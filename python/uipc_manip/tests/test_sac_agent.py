@@ -92,3 +92,33 @@ def test_sac_update_and_checkpoint(tmp_path):
     mismatched = SACAgent(ObsSpec(12), 3, _small_cfg(), "cpu")
     with pytest.raises(ValueError):
         mismatched.load(path)
+
+
+def test_actor_update_uses_the_critic_action_gradient():
+    """The actor must learn from ``dQ/da``, not from the entropy term alone.
+
+    The critic concatenates the action after its encoder, so detaching that
+    encoder during the actor update saves work without cutting the path to the
+    action. Detaching the action itself instead would leave ``Q(s, pi(s))``
+    constant in ``pi`` and silently reduce the actor to entropy maximisation.
+    """
+    torch.manual_seed(0)
+    spec = ObsSpec(10)
+    agent = SACAgent(spec, 3, _small_cfg(), "cpu")
+    rng = np.random.default_rng(0)
+    blob = rng.normal(scale=0.01, size=(6, 3))
+    marker = np.array([True, True, False, False, False, False])
+    obs_flat = torch.as_tensor(
+        np.stack([spec.pack(blob, marker, rng.normal(size=3) * 0.05, np.zeros(3), True) for _ in range(8)])
+    )
+    obs = agent._unpack(obs_flat)
+    _, pi, _, _ = agent.actor(obs)
+    q1, _ = agent.critic(obs, pi, detach_encoder=True)
+    grad = torch.autograd.grad(q1.sum(), pi, retain_graph=True)[0]
+    assert grad.abs().sum() > 0.0, "critic gives the actor no action gradient"
+
+    before = [p.detach().clone() for p in agent.actor.trunk.parameters()]
+    agent.updates = agent.cfg.actor_update_freq - 1
+    agent._update_actor_and_alpha(obs)
+    after = list(agent.actor.trunk.parameters())
+    assert any(not torch.equal(b, a) for b, a in zip(before, after, strict=True))
