@@ -27,3 +27,16 @@ The neighboring Genesis checkout is version 1.1.2 and has also been set up with
 pyuipc 0.0.28. Its `examples/IPC_Solver/ipc_cloth_cable.py` advances cloth and
 an experimental native IPC cable through Genesis's existing coupler. See that
 checkout's IPC example README for commands and integration limitations.
+
+## Robot manipulation pretraining
+
+That example and the neighbouring Genesis one are prescribed-motion
+validations. `python/uipc_manip/` builds on them into a reinforcement-learning
+package: a Franka Panda manipulates the same kind of cloth sheet or elastic
+cable, contact is solved by this project's IPC backend through the Genesis
+coupler, and a point-cloud Soft Actor-Critic policy is trained on three
+goal-reaching tasks. Its algorithm and hyperparameters are ported from the
+Newton cloth-dressing teacher. See `python/uipc_manip/README.md` for commands
+and limitations, and
+`agent_docs/performance/2026-09-08-uipc-manip-pretraining.md` for measured
+throughput and the scripted task gate.

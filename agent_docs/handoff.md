@@ -1340,3 +1340,37 @@ Created a Python 3.11 environment using the pyuipc 0.0.28 wheel and added
 cloth and rod soft-grip movement, finite state, and target tracking. Setup,
 commands, results, and the neighboring Genesis integration are documented in
 `agent_docs/cloth_cable_setup.md`. No native solver build was performed.
+
+## 2026-09-08: IPC robot manipulation pretraining package
+
+Added `python/uipc_manip/`, a point-cloud SAC pretraining stack in which a
+Franka Panda manipulates deformables whose contact is solved by this project's
+IPC backend. Genesis 1.1.2 supplies the robot, plane, and viewer; the cloth
+sheet and elastic cable are native libuipc geometries in the Genesis IPC
+coupler, reached through the same private attributes the upstream Genesis IPC
+examples use. Parallelism is one IPC scene per subprocess.
+
+The agent, hyperparameters, and transition semantics are ported from the Newton
+cloth-dressing teacher on `leomessikun/fmvp-sac-retrain` (Wang RSS 2023 as used
+for FMVP simulation pretraining): scalar SAC with twin critics and the
+reference `Q(encode(s), a)` form, a learned entropy temperature, the
+horizon-equivalent discount, temperature learning rate and replay reward-scale
+helpers, the replay-prefill gradient budget, time-limit bootstrapping from the
+pre-reset observation, and a checkpoint protocol that refuses a mismatched
+observation layout or another task. The reference PointNet++ requires PyTorch
+Geometric, absent from the Genesis environment, so it was reimplemented on
+dense masked tensors with padding and permutation invariance tests.
+
+Two measured findings set the defaults. Three simulation steps per decision
+leaves the deformable lagging the tool, and the scripted policy then scores 0/6
+on both drag tasks; five restores 6/6. Truncating an oversized marker set by
+vertex index biased the observation to one region of the sheet while the reward
+measured the whole of it, also 0/6; random subsampling restores 6/6 at a 3.3 mm
+mean final error. All three tasks pass the scripted gate.
+
+Throughput on a shared RTX PRO 6000 Blackwell: the IPC solve is 68 ms of a
+120 ms Genesis scene step, four subprocess workers reach 4.4 environment
+transitions per second, and a SAC update costs 47 ms at the 256-point budget.
+Evidence is in `agent_docs/performance/2026-09-08-uipc-manip-pretraining.md`.
+No libuipc solver code was changed and no native build was performed; the
+package runs against the released `pyuipc` 0.0.28 wheel.

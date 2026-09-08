@@ -99,6 +99,48 @@ Packaging/helper invariants verified in the current tree:
 Base functionality is covered by 19 `test_*.py` files containing 75 top-level
 test functions.
 
+## Robot Manipulation Pretraining (`python/uipc_manip/`)
+
+`python/uipc_manip/` is a research package, not part of the `pyuipc` wheel. It
+trains a point-cloud Soft Actor-Critic policy to manipulate deformables with a
+Franka Panda, where deformable contact is solved by this project's IPC backend.
+Genesis 1.1.2 supplies the robot, the table plane, and the viewer; the cloth
+sheet and the elastic cable are native libuipc geometries inserted through the
+Genesis IPC coupler, so finger contact and deformable elasticity are solved in
+the same Newton iterations.
+
+| Module | Role |
+|---|---|
+| `obs.py` | flat observation layout shared by environment, replay, and networks |
+| `assets.py`, `tasks.py` | deformable builders and the three goal-reaching task definitions |
+| `genesis_env.py` | single Genesis scene, picker attachment, IPC snapshot reset |
+| `vec_env.py` | subprocess vector environment (`spawn`; one IPC scene per process) |
+| `models.py` | dense masked PointNet++ encoder with actor and twin-critic heads |
+| `sac.py`, `replay.py` | scalar SAC, checkpoint protocol, replay snapshots |
+| `train_sac.py`, `preview.py` | launcher (train, scripted sweep, evaluation) and offline renderer |
+
+Boundaries worth knowing before changing it:
+
+- the agent, hyperparameters, and transition semantics are ported from the
+  Newton cloth-dressing teacher (Wang RSS 2023 as used for FMVP simulation
+  pretraining); the horizon-equivalent discount, temperature learning rate, and
+  replay reward-scale helpers all return the reference values at the default
+  150-step horizon;
+- the reference PointNet++ needs PyTorch Geometric, which the Genesis
+  environment does not carry, so `models.py` reimplements it on dense masked
+  tensors; ball-query neighbour counts are the dominant cost knob;
+- the environment reaches Genesis coupler internals (`_ipc_objects`,
+  `_ipc_animator`, `_ipc_contact_tabular`, `_ipc_world`), the same access
+  pattern as the upstream Genesis IPC examples, so a Genesis upgrade needs a
+  recheck;
+- tests split by dependency: the observation, encoder, and SAC tests run on CPU
+  and skip without PyTorch, while the environment test carries the `cuda`
+  marker and is deselected by the repository's default pytest options.
+
+`python/uipc_manip/README.md` carries the commands, measured throughput, and
+the full limitation list. Durable evidence is in
+`performance/2026-09-08-uipc-manip-pretraining.md`.
+
 ## Sample Repository as Executable API Evidence
 
 `libuipc-samples/` is a tracked git submodule, not an untracked sibling. At the
