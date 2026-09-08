@@ -276,7 +276,10 @@ evaluation in 7 minutes. First evaluation at 28,800 transitions: 0 of 16,
 forearm and upper-arm ratios 0.0 including their episode maxima, return
 -84.5, task reward -0.087, and the held cuff now stays within 2.8 cm of the
 tool. The critic drift recurs: Q mean 1.5 to 52 over the first 28,800
-updates against training returns near -139.
+updates against training returns near -139. Second evaluation at 57,600
+transitions: 0 of 16, ratios 0.0, return -123.3 against -84.5 before, cuff
+within 1.3 cm of the tool, Q mean 86; the second half of that run shared
+the GPU with the temperature ablation and the pipeline smoke.
 
 ## Newton reference compared, same machine
 
