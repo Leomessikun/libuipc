@@ -72,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--point-jitter", type=float, default=0.0, help="Per-point jitter [m] applied to replay samples.")
     p.add_argument("--grad-clip-max-norm", type=float, default=0.0)
     p.add_argument("--min-alpha", type=float, default=0.0)
+    p.add_argument("--init-temperature", type=float, default=0.1, help="Initial SAC temperature; the reference uses 0.1 at a 150-step horizon.")
     p.add_argument("--eval-freq", type=int, default=500, help="Vector steps between evaluations (0 disables).")
     p.add_argument("--num-eval-episodes", type=int, default=4)
     p.add_argument("--checkpoint-interval", type=int, default=500)
@@ -290,6 +291,7 @@ def main(argv: list[str] | None = None) -> None:
         sac_cfg = SACConfig(
             discount=discount,
             alpha_lr=alpha_lr,
+            init_temperature=args.init_temperature,
             actor_lr=args.actor_lr,
             critic_lr=args.critic_lr,
             hidden_dim=args.hidden_dim,

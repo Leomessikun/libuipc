@@ -144,6 +144,7 @@ are there to be compared against it, not assumed better.
 | `--actor` | `wang-flow`, `flat` | `wang-flow` | tool-point readout of a segmentation encoder (reference) or a globally pooled encoder |
 | `--algo` | `sac`, `flashsac` | `sac` | scalar twin critic (reference) or the bounded categorical critic from the Newton `flashsac` path |
 | `--encoder` | `pointnet2`, `transformer` | `pointnet2` | dense masked PointNet++ (reference) or a set transformer with a learned global token |
+| `--init-temperature` | float | `0.1` | initial SAC temperature; the reference value at 150 steps. The horizon-equivalent helpers rescale the reward and the temperature learning rate for a 900-step horizon but not this, so the critic target carries a six-times larger entropy term; `0.0167` is the variant under test |
 
 For dressing prefer `--encoder transformer`: the 768-point observation makes the dense ball query several times more expensive per update than attention.
 
