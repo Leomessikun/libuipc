@@ -16,7 +16,7 @@ attributes, which is the same access pattern as the upstream IPC examples.
 from __future__ import annotations
 
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 import numpy as np
 

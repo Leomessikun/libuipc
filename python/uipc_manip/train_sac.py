@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--num-eval-episodes", type=int, default=4)
     p.add_argument("--checkpoint-interval", type=int, default=500)
     p.add_argument("--log-interval", type=int, default=20)
-    p.add_argument("--work-dir", type=str, default="runs/uipc_manip")
+    p.add_argument("--work-dir", type=str, default="output/uipc_manip", help="Runs land here; the repository ignores output/.")
     p.add_argument("--run-name", type=str, default=None)
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--device", type=str, default="cuda:0")
