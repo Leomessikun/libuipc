@@ -270,8 +270,13 @@ initial temperature by the same 150/900 is the candidate change if the
 drift recurs. Wall-clock figures from the stopped run are contaminated by
 the probes that shared the GPU.
 
-Rerun with the strength-1e4 hold, same 16 slots and settings: 1.83 s per
-vector step over the first 50 steps with no other GPU load.
+Rerun with the strength-1e4 hold, same 16 slots and settings: 1.87 s per
+vector step over the first 1,800 steps with no other GPU load, a 16-episode
+evaluation in 7 minutes. First evaluation at 28,800 transitions: 0 of 16,
+forearm and upper-arm ratios 0.0 including their episode maxima, return
+-84.5, task reward -0.087, and the held cuff now stays within 2.8 cm of the
+tool. The critic drift recurs: Q mean 1.5 to 52 over the first 28,800
+updates against training returns near -139.
 
 ## Interpretation
 
