@@ -235,14 +235,15 @@ logged, the same expert, cell, and horizon give:
 
 The sleeve opening is nearly twice as wide as the hand (radius 9.9 cm against
 a hand radius of 6 cm), so the geometry admits threading, and with a hold
-that carries the garment the expert threads it. The blocker was the hold, not
-friction, fingers, or the cloth model. The reference's kinematic pin is still
-only approximated: in contact the soft hold yields by a few centimetres at
-either strength, which is the joint effect of an impenetrable arm, a
-strain-limited shell, and a finite spring, and is why the expert reaches
-0.28 of the upper arm here against 0.7 in 20 of 35 cells under Newton's VBD
-cloth, where the cloth stretches and penetrates slightly. The no-move shell
-also stalls the expert for about 200 decisions at the elbow.
+that carries the garment the expert threads it. The hold was a blocker; the
+friction, erosion, and cloth-model rows above were all measured with a
+detached anchor and say nothing either way, so they have not been ruled out
+as what separates 0.28 from the 0.7 threshold, and none has been retested
+with the working hold yet. The reference's kinematic pin is still only
+approximated: in contact the soft hold yields by 3 to 5 cm at either
+strength. The no-move shell also stalls the expert for about 200 decisions
+at the elbow. Under Newton's VBD cloth, where the cloth stretches and
+penetrates slightly, the same expert reaches 0.7 in 20 of 35 cells.
 
 First SAC evaluation on the dressing task, 16 slots, tshirt_26 and
 tshirt_392, transformer encoder, 28,800 transitions in 44 minutes at 1.4 s
@@ -252,10 +253,25 @@ with the reference's own note that upper-arm progress begins only after
 hundreds of sustained steps. The second evaluation at 57,600 transitions was
 the same: 0 of 16, ratios 0.0, return -92.5. The run used the strength-100
 hold and was stopped at 3,700 vector steps once the hold was shown to detach
-the garment; its critic had drifted from a Q mean of 1.4 to 86 against
-returns of -95, the soft value's entropy term at discount 0.99833 dwarfing a
-reward of -0.017 per step, which is worth watching in the rerun. Wall-clock
-figures from that run are contaminated by the probes that shared the GPU.
+the garment. Its critic had drifted from a Q mean of 1.4 to 86 against
+returns of -95. The checkpoint's temperature explains the drift: alpha was
+0.079 (from 0.1, at the horizon-equivalent alpha learning rate of 1.67e-5),
+so with the policy near its target entropy of 6 nats the soft value carries
+about 0.5 per step of entropy bonus against a scaled reward of -0.017 per
+step, summed over an effective horizon of 600 steps instead of the
+reference's 100. The reward was rescaled by 150/900 to keep its discounted
+sum at the reference's scale; the temperature was not, so the critic's
+target is dominated by an entropy term six times larger relative to reward
+than in Wang's setting, while the actor's per-step trade-off `alpha log pi -
+Q` is unchanged. The critic will keep chasing that growing baseline for
+hundreds of thousands of updates. This is left as measured; the rerun keeps
+the reference temperature so its Q mean is comparable, and dividing the
+initial temperature by the same 150/900 is the candidate change if the
+drift recurs. Wall-clock figures from the stopped run are contaminated by
+the probes that shared the GPU.
+
+Rerun with the strength-1e4 hold, same 16 slots and settings: 1.83 s per
+vector step over the first 50 steps with no other GPU load.
 
 ## Interpretation
 
