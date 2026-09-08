@@ -19,6 +19,60 @@ which follows Wang RSS 2023 as used for FMVP simulation pretraining. The task
 suite is deliberately smaller: three goal-reaching tasks rather than a
 multi-garment dressing curriculum.
 
+## The dressing task
+
+`--task dressing` is the Newton cloth-dressing teacher's environment rebuilt
+on the IPC solver: thread the sleeve opening of a pre-worn garment along a
+human's right arm to the shoulder. Every slot holds one pre-worn
+(garment, human) cell from the Newton bake cache; the human's right-arm
+collision mesh is a fixed libuipc affine body, the garment a strain-limiting
+Baraff-Witkin shell in its own IPC subscene, and twelve cuff vertices near the
+picker follow the 6-D gripper action (translation and rotation) through a
+soft position constraint. All slots share one libuipc world.
+
+The MDP is the Wang RSS 2023 `pointcloud_3` preset the Newton
+`--fmvp-pretrain-defaults` launcher reproduces: 900 decisions at 60 Hz, a
+0.15 m/s end-effector speed cap split per axis, 5 degrees of rotation per
+step with the x-rotation zeroed, a 12 mm no-move collision shell around the
+arm, the line-triangle progress reward with the upper arm worth five times
+the forearm, a dual-camera visible point cloud with voxel downsampling,
+camera jitter and dropout, an explicit tool point, and a 768-point budget.
+Success is an upper-arm dressed ratio of at least 0.7 at the time limit.
+
+The cache is not in this repository. It is read from
+`UIPC_MANIP_DRESSING_CACHE` (default: the `hand_cached_states.pkl` of the
+`ppf-contact-solver` bake on this machine) and the garment semantics from
+`UIPC_MANIP_DRESSING_SEMANTICS` (default: the Newton branch's
+`canonical_drape` directory). Seventeen of the 23 cached cells build under
+libuipc's intersection and distance checks; the six that do not carry
+residual self-intersections from the bake. A world holds one human, so a run
+is a regional teacher in the Newton sense; garments cycle across slots.
+
+```bash
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac --task dressing --human 0 \
+    --garments tshirt_26 tshirt_392 --policy heuristic --eval-only --num-envs 4 --num-eval-episodes 4
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac --task dressing --human 0 \
+    --garments tshirt_26 tshirt_392 --num-envs 16 --encoder transformer \
+    --total-transitions 100000 --eval-freq 1800 --num-eval-episodes 16 --checkpoint-interval 900
+```
+
+Where the IPC port departs from the Newton teacher, and why:
+
+* The cuff is held by a soft position constraint of strength 100 on twelve
+  vertices rather than a hard kinematic pin; the picker patch is the same.
+* The arm collider is the cached `right_arm_faces` mesh eroded 6 mm along its
+  normals. The cache was accepted with centimetre-scale interpenetration,
+  which libuipc refuses; erosion is how the states become legal.
+* The garment is a strain-limiting Baraff-Witkin shell at 0.5 kg/m^2 with a
+  0.15 mm collision radius. A thicker radius is impossible because cached
+  layers already sit closer than that, and a Neo-Hookean shell at that
+  radius stretched by tens of centimetres under its own weight.
+* The libuipc FEM preconditioner is the multilevel additive Schwarz one. With
+  block-Jacobi the conjugate-gradient solve took seconds per Newton
+  iteration on this cloth.
+* No garment curriculum, no held-out human, no early-turn detector in the
+  success metric, and the hospital gown is opt-in.
+
 ## Requirements
 
 The package needs Genesis, PyTorch, and `pyuipc` in one interpreter. On this
@@ -74,6 +128,8 @@ are there to be compared against it, not assumed better.
 | `--actor` | `wang-flow`, `flat` | `wang-flow` | tool-point readout of a segmentation encoder (reference) or a globally pooled encoder |
 | `--algo` | `sac`, `flashsac` | `sac` | scalar twin critic (reference) or the bounded categorical critic from the Newton `flashsac` path |
 | `--encoder` | `pointnet2`, `transformer` | `pointnet2` | dense masked PointNet++ (reference) or a set transformer with a learned global token |
+
+For dressing prefer `--encoder transformer`: the 768-point observation makes the dense ball query several times more expensive per update than attention.
 
 Replay a checkpoint without modifying it, and resume training from one.
 

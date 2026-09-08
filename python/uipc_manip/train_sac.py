@@ -22,6 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .dressing_env import DEFAULT_GARMENTS, DressingConfig, GenesisIPCDressingEnv
 from .genesis_env import EnvConfig, GenesisIPCManipEnv, ViewerClosed
 from .obs import ObsSpec, goal_rel, marker_centroid_rel
 from .sac import (
@@ -36,12 +37,17 @@ from .tasks import TASKS, heuristic_action
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--task", choices=sorted(TASKS), default="cloth_drag")
+    p.add_argument("--task", choices=[*sorted(TASKS), "dressing"], default="dressing")
+    p.add_argument("--human", type=int, default=0, help="dressing: cached human whose cells fill every slot (a regional teacher).")
+    p.add_argument("--garments", type=str, nargs="+", default=list(DEFAULT_GARMENTS), help="dressing: garments cycled across slots.")
+    p.add_argument("--anchor-count", type=int, default=12, help="dressing: cuff vertices held by the picker.")
+    p.add_argument("--cuff-strength", type=float, default=100.0, help="dressing: soft position constraint strength of the held cuff.")
+    p.add_argument("--no-obs-augment", action="store_true", help="dressing: disable camera jitter and dropout.")
     p.add_argument("--num-envs", type=int, default=32, help="Deformable and robot copies solved together in one IPC world.")
-    p.add_argument("--horizon", type=int, default=150)
+    p.add_argument("--horizon", type=int, default=None, help="Decisions per episode; 900 for dressing, 150 otherwise.")
     p.add_argument("--action-repeat", type=int, default=5)
     p.add_argument("--max-translation", type=float, default=0.006)
-    p.add_argument("--point-budget", type=int, default=256)
+    p.add_argument("--point-budget", type=int, default=None, help="Points per observation; 768 for dressing, 256 otherwise.")
     p.add_argument("--friction", type=float, default=0.6)
     p.add_argument("--settle-steps", type=int, default=40)
     p.add_argument("--vis", action="store_true", help="Open the Genesis viewer (forces a single environment).")
@@ -81,6 +87,23 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def make_env(args):
+    if args.task == "dressing":
+        cfg = DressingConfig(
+            human=args.human,
+            garments=tuple(args.garments),
+            horizon=args.horizon,
+            point_budget=args.point_budget,
+            anchor_count=args.anchor_count,
+            constraint_strength=args.cuff_strength,
+            seed=args.seed,
+            augment_obs=not args.no_obs_augment,
+            show_viewer=bool(args.vis),
+        )
+        return GenesisIPCDressingEnv(cfg, num_envs=args.num_envs)
+    return GenesisIPCManipEnv(env_config(args), num_envs=args.num_envs)
+
+
 def env_config(args) -> EnvConfig:
     return EnvConfig(
         task=args.task,
@@ -105,6 +128,8 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
     finished: list[dict] = []
     returns = np.zeros(env.num_envs)
     max_tracking = np.zeros(env.num_envs)
+    metric_keys = tuple(getattr(env, "metric_keys", ()))
+    running_max = {k: np.full(env.num_envs, -np.inf) for k in metric_keys}
     trajectories = [[] for _ in range(env.num_envs)] if trajectory_dir is not None else None
     episode_index = 0
     while len(finished) < episodes:
@@ -116,6 +141,9 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
         returns += rewards
         for i, info in enumerate(infos):
             max_tracking[i] = max(max_tracking[i], float(info.get("tracking_error", 0.0)))
+            for k in metric_keys:
+                if k in info:
+                    running_max[k][i] = max(running_max[k][i], float(info[k]))
             if dones[i]:
                 record = {
                     "success": bool(info.get("success", False)),
@@ -124,6 +152,12 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
                     "max_tracking_error": float(max_tracking[i]),
                     "sim_error": bool(info.get("sim_error", False)),
                 }
+                for k in metric_keys:
+                    record[f"final_{k}"] = float(info.get(k, np.nan))
+                    record[f"max_{k}"] = float(running_max[k][i])
+                    running_max[k][i] = -np.inf
+                if "garment" in info:
+                    record["garment"] = str(info["garment"])
                 if len(finished) < episodes:
                     finished.append(record)
                     if trajectories is not None:
@@ -134,15 +168,23 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
                 if trajectories is not None:
                     trajectories[i] = []
     distances = np.array([r["distance"] for r in finished])
-    return {
+    summary = {
         "episodes": len(finished),
         "success_rate": float(np.mean([r["success"] for r in finished])),
         "mean_final_distance": float(np.nanmean(distances)),
         "mean_return": float(np.mean([r["return"] for r in finished])),
         "max_tracking_error": float(max(r["max_tracking_error"] for r in finished)),
         "sim_errors": int(sum(r["sim_error"] for r in finished)),
-        "records": finished,
     }
+    for k in metric_keys:
+        summary[f"mean_final_{k}"] = float(np.nanmean([r[f"final_{k}"] for r in finished]))
+        summary[f"mean_max_{k}"] = float(np.nanmean([r[f"max_{k}"] for r in finished]))
+    garments = sorted({r["garment"] for r in finished if "garment" in r})
+    for g in garments:
+        rows = [r for r in finished if r.get("garment") == g]
+        summary[f"success_rate_{g}"] = float(np.mean([r["success"] for r in rows]))
+    summary["records"] = finished
+    return summary
 
 
 def _save_trajectory(directory: Path, index: int, states: list[dict], description: dict) -> None:
@@ -209,7 +251,11 @@ def main(argv: list[str] | None = None) -> None:
     run_dir = Path(args.work_dir) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     seeds = [args.seed * 100 + i for i in range(args.num_envs)]
-    env = GenesisIPCManipEnv(env_config(args), num_envs=args.num_envs)
+    if args.horizon is None:
+        args.horizon = 900 if args.task == "dressing" else 150
+    if args.point_budget is None:
+        args.point_budget = 768 if args.task == "dressing" else 256
+    env = make_env(args)
     spec = ObsSpec(args.point_budget)
     description = env.descriptions[0]
     print(
@@ -220,7 +266,10 @@ def main(argv: list[str] | None = None) -> None:
     (run_dir / "env.json").write_text(json.dumps(description, indent=2) + "\n")
 
     if args.policy == "heuristic":
-        policy = lambda obs, deterministic: heuristic_actions(obs, spec, args.max_translation)  # noqa: E731
+        if args.task == "dressing":
+            policy = lambda obs, deterministic: env.scripted_actions()  # noqa: E731
+        else:
+            policy = lambda obs, deterministic: heuristic_actions(obs, spec, args.max_translation)  # noqa: E731
         agent = None
     elif args.policy == "random":
         policy = lambda obs, deterministic: np.random.uniform(-1, 1, size=(obs.shape[0], env.action_dim))  # noqa: E731

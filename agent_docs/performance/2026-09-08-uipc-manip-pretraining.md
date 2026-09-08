@@ -185,6 +185,29 @@ evaluation-only loading, training continuation with the replay snapshot
 (transition and update counts continue from the checkpoint), and a deliberate
 encoder mismatch, which is refused with both protocols printed.
 
+### Fourth pass: the Newton dressing task on IPC
+
+The owner's target is the Newton cloth-dressing teacher, so the dressing MDP
+was rebuilt on the batched IPC world from the Newton bake cache (23 pre-worn
+garment/human cells). Findings, each measured on a single tshirt_26/human_0
+cell unless stated:
+
+| Finding | Evidence |
+|---|---|
+| 17 of 23 cells build under libuipc's checks | pure-pyuipc init sweep; the six failures are residual self-intersections from the bake, not arm contact |
+| Cloth collision radius must be the thin 0.15 mm the sim2sim path used | with a 1 mm radius libuipc reports cached layers closer than the summed radii; with the checks off the solver asserts "thickness violated" on those pairs |
+| Block-Jacobi PCG dominates: 83 of 84.5 solver seconds over 25 Newton iterations | libuipc timer; step 7.3 s at 200 kg/m^3, 3.9 s at 3333 kg/m^3 |
+| Multilevel additive Schwarz preconditioner: 3.9 s to 0.67 s per step | same probe; PCG time per Newton iteration 1.5 s to 0.1 s; once the garment settles a step costs 12-55 ms |
+| Contact stiffness is not a lever | libuipc clamps the requested kappa into a range set by the geometry, so 1e5 and 1e7 behave alike |
+| Genesis re-tessellates an imported arm mesh, 1307 vertices to 4885 with duplicates, and the IPC trajectory filter then asserted on NaN distances | device assert `D=-nan` in the simplex trajectory filter, twice, both times on a cloth face against a duplicated arm vertex; a native fixed affine body from the cached mesh runs 800 steps cleanly and builds in 6 s against 116 s |
+| A Neo-Hookean shell at the thin radius stretches by tens of centimetres under its own weight | membrane stiffness scales with the radius, 6e4 Pa times 0.3 mm is 18 N/m; the strain-limiting Baraff-Witkin shell holds shape and is what the reference-validated Genesis path used |
+| The cached hand-to-shoulder pull threads the sleeve over the fingertips only | forearm ratio 0.01-0.04 with the anchor at the shoulder, unchanged by erosion 15-25 mm, 40 anchored vertices, or a 1000 hold; the opening (radius 8-10 cm) is wider than the hand, so this is the motion, not the geometry, and the learned policy has to do better |
+| Batched throughput, mixed tshirt_26 / tshirt_392 / hospital_gown slots | 8 slots 480 ms per step, 16 slots 929 ms per step: near-linear, the garment vertex count saturates the GPU, so roughly 17 environment steps per second at 16 slots |
+
+The libuipc default gravity is along -y; a pure-pyuipc probe that omitted the
+Genesis gravity setting spent an hour blaming contact for a garment that was
+simply falling sideways. Set `config["gravity"]` in any standalone probe.
+
 ## Interpretation
 
 Directly measured: the IPC solve is 68 ms of a 120 ms scene step, so slightly

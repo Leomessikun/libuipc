@@ -99,6 +99,43 @@ class ObsSpec:
         extra[6] = 1.0 if attached else 0.0
         return np.concatenate([block.reshape(-1), extra])
 
+    def pack_labeled(
+        self,
+        points_rel: np.ndarray,
+        flags: np.ndarray,
+        goal_rel: np.ndarray,
+        tool_world: np.ndarray,
+        attached: bool,
+    ) -> np.ndarray:
+        """Build one flat observation from points that carry their own segmentation flags.
+
+        Args:
+            points_rel: ``[M, 3]`` points relative to the tool, ``M <= deformable_budget``.
+            flags: ``[M, FEATURE_DIM]`` segmentation flags per point (for example arm
+                points flagged as markers and cloth points flagged as deformable).
+            goal_rel: ``[3]`` goal position relative to the tool.
+            tool_world: ``[3]`` absolute tool position.
+            attached: Whether the deformable is currently attached to the tool.
+        """
+        points_rel = np.asarray(points_rel, dtype=np.float32).reshape(-1, 3)
+        flags = np.asarray(flags, dtype=np.float32).reshape(-1, FEATURE_DIM)
+        count = points_rel.shape[0]
+        if count != flags.shape[0]:
+            raise ValueError("points_rel and flags must have the same length")
+        if count > self.deformable_budget:
+            raise ValueError(f"{count} points exceed the budget of {self.deformable_budget}")
+        block = np.zeros((int(self.point_budget), POINT_DIM), dtype=np.float32)
+        block[:count, :3] = points_rel
+        block[:count, 3:] = flags
+        block[count, :3] = np.asarray(goal_rel, dtype=np.float32).reshape(3)
+        block[count, 3 + FLAG_GOAL] = 1.0
+        block[count + 1, 3 + FLAG_TOOL] = 1.0
+        extra = np.zeros(EXTRA_DIM, dtype=np.float32)
+        extra[0:3] = np.asarray(tool_world, dtype=np.float32).reshape(3)
+        extra[3:6] = np.asarray(goal_rel, dtype=np.float32).reshape(3)
+        extra[6] = 1.0 if attached else 0.0
+        return np.concatenate([block.reshape(-1), extra])
+
     def unpack_numpy(self, flat: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Split a flat observation (or a batch of them) into arrays.
 

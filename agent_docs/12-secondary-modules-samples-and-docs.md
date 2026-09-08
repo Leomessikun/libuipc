@@ -114,6 +114,7 @@ the same Newton iterations.
 | `obs.py` | flat observation layout shared by environment, replay, and networks |
 | `assets.py`, `tasks.py` | deformable builders and the three goal-reaching task definitions |
 | `genesis_env.py` | one batched Genesis scene, `N` deformable copies in one IPC world isolated by subscenes, picker attachment, snapshot reset |
+| `dressing_assets.py`, `dressing_obs.py`, `dressing_reward.py`, `dressing_env.py` | Newton dressing task on the batched IPC world: bake-cache loader, dual-camera visible cloud, Wang line-triangle reward, environment |
 | `models.py` | dense masked PointNet++ (global and segmentation), set-transformer encoder, Wang tool-point actor, scalar and categorical twin critics |
 | `sac.py`, `replay.py` | scalar SAC, checkpoint protocol, replay snapshots |
 | `train_sac.py`, `preview.py` | launcher (train, scripted sweep, evaluation) and offline renderer |

@@ -1397,3 +1397,17 @@ units of `max_translation`. At 8,000 transitions the same run went from 0/32
 successes and 97.8 mm to 27/32 and 14.6 mm, matching the scripted baseline.
 The viewer path (`--vis`) holds the window open after evaluation and exits
 cleanly when it is closed.
+
+Fourth pass: the owner clarified that the target is the Newton dressing task
+itself, not simpler cloth tasks. `python/uipc_manip/dressing_env.py` rebuilds
+that MDP on the batched IPC world from the Newton bake cache: fixed affine-body
+arm collider (eroded 6 mm), strain-limiting Baraff-Witkin garment, twelve
+anchored cuff vertices following the 6-D action, the Wang line-triangle reward
+with the 5x upper-arm term, the dual-camera visible cloud with jitter and
+dropout, and the 900-step horizon. The multilevel additive Schwarz
+preconditioner is required (block-Jacobi PCG cost seconds per Newton
+iteration), the arm must be a native body (Genesis re-tessellation produced
+NaN distances in the trajectory filter), and 17 of 23 cells build. The cached
+scripted pull threads the sleeve only over the fingertips (forearm ratio 0.04),
+so the reachability baseline is weak; the trainer runs end to end with
+per-garment dressing metrics. Details are in the performance record.
