@@ -278,6 +278,80 @@ forearm and upper-arm ratios 0.0 including their episode maxima, return
 tool. The critic drift recurs: Q mean 1.5 to 52 over the first 28,800
 updates against training returns near -139.
 
+## Newton reference compared, same machine
+
+The Newton teacher's own runs live in `runs/dressing_pointcloud_sac` of the
+`leomessikun/fmvp-sac-retrain` worktree, 33 of them with evaluations, on this
+same RTX PRO 6000 Blackwell. Their TensorBoard scalars carry
+`perf/env_steps_per_s`, so speed is measured on both sides rather than
+inferred. Newton runs 40 environments per process against this port's 16.
+
+| | Newton, VBD cloth | This port, libuipc IPC |
+|---|---:|---:|
+| Vector steps per second | 0.97 to 1.00 | 0.53 |
+| Environment transitions per second | 38.9 to 42.7 | 8.9 |
+| Milliseconds per environment transition | 23 to 26 | 112 |
+
+Newton is 4.4 times faster per transition. Its older runs at 5 to 23
+transitions per second are not slower physics: fidelity is identical across
+them (`cloth_substeps` 10, `vbd_iterations` 15, decimation 1), and the
+Aug 25 sweep shows eight concurrent MPS jobs at 6 to 8 transitions per second
+each against 42 solo, so the low numbers are GPU contention. The gap is what
+the two solvers do per step: a fixed-cost local VBD sweep against a full
+Newton solve with continuous collision detection, line search, and a global
+linear system that guarantees no penetration.
+
+Neither has solved the task. Success is the same definition on both sides, a
+final upper-arm ratio of at least 0.7.
+
+| | Newton | This port |
+|---|---|---|
+| Runs with evaluations | 33 | 2 |
+| Best success rate | 0.025, one episode of 40, in four runs; the other 29 runs scored 0.000 | 0 of 16 |
+| Best rate of touching 0.7 during an episode | 0.35 | 0.0 |
+| Best mean of the per-episode maximum upper-arm ratio | 0.381 at horizon 150, 0.21 to 0.27 at horizon 900 | policy 0.0, scripted expert 0.28 |
+| Sleeve latched over the hand | 0.75 to 1.0 | the expert threads it |
+| Largest budget spent | 74,400 vector steps at 40 environments, 2.98M transitions, 72 hours | 50k transitions, 1.8 hours |
+
+So the reference reaches the same plateau this port reaches: the sleeve
+latches over the hand and then stalls a fifth to a third of the way up the
+arm. The scripted expert here, at 0.28, is inside the band of Newton's
+trained policies at horizon 900. That plateau is a property of the task as
+posed, not of the solver.
+
+Newton's best upper-arm result came from its shortest-decision configuration,
+horizon 150 with decimation 6: the same 900 simulation steps per episode, but
+six simulation steps per decision instead of one. This port runs the opposite
+extreme, horizon 900 with `action_repeat` 1, which is the most expensive
+setting and the one Newton's own sweep found worst.
+
+## Machine utilisation, measured
+
+At 16 environments one training process holds 7.8 GB of the 96 GB of GPU
+memory and 5.2 GB of host RAM, and drives one CPU core of 32 at 100 per cent.
+GPU utilisation reads 93 to 100 per cent at 356 to 370 W of a 600 W limit.
+Neither memory nor the CPU is the limit.
+
+Running a second training process was measured rather than assumed:
+
+| | Solo | Two processes |
+|---|---:|---:|
+| Seconds per vector step, first run | 1.79 | 2.93 |
+| Seconds per vector step, second run | - | 3.28 |
+| Aggregate environment transitions per second | 8.9 | 10.3 |
+| GPU memory | 7.8 GB | 17.9 GB |
+
+A second process buys 1.16 times the aggregate throughput while making each
+run 64 per cent slower. Newton's eight-way MPS sweep measured the same shape,
+1.24 times aggregate. The GPU is saturated by small serial solver kernels, so
+neither more processes nor more environments per process helps: the earlier
+scaling measurement, 8 slots at 480 ms and 16 slots at 929 ms per step, is
+linear, which means transitions per second is flat in the environment count.
+
+What would raise throughput is fewer decisions per episode, which is the
+`action_repeat` and horizon trade Newton's own sweep found best, or fewer
+garment vertices. Adding hardware pressure will not.
+
 ## Interpretation
 
 Directly measured: the IPC solve is 68 ms of a 120 ms scene step, so slightly
