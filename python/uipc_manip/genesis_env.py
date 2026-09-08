@@ -191,7 +191,14 @@ class GenesisIPCManipEnv:
             markers = np.unique(self.marker_idx)
             others = np.setdiff1d(np.arange(n, dtype=np.int64), markers)
             sub_rng = np.random.default_rng(_OBS_SUBSET_SEED)
-            keep_markers = markers[: min(markers.size, budget)]
+            # Markers are subsampled at random rather than truncated by index.
+            # Vertex indices run along the mesh, so keeping the first ones
+            # would show the policy one region of the sheet while the reward
+            # measures the centroid of all of it.
+            if markers.size > budget:
+                keep_markers = np.sort(sub_rng.choice(markers, size=budget, replace=False))
+            else:
+                keep_markers = markers
             remaining = budget - keep_markers.size
             extra = sub_rng.choice(others, size=min(remaining, others.size), replace=False) if remaining > 0 else []
             subset = np.sort(np.concatenate([keep_markers, np.asarray(extra, dtype=np.int64)]))

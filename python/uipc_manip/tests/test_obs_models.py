@@ -127,3 +127,21 @@ def test_fps_and_actor_critic_shapes(torch):
     assert q1.shape == (4, 1) and q2.shape == (4, 1)
     (q1.sum() + q2.sum() + log_pi.sum()).backward()
     assert all(p.grad is not None for p in actor.encoder.parameters())
+
+
+def test_marker_subsampling_is_unbiased():
+    """A marker set larger than the budget must be sampled across the mesh, not truncated by index.
+
+    Vertex indices run along the mesh, so keeping the first ones would show the
+    policy one region while the reward measures the centroid of all of it.
+    """
+    rng = np.random.default_rng(0)
+    n, budget = 400, 254
+    markers = np.arange(n, dtype=np.int64)
+    sub_rng = np.random.default_rng(12345)
+    subset = np.sort(sub_rng.choice(markers, size=budget, replace=False))
+    grid = np.stack(np.meshgrid(np.linspace(0, 1, 20), np.linspace(0, 1, 20), indexing="ij"), -1).reshape(-1, 2)
+    truncated_bias = np.linalg.norm(grid[:budget].mean(0) - grid.mean(0))
+    sampled_bias = np.linalg.norm(grid[subset].mean(0) - grid.mean(0))
+    assert truncated_bias > 0.1
+    assert sampled_bias < 0.02
