@@ -74,8 +74,9 @@ Where the IPC port departs from the Newton teacher, and why:
 * The libuipc FEM preconditioner is the multilevel additive Schwarz one. With
   block-Jacobi the conjugate-gradient solve took seconds per Newton
   iteration on this cloth.
-* No garment curriculum and no held-out human, and the hospital gown is
-  opt-in. FMVP's early-turn detector is reported per episode
+* Wang's garment curriculum is available but off by default, there is no
+  held-out human (a single-pose regional teacher reserves none, as in the
+  Newton port), and the hospital gown is opt-in. FMVP's early-turn detector is reported per episode
   (`early_turn_rate`, `paper_filter_rate`) but, as in the paper, it filters
   trajectories rather than defining success.
 
@@ -146,6 +147,9 @@ are there to be compared against it, not assumed better.
 | `--actor` | `wang-flow`, `flat` | `wang-flow` | tool-point readout of a segmentation encoder (reference) or a globally pooled encoder |
 | `--algo` | `sac`, `flashsac` | `sac` | scalar twin critic (reference) or the bounded categorical critic from the Newton `flashsac` path |
 | `--encoder` | `pointnet2`, `transformer` | `pointnet2` | dense masked PointNet++ (reference) or a set transformer with a learned global token |
+| `--action-repeat` | int | `1` dressing, `5` otherwise | simulation steps per decision. The tool speed cap covers the whole decision, as Newton's `decimation` does, so `--horizon 150 --action-repeat 6` is the reference's 900 simulation steps with six times fewer decisions: the configuration Newton's own sweep found best for upper-arm progress |
+| `--garment-curriculum-interval` | int | `0` | dressing: Wang's `curriculum_update_freq`. Every this many vector steps one more garment's slots are admitted to replay, easiest first; all slots keep stepping. `0` trains on every garment from the start. Wang's value is in neither the original nor the Newton checkout, so any interval used in a run is a choice of this port |
+| `--garment-curriculum-order` | names | Wang's five | dressing: preference order, easiest first; absent garments are skipped and unnamed ones appended |
 | `--init-temperature` | float | `0.1` | initial SAC temperature; the reference value at 150 steps. The horizon-equivalent helpers rescale the reward and the temperature learning rate for a 900-step horizon but not this, so the critic target carries a six-times larger entropy term; `0.0167` is the variant under test |
 
 For dressing prefer `--encoder transformer`: the 768-point observation makes the dense ball query several times more expensive per update than attention.

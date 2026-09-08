@@ -22,6 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .curriculum import WANG_GARMENT_ORDER, curriculum_order, garment_curriculum_stage
 from .dressing_env import DEFAULT_GARMENTS, DressingConfig, GenesisIPCDressingEnv
 from .genesis_env import EnvConfig, GenesisIPCManipEnv, ViewerClosed
 from .obs import ObsSpec, goal_rel, marker_centroid_rel
@@ -43,9 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--anchor-count", type=int, default=12, help="dressing: cuff vertices held by the picker.")
     p.add_argument("--cuff-strength", type=float, default=1.0e4, help="dressing: soft position constraint strength_rate of the held cuff; 100 lets the garment detach from the tool.")
     p.add_argument("--no-obs-augment", action="store_true", help="dressing: disable camera jitter and dropout.")
+    p.add_argument("--garment-curriculum-interval", type=int, default=0, help="dressing: vector steps between admitting one more garment's slots to replay, easiest first (Wang's curriculum_update_freq); 0 trains on every garment from the start.")
+    p.add_argument("--garment-curriculum-order", type=str, default=",".join(WANG_GARMENT_ORDER), help="dressing: comma-separated garment names, easiest first; garments not named are appended.")
     p.add_argument("--num-envs", type=int, default=32, help="Deformable and robot copies solved together in one IPC world.")
     p.add_argument("--horizon", type=int, default=None, help="Decisions per episode; 900 for dressing, 150 otherwise.")
-    p.add_argument("--action-repeat", type=int, default=5)
+    p.add_argument("--action-repeat", type=int, default=None, help="Simulation steps per decision; 1 for dressing (the reference decides at 60 Hz), 5 otherwise. The tool speed cap is held over the whole decision.")
     p.add_argument("--max-translation", type=float, default=0.006)
     p.add_argument("--point-budget", type=int, default=None, help="Points per observation; 768 for dressing, 256 otherwise.")
     p.add_argument("--friction", type=float, default=0.6)
@@ -94,6 +97,7 @@ def make_env(args):
             human=args.human,
             garments=tuple(args.garments),
             horizon=args.horizon,
+            action_repeat=args.action_repeat,
             point_budget=args.point_budget,
             anchor_count=args.anchor_count,
             constraint_strength=args.cuff_strength,
@@ -273,6 +277,8 @@ def main(argv: list[str] | None = None) -> None:
     seeds = [args.seed * 100 + i for i in range(args.num_envs)]
     if args.horizon is None:
         args.horizon = 900 if args.task == "dressing" else 150
+    if args.action_repeat is None:
+        args.action_repeat = 1 if args.task == "dressing" else 5
     if args.point_budget is None:
         args.point_budget = 768 if args.task == "dressing" else 256
     env = make_env(args)
@@ -375,6 +381,15 @@ def main(argv: list[str] | None = None) -> None:
         flush=True,
     )
 
+    # Wang's garment curriculum: slots of garments not yet admitted keep stepping but do not feed replay.
+    slot_garments = [str(d.get("garment", "")) for d in env.descriptions]
+    order = curriculum_order(args.garment_curriculum_order.split(","), [g for g in slot_garments if g]) if any(slot_garments) else []
+    slot_rank = np.array([order.index(g) if g else 0 for g in slot_garments], dtype=np.int64)
+    curriculum_interval = int(args.garment_curriculum_interval) if order else 0
+    active_garments = -1
+    if curriculum_interval > 0:
+        print(f"[uipc-manip] garment curriculum every {curriculum_interval} vector steps, order={order}", flush=True)
+
     obs = env.reset(seeds)
     episode_return = np.zeros(env.num_envs)
     updates_started = False
@@ -389,10 +404,17 @@ def main(argv: list[str] | None = None) -> None:
         else:
             actions = agent.act(obs, deterministic=False).astype(np.float32)
         next_obs, rewards, dones, infos = env.step(actions)
+        stage = garment_curriculum_stage(vector_step, interval=curriculum_interval, garment_count=max(1, len(order)))
+        if stage != active_garments:
+            active_garments = stage
+            if curriculum_interval > 0:
+                print(f"[uipc-manip] curriculum step={vector_step} active={stage}/{len(order)} garments={order[:stage]}", flush=True)
         added = 0
         for i, info in enumerate(infos):
             if info.get("sim_error"):
                 episode_return[i] = 0.0
+                continue
+            if slot_rank[i] >= stage:
                 continue
             # Time limits are not terminal states: bootstrap from the true final observation.
             terminal_obs = info.get("terminal_obs", None)
@@ -423,6 +445,7 @@ def main(argv: list[str] | None = None) -> None:
                 "elapsed_s": round(elapsed, 1),
                 "episode_return": float(np.mean(recent_returns[-20:])) if recent_returns else float("nan"),
                 "episode_success": float(np.mean(recent_success[-20:])) if recent_success else float("nan"),
+                "active_garments": int(active_garments),
                 **{k: round(v, 5) for k, v in stats.items()},
             }
             logger.log(row)

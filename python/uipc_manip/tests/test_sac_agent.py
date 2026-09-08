@@ -165,3 +165,15 @@ def test_agent_variants_update_and_roundtrip(tmp_path, actor_type, algo, encoder
     other = SACAgent(spec, 3, _small_cfg("flat" if actor_type != "flat" else "wang-flow", algo, encoder), "cpu")
     with pytest.raises(ValueError):
         other.load(path)
+
+
+def test_garment_curriculum_follows_wang_schedule():
+    from uipc_manip.curriculum import WANG_GARMENT_ORDER, curriculum_order, garment_curriculum_stage
+
+    # Wang: curriculum_step = step // curriculum_update_freq + 1, capped at the garment count.
+    assert [garment_curriculum_stage(s, interval=100, garment_count=3) for s in (0, 99, 100, 199, 200, 10_000)] == [1, 1, 2, 2, 3, 3]
+    assert garment_curriculum_stage(0, interval=0, garment_count=3) == 3
+    present = ["tshirt_392", "tshirt_26", "tshirt_392", "tshirt_26"]
+    assert curriculum_order(WANG_GARMENT_ORDER, present) == ["tshirt_26", "tshirt_392"]
+    assert curriculum_order(None, present) == ["tshirt_392", "tshirt_26"]
+    assert curriculum_order(["jacket", "tshirt_26"], present) == ["tshirt_26", "tshirt_392"]
