@@ -1421,3 +1421,14 @@ are not the blocker, the hard-pin hypothesis is under test, and the first SAC
 evaluation at 28,800 transitions shows no insertion. The performance record
 has the table. Trajectory files now carry the static arm mesh and the preview
 renders it.
+
+Sixth pass: the blocker was the cuff hold. libuipc's soft position constraint
+strength is a rate times the vertex mass, and at the library default of 100
+the held cuff lags the tool by centimetres in free air and is left more than
+a metre behind once the sleeve touches the hand, so every earlier
+reachability number measured a detached anchor. At the new default of 1e4
+the expert dresses the whole forearm and 0.28 of the upper arm. The
+environment now reports the real held-vertex error as `tracking_error`, a
+GPU test asserts the hold tracks through free air, and the strength-100 SAC
+run was stopped as invalid (two evaluations, 0 of 16 each). Training is
+relaunched with the fixed hold.

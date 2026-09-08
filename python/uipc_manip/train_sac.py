@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--human", type=int, default=0, help="dressing: cached human whose cells fill every slot (a regional teacher).")
     p.add_argument("--garments", type=str, nargs="+", default=list(DEFAULT_GARMENTS), help="dressing: garments cycled across slots.")
     p.add_argument("--anchor-count", type=int, default=12, help="dressing: cuff vertices held by the picker.")
-    p.add_argument("--cuff-strength", type=float, default=100.0, help="dressing: soft position constraint strength of the held cuff.")
+    p.add_argument("--cuff-strength", type=float, default=1.0e4, help="dressing: soft position constraint strength_rate of the held cuff; 100 lets the garment detach from the tool.")
     p.add_argument("--no-obs-augment", action="store_true", help="dressing: disable camera jitter and dropout.")
     p.add_argument("--num-envs", type=int, default=32, help="Deformable and robot copies solved together in one IPC world.")
     p.add_argument("--horizon", type=int, default=None, help="Decisions per episode; 900 for dressing, 150 otherwise.")

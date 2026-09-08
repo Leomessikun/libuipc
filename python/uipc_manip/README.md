@@ -58,8 +58,12 @@ PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac --task dressing --human 0 
 
 Where the IPC port departs from the Newton teacher, and why:
 
-* The cuff is held by a soft position constraint of strength 100 on twelve
-  vertices rather than a hard kinematic pin; the picker patch is the same.
+* The cuff is held by a soft position constraint on twelve vertices rather
+  than a hard kinematic pin; the picker patch is the same. libuipc's strength
+  is a rate multiplied by the vertex mass, so the default of 1e4 is what makes
+  the hold behave like a pin: at the library default of 100 the cuff lags the
+  tool by centimetres in free air and, once the sleeve touches the hand,
+  stays behind while the tool moves on, ending more than a metre away.
 * The arm collider is the cached `right_arm_faces` mesh eroded 6 mm along its
   normals. The cache was accepted with centimetre-scale interpenetration,
   which libuipc refuses; erosion is how the states become legal.
@@ -75,13 +79,15 @@ Where the IPC port departs from the Newton teacher, and why:
 
 `--policy heuristic` runs a port of the Newton seven-stage dressing expert
 (approach, finger, middle, align-yaw, align-pitch, elbow-hook, last) as the
-reachability baseline. On this solver it threads the sleeve opening over the
-fingertips and onto the forearm but stalls after about 8 cm: forearm dressed
-ratio 0.08 at the reference friction of 0.3, 0.17 at 0.1, 0.22 with a 2 cm
-arm erosion, never reaching the upper arm, while the same expert reaches an
-upper-arm ratio of 0.7 in 20 of 35 cells under Newton's VBD cloth. Until a
-motion is shown to dress the arm in IPC, a zero success rate from SAC says
-nothing about the learner; see the evidence record for what was ruled out.
+reachability baseline. With the cuff held at strength 1e4 it dresses the
+whole forearm (ratio 1.0) and 0.28 of the upper arm on tshirt_26/human_0
+within 900 decisions, which is below the success threshold of 0.7 but is
+sustained upper-arm progress of the kind the reference says appears only
+after hundreds of steps. At the old strength of 100 the same expert never
+passed a forearm ratio of 0.08 because the garment was left behind by the
+tool, so every reachability number recorded before that fix measured a
+detached anchor. The same expert reaches an upper-arm ratio of 0.7 in 20 of
+35 cells under Newton's VBD cloth; see the evidence record.
 
 ## Requirements
 
@@ -242,7 +248,10 @@ points is dense, cheap, and has no radius to tune against the scene scale.
   tool through a soft position constraint, as in SoftGym, Wang RSS 2023, and
   the Newton teacher. The fingers stay open and still collide with the rest of
   the deformable through IPC. A physical closed-finger grasp is what
-  `ipc_robot_deformables.py` in the Genesis checkout demonstrates.
+  `ipc_robot_deformables.py` in the Genesis checkout demonstrates. The hold is
+  soft: in contact it still yields by up to 5 cm at strength 1e4, so the
+  reference's kinematic pin is approximated, not reproduced. The `tracking_error`
+  info key and the evaluation's `max_tracking_error` report the gap.
 * **State-based point cloud.** Points are sampled from simulator state, not
   rendered from cameras. There is no visibility filtering, camera jitter, or
   dropout, so this does not reproduce the reference visual observation.

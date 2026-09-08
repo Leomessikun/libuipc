@@ -50,7 +50,7 @@ class DressingConfig:
     no_move_collision_threshold: float = 0.012
     point_budget: int = 768
     anchor_count: int = 12
-    constraint_strength: float = 100.0
+    constraint_strength: float = 1.0e4  # strength_rate: spring stiffness is this times the vertex mass
     """Soft position constraint strength of the anchored cuff vertices. Newton's FMVP preset pins
     its 12 picker-patch particles kinematically; a weak hold (3) let the 0.5 kg/m^2 garment fall."""
     arm_erosion_m: float = 0.006
@@ -310,6 +310,7 @@ class GenesisIPCDressingEnv:
         self._check_world()
         after = self.positions()
         self.settle_displacement = float(max(np.linalg.norm(a - b, axis=1).max() for a, b in zip(after, before, strict=True)))
+        self.snapshot_tracking_error = float(max(self._tracking_error(i, after) for i in range(self.num_envs)))
         self._snapshot_frame = int(self._world.frame())
         if not self._world.dump():
             raise RuntimeError("Failed to dump the settled IPC snapshot")
@@ -321,6 +322,11 @@ class GenesisIPCDressingEnv:
     def _update_targets(self) -> None:
         for i, picker in enumerate(self._pickers):
             picker["targets"] = self._anchor[i][None, :] + self._offsets[i]
+
+    def _tracking_error(self, i: int, positions: list[np.ndarray]) -> float:
+        """Largest distance between a held cuff vertex and its commanded position [m]."""
+        picker = self._pickers[i]
+        return float(np.linalg.norm(positions[i][picker["anchor_idx"]] - picker["targets"], axis=1).max())
 
     def _sim_step(self) -> None:
         try:
@@ -431,7 +437,7 @@ class GenesisIPCDressingEnv:
                     "on_forearm": bool(pr.on_forearm),
                     "on_upperarm": bool(pr.on_upperarm),
                     "collision": float(pr.collision),
-                    "tracking_error": 0.0,
+                    "tracking_error": self._tracking_error(i, positions),
                     "garment": cell.garment,
                     "episode_step": int(self._episode_step),
                     "time_limit": bool(done),
@@ -509,7 +515,7 @@ class GenesisIPCDressingEnv:
             "arm_collider": self.arm_collider_path,
             "build_seconds": float(self.build_seconds),
             "settle_displacement_m": float(self.settle_displacement),
-            "snapshot_tracking_error_m": 0.0,
+            "snapshot_tracking_error_m": float(self.snapshot_tracking_error),
         }
 
     def close(self) -> None:

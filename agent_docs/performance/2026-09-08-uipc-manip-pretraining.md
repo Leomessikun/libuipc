@@ -203,6 +203,8 @@ cell unless stated:
 | A Neo-Hookean shell at the thin radius stretches by tens of centimetres under its own weight | membrane stiffness scales with the radius, 6e4 Pa times 0.3 mm is 18 N/m; the strain-limiting Baraff-Witkin shell holds shape and is what the reference-validated Genesis path used |
 | The cached hand-to-shoulder pull threads the sleeve over the fingertips only | forearm ratio 0.01-0.04 with the anchor at the shoulder, unchanged by erosion 15-25 mm, 40 anchored vertices, or a 1000 hold; the opening (radius 8-10 cm) is wider than the hand, so this is the motion, not the geometry, and the learned policy has to do better |
 | Batched throughput, mixed tshirt_26 / tshirt_392 / hospital_gown slots | 8 slots 480 ms per step, 16 slots 929 ms per step: near-linear, the garment vertex count saturates the GPU, so roughly 17 environment steps per second at 16 slots |
+| The cuff hold at libuipc's default strength of 100 does not carry this garment | `SoftPositionConstraint` energy is `0.5 * strength * vertex_mass * |x - aim|^2`, so 100 is a spring with a 0.6 s period; moving the anchor 20 cm through free air at the reference's 0.15 m/s the cuff sags 1.4 cm at rest, lags up to 6.5 cm in motion, and 3.1 cm after a 30-step hold; at 1e4: 0.6 mm, 1.5 cm, 2 mm; at 1e5: 0.1 mm, 5 mm, 0.4 mm; step cost 138, 202, 211 ms for two slots |
+| Once the sleeve touches the hand, a strength-100 hold lets the tool leave the garment behind | expert run, tshirt_26/human_0: the largest held-vertex error grows 2 cm at step 100, 11 cm at 300, 43 cm at 500, 107 cm at 800, while the forearm ratio stays at 0.07; the previous reachability sweep measured a detached anchor |
 
 The libuipc default gravity is along -y; a pure-pyuipc probe that omitted the
 Genesis gravity setting spent an hour blaming contact for a garment that was
@@ -219,26 +221,41 @@ reached, success requires an upper-arm ratio of 0.7):
 | friction 0.0 | 0.18 | friction is a factor, not the blocker |
 | friction 0.1, erosion 20 mm (fingers removed) | 0.22 | finger snagging is not the blocker |
 | cached waypoint pull instead of the expert, any erosion, 40 anchors, or a 1000 hold | 0.01 to 0.04 | |
-| hold strength 1e4 (toward a hard pin) | 0.00 | inconclusive: the expert drove the anchor to 2.6 cm from the elbow, the 12 mm no-move shell then dropped every step, and steps cost up to 3 s |
+| hold strength 1e4, first attempt | 0.00 | inconclusive at the time: the anchor sat 2.6 cm from the elbow inside the 12 mm no-move shell and steps cost up to 3 s; superseded below |
+
+Every row above was measured with a hold that had let go of the garment (see
+the two findings on the strength-100 hold). With the held-vertex error
+logged, the same expert, cell, and horizon give:
+
+| Hold strength | Forearm ratio | Upper-arm ratio | Held-vertex error in contact | Median step, 1 slot |
+|---:|---:|---:|---:|---:|
+| 100 (old default) | 0.07 | 0.00 | 0.43 m by step 500, 1.07 m by 800 | 245 ms |
+| 1e4 (new default) | 1.00 by step 800 | 0.28 at 900 | 3-5 cm | 177 ms, spikes to 2.2 s while hooking the elbow |
+| 1e5 | 0.72 by step 400 | not reached, run stopped | 2-5 cm | 115-644 ms until the elbow hook, then over 3.6 s per step; unusable for training |
 
 The sleeve opening is nearly twice as wide as the hand (radius 9.9 cm against
-a hand radius of 6 cm), so the geometry admits threading. What stalls it
-has not been isolated. The anchored patch does not keep up with the
-commanded anchor once the sleeve is caught, so the reference's hard
-kinematic pin remains the leading untested difference; the one attempt at a
-stiff hold was confounded by the no-move shell and by a solve that slowed to
-seconds per step, so it neither confirms nor rules the hypothesis out. The Newton teacher's own reachability sweep
-reaches the upper arm in 20 of 35 cells with the same expert under VBD cloth,
-where the cloth stretches and penetrates slightly. A learned policy's zero
-success on this solver is therefore not evidence about the learner until a
-motion is shown to dress the arm here.
+a hand radius of 6 cm), so the geometry admits threading, and with a hold
+that carries the garment the expert threads it. The blocker was the hold, not
+friction, fingers, or the cloth model. The reference's kinematic pin is still
+only approximated: in contact the soft hold yields by a few centimetres at
+either strength, which is the joint effect of an impenetrable arm, a
+strain-limited shell, and a finite spring, and is why the expert reaches
+0.28 of the upper arm here against 0.7 in 20 of 35 cells under Newton's VBD
+cloth, where the cloth stretches and penetrates slightly. The no-move shell
+also stalls the expert for about 200 decisions at the elbow.
 
 First SAC evaluation on the dressing task, 16 slots, tshirt_26 and
 tshirt_392, transformer encoder, 28,800 transitions in 44 minutes at 1.4 s
 per vector step: 0 of 16 successes, forearm and upper-arm ratios 0.0, task
 reward -0.099, which is the pre-insertion finger-distance term. Consistent
-with the expert's result above and with the reference's own note that
-upper-arm progress begins only after hundreds of sustained steps.
+with the reference's own note that upper-arm progress begins only after
+hundreds of sustained steps. The second evaluation at 57,600 transitions was
+the same: 0 of 16, ratios 0.0, return -92.5. The run used the strength-100
+hold and was stopped at 3,700 vector steps once the hold was shown to detach
+the garment; its critic had drifted from a Q mean of 1.4 to 86 against
+returns of -95, the soft value's entropy term at discount 0.99833 dwarfing a
+reward of -0.017 per step, which is worth watching in the rerun. Wall-clock
+figures from that run are contaminated by the probes that shared the GPU.
 
 ## Interpretation
 
