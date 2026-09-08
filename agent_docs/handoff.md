@@ -1411,3 +1411,13 @@ NaN distances in the trajectory filter), and 17 of 23 cells build. The cached
 scripted pull threads the sleeve only over the fingertips (forearm ratio 0.04),
 so the reachability baseline is weak; the trainer runs end to end with
 per-garment dressing metrics. Details are in the performance record.
+
+Fifth pass: the Newton seven-stage dressing expert is ported as the
+`--policy heuristic` reachability baseline for the dressing task. On IPC it
+threads the opening over the fingertips but stalls at a forearm ratio of
+0.08 (reference friction), 0.17 (friction 0.1), 0.22 (2 cm erosion); the
+upper arm is never reached. Geometry admits threading, friction and fingers
+are not the blocker, the hard-pin hypothesis is under test, and the first SAC
+evaluation at 28,800 transitions shows no insertion. The performance record
+has the table. Trajectory files now carry the static arm mesh and the preview
+renders it.

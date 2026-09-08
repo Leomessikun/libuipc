@@ -73,6 +73,16 @@ Where the IPC port departs from the Newton teacher, and why:
 * No garment curriculum, no held-out human, no early-turn detector in the
   success metric, and the hospital gown is opt-in.
 
+`--policy heuristic` runs a port of the Newton seven-stage dressing expert
+(approach, finger, middle, align-yaw, align-pitch, elbow-hook, last) as the
+reachability baseline. On this solver it threads the sleeve opening over the
+fingertips and onto the forearm but stalls after about 8 cm: forearm dressed
+ratio 0.08 at the reference friction of 0.3, 0.17 at 0.1, 0.22 with a 2 cm
+arm erosion, never reaching the upper arm, while the same expert reaches an
+upper-arm ratio of 0.7 in 20 of 35 cells under Newton's VBD cloth. Until a
+motion is shown to dress the arm in IPC, a zero success rate from SAC says
+nothing about the learner; see the evidence record for what was ruled out.
+
 ## Requirements
 
 The package needs Genesis, PyTorch, and `pyuipc` in one interpreter. On this

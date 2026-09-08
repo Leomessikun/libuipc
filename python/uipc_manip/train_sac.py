@@ -161,7 +161,10 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
                 if len(finished) < episodes:
                     finished.append(record)
                     if trajectories is not None:
-                        _save_trajectory(trajectory_dir, episode_index, trajectories[i], env.descriptions[i])
+                        static = None
+                        if hasattr(env, "arm_vertices"):
+                            static = {"vertices": env.arm_vertices, "faces": env.arm_faces}
+                        _save_trajectory(trajectory_dir, episode_index, trajectories[i], env.descriptions[i], static)
                         episode_index += 1
                 returns[i] = 0.0
                 max_tracking[i] = 0.0
@@ -187,10 +190,12 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
     return summary
 
 
-def _save_trajectory(directory: Path, index: int, states: list[dict], description: dict) -> None:
+def _save_trajectory(directory: Path, index: int, states: list[dict], description: dict, static: dict | None = None) -> None:
     directory.mkdir(parents=True, exist_ok=True)
+    static = static or {}
     np.savez_compressed(
         directory / f"episode_{index:03d}.npz",
+        **{f"static_{k}": np.asarray(v) for k, v in static.items()},
         positions=np.stack([s["positions"] for s in states]),
         tcp=np.stack([s["tcp"] for s in states]),
         goal=np.stack([s["goal"] for s in states]),

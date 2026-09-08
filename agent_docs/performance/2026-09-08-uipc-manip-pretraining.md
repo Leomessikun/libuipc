@@ -208,6 +208,36 @@ The libuipc default gravity is along -y; a pure-pyuipc probe that omitted the
 Genesis gravity setting spent an hour blaming contact for a garment that was
 simply falling sideways. Set `config["gravity"]` in any standalone probe.
 
+Reachability with the ported Newton seven-stage expert, tshirt_26/human_0,
+900 decisions, maximum forearm dressed ratio reached (upper arm never
+reached, success requires an upper-arm ratio of 0.7):
+
+| Variant | Forearm ratio | Note |
+|---|---:|---|
+| reference: friction 0.3, erosion 6 mm, 12 anchors at strength 100 | 0.08 | opening passes the fingertips, threaded by the winding test |
+| friction 0.1 | 0.17 | |
+| friction 0.0 | 0.18 | friction is a factor, not the blocker |
+| friction 0.1, erosion 20 mm (fingers removed) | 0.22 | finger snagging is not the blocker |
+| cached waypoint pull instead of the expert, any erosion, 40 anchors, or a 1000 hold | 0.01 to 0.04 | |
+
+The sleeve opening is nearly twice as wide as the hand (radius 9.9 cm against
+a hand radius of 6 cm), so the geometry admits threading. What stalls it
+has not been isolated. The anchored patch does not keep up with the
+commanded anchor once the sleeve is caught, so the reference's hard
+kinematic pin is the remaining difference under test; strengths of 1e4 and
+above slow the solve severely. The Newton teacher's own reachability sweep
+reaches the upper arm in 20 of 35 cells with the same expert under VBD cloth,
+where the cloth stretches and penetrates slightly. A learned policy's zero
+success on this solver is therefore not evidence about the learner until a
+motion is shown to dress the arm here.
+
+First SAC evaluation on the dressing task, 16 slots, tshirt_26 and
+tshirt_392, transformer encoder, 28,800 transitions in 44 minutes at 1.4 s
+per vector step: 0 of 16 successes, forearm and upper-arm ratios 0.0, task
+reward -0.099, which is the pre-insertion finger-distance term. Consistent
+with the expert's result above and with the reference's own note that
+upper-arm progress begins only after hundreds of sustained steps.
+
 ## Interpretation
 
 Directly measured: the IPC solve is 68 ms of a 120 ms scene step, so slightly

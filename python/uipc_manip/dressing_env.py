@@ -80,6 +80,9 @@ class DressingConfig:
     libuipc's build-time distance check rejects non-adjacent surfaces closer than the summed
     radii plus ``d_hat``; the thin radius the Genesis sim2sim path validated keeps them legal."""
     cloth_bending_stiffness: float = 10.0
+    cloth_strain_rate: float = 100.0
+    """Baraff-Witkin over-stretch amplification of the strain-limiting shell; lower lets the opening
+    stretch further over the hand."""
     sanity_check: bool = True
     """Keep libuipc's build-time intersection and distance checks. Disabling them lets a cached
     state with residual self-contact build, at the cost of starting from an unverified state."""
@@ -253,7 +256,9 @@ class GenesisIPCDressingEnv:
                 label_surface(mesh)
                 moduli = ElasticModuli2D.youngs_poisson(cfg.cloth_youngs, cfg.cloth_poisson)
                 if cfg.cloth_model == "slbw":
-                    StrainLimitingBaraffWitkinShell().apply_to(mesh, moduli, cfg.cloth_density, cfg.cloth_thickness)
+                    StrainLimitingBaraffWitkinShell().apply_to(
+                        mesh, moduli, cfg.cloth_density, cfg.cloth_thickness, cfg.cloth_strain_rate
+                    )
                 elif cfg.cloth_model == "neohookean":
                     NeoHookeanShell().apply_to(mesh, moduli, cfg.cloth_density, cfg.cloth_thickness)
                 else:
@@ -377,7 +382,8 @@ class GenesisIPCDressingEnv:
             self._sim_step()
         self._check_world()
         self._episode_step = 0
-        self._waypoint_index = np.zeros(self.num_envs, dtype=np.int64)
+        if getattr(self, "_heuristic", None) is not None:
+            self._heuristic.reset()
         return self.observation(self.positions())
 
     def step(self, actions: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict]]:
@@ -456,17 +462,16 @@ class GenesisIPCDressingEnv:
         return out
 
     def scripted_actions(self) -> np.ndarray:
-        """Follow the cached hand-to-shoulder pull waypoints at the speed cap (the reachability baseline)."""
-        actions = np.zeros((self.num_envs, self.action_dim), dtype=np.float32)
-        for i, cell in enumerate(self.cells):
-            waypoints = cell.pull_waypoints
-            k = int(self._waypoint_index[i])
-            while k < len(waypoints) - 1 and np.linalg.norm(waypoints[k] - self._anchor[i]) < 0.015:
-                k += 1
-            self._waypoint_index[i] = k
-            delta = waypoints[k] - self._anchor[i]
-            actions[i, :3] = np.clip(delta / self.cfg.max_translation, -1.0, 1.0)
-        return actions
+        """The Newton seven-stage dressing expert (the reachability baseline)."""
+        if getattr(self, "_heuristic", None) is None:
+            from .dressing_heuristic import HeuristicDressingPolicy
+
+            self._heuristic = HeuristicDressingPolicy(self)
+        return self._heuristic.actions()
+
+    def scripted_stage_names(self) -> list[str]:
+        heuristic = getattr(self, "_heuristic", None)
+        return heuristic.stage_names() if heuristic is not None else ["none"] * self.num_envs
 
     def states(self) -> list[dict]:
         positions = self.positions()
