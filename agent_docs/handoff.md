@@ -1374,3 +1374,17 @@ transitions per second, and a SAC update costs 47 ms at the 256-point budget.
 Evidence is in `agent_docs/performance/2026-09-08-uipc-manip-pretraining.md`.
 No libuipc solver code was changed and no native build was performed; the
 package runs against the released `pyuipc` 0.0.28 wheel.
+
+Second pass the same day, after the owner questioned the throughput and the
+fidelity of the port. Two findings were confirmed against the code. The Newton
+teacher's transition budget comes from batched simulation, and the Genesis
+IPC coupler already supports its counterpart: `N` deformable copies in one
+libuipc world, isolated by subscenes, with batched robots. The environment was
+rewritten that way and the subprocess wrapper removed; 32 copies in one world
+step 222 environment steps per second against 22 for one, and per-episode
+results are unchanged under matched seeds. The active reference actor is
+`WangFlowActor`, a segmentation PointNet++ read at the tool point, not the
+flat global actor first ported; it is now the default, with the categorical
+`flashsac` critic and a set-transformer encoder as measured options (19 ms per
+update against 122 ms for the reference encoder). Evidence is in the same
+performance record.

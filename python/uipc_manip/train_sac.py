@@ -3,7 +3,7 @@
 Usage (from the repository root, inside the Genesis environment)::
 
     PYTHONPATH=python python -m uipc_manip.train_sac --task cloth_drag --num-envs 4 \
-        --total-transitions 20000 --work-dir runs/uipc_manip --run-name cloth_drag_seed1
+        --total-transitions 20000 --work-dir output/uipc_manip --run-name cloth_drag_seed1
 
 ``--policy heuristic --eval-only`` runs the scripted reachability check that
 every task must pass before SAC is worth running. ``--resume`` continues from a
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .genesis_env import EnvConfig
+from .genesis_env import EnvConfig, GenesisIPCManipEnv
 from .obs import ObsSpec, goal_rel, marker_centroid_rel
 from .sac import (
     SACConfig,
@@ -32,21 +32,19 @@ from .sac import (
     wang_equivalent_reward_scale,
 )
 from .tasks import TASKS, heuristic_action
-from .vec_env import make_vec_env
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--task", choices=sorted(TASKS), default="cloth_drag")
-    p.add_argument("--num-envs", type=int, default=1)
-    p.add_argument("--in-process", action="store_true", help="Run the environments in this process (viewer, debugging).")
+    p.add_argument("--num-envs", type=int, default=32, help="Deformable and robot copies solved together in one IPC world.")
     p.add_argument("--horizon", type=int, default=150)
     p.add_argument("--action-repeat", type=int, default=5)
     p.add_argument("--max-translation", type=float, default=0.006)
     p.add_argument("--point-budget", type=int, default=256)
     p.add_argument("--friction", type=float, default=0.6)
     p.add_argument("--settle-steps", type=int, default=40)
-    p.add_argument("--vis", action="store_true", help="Open the Genesis viewer (implies --in-process, one env).")
+    p.add_argument("--vis", action="store_true", help="Open the Genesis viewer (forces a single environment).")
     p.add_argument("--policy", choices=("sac", "heuristic", "random"), default="sac")
     p.add_argument("--total-transitions", type=int, default=20_000)
     p.add_argument("--init-steps", type=int, default=0, help="Vector steps of uniform random actions before the policy acts.")
@@ -58,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor-lr", type=float, default=1.0e-4)
     p.add_argument("--critic-lr", type=float, default=1.0e-4)
     p.add_argument("--hidden-dim", type=int, default=1024)
+    p.add_argument("--actor", choices=("wang-flow", "flat"), default="wang-flow", help="wang-flow is the reference tool-point actor.")
+    p.add_argument("--algo", choices=("sac", "flashsac"), default="sac", help="Scalar reference critic or bounded categorical critic.")
+    p.add_argument("--encoder", choices=("pointnet2", "transformer"), default="pointnet2")
+    p.add_argument("--num-bins", type=int, default=51, help="flashsac: value atoms per critic head.")
+    p.add_argument("--min-v", type=float, default=-50.0, help="flashsac: lowest value atom.")
+    p.add_argument("--max-v", type=float, default=50.0, help="flashsac: highest value atom.")
     p.add_argument("--sa-neighbors", type=int, nargs="+", default=[8, 16], help="Ball-query neighbours per set-abstraction level.")
     p.add_argument("--point-jitter", type=float, default=0.0, help="Per-point jitter [m] applied to replay samples.")
     p.add_argument("--grad-clip-max-norm", type=float, default=0.0)
@@ -77,22 +81,18 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def env_configs(args, seeds: list[int]) -> list[dict]:
-    configs = []
-    for seed in seeds:
-        cfg = EnvConfig(
-            task=args.task,
-            horizon=args.horizon,
-            action_repeat=args.action_repeat,
-            max_translation=args.max_translation,
-            point_budget=args.point_budget,
-            seed=seed,
-            friction=args.friction,
-            settle_steps=args.settle_steps,
-            show_viewer=bool(args.vis),
-        )
-        configs.append(cfg.to_dict())
-    return configs
+def env_config(args) -> EnvConfig:
+    return EnvConfig(
+        task=args.task,
+        horizon=args.horizon,
+        action_repeat=args.action_repeat,
+        max_translation=args.max_translation,
+        point_budget=args.point_budget,
+        seed=args.seed,
+        friction=args.friction,
+        settle_steps=args.settle_steps,
+        show_viewer=bool(args.vis),
+    )
 
 
 def heuristic_actions(obs: np.ndarray, spec: ObsSpec, max_translation: float) -> np.ndarray:
@@ -185,14 +185,13 @@ class CsvLogger:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.vis:
-        args.in_process = True
         args.num_envs = 1
     np.random.seed(args.seed)
     run_name = args.run_name or f"{args.task}_{args.policy}_seed{args.seed}"
     run_dir = Path(args.work_dir) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     seeds = [args.seed * 100 + i for i in range(args.num_envs)]
-    env = make_vec_env(env_configs(args, seeds), subprocess=not args.in_process)
+    env = GenesisIPCManipEnv(env_config(args), num_envs=args.num_envs)
     spec = ObsSpec(args.point_budget)
     description = env.descriptions[0]
     print(
@@ -226,11 +225,16 @@ def main(argv: list[str] | None = None) -> None:
             grad_clip_max_norm=args.grad_clip_max_norm,
             min_alpha=args.min_alpha,
             point_jitter_scale=args.point_jitter,
+            actor_type=args.actor,
+            algo=args.algo,
+            num_bins=args.num_bins,
+            min_v=args.min_v,
+            max_v=args.max_v,
         )
         neighbors = [int(n) for n in args.sa_neighbors]
         if len(neighbors) == 1:
             neighbors = neighbors * 2
-        sac_cfg.encoder = replace(sac_cfg.encoder, sa_neighbors=neighbors)
+        sac_cfg.encoder = replace(sac_cfg.encoder, kind=args.encoder, sa_neighbors=neighbors)
         agent = SACAgent(spec, env.action_dim, sac_cfg, args.device)
         if args.resume:
             payload = agent.load(args.resume, load_optimizers=not args.eval_only)

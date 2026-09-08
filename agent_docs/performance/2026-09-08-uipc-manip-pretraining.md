@@ -1,6 +1,6 @@
 # 2026-09-08 — IPC manipulation pretraining throughput and task validation
 
-- Status: Accepted (baseline record; no libuipc solver change)
+- Status: Accepted (baseline record, revised the same day for the batched world; no libuipc solver change)
 - Before commit: n/a, new package
 - After commit: `python/uipc_manip/` on `cloth-cable-manip-rl`
 - Benchmark manifest name and samples commit: n/a; this uses the package's own
@@ -97,6 +97,59 @@ simulation steps per decision:
 | `cloth_fold` | 6/6 | under 0.01 mm | 14.76 | 14.7 mm |
 | `cable_drag` | 6/6 | 14.4 mm | 11.08 | 20.6 mm |
 
+### Second pass: one IPC world for all environments
+
+The first pass ran one IPC world per subprocess. The Newton teacher gets its
+transition budget from batched simulation instead, and the Genesis coupler
+already supports the IPC counterpart: `N` deformable copies in one world,
+each in its own subscene so contact never crosses environments, with the
+Newton solve covering the whole batch. The environment was rewritten that way.
+Measured on the idle GPU (the unrelated training job had finished), cloth task,
+`N` Franka robots and `N` cloth copies in one Genesis scene:
+
+| Copies | Step | Environment steps per second |
+|---:|---:|---:|
+| 1 | 45 ms | 22 |
+| 8 | 78 ms | 102 |
+| 16 | 97 ms | 164 |
+| 32 | 144 ms | 222 |
+| 64 | 242 ms | 264 |
+
+The single-environment step is 45 ms here against 120 ms in the first pass.
+The difference is GPU contention with the job that was running then, not a
+solver change; the first-pass numbers were pessimistic by that factor.
+
+Batching preserves the physics. With identical per-environment goal seeds,
+episode zero of the scripted cloth drag ends 3.3 mm from its goal alone and
+3.4 mm inside a batch of 32; the six goals that succeed at two environments
+succeed at the same 3.3 mm inside batches of 8 and 32. Wall time for 32
+scripted episodes was 206 s in one batch against 415 s for four episodes run
+one at a time, a sixteen-fold gain per episode.
+
+Two goal seeds fail at every batch size, ending about 33 mm away with a
+return near 1.0. Those goals lie in the direction that folds the held corner
+back over the sheet, where dragging the corner moves the centroid little. The
+scripted policy cannot solve them and the learned policy will have to; they
+were invisible at two environments because two environments sample too few
+goal directions.
+
+Optimizer cost per update at batch 64 and a 256-point budget, with the
+32-environment action pass:
+
+| Actor | Critic | Encoder | Update | 32-env action | Peak memory |
+|---|---|---|---:|---:|---:|
+| flat | sac | pointnet2 | 68 ms | 7.5 ms | 1.8 GiB |
+| wang-flow | sac | pointnet2 | 122 ms | 12.7 ms | 2.0 GiB |
+| wang-flow | flashsac | pointnet2 | 121 ms | 12.7 ms | 2.0 GiB |
+| wang-flow | sac | transformer | 19 ms | 1.7 ms | 0.6 GiB |
+| flat | sac | transformer | 18 ms | 1.8 ms | 0.6 GiB |
+
+With one gradient update per collected transition and 32 environments, the
+update pass is 32 updates per vector step. The reference segmentation
+PointNet++ therefore costs about 3.9 s of optimizer time per 0.72 s of
+simulation, roughly 7 transitions per second end to end; the transformer
+encoder brings the same loop to roughly 24 transitions per second.
+
 ## Interpretation
 
 Directly measured: the IPC solve is 68 ms of a 120 ms scene step, so slightly
@@ -134,10 +187,12 @@ must be spatially unbiased or the two disagree about what is being optimised.
 
 ## Decision
 
-Accept as the baseline record. Defaults set from it: five simulation steps per
-decision, a 256-point budget, and ball-query neighbour counts of 8 and 16 per
-set-abstraction level. All three tasks pass the scripted gate, so all three are
-worth training.
+Accept as the baseline record. Defaults set from it: one batched IPC world
+with 32 copies, five simulation steps per decision, a 256-point budget, and
+ball-query neighbour counts of 8 and 16 per set-abstraction level. All three
+tasks pass the scripted gate, so all three are worth training. The subprocess
+vector environment of the first pass was removed; it was the wrong
+architecture for this solver.
 
 ## Reproduction and artifacts
 

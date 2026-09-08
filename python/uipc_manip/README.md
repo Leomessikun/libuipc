@@ -6,6 +6,13 @@ resolved by libuipc's Incremental Potential Contact solver. The scene, robot,
 and rendering come from Genesis; the cloth or cable is a native libuipc
 geometry inserted through the Genesis IPC coupler.
 
+Environments are batched the way the Newton teacher batches its simulation:
+one Genesis scene holds `N` robots and `N` deformable copies, and one libuipc
+world solves all of them together with contact isolated per environment by
+IPC subscenes. Thirty-two copies step about ten times as many environment
+steps per second as one, which is what makes a real transition budget
+reachable on this solver.
+
 The algorithm, hyperparameters, and transition semantics are ported from the
 Newton cloth-dressing teacher on the `leomessikun/fmvp-sac-retrain` branch,
 which follows Wang RSS 2023 as used for FMVP simulation pretraining. The task
@@ -49,14 +56,24 @@ PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac \
     --work-dir output/uipc_manip --run-name heuristic_cloth_drag --save-trajectories
 ```
 
-SAC training.
+SAC training. `--num-envs` is the number of copies in the single IPC world;
+32 is the default and the measured sweet spot on the RTX PRO 6000.
 
 ```bash
 PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac \
-    --task cloth_drag --num-envs 4 --total-transitions 20000 \
-    --eval-freq 250 --num-eval-episodes 4 \
+    --task cloth_drag --num-envs 32 --total-transitions 60000 \
+    --eval-freq 250 --num-eval-episodes 32 \
     --work-dir output/uipc_manip --run-name cloth_drag_seed1 --seed 1
 ```
+
+Policy and critic variants. The defaults reproduce the reference; the others
+are there to be compared against it, not assumed better.
+
+| Flag | Choices | Default | Meaning |
+|---|---|---|---|
+| `--actor` | `wang-flow`, `flat` | `wang-flow` | tool-point readout of a segmentation encoder (reference) or a globally pooled encoder |
+| `--algo` | `sac`, `flashsac` | `sac` | scalar twin critic (reference) or the bounded categorical critic from the Newton `flashsac` path |
+| `--encoder` | `pointnet2`, `transformer` | `pointnet2` | dense masked PointNet++ (reference) or a set transformer with a learned global token |
 
 Replay a checkpoint without modifying it, and resume training from one.
 
@@ -93,9 +110,17 @@ and the networks.
 
 ## Ported from the Newton teacher
 
+* The `wang-flow` actor: a segmentation PointNet++ gives every point a feature
+  and the policy trunk reads the explicit tool point's row, which localises the
+  policy at the gripper. This is the actor the reference
+  `--fmvp-pretrain-defaults` preset trains.
 * Scalar SAC with twin critics, a learned entropy temperature targeting
   `-action_dim`, and the reference form `Q(encode(s), a)` where the action
-  joins after the encoder.
+  joins after the encoder. The `flashsac` categorical critic with its
+  C51-on-mean target projection is ported as an option.
+* Batched collection: all environments share the horizon, reset together from
+  one dumped IPC snapshot, and feed one replay buffer with one gradient update
+  per collected transition.
 * The Wang `pointcloud_3` defaults: actor and critic learning rate `1e-4`,
   batch 64, actor update every fourth optimizer step, Q-head Polyak `0.01`,
   encoder Polyak `0.05` every second update, no gradient clipping, no random
@@ -121,13 +146,20 @@ the Genesis environment. `models.py` implements the same architecture on dense
 `[B, N, C]` tensors with a validity mask: ball queries are a masked top-k over
 pairwise distances, aggregation is a masked max, and padded points never
 contribute. Neighbour counts per level are the cost knob, since the dense query
-is linear in them. Tests cover padding invariance and permutation invariance.
+is linear in them. With the reference ratios of `1.0` the segmentation
+encoder's feature propagation is the identity and is implemented as direct
+concatenation. Tests cover padding invariance, permutation invariance, and the
+tool-point readout.
+
+`--encoder transformer` is not a port. It is a small self-attention encoder
+with a learned global token, offered because attention over a few hundred
+points is dense, cheap, and has no radius to tune against the scene scale.
 
 ## Limitations
 
-* **One environment per process.** Native IPC geometry reaches Genesis through
-  coupler internals that support a single scene, so parallelism uses subprocess
-  workers, each initialising Genesis itself.
+* **Synchronised episodes.** All copies share one IPC world, so they reset
+  together at the fixed horizon; per-environment early termination is not
+  supported. This matches the reference's fixed-horizon slots.
 * **Private Genesis API.** `_ipc_objects`, `_ipc_animator`,
   `_ipc_contact_tabular`, and `_ipc_world` are Genesis 1.1.2 internals, the
   same access pattern as the upstream IPC examples.

@@ -44,9 +44,19 @@ class ToyEnv:
         return self.obs(), float(10 * (prev - dist)), dist
 
 
-def _small_cfg() -> SACConfig:
-    cfg = SACConfig(hidden_dim=32, batch_size=16, actor_update_freq=2)
-    cfg.encoder = EncoderConfig(sa_mlp=[[16, 16], [16, 16], [16, 32]], linear_mlp=[16], output_dim=8, sa_neighbors=[6, 6])
+def _small_cfg(actor_type: str = "flat", algo: str = "sac", encoder: str = "pointnet2") -> SACConfig:
+    cfg = SACConfig(hidden_dim=32, batch_size=16, actor_update_freq=2, actor_type=actor_type, algo=algo, num_bins=21, min_v=-5.0, max_v=5.0)
+    cfg.encoder = EncoderConfig(
+        kind=encoder,
+        sa_mlp=[[16, 16], [16, 16], [16, 32]],
+        fp_mlp=[[16, 16], [16, 8], [8, 8]],
+        linear_mlp=[16],
+        output_dim=8,
+        sa_neighbors=[6, 6],
+        transformer_dim=16,
+        transformer_heads=2,
+        transformer_layers=1,
+    )
     return cfg
 
 
@@ -122,3 +132,36 @@ def test_actor_update_uses_the_critic_action_gradient():
     agent._update_actor_and_alpha(obs)
     after = list(agent.actor.trunk.parameters())
     assert any(not torch.equal(b, a) for b, a in zip(before, after, strict=True))
+
+
+@pytest.mark.parametrize(
+    ("actor_type", "algo", "encoder"),
+    [("wang-flow", "sac", "pointnet2"), ("wang-flow", "flashsac", "pointnet2"), ("flat", "flashsac", "transformer"), ("wang-flow", "sac", "transformer")],
+)
+def test_agent_variants_update_and_roundtrip(tmp_path, actor_type, algo, encoder):
+    torch.manual_seed(0)
+    spec = ObsSpec(10)
+    env = ToyEnv(spec)
+    cfg = _small_cfg(actor_type, algo, encoder)
+    agent = SACAgent(spec, 3, cfg, "cpu")
+    replay = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu")
+    obs = env.reset()
+    for _ in range(64):
+        action = np.random.uniform(-1, 1, size=3)
+        next_obs, reward, _ = env.step(action)
+        replay.add(obs, action, reward, next_obs, False)
+        obs = next_obs
+    stats = None
+    for _ in range(8):
+        stats = agent.update(replay)
+    assert np.isfinite(stats["critic_loss"]) and np.isfinite(stats["q1_mean"])
+    if algo == "flashsac":
+        assert cfg.min_v <= stats["q1_mean"] <= cfg.max_v
+    before = agent.act(np.stack([obs, obs]), deterministic=True)
+    path = agent.save(tmp_path / f"{actor_type}_{algo}_{encoder}.pt", step=1)
+    restored = SACAgent(spec, 3, _small_cfg(actor_type, algo, encoder), "cpu")
+    restored.load(path)
+    np.testing.assert_allclose(restored.act(np.stack([obs, obs]), deterministic=True), before, atol=1e-6)
+    other = SACAgent(spec, 3, _small_cfg("flat" if actor_type != "flat" else "wang-flow", algo, encoder), "cpu")
+    with pytest.raises(ValueError):
+        other.load(path)

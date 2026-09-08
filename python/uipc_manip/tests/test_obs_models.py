@@ -145,3 +145,29 @@ def test_marker_subsampling_is_unbiased():
     sampled_bias = np.linalg.norm(grid[subset].mean(0) - grid.mean(0))
     assert truncated_bias > 0.1
     assert sampled_bias < 0.02
+
+
+def test_segmentation_and_transformer_ignore_padding_and_read_tool(torch):
+    from uipc_manip.models import EncoderConfig, PointNet2Segmentation, SetTransformerEncoder
+
+    torch.manual_seed(0)
+    rng = np.random.default_rng(3)
+    rel = rng.normal(scale=0.03, size=(8, 3))
+    marker = np.zeros(8, dtype=bool)
+    goal, tool = np.array([0.05, 0.0, 0.0]), np.array([0.5, 0.0, 0.1])
+    cfg = EncoderConfig(
+        sa_mlp=[[16, 32], [32, 32], [32, 64]], fp_mlp=[[32, 32], [32, 16], [16, 16]], linear_mlp=[16], output_dim=8,
+        sa_neighbors=[8, 8], transformer_dim=16, transformer_heads=2, transformer_layers=1,
+    )
+    for encoder in (PointNet2Segmentation(4, cfg).eval(), SetTransformerEncoder(4, cfg).eval()):
+        rows = []
+        for spec in (ObsSpec(12), ObsSpec(40)):
+            flat = torch.as_tensor(spec.pack(rel, marker, goal, tool, True))[None]
+            pos, feat, valid, _ = spec.unpack_torch(flat)
+            with torch.no_grad():
+                per_point = encoder(pos, feat, valid) if isinstance(encoder, PointNet2Segmentation) else encoder.point_features(pos, feat, valid)
+            assert per_point.shape[1] == spec.point_budget
+            assert torch.all(per_point[0, ~valid[0]] == 0.0)
+            tool_index = int((feat[0, :, FLAG_TOOL] * valid[0]).argmax())
+            rows.append(per_point[0, tool_index])
+        torch.testing.assert_close(rows[0], rows[1], atol=1e-5, rtol=1e-5)

@@ -18,18 +18,25 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .obs import EXTRA_DIM, FEATURE_DIM, ObsSpec
+from .obs import EXTRA_DIM, FEATURE_DIM, FLAG_TOOL, ObsSpec
 
 
 @dataclass
 class EncoderConfig:
+    kind: str = "pointnet2"
+    """``pointnet2`` reproduces the reference; ``transformer`` is the attention alternative."""
     sa_radius: list[float] = field(default_factory=lambda: [0.05, 0.1])
     sa_ratio: list[float] = field(default_factory=lambda: [1.0, 1.0])
     sa_neighbors: list[int] = field(default_factory=lambda: [8, 16])
     """Neighbours kept per ball query. The dense query is O(neighbours), so this is the main cost knob."""
     sa_mlp: list[list[int]] = field(default_factory=lambda: [[64, 64, 128], [128, 128, 256], [256, 512, 1024]])
+    fp_mlp: list[list[int]] = field(default_factory=lambda: [[256, 256], [256, 128], [128, 128, 128]])
+    """Feature-propagation widths of the segmentation encoder (Wang ``fp_mlp_list``)."""
     linear_mlp: list[int] = field(default_factory=lambda: [128, 128])
     output_dim: int = 50
+    transformer_dim: int = 128
+    transformer_heads: int = 4
+    transformer_layers: int = 3
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -187,7 +194,7 @@ class Actor(nn.Module):
     ) -> None:
         super().__init__()
         self.spec = spec
-        self.encoder = PointNet2Encoder(FEATURE_DIM, encoder_cfg)
+        self.encoder = make_global_encoder(FEATURE_DIM, encoder_cfg)
         self.use_extra = bool(use_extra)
         self.log_std_min = float(log_std_min)
         self.log_std_max = float(log_std_max)
@@ -245,7 +252,7 @@ class Critic(nn.Module):
     ) -> None:
         super().__init__()
         self.spec = spec
-        self.encoder = PointNet2Encoder(FEATURE_DIM, encoder_cfg)
+        self.encoder = make_global_encoder(FEATURE_DIM, encoder_cfg)
         self.use_extra = bool(use_extra)
         in_dim = self.encoder.feature_dim + int(action_dim) + (EXTRA_DIM if self.use_extra else 0)
         self.Q1 = QHead(in_dim, hidden_dim)
@@ -262,3 +269,252 @@ class Critic(nn.Module):
             parts.append(extra)
         z = torch.cat(parts, dim=-1)
         return self.Q1(z), self.Q2(z)
+
+
+# ---------------------------------------------------------------------------
+# Segmentation PointNet++ (per-point features) for the Wang flow actor
+# ---------------------------------------------------------------------------
+
+
+class PointNet2Segmentation(nn.Module):
+    """Wang ``SegmentationNet``: PointNet++ with feature propagation back to every point.
+
+    The reference propagates coarse features to fine levels with inverse-distance
+    k-nearest-neighbour interpolation. With the reference ratios of ``1.0`` every
+    level holds the same points, so each point's nearest neighbour is itself at
+    distance zero and the ``1 / d^2`` weight of that neighbour dominates the other
+    two by many orders of magnitude. The interpolation is therefore the identity
+    map and is implemented as direct concatenation, which is the same shortcut
+    the Newton port takes with ``direct_index``. Ratios below one are rejected
+    here rather than silently approximated.
+    """
+
+    def __init__(self, feature_dim: int, cfg: EncoderConfig) -> None:
+        super().__init__()
+        if any(float(r) < 1.0 for r in cfg.sa_ratio[:2]):
+            raise ValueError("PointNet2Segmentation implements the identity propagation of ratio 1.0 only")
+        self.sa1 = SetAbstraction(1.0, cfg.sa_radius[0], cfg.sa_neighbors[0], feature_dim, cfg.sa_mlp[0])
+        self.sa2 = SetAbstraction(1.0, cfg.sa_radius[1], cfg.sa_neighbors[1], self.sa1.out_channels, cfg.sa_mlp[1])
+        self.global_sa = GlobalAbstraction(self.sa2.out_channels, cfg.sa_mlp[2])
+        fp = cfg.fp_mlp
+        self.fp0 = mlp([self.global_sa.out_channels + self.sa2.out_channels, *fp[0]])
+        self.fp1 = mlp([fp[0][-1] + self.sa1.out_channels, *fp[1]])
+        self.fp2 = mlp([fp[1][-1] + feature_dim, *fp[2]])
+        self.linear = mlp([fp[2][-1], *cfg.linear_mlp])
+        self.out = nn.Linear(cfg.linear_mlp[-1] if cfg.linear_mlp else fp[2][-1], cfg.output_dim)
+        self.feature_dim = int(cfg.output_dim)
+
+    def forward(self, pos: torch.Tensor, feat: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+        """Per-point features ``[B, N, output_dim]``; padded rows are zero."""
+        x1, _, _ = self.sa1(feat, pos, valid)
+        x2, _, _ = self.sa2(x1, pos, valid)
+        g = self.global_sa(x2, pos, valid)
+        h = self.fp0(torch.cat([g[:, None, :].expand(-1, pos.shape[1], -1), x2], dim=-1))
+        h = self.fp1(torch.cat([h, x1], dim=-1))
+        h = self.fp2(torch.cat([h, feat], dim=-1))
+        h = self.out(self.linear(h))
+        return h * valid[..., None]
+
+
+# ---------------------------------------------------------------------------
+# Set transformer encoder (a modern alternative to PointNet++)
+# ---------------------------------------------------------------------------
+
+
+class SetTransformerEncoder(nn.Module):
+    """Self-attention over points with a learned global token.
+
+    Every point becomes a token from its tool-relative position and segmentation
+    flags; padded rows are masked out of attention. The global token's output is
+    the global feature and each point's output is its per-point feature, so one
+    forward serves both the critic and the tool-point actor readout. Attention
+    over a few hundred points is dense and cheap, and unlike a ball query it has
+    no radius to tune against the scene scale.
+    """
+
+    def __init__(self, feature_dim: int, cfg: EncoderConfig) -> None:
+        super().__init__()
+        d = int(cfg.transformer_dim)
+        self.embed = nn.Sequential(nn.Linear(3 + feature_dim, d), nn.ReLU(), nn.Linear(d, d))
+        self.global_token = nn.Parameter(torch.zeros(1, 1, d))
+        layer = nn.TransformerEncoderLayer(
+            d_model=d,
+            nhead=int(cfg.transformer_heads),
+            dim_feedforward=4 * d,
+            dropout=0.0,
+            batch_first=True,
+            norm_first=True,
+        )
+        self.blocks = nn.TransformerEncoder(layer, num_layers=int(cfg.transformer_layers), enable_nested_tensor=False)
+        self.norm = nn.LayerNorm(d)
+        self.out = nn.Linear(d, cfg.output_dim)
+        self.feature_dim = int(cfg.output_dim)
+
+    def _run(self, pos: torch.Tensor, feat: torch.Tensor, valid: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        tokens = self.embed(torch.cat([pos, feat], dim=-1))
+        tokens = torch.cat([self.global_token.expand(tokens.shape[0], -1, -1), tokens], dim=1)
+        mask = torch.cat([torch.zeros_like(valid[:, :1]), ~valid], dim=1)
+        h = self.norm(self.blocks(tokens, src_key_padding_mask=mask))
+        return h[:, 0], h[:, 1:] * valid[..., None]
+
+    def forward(self, pos: torch.Tensor, feat: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+        return self.out(self._run(pos, feat, valid)[0])
+
+    def point_features(self, pos: torch.Tensor, feat: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+        return self.out(self._run(pos, feat, valid)[1]) * valid[..., None]
+
+
+def make_global_encoder(feature_dim: int, cfg: EncoderConfig) -> nn.Module:
+    if cfg.kind == "pointnet2":
+        return PointNet2Encoder(feature_dim, cfg)
+    if cfg.kind == "transformer":
+        return SetTransformerEncoder(feature_dim, cfg)
+    raise ValueError(f"Unknown encoder kind {cfg.kind!r}")
+
+
+class _PointFeatureAdapter(nn.Module):
+    """Expose ``point_features`` of a transformer through the segmentation interface."""
+
+    def __init__(self, encoder: SetTransformerEncoder) -> None:
+        super().__init__()
+        self.encoder = encoder
+        self.feature_dim = encoder.feature_dim
+
+    def forward(self, pos: torch.Tensor, feat: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+        return self.encoder.point_features(pos, feat, valid)
+
+
+def make_point_encoder(feature_dim: int, cfg: EncoderConfig) -> nn.Module:
+    if cfg.kind == "pointnet2":
+        return PointNet2Segmentation(feature_dim, cfg)
+    if cfg.kind == "transformer":
+        return _PointFeatureAdapter(SetTransformerEncoder(feature_dim, cfg))
+    raise ValueError(f"Unknown encoder kind {cfg.kind!r}")
+
+
+class WangFlowActor(nn.Module):
+    """Wang RSS 2023 policy head: read the per-point feature at the explicit tool point.
+
+    This is the actor the Newton ``--fmvp-pretrain-defaults`` preset trains. The
+    segmentation encoder gives every point a feature; the policy trunk sees only
+    the tool point's row, which localises the policy at the gripper. ``use_extra``
+    additionally concatenates the observation tail (absolute tool position and
+    goal offset), which the reference does not have because its task carries no
+    separate goal.
+    """
+
+    def __init__(
+        self,
+        spec: ObsSpec,
+        action_dim: int,
+        hidden_dim: int,
+        encoder_cfg: EncoderConfig,
+        use_extra: bool = True,
+        log_std_min: float = -10.0,
+        log_std_max: float = 2.0,
+    ) -> None:
+        super().__init__()
+        self.spec = spec
+        self.encoder = make_point_encoder(FEATURE_DIM, encoder_cfg)
+        self.use_extra = bool(use_extra)
+        self.log_std_min = float(log_std_min)
+        self.log_std_max = float(log_std_max)
+        in_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
+        self.trunk = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2 * action_dim),
+        )
+        self.apply(_weight_init)
+
+    def forward(self, obs, compute_pi: bool = True, compute_log_pi: bool = True, detach_encoder: bool = False):
+        pos, feat, valid, extra = obs
+        point_features = self.encoder(pos, feat, valid)
+        if detach_encoder:
+            point_features = point_features.detach()
+        tool_index = (feat[:, :, FLAG_TOOL] * valid).argmax(dim=1)
+        z = point_features[torch.arange(pos.shape[0], device=pos.device), tool_index]
+        if self.use_extra:
+            z = torch.cat([z, extra], dim=-1)
+        mu, log_std = self.trunk(z).chunk(2, dim=-1)
+        log_std = torch.tanh(log_std)
+        log_std = self.log_std_min + 0.5 * (self.log_std_max - self.log_std_min) * (log_std + 1)
+        if compute_pi:
+            std = log_std.exp()
+            noise = torch.randn_like(mu)
+            pi = mu + noise * std
+        else:
+            pi, noise = None, None
+        log_pi = gaussian_logprob(noise, log_std) if (compute_log_pi and noise is not None) else None
+        mu, pi, log_pi = squash(mu, pi, log_pi)
+        return mu, pi, log_pi, log_std
+
+
+# ---------------------------------------------------------------------------
+# Categorical (C51-style) critic for the FlashSAC path
+# ---------------------------------------------------------------------------
+
+
+class CategoricalQHead(nn.Module):
+    """Distributional Q head over ``num_bins`` value atoms in ``[min_v, max_v]``.
+
+    Bounding the atoms bounds the expected value structurally, which is what the
+    Newton FlashSAC path relies on to stop scalar Q from chasing an unbounded
+    steady state on dense negative rewards.
+    """
+
+    def __init__(self, in_dim: int, hidden_dim: int, num_bins: int, min_v: float, max_v: float) -> None:
+        super().__init__()
+        self.trunk = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, int(num_bins)),
+        )
+        self.register_buffer("bin_values", torch.linspace(float(min_v), float(max_v), int(num_bins)))
+
+    def forward(self, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        log_probs = F.log_softmax(self.trunk(z), dim=-1)
+        expected = (log_probs.exp() * self.bin_values).sum(dim=-1, keepdim=True)
+        return expected, log_probs
+
+
+class CategoricalCritic(nn.Module):
+    """Twin distributional critic in the reference form ``Q(encode(s), a)``."""
+
+    def __init__(
+        self,
+        spec: ObsSpec,
+        action_dim: int,
+        hidden_dim: int,
+        encoder_cfg: EncoderConfig,
+        num_bins: int,
+        min_v: float,
+        max_v: float,
+        use_extra: bool = True,
+    ) -> None:
+        super().__init__()
+        self.spec = spec
+        self.encoder = make_global_encoder(FEATURE_DIM, encoder_cfg)
+        self.use_extra = bool(use_extra)
+        self.num_bins, self.min_v, self.max_v = int(num_bins), float(min_v), float(max_v)
+        in_dim = self.encoder.feature_dim + int(action_dim) + (EXTRA_DIM if self.use_extra else 0)
+        self.Q1 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v)
+        self.Q2 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v)
+        self.apply(_weight_init)
+
+    def forward(self, obs, action: torch.Tensor, detach_encoder: bool = False):
+        pos, feat, valid, extra = obs
+        z = self.encoder(pos, feat, valid)
+        if detach_encoder:
+            z = z.detach()
+        parts = [z, action]
+        if self.use_extra:
+            parts.append(extra)
+        z = torch.cat(parts, dim=-1)
+        q1, log_p1 = self.Q1(z)
+        q2, log_p2 = self.Q2(z)
+        return q1, q2, log_p1, log_p2

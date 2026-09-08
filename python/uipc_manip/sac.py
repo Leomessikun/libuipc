@@ -21,7 +21,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .models import Actor, Critic, EncoderConfig
+from .models import Actor, CategoricalCritic, Critic, EncoderConfig, WangFlowActor
 from .obs import FLAG_TOOL, ObsSpec
 
 WANG_HORIZON_STEPS = 150
@@ -86,6 +86,13 @@ class SACConfig:
     actor_log_std_min: float = -10.0
     actor_log_std_max: float = 2.0
     use_extra: bool = True
+    actor_type: str = "wang-flow"
+    """``wang-flow`` reads the tool point of a segmentation encoder (the reference); ``flat`` pools globally."""
+    algo: str = "sac"
+    """``sac`` is the scalar reference critic; ``flashsac`` is the bounded categorical critic."""
+    num_bins: int = 51
+    min_v: float = -50.0
+    max_v: float = 50.0
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
 
     def to_dict(self) -> dict:
@@ -123,11 +130,25 @@ class SACAgent:
         self.action_dim = int(action_dim)
         self.cfg = cfg
         self.device = torch.device(device)
-        self.actor = Actor(
+        if cfg.actor_type == "wang-flow":
+            actor_cls = WangFlowActor
+        elif cfg.actor_type == "flat":
+            actor_cls = Actor
+        else:
+            raise ValueError(f"Unknown actor_type {cfg.actor_type!r}")
+        self.actor = actor_cls(
             spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.actor_log_std_min, cfg.actor_log_std_max
         ).to(self.device)
-        self.critic = Critic(spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra).to(self.device)
-        self.critic_target = Critic(spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra).to(self.device)
+        if cfg.algo == "sac":
+            make_critic = lambda: Critic(spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra)  # noqa: E731
+        elif cfg.algo == "flashsac":
+            make_critic = lambda: CategoricalCritic(  # noqa: E731
+                spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.num_bins, cfg.min_v, cfg.max_v, cfg.use_extra
+            )
+        else:
+            raise ValueError(f"Unknown algo {cfg.algo!r}")
+        self.critic = make_critic().to(self.device)
+        self.critic_target = make_critic().to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
         self.log_alpha = torch.tensor(np.log(cfg.init_temperature), dtype=torch.float32, device=self.device)
         self.log_alpha.requires_grad_(True)
@@ -196,10 +217,44 @@ class SACAgent:
         self.critic_optimizer.step()
         return {"critic_loss": float(critic_loss.item()), "q1_mean": float(current_q1.mean().item()), "critic_grad_norm": grad_norm}
 
+    def _critic_scalar(self, obs, action, detach_encoder: bool = False):
+        """Scalar ``(Q1, Q2)`` for either critic form."""
+        out = self.critic(obs, action, detach_encoder=detach_encoder)
+        return out[0], out[1]
+
+    def _update_critic_categorical(self, obs, action, reward, next_obs, not_done) -> dict:
+        """FlashSAC-style update: project the soft Bellman target onto the atom grid, cross-entropy loss."""
+        with torch.no_grad():
+            _, next_pi, next_log_pi, _ = self.actor(next_obs)
+            tq1, tq2, tlp1, tlp2 = self.critic_target(next_obs, next_pi)
+            target_min = torch.minimum(tq1, tq2)
+            target_scalar = reward + not_done * self.cfg.discount * (target_min - self.alpha.detach() * next_log_pi)
+            target_probs = self._project_categorical_target(target_scalar, tlp1.shape[-1])
+        q1, _, log_p1, log_p2 = self.critic(obs, action)
+        critic_loss = -(target_probs * log_p1).sum(-1).mean() - (target_probs * log_p2).sum(-1).mean()
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        grad_norm = self._clip(self.critic)
+        self.critic_optimizer.step()
+        return {"critic_loss": float(critic_loss.item()), "q1_mean": float(q1.mean().item()), "critic_grad_norm": grad_norm}
+
+    def _project_categorical_target(self, target_scalar: torch.Tensor, num_bins: int) -> torch.Tensor:
+        """Point-mass projection of the scalar target onto its two neighbouring atoms (Newton's C51-on-mean)."""
+        min_v, max_v = float(self.cfg.min_v), float(self.cfg.max_v)
+        width = (max_v - min_v) / (num_bins - 1)
+        b = (target_scalar.clamp(min_v, max_v) - min_v) / width
+        lower = torch.floor(b).long().clamp(0, num_bins - 1)
+        upper = (lower + 1).clamp(0, num_bins - 1)
+        frac = b - lower.float()
+        probs = torch.zeros(target_scalar.shape[0], num_bins, device=target_scalar.device, dtype=target_scalar.dtype)
+        probs.scatter_add_(1, lower, 1.0 - frac)
+        probs.scatter_add_(1, upper, frac)
+        return probs
+
     def _update_actor_and_alpha(self, obs) -> dict:
         _, pi, log_pi, _ = self.actor(obs)
         with frozen_parameters(self.critic):
-            q1, q2 = self.critic(obs, pi, detach_encoder=True)
+            q1, q2 = self._critic_scalar(obs, pi, detach_encoder=True)
         actor_loss = (self.alpha.detach() * log_pi - torch.min(q1, q2)).mean()
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
@@ -227,7 +282,10 @@ class SACAgent:
         obs_flat, action, reward, next_obs_flat, not_done = replay.sample(self.cfg.batch_size)
         obs = self._unpack(obs_flat, augment=True)
         next_obs = self._unpack(next_obs_flat, augment=True)
-        stats = self._update_critic(obs, action, reward, next_obs, not_done)
+        if self.cfg.algo == "flashsac":
+            stats = self._update_critic_categorical(obs, action, reward, next_obs, not_done)
+        else:
+            stats = self._update_critic(obs, action, reward, next_obs, not_done)
         stats["batch_reward"] = float(reward.mean().item())
         self.updates += 1
         if self.updates % self.cfg.actor_update_freq == 0:
@@ -247,6 +305,11 @@ class SACAgent:
             "action_dim": int(self.action_dim),
             "hidden_dim": int(self.cfg.hidden_dim),
             "use_extra": bool(self.cfg.use_extra),
+            "actor_type": str(self.cfg.actor_type),
+            "algo": str(self.cfg.algo),
+            "num_bins": int(self.cfg.num_bins),
+            "min_v": float(self.cfg.min_v),
+            "max_v": float(self.cfg.max_v),
             "encoder": self.cfg.encoder.to_dict(),
         }
 

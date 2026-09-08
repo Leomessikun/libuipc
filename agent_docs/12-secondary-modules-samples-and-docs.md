@@ -113,9 +113,8 @@ the same Newton iterations.
 |---|---|
 | `obs.py` | flat observation layout shared by environment, replay, and networks |
 | `assets.py`, `tasks.py` | deformable builders and the three goal-reaching task definitions |
-| `genesis_env.py` | single Genesis scene, picker attachment, IPC snapshot reset |
-| `vec_env.py` | subprocess vector environment (`spawn`; one IPC scene per process) |
-| `models.py` | dense masked PointNet++ encoder with actor and twin-critic heads |
+| `genesis_env.py` | one batched Genesis scene, `N` deformable copies in one IPC world isolated by subscenes, picker attachment, snapshot reset |
+| `models.py` | dense masked PointNet++ (global and segmentation), set-transformer encoder, Wang tool-point actor, scalar and categorical twin critics |
 | `sac.py`, `replay.py` | scalar SAC, checkpoint protocol, replay snapshots |
 | `train_sac.py`, `preview.py` | launcher (train, scripted sweep, evaluation) and offline renderer |
 
@@ -128,7 +127,11 @@ Boundaries worth knowing before changing it:
   150-step horizon;
 - the reference PointNet++ needs PyTorch Geometric, which the Genesis
   environment does not carry, so `models.py` reimplements it on dense masked
-  tensors; ball-query neighbour counts are the dominant cost knob;
+  tensors; ball-query neighbour counts are the dominant cost knob, and the
+  transformer encoder is several times cheaper per update;
+- all copies share one IPC world and reset together at the fixed horizon;
+  per-environment early termination is not supported, matching the
+  reference's fixed-horizon slots;
 - the environment reaches Genesis coupler internals (`_ipc_objects`,
   `_ipc_animator`, `_ipc_contact_tabular`, `_ipc_world`), the same access
   pattern as the upstream Genesis IPC examples, so a Genesis upgrade needs a
