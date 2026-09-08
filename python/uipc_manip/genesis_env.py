@@ -95,6 +95,10 @@ def quat_rotate(q: np.ndarray, v: np.ndarray) -> np.ndarray:
     return v + 2.0 * np.cross(u, np.cross(u, v) + w * v)
 
 
+class ViewerClosed(RuntimeError):
+    """Raised when the Genesis viewer window is closed during a step."""
+
+
 class GenesisIPCManipEnv:
     """Batched goal-reaching task on a cloth sheet or cable; one libuipc world for all environments."""
 
@@ -114,12 +118,13 @@ class GenesisIPCManipEnv:
         self._uipc = __import__("uipc")
         self._device = self._gs.device
         self._debug_objects: list = []
-        self._build_scene()
-        self._prepare_grasp()
+        # Goals exist before the scene builds because the viewer draws during the settle.
         self.goals = np.zeros((self.num_envs, 3))
         self._prev_distance = np.zeros(self.num_envs)
         self._episode_step = 0
         self._last_ik_error = np.zeros(self.num_envs)
+        self._build_scene()
+        self._prepare_grasp()
         self.descriptions = [self.describe()] * self.num_envs
 
     # ------------------------------------------------------------------
@@ -316,7 +321,12 @@ class GenesisIPCManipEnv:
     def _sim_step(self) -> None:
         self.robot.control_dofs_position(self._q_target[:, :7], self._arm_dofs)
         self.robot.control_dofs_position(np.full((self.num_envs, 2), 0.04), self._finger_dofs)
-        self.scene.step()
+        try:
+            self.scene.step()
+        except Exception as exc:
+            if self.cfg.show_viewer and "Viewer closed" in str(exc):
+                raise ViewerClosed("viewer window closed") from exc
+            raise
         if self.cfg.show_viewer:
             self._draw()
 
@@ -398,6 +408,8 @@ class GenesisIPCManipEnv:
                 ik_errors = np.maximum(ik_errors, self._last_ik_error)
                 self._sim_step()
             self._check_world()
+        except ViewerClosed:
+            raise
         except RuntimeError as exc:
             # The whole world failed. Recover the snapshot and report every
             # environment as a simulation error so the trainer skips them.

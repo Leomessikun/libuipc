@@ -150,6 +150,41 @@ PointNet++ therefore costs about 3.9 s of optimizer time per 0.72 s of
 simulation, roughly 7 transitions per second end to end; the transformer
 encoder brings the same loop to roughly 24 transitions per second.
 
+### Third pass: reward scale
+
+With the batched world and the reference actor in place, the transformer
+encoder run still showed almost nothing after 16,800 transitions: mean final
+distance 97.8 mm at 8,000 and 91.8 mm at 16,000, 0 of 32 successes at both.
+The cause was reward scale. The progress reward was ten times the metres of
+marker motion toward the goal, so one decision could earn at most 0.06, while
+the initial entropy term of the policy objective contributed about 0.43 per
+decision. The reference calibrates its temperature and learning rates for
+per-step rewards in `[-1, 1]`, and its own notes warn that every reference
+hyperparameter silently miscalibrates when the value scale changes.
+
+The reward was rescaled to progress in units of `max_translation`, so a unit
+action straight at the goal earns about +1, with +1 more on every decision
+inside the tolerance. Same network, hyperparameters, environment, and seed:
+
+| Transitions | Success (32 episodes) | Mean final distance | Mean return |
+|---:|---:|---:|---:|
+| 8,000, old reward | 0/32 | 97.8 mm | 0.04 |
+| 16,000, old reward | 0/32 | 91.8 mm | 0.10 |
+| 8,000, rescaled | 27/32 | 14.6 mm | 121.3 |
+| 16,000, rescaled | 27/32 | 13.2 mm | 124.3 |
+
+The scripted policy scores 27/32 on the same goal seeds, so 8,000 transitions
+reach the scripted baseline. The five remaining goals lie in the direction
+that folds the held corner over the sheet; whether the learned policy passes
+them is what the longer run measures. The run collected 8,000 transitions in
+480 s with 32 environments, about 17 per second, while an unrelated training
+job shared the GPU.
+
+The resume paths were exercised on a real checkpoint from this run:
+evaluation-only loading, training continuation with the replay snapshot
+(transition and update counts continue from the checkpoint), and a deliberate
+encoder mismatch, which is refused with both protocols printed.
+
 ## Interpretation
 
 Directly measured: the IPC solve is 68 ms of a 120 ms scene step, so slightly

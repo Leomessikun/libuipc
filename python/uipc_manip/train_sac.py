@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .genesis_env import EnvConfig, GenesisIPCManipEnv
+from .genesis_env import EnvConfig, GenesisIPCManipEnv, ViewerClosed
 from .obs import ObsSpec, goal_rel, marker_centroid_rel
 from .sac import (
     SACConfig,
@@ -162,6 +162,24 @@ def _save_trajectory(directory: Path, index: int, states: list[dict], descriptio
     )
 
 
+def _set_viewer_caption(env, text: str) -> None:
+    try:
+        env.scene.viewer._pyrender_viewer.set_caption(text)
+    except Exception:  # viewer backends without a caption API
+        pass
+
+
+def _hold_viewer(env, text: str) -> None:
+    """Keep the Genesis viewer open after evaluation so the scene can be inspected."""
+    _set_viewer_caption(env, text)
+    viewer = getattr(env.scene, "viewer", None)
+    if viewer is None:
+        return
+    while viewer.is_alive():
+        viewer.update(force=True)
+        time.sleep(0.03)
+
+
 def checkpoint_score(metrics: dict) -> tuple:
     return (metrics["success_rate"], -metrics["mean_final_distance"], metrics["mean_return"])
 
@@ -246,9 +264,17 @@ def main(argv: list[str] | None = None) -> None:
 
     trajectory_dir = run_dir / "trajectories" if args.save_trajectories else None
     if args.eval_only or agent is None:
-        metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir)
+        if args.vis:
+            _set_viewer_caption(env, f"uipc_manip {args.task} | {args.policy} policy | blue: deformable, green: goal, red: marker centroid")
+        try:
+            metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir)
+        except ViewerClosed:
+            print("[uipc-manip] viewer closed; exiting", flush=True)
+            return
         (run_dir / "eval.json").write_text(json.dumps(metrics, indent=2) + "\n")
         print(json.dumps({k: v for k, v in metrics.items() if k != "records"}, indent=2), flush=True)
+        if args.vis:
+            _hold_viewer(env, f"uipc_manip {args.task} | done: success {metrics['success_rate']:.0%} | drag to orbit, close window to exit")
         env.close()
         return
 

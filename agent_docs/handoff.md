@@ -1388,3 +1388,12 @@ flat global actor first ported; it is now the default, with the categorical
 `flashsac` critic and a set-transformer encoder as measured options (19 ms per
 update against 122 ms for the reference encoder). Evidence is in the same
 performance record.
+
+Third pass: with batching and the reference actor in place the policy still
+did not learn, and the cause was reward scale. Rewards of at most 0.06 per
+decision were dominated by an entropy term near 0.43, where the reference
+calibrates for per-step rewards in `[-1, 1]`. Progress is now measured in
+units of `max_translation`. At 8,000 transitions the same run went from 0/32
+successes and 97.8 mm to 27/32 and 14.6 mm, matching the scripted baseline.
+The viewer path (`--vis`) holds the window open after evaluation and exits
+cleanly when it is closed.
