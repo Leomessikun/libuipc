@@ -148,7 +148,7 @@ are there to be compared against it, not assumed better.
 | `--algo` | `sac`, `flashsac` | `sac` | scalar twin critic (reference) or the bounded categorical critic from the Newton `flashsac` path |
 | `--encoder` | `pointnet2`, `transformer` | `pointnet2` | dense masked PointNet++ (reference) or a set transformer with a learned global token |
 | `--action-repeat` | int | `1` dressing, `5` otherwise | simulation steps per decision. The tool speed cap covers the whole decision, as Newton's `decimation` does, so `--horizon 150 --action-repeat 6` is the reference's 900 simulation steps with six times fewer decisions: the configuration Newton's own sweep found best for upper-arm progress |
-| `--garment-curriculum-interval` | int | `0` | dressing: Wang's `curriculum_update_freq`. Every this many vector steps one more garment's slots are admitted to replay, easiest first; all slots keep stepping. `0` trains on every garment from the start. Wang's value is in neither the original nor the Newton checkout, so any interval used in a run is a choice of this port |
+| `--garment-curriculum-interval` | int | `0` | dressing: Wang's `curriculum_update_freq`. Every this many vector steps one more garment's slots are admitted to replay, easiest first; all slots keep stepping. Use a multiple of the horizon so a garment joins at an episode boundary. `0` trains on every garment from the start. Wang's value is in neither the original nor the Newton checkout, so any interval used in a run is a choice of this port. Evaluation plays every garment at every stage, unlike Wang's `evaluate`, which scores only the admitted ones |
 | `--garment-curriculum-order` | names | Wang's five | dressing: preference order, easiest first; absent garments are skipped and unnamed ones appended |
 | `--init-temperature` | float | `0.1` | initial SAC temperature; the reference value at 150 steps. The horizon-equivalent helpers rescale the reward and the temperature learning rate for a 900-step horizon but not this, so the critic target carries a six-times larger entropy term; `0.0167` is the variant under test |
 
@@ -184,7 +184,7 @@ solver in place of PointNet++ and FleX.
 # Stage I-A: SAC teacher with Wang's garment curriculum (interval is this port's choice).
 PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac --task dressing --human 0 \
     --garments tshirt_26 tshirt_392 --num-envs 16 --encoder transformer \
-    --total-transitions 100000 --garment-curriculum-interval 1500 \
+    --total-transitions 100000 --garment-curriculum-interval 1800 \
     --eval-freq 1800 --num-eval-episodes 16 --checkpoint-interval 900
 
 # Stage I-B: roll the frozen teacher out and keep the paper-filtered episodes.
