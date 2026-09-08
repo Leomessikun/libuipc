@@ -1332,3 +1332,11 @@ regression).
   repository contracts 48/48, portable Python tests 80 passed / 1 skipped, the
   real Python 3.14 CUDA doctor probe, and the complete documentation build all
   passed.
+
+## 2026-09-08: local cloth/cable setup
+
+Created a Python 3.11 environment using the pyuipc 0.0.28 wheel and added
+`python/examples/cloth_cable_manipulation.py`. A 180-step CUDA run validated
+cloth and rod soft-grip movement, finite state, and target tracking. Setup,
+commands, results, and the neighboring Genesis integration are documented in
+`agent_docs/cloth_cable_setup.md`. No native solver build was performed.
