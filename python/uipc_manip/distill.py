@@ -42,24 +42,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--eval-every", type=int, default=1000)
     p.add_argument("--save-every", type=int, default=10_000)
     p.add_argument("--max-train-transitions", type=int, default=0, help="Cap on training transitions loaded into memory; 0 loads every kept episode.")
-    p.add_argument("--min-upperarm-ratio", type=float, default=None, help="Re-filter kept episodes at a different final-ratio threshold.")
-    p.add_argument("--include-rejected", action="store_true", help="Smoke tests only: also train on episodes the paper filter rejected (they carry no stored data unless kept).")
+    p.add_argument("--min-upperarm-ratio", type=float, default=None, help="Tighten the filter on the kept episodes to this final ratio; only kept episodes carry data, so it cannot loosen it.")
     p.add_argument("--device", type=str, default="cuda:0")
     p.add_argument("--seed", type=int, default=1)
     return p
 
 
-def episode_ok(record: dict, *, min_upperarm_ratio: float | None, include_rejected: bool) -> bool:
+def episode_ok(record: dict, *, min_upperarm_ratio: float | None) -> bool:
     if record.get("path") is None or record.get("sim_error", False):
         return False
-    if include_rejected:
-        return True
     if min_upperarm_ratio is not None:
         return float(record["final_upperarm_ratio"]) >= float(min_upperarm_ratio) and not bool(record["early_turn"])
     return bool(record.get("kept", False))
 
 
-def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_train_transitions: int, min_upperarm_ratio: float | None, include_rejected: bool):
+def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_train_transitions: int, min_upperarm_ratio: float | None):
     """Episode-level split of the kept rollouts into flat observation and action arrays."""
     episodes: list[tuple[Path, dict]] = []
     manifests: list[dict] = []
@@ -67,7 +64,7 @@ def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_tra
         d = Path(d)
         manifests.append(json.loads((d / "manifest.json").read_text()))
         for record in json.loads((d / "episode_metrics.json").read_text()):
-            if episode_ok(record, min_upperarm_ratio=min_upperarm_ratio, include_rejected=include_rejected):
+            if episode_ok(record, min_upperarm_ratio=min_upperarm_ratio):
                 episodes.append((d / record["path"], record))
     if not episodes:
         raise SystemExit("No episode passes the filter; nothing to distil")
@@ -149,7 +146,6 @@ def main(argv: list[str] | None = None) -> None:
         seed=args.seed,
         max_train_transitions=args.max_train_transitions,
         min_upperarm_ratio=args.min_upperarm_ratio,
-        include_rejected=args.include_rejected,
     )
     cfg = student_config(args, manifests)
     agent = SACAgent(ObsSpec(summary["point_budget"]), summary["action_dim"], cfg, args.device)
