@@ -1433,3 +1433,13 @@ GPU test asserts the hold tracks through free air, and the strength-100 SAC
 run was stopped as invalid (two evaluations, 0 of 16 each). Training is
 relaunched with the fixed hold. Friction, erosion, and cloth-model sweeps
 were all taken with the detached anchor and are void, not ruled out.
+
+Seventh pass: the Wang RSS 2023 / FMVP simulation pipeline is ported around
+this encoder and solver: the garment curriculum gating replay writes, the
+decision-rate flag, FMVP's early-turn detector (bend-plane form), the
+rollout collector with the paper's two filters, and NLL distillation into a
+student that the unchanged evaluator plays. All three stages ran end to end
+on the GPU with the scripted expert and a lowered filter; the paper's 0.7
+filter keeps nothing yet because no policy ends dressed. The Newton
+reference itself was compared on this machine: 4.4 times faster per
+transition and no better than one success in 40 after 2.98M transitions.

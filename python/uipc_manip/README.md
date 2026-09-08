@@ -172,6 +172,47 @@ PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac --task cloth_drag --policy
 PYTHONPATH=python $GENESIS_PY -m uipc_manip.preview output/uipc_manip/<run>/trajectories/episode_000.npz
 ```
 
+### The FMVP simulation pipeline
+
+Wang RSS 2023 trains one SAC teacher per arm-pose region; FMVP rolls those
+teachers out, keeps the trajectories that end dressed without an early turn
+at the elbow, and clones them into one visual policy. The three stages map
+onto three launchers here, with the set-transformer encoder and the libuipc
+solver in place of PointNet++ and FleX.
+
+```bash
+# Stage I-A: SAC teacher with Wang's garment curriculum (interval is this port's choice).
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac --task dressing --human 0 \
+    --garments tshirt_26 tshirt_392 --num-envs 16 --encoder transformer \
+    --total-transitions 100000 --garment-curriculum-interval 1500 \
+    --eval-freq 1800 --num-eval-episodes 16 --checkpoint-interval 900
+
+# Stage I-B: roll the frozen teacher out and keep the paper-filtered episodes.
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.collect_rollouts --task dressing --human 0 \
+    --garments tshirt_26 tshirt_392 --num-envs 16 --encoder transformer \
+    --checkpoint output/uipc_manip/<run>/checkpoints/best.pt \
+    --target-kept-episodes 2514 --max-episodes 8000 --run-name <run>
+
+# Stage I-C: behaviour-clone the kept episodes into a student (NLL, Adam 1e-4, batch 128, 40k updates).
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.distill \
+    --source-dirs output/uipc_manip/<run>/rollouts --run-name <run>_student
+
+# Evaluate the student like any checkpoint.
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac --task dressing --human 0 \
+    --garments tshirt_26 tshirt_392 --encoder transformer --eval-only \
+    --resume output/uipc_manip/<run>_student/checkpoints/actor_best.pt
+```
+
+The collector stores one compressed `episode_*.npz` per kept episode (about
+3 MB at 900 steps, the padded rows compress away) and every attempt in
+`episode_metrics.json`; the
+distiller splits by episode, holds out ten per cent, and caps what it loads
+with `--max-train-transitions`. The paper's 0.7 filter keeps nothing until a
+teacher ends episodes dressed, which none does here yet: `--policy heuristic
+--min-upperarm-ratio 0` with `--loss mse` (the scripted expert's bang-bang
+actions have no finite log-likelihood) exercises the stages mechanically and
+is labelled a smoke setting, not a result.
+
 ## Reward
 
 The reward is progress toward the goal measured in units of `max_translation`,

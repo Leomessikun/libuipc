@@ -91,6 +91,44 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def resolve_defaults(args) -> None:
+    """Fill the task-dependent launcher defaults in place."""
+    if args.horizon is None:
+        args.horizon = 900 if args.task == "dressing" else 150
+    if args.action_repeat is None:
+        args.action_repeat = 1 if args.task == "dressing" else 5
+    if args.point_budget is None:
+        args.point_budget = 768 if args.task == "dressing" else 256
+
+
+def build_sac_config(args) -> SACConfig:
+    """The reference SAC settings with the horizon-equivalent discount and temperature learning rate."""
+    discount = wang_equivalent_discount(args.horizon) if args.discount is None else float(args.discount)
+    alpha_lr = wang_equivalent_alpha_lr(args.horizon) if args.alpha_lr is None else float(args.alpha_lr)
+    sac_cfg = SACConfig(
+        discount=discount,
+        alpha_lr=alpha_lr,
+        init_temperature=args.init_temperature,
+        actor_lr=args.actor_lr,
+        critic_lr=args.critic_lr,
+        hidden_dim=args.hidden_dim,
+        batch_size=args.batch_size,
+        grad_clip_max_norm=args.grad_clip_max_norm,
+        min_alpha=args.min_alpha,
+        point_jitter_scale=args.point_jitter,
+        actor_type=args.actor,
+        algo=args.algo,
+        num_bins=args.num_bins,
+        min_v=args.min_v,
+        max_v=args.max_v,
+    )
+    neighbors = [int(n) for n in args.sa_neighbors]
+    if len(neighbors) == 1:
+        neighbors = neighbors * 2
+    sac_cfg.encoder = replace(sac_cfg.encoder, kind=args.encoder, sa_neighbors=neighbors)
+    return sac_cfg
+
+
 def make_env(args):
     if args.task == "dressing":
         cfg = DressingConfig(
@@ -275,12 +313,7 @@ def main(argv: list[str] | None = None) -> None:
     run_dir = Path(args.work_dir) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     seeds = [args.seed * 100 + i for i in range(args.num_envs)]
-    if args.horizon is None:
-        args.horizon = 900 if args.task == "dressing" else 150
-    if args.action_repeat is None:
-        args.action_repeat = 1 if args.task == "dressing" else 5
-    if args.point_budget is None:
-        args.point_budget = 768 if args.task == "dressing" else 256
+    resolve_defaults(args)
     env = make_env(args)
     spec = ObsSpec(args.point_budget)
     description = env.descriptions[0]
@@ -306,29 +339,7 @@ def main(argv: list[str] | None = None) -> None:
         from .sac import SACAgent
 
         torch.manual_seed(args.seed)
-        discount = wang_equivalent_discount(args.horizon) if args.discount is None else float(args.discount)
-        alpha_lr = wang_equivalent_alpha_lr(args.horizon) if args.alpha_lr is None else float(args.alpha_lr)
-        sac_cfg = SACConfig(
-            discount=discount,
-            alpha_lr=alpha_lr,
-            init_temperature=args.init_temperature,
-            actor_lr=args.actor_lr,
-            critic_lr=args.critic_lr,
-            hidden_dim=args.hidden_dim,
-            batch_size=args.batch_size,
-            grad_clip_max_norm=args.grad_clip_max_norm,
-            min_alpha=args.min_alpha,
-            point_jitter_scale=args.point_jitter,
-            actor_type=args.actor,
-            algo=args.algo,
-            num_bins=args.num_bins,
-            min_v=args.min_v,
-            max_v=args.max_v,
-        )
-        neighbors = [int(n) for n in args.sa_neighbors]
-        if len(neighbors) == 1:
-            neighbors = neighbors * 2
-        sac_cfg.encoder = replace(sac_cfg.encoder, kind=args.encoder, sa_neighbors=neighbors)
+        sac_cfg = build_sac_config(args)
         agent = SACAgent(spec, env.action_dim, sac_cfg, args.device)
         if args.resume:
             payload = agent.load(args.resume, load_optimizers=not args.eval_only)

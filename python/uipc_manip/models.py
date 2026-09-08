@@ -179,6 +179,39 @@ def squash(mu: torch.Tensor, pi: torch.Tensor | None, log_pi: torch.Tensor | Non
     return mu, pi, log_pi
 
 
+def squashed_action_log_prob(mu: torch.Tensor, log_std: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+    """Log-density of an executed ``tanh``-squashed action under the pre-squash Gaussian.
+
+    The inverse of :func:`squash`: recover the pre-tanh sample by ``atanh``,
+    score it under ``N(mu, exp(log_std))``, and subtract the squashing
+    log-determinant. Actions are clamped just inside ``(-1, 1)`` so saturated
+    targets stay finite; their density is then meaningless, which is why
+    behaviour cloning from a bang-bang scripted policy should use ``mse``.
+    """
+    squashed = action.clamp(-1.0 + 1.0e-6, 1.0 - 1.0e-6)
+    pre_tanh = 0.5 * (torch.log1p(squashed) - torch.log1p(-squashed))
+    noise = (pre_tanh - mu) / log_std.exp().clamp_min(1.0e-8)
+    log_pi = gaussian_logprob(noise, log_std)
+    return log_pi - torch.log(F.relu(1.0 - squashed.pow(2)) + 1e-6).sum(-1, keepdim=True)
+
+
+def _bounded_log_std(log_std: torch.Tensor, low: float, high: float) -> torch.Tensor:
+    log_std = torch.tanh(log_std)
+    return low + 0.5 * (high - low) * (log_std + 1)
+
+
+def _sample_head(mu: torch.Tensor, log_std: torch.Tensor, compute_pi: bool, compute_log_pi: bool):
+    if compute_pi:
+        std = log_std.exp()
+        noise = torch.randn_like(mu)
+        pi = mu + noise * std
+    else:
+        pi, noise = None, None
+    log_pi = gaussian_logprob(noise, log_std) if (compute_log_pi and noise is not None) else None
+    mu, pi, log_pi = squash(mu, pi, log_pi)
+    return mu, pi, log_pi, log_std
+
+
 class Actor(nn.Module):
     """Squashed Gaussian policy on ``[encoder(points), extra]``."""
 
@@ -208,7 +241,8 @@ class Actor(nn.Module):
         )
         self.apply(_weight_init)
 
-    def forward(self, obs, compute_pi: bool = True, compute_log_pi: bool = True, detach_encoder: bool = False):
+    def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pre-squash mean and bounded log standard deviation."""
         pos, feat, valid, extra = obs
         z = self.encoder(pos, feat, valid)
         if detach_encoder:
@@ -216,17 +250,15 @@ class Actor(nn.Module):
         if self.use_extra:
             z = torch.cat([z, extra], dim=-1)
         mu, log_std = self.trunk(z).chunk(2, dim=-1)
-        log_std = torch.tanh(log_std)
-        log_std = self.log_std_min + 0.5 * (self.log_std_max - self.log_std_min) * (log_std + 1)
-        if compute_pi:
-            std = log_std.exp()
-            noise = torch.randn_like(mu)
-            pi = mu + noise * std
-        else:
-            pi, noise = None, None
-        log_pi = gaussian_logprob(noise, log_std) if (compute_log_pi and noise is not None) else None
-        mu, pi, log_pi = squash(mu, pi, log_pi)
-        return mu, pi, log_pi, log_std
+        return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
+
+    def forward(self, obs, compute_pi: bool = True, compute_log_pi: bool = True, detach_encoder: bool = False):
+        mu, log_std = self.head(obs, detach_encoder)
+        return _sample_head(mu, log_std, compute_pi, compute_log_pi)
+
+    def action_log_prob(self, obs, action: torch.Tensor, detach_encoder: bool = False) -> torch.Tensor:
+        mu, log_std = self.head(obs, detach_encoder)
+        return squashed_action_log_prob(mu, log_std, action)
 
 
 class QHead(nn.Module):
@@ -429,7 +461,8 @@ class WangFlowActor(nn.Module):
         )
         self.apply(_weight_init)
 
-    def forward(self, obs, compute_pi: bool = True, compute_log_pi: bool = True, detach_encoder: bool = False):
+    def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pre-squash mean and bounded log standard deviation read at the tool point."""
         pos, feat, valid, extra = obs
         point_features = self.encoder(pos, feat, valid)
         if detach_encoder:
@@ -439,17 +472,15 @@ class WangFlowActor(nn.Module):
         if self.use_extra:
             z = torch.cat([z, extra], dim=-1)
         mu, log_std = self.trunk(z).chunk(2, dim=-1)
-        log_std = torch.tanh(log_std)
-        log_std = self.log_std_min + 0.5 * (self.log_std_max - self.log_std_min) * (log_std + 1)
-        if compute_pi:
-            std = log_std.exp()
-            noise = torch.randn_like(mu)
-            pi = mu + noise * std
-        else:
-            pi, noise = None, None
-        log_pi = gaussian_logprob(noise, log_std) if (compute_log_pi and noise is not None) else None
-        mu, pi, log_pi = squash(mu, pi, log_pi)
-        return mu, pi, log_pi, log_std
+        return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
+
+    def forward(self, obs, compute_pi: bool = True, compute_log_pi: bool = True, detach_encoder: bool = False):
+        mu, log_std = self.head(obs, detach_encoder)
+        return _sample_head(mu, log_std, compute_pi, compute_log_pi)
+
+    def action_log_prob(self, obs, action: torch.Tensor, detach_encoder: bool = False) -> torch.Tensor:
+        mu, log_std = self.head(obs, detach_encoder)
+        return squashed_action_log_prob(mu, log_std, action)
 
 
 # ---------------------------------------------------------------------------

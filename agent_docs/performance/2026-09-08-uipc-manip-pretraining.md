@@ -325,6 +325,49 @@ six simulation steps per decision instead of one. This port runs the opposite
 extreme, horizon 900 with `action_repeat` 1, which is the most expensive
 setting and the one Newton's own sweep found worst.
 
+## The Wang / FMVP pipeline, ported
+
+The owner asked for Yufei Wang's method (RSS 2023, original code in the
+local `dressing/` checkout) as FMVP extends it (Appendix A.1) and as the
+Newton branch reproduces it (`dressing/docs/PIPELINE.md`, the authoritative
+local spec), with this port's encoder and solver. What was missing and is
+now in place:
+
+| Stage | Reference | Here |
+|---|---|---|
+| I-A garment curriculum | `train_multi_garments.py`: `curriculum_step = step // curriculum_update_freq + 1`, garments sampled among the first `curriculum_step` of `hospital_gown, tshirt_26, tshirt_68, tshirt_4, tshirt_392` | slots are bound to garments, so the schedule gates which slots write to replay while all keep stepping (the Newton form); `--garment-curriculum-interval`, off by default because Wang's frequency is in neither checkout |
+| I-A decision rate | Newton's best upper-arm result used horizon 150 with decimation 6, the tool speed cap spanning the whole decision | `--action-repeat` now reaches the dressing environment, whose cap already spans the decision |
+| I-B rollout filter | more than 8,000 episodes; keep final upper-arm ratio at least 0.7 and no early turn; 2,514 kept | `collect_rollouts`: same two filters, one compressed file per kept episode, every attempt recorded |
+| early-turn test | gripper in the projected quarter-segments around the elbow and on the inner side by two signed XZ cross products (y-up FleX) | same region; the cross products are taken in the arm's own bend plane with the sign resolved against the shoulder and finger, because a literal XZ copy is a vertical plane in this z-up scene |
+| I-C distillation | NLL behaviour cloning, Adam 1e-4, batch 128, 40,000 updates, PointNet++ actor | `distill`: same, on the teacher's actor and encoder (set transformer); the student saves as a full SAC checkpoint so the evaluator is unchanged |
+| checkpoint selection | FMVP's final-ratio criterion first | success (final ratio at least 0.7), final ratio, maximum ratio, return |
+
+Not ported, deliberately: per-pose replay sampling (the `yufei_r111_s100`
+Newton variant, not the reference launcher, which uses one buffer); a
+held-out human (a single-pose regional teacher reserves none, as in Newton);
+the 5M-transition budget per regional teacher, which is about 156 hours at
+this port's 8.9 transitions per second.
+
+Mechanical check on the GPU, two slots, the scripted expert at strength 1e4,
+900 decisions, filter threshold lowered to 0 so something is kept:
+
+| | tshirt_26 | tshirt_392 |
+|---|---:|---:|
+| Final upper-arm ratio | 0.272 | 0.184 |
+| Forearm ratio | 1.00 | 1.00 |
+| Early turn flagged | no | no |
+| Largest held-vertex error | 6.5 cm | 32 cm |
+| Return | 139 | 34 |
+
+The early-turn detector does not flag the expert, which hooks the elbow from
+the outside by construction, and the unit test flags the mirrored path. The
+32 cm hold error on tshirt_392 says the 1e4 hold still loses that garment
+for part of the episode; it is the next thing to look at for the second
+garment. A 300-update MSE distillation of those two episodes brings the
+action error from 0.34 to 0.02, and the student loads and plays through the
+unchanged evaluator. None of this is a result: the paper filter keeps
+nothing at 0.7 because no policy here ends an episode dressed to 0.7.
+
 ## Machine utilisation, measured
 
 At 16 environments one training process holds 7.8 GB of the 96 GB of GPU

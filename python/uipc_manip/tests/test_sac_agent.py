@@ -177,3 +177,74 @@ def test_garment_curriculum_follows_wang_schedule():
     assert curriculum_order(WANG_GARMENT_ORDER, present) == ["tshirt_26", "tshirt_392"]
     assert curriculum_order(None, present) == ["tshirt_392", "tshirt_26"]
     assert curriculum_order(["jacket", "tshirt_26"], present) == ["tshirt_26", "tshirt_392"]
+
+
+@pytest.mark.parametrize("actor_type", ["flat", "wang-flow"])
+def test_action_log_prob_matches_the_sampled_log_pi(actor_type):
+    spec = ObsSpec(16)
+    cfg = SACConfig(hidden_dim=32, actor_type=actor_type, encoder=EncoderConfig(kind="pointnet2", sa_neighbors=[4, 4]))
+    agent = SACAgent(spec, 3, cfg, "cpu")
+    env = ToyEnv(spec, seed=3)
+    obs = np.stack([env.reset() for _ in range(5)])
+    batch = agent._unpack(torch.as_tensor(obs))
+    torch.manual_seed(0)
+    _, pi, log_pi, _ = agent.actor(batch)
+    recomputed = agent.actor.action_log_prob(batch, pi.detach())
+    assert torch.allclose(recomputed, log_pi, atol=1e-3, rtol=1e-3)
+    # The clamp keeps saturated targets finite.
+    assert torch.isfinite(agent.actor.action_log_prob(batch, torch.ones_like(pi))).all()
+
+
+def test_episode_collector_applies_the_paper_filter(tmp_path):
+    from uipc_manip.collect_rollouts import EpisodeCollector
+
+    collector = EpisodeCollector(2, tmp_path, min_upperarm_ratio=0.7, target_kept=1)
+    obs = np.zeros(8, dtype=np.float32)
+    act = np.zeros(2, dtype=np.float32)
+    # Slot 0 dresses the arm without turning early; slot 1 dresses it but cut the elbow.
+    for t in range(3):
+        last = t == 2
+        r0 = collector.step(0, obs, act, 1.0, {"upperarm_ratio": 0.8 if last else 0.2, "garment": "tshirt_26", "time_limit": last})
+        r1 = collector.step(1, obs, act, 1.0, {"upperarm_ratio": 0.9 if last else 0.3, "garment": "tshirt_392", "early_turn": t == 1, "time_limit": last})
+    assert r0["kept"] and r0["paper_filter_success"] and r0["length"] == 3 and r0["path"] is not None
+    assert not r1["kept"] and r1["early_turn"] and r1["path"] is None
+    data = np.load(tmp_path / r0["path"])
+    assert data["obs"].shape == (3, 8) and data["actions"].shape == (3, 2)
+    # The target was reached, so a further success is recorded but not stored.
+    r2 = collector.step(0, obs, act, 0.0, {"upperarm_ratio": 0.95, "garment": "tshirt_26", "time_limit": True})
+    assert r2["paper_filter_success"] and not r2["kept"]
+    summary = collector.summary()
+    assert summary["attempted_episodes"] == 3 and summary["kept_episodes"] == 1 and summary["kept_per_garment"] == {"tshirt_26": 1, "tshirt_392": 0}
+
+
+def test_distillation_smoke_produces_a_loadable_student(tmp_path):
+    import json
+
+    from uipc_manip import distill
+
+    spec = ObsSpec(16)
+    env = ToyEnv(spec, seed=5)
+    rng = np.random.default_rng(0)
+    rollouts = tmp_path / "rollouts"
+    (rollouts / "episodes").mkdir(parents=True)
+    records = []
+    for k in range(4):
+        obs = np.stack([env.reset() for _ in range(6)])
+        act = np.clip(rng.normal(scale=0.3, size=(6, 3)), -1, 1).astype(np.float32)
+        path = f"episodes/episode_{k:05d}.npz"
+        np.savez_compressed(rollouts / path, obs=obs, actions=act, rewards=np.zeros(6, dtype=np.float32))
+        records.append({"path": path, "kept": True, "final_upperarm_ratio": 0.9, "early_turn": False, "sim_error": False})
+    (rollouts / "episode_metrics.json").write_text(json.dumps(records))
+    (rollouts / "manifest.json").write_text(json.dumps({"obs_dim": spec.dim, "action_dim": 3, "point_budget": 16}))
+    distill.main([
+        "--source-dirs", str(rollouts), "--work-dir", str(tmp_path), "--run-name", "student",
+        "--encoder", "pointnet2", "--hidden-dim", "32", "--steps", "6", "--batch-size", "4",
+        "--eval-every", "3", "--save-every", "0", "--device", "cpu", "--loss", "nll_mse",
+    ])
+    ckpt = tmp_path / "student" / "checkpoints" / "actor_final.pt"
+    assert ckpt.exists() and (tmp_path / "student" / "checkpoints" / "actor_best.pt").exists()
+    cfg = SACConfig.from_dict(SACAgent.read_checkpoint(ckpt)["sac_config"])
+    student = SACAgent(spec, 3, cfg, "cpu")
+    payload = student.load(ckpt, load_optimizers=False)
+    assert payload["metadata"]["stage"] == "fmvp_distillation"
+    assert student.act(np.stack([env.reset()]), deterministic=True).shape == (1, 3)
