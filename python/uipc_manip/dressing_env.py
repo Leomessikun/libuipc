@@ -28,7 +28,7 @@ import numpy as np
 
 from .dressing_assets import DressingCache, DressingCacheConfig, DressingCell, erode_arm_mesh, write_obj
 from .dressing_obs import DressingObsConfig, DressingObservationBuilder
-from .dressing_reward import WangRewardConfig, opening_threaded, wang_progress
+from .dressing_reward import early_turn, WangRewardConfig, opening_threaded, wang_progress
 from .genesis_env import ViewerClosed, _ensure_genesis
 from .obs import FEATURE_DIM, FLAG_DEFORMABLE, FLAG_MARKER, ObsSpec
 
@@ -438,6 +438,7 @@ class GenesisIPCDressingEnv:
                     "on_upperarm": bool(pr.on_upperarm),
                     "collision": float(pr.collision),
                     "tracking_error": self._tracking_error(i, positions),
+                    "early_turn": early_turn(self._anchor[i], cell.finger, cell.elbow, cell.shoulder),
                     "garment": cell.garment,
                     "episode_step": int(self._episode_step),
                     "time_limit": bool(done),

@@ -74,8 +74,10 @@ Where the IPC port departs from the Newton teacher, and why:
 * The libuipc FEM preconditioner is the multilevel additive Schwarz one. With
   block-Jacobi the conjugate-gradient solve took seconds per Newton
   iteration on this cloth.
-* No garment curriculum, no held-out human, no early-turn detector in the
-  success metric, and the hospital gown is opt-in.
+* No garment curriculum and no held-out human, and the hospital gown is
+  opt-in. FMVP's early-turn detector is reported per episode
+  (`early_turn_rate`, `paper_filter_rate`) but, as in the paper, it filters
+  trajectories rather than defining success.
 
 `--policy heuristic` runs a port of the Newton seven-stage dressing expert
 (approach, finger, middle, align-yaw, align-pitch, elbow-hook, last) as the

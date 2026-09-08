@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from uipc_manip.dressing_assets import erode_arm_mesh, vertex_normals
-from uipc_manip.dressing_reward import WangRewardConfig, line_triangles, opening_threaded, wang_progress
+from uipc_manip.dressing_reward import WangRewardConfig, early_turn, line_triangles, opening_threaded, wang_progress
 
 
 def _ring(center, axis, radius, n=6):
@@ -113,3 +113,22 @@ def test_erode_arm_mesh_shrinks_toward_axis():
     # Flipped winding must still erode inward.
     eroded_flipped = erode_arm_mesh(verts, faces[:, ::-1], 0.01, np.array([0.0, 0.0, 0.0]), np.array([0.4, 0.0, 0.0]))
     assert np.allclose(np.linalg.norm(eroded_flipped[:, 1:], axis=1), r - 0.01, atol=1e-4)
+
+
+def test_early_turn_flags_the_concave_side_of_the_elbow_only(arm):
+    finger, elbow, shoulder = arm
+    # The arm bends toward +y at the elbow, so the concave side of the bend is the +y / -x corner.
+    inside = elbow + np.array([-0.03, 0.04, 0.0])
+    outside = elbow + np.array([0.04, -0.04, 0.0])
+    assert early_turn(inside, finger, elbow, shoulder)
+    assert not early_turn(outside, finger, elbow, shoulder)
+    # Same side, but outside both projected quarter-segments: not an early turn. The paper's
+    # region is a union of projections, so a point beside the hand at small +y still projects
+    # into the first quarter of the upper arm; 0.1 m of +y puts it past that quarter.
+    assert not early_turn(finger + np.array([0.0, 0.1, 0.0]), finger, elbow, shoulder)
+    # Height off the bend plane does not change the verdict.
+    assert early_turn(inside + np.array([0.0, 0.0, 0.1]), finger, elbow, shoulder)
+    # Mirrored arm: the verdict follows the geometry, not the world frame.
+    mirror = np.array([1.0, -1.0, 1.0])
+    assert early_turn(inside * mirror, finger * mirror, elbow * mirror, shoulder * mirror)
+    assert not early_turn(outside * mirror, finger * mirror, elbow * mirror, shoulder * mirror)

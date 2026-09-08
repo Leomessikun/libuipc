@@ -129,6 +129,7 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
     finished: list[dict] = []
     returns = np.zeros(env.num_envs)
     max_tracking = np.zeros(env.num_envs)
+    early_turn_seen = np.zeros(env.num_envs, dtype=bool)
     metric_keys = tuple(getattr(env, "metric_keys", ()))
     running_max = {k: np.full(env.num_envs, -np.inf) for k in metric_keys}
     trajectories = [[] for _ in range(env.num_envs)] if trajectory_dir is not None else None
@@ -142,6 +143,7 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
         returns += rewards
         for i, info in enumerate(infos):
             max_tracking[i] = max(max_tracking[i], float(info.get("tracking_error", 0.0)))
+            early_turn_seen[i] |= bool(info.get("early_turn", False))
             for k in metric_keys:
                 if k in info:
                     running_max[k][i] = max(running_max[k][i], float(info[k]))
@@ -152,7 +154,10 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
                     "return": float(returns[i]),
                     "max_tracking_error": float(max_tracking[i]),
                     "sim_error": bool(info.get("sim_error", False)),
+                    "early_turn": bool(early_turn_seen[i]),
                 }
+                # FMVP Appendix A.1 keeps a trajectory when it ends dressed and never cut the elbow.
+                record["paper_filter"] = bool(record["success"] and not record["early_turn"])
                 for k in metric_keys:
                     record[f"final_{k}"] = float(info.get(k, np.nan))
                     record[f"max_{k}"] = float(running_max[k][i])
@@ -169,6 +174,7 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
                         episode_index += 1
                 returns[i] = 0.0
                 max_tracking[i] = 0.0
+                early_turn_seen[i] = False
                 if trajectories is not None:
                     trajectories[i] = []
     distances = np.array([r["distance"] for r in finished])
@@ -179,6 +185,8 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
         "mean_return": float(np.mean([r["return"] for r in finished])),
         "max_tracking_error": float(max(r["max_tracking_error"] for r in finished)),
         "sim_errors": int(sum(r["sim_error"] for r in finished)),
+        "early_turn_rate": float(np.mean([r["early_turn"] for r in finished])),
+        "paper_filter_rate": float(np.mean([r["paper_filter"] for r in finished])),
     }
     for k in metric_keys:
         summary[f"mean_final_{k}"] = float(np.nanmean([r[f"final_{k}"] for r in finished]))
@@ -229,7 +237,13 @@ def _hold_viewer(env, text: str) -> None:
 
 
 def checkpoint_score(metrics: dict) -> tuple:
-    return (metrics["success_rate"], -metrics["mean_final_distance"], metrics["mean_return"])
+    """Lexicographic selection key: FMVP's final-ratio success first, then how far the arm was dressed."""
+    return (
+        metrics["success_rate"],
+        -metrics["mean_final_distance"],
+        metrics.get("mean_max_upperarm_ratio", 0.0),
+        metrics["mean_return"],
+    )
 
 
 class CsvLogger:

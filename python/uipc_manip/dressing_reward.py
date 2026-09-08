@@ -185,3 +185,48 @@ def opening_threaded(cloth: np.ndarray, opening_idx: np.ndarray, finger: np.ndar
     ang = np.sort(np.arctan2(rel @ e2, rel @ e1))
     gaps = np.diff(np.concatenate([ang, ang[:1] + 2.0 * np.pi]))
     return bool(gaps.max() < np.pi), t
+
+
+def _segment_fraction(point: np.ndarray, start: np.ndarray, end: np.ndarray) -> float:
+    direction = end - start
+    return float(np.dot(point - start, direction) / max(float(np.dot(direction, direction)), 1.0e-12))
+
+
+def early_turn(gripper: np.ndarray, finger: np.ndarray, elbow: np.ndarray, shoulder: np.ndarray) -> bool:
+    """FMVP Appendix A.1 early-turn test: the gripper cuts the inside of the elbow.
+
+    The elbow region is the last quarter of the finger-to-elbow segment plus the
+    first quarter of the elbow-to-shoulder segment, each taken as a projected
+    fraction along its segment as the paper and the Newton port do, so it is a
+    union of two slabs rather than a ball around the elbow. Inside it, the gripper is on
+    the inner side of the arm when it lies on the concave side of both segments,
+    which the paper expresses as two negative signed cross products in the
+    horizontal plane of its y-up simulator. Here the cross products are taken in
+    the plane the arm actually bends in (spanned by finger, elbow, shoulder) and
+    the sign is resolved against the arm itself: the shoulder marks the concave
+    side of the forearm line and the finger the concave side of the upper-arm
+    line. That keeps the test independent of the world frame's handedness.
+    """
+    gripper = np.asarray(gripper, dtype=np.float64)
+    finger = np.asarray(finger, dtype=np.float64)
+    elbow = np.asarray(elbow, dtype=np.float64)
+    shoulder = np.asarray(shoulder, dtype=np.float64)
+    forearm_fraction = _segment_fraction(gripper, finger, elbow)
+    upperarm_fraction = _segment_fraction(gripper, elbow, shoulder)
+    in_elbow_region = (0.75 <= forearm_fraction <= 1.0) or (0.0 <= upperarm_fraction <= 0.25)
+    if not in_elbow_region:
+        return False
+    normal = np.cross(finger - elbow, shoulder - elbow)
+    norm = float(np.linalg.norm(normal))
+    if norm < 1.0e-12:
+        return False
+    normal /= norm
+
+    def signed_cross(left: np.ndarray, right: np.ndarray) -> float:
+        return float(np.dot(np.cross(left, right), normal))
+
+    forearm_dir = finger - elbow
+    upperarm_dir = elbow - shoulder
+    c1 = signed_cross(finger - gripper, forearm_dir) * signed_cross(finger - shoulder, forearm_dir)
+    c2 = signed_cross(elbow - gripper, upperarm_dir) * signed_cross(elbow - finger, upperarm_dir)
+    return bool(c1 > 0.0 and c2 > 0.0)
