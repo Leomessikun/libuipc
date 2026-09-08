@@ -219,13 +219,15 @@ reached, success requires an upper-arm ratio of 0.7):
 | friction 0.0 | 0.18 | friction is a factor, not the blocker |
 | friction 0.1, erosion 20 mm (fingers removed) | 0.22 | finger snagging is not the blocker |
 | cached waypoint pull instead of the expert, any erosion, 40 anchors, or a 1000 hold | 0.01 to 0.04 | |
+| hold strength 1e4 (toward a hard pin) | 0.00 | inconclusive: the expert drove the anchor to 2.6 cm from the elbow, the 12 mm no-move shell then dropped every step, and steps cost up to 3 s |
 
 The sleeve opening is nearly twice as wide as the hand (radius 9.9 cm against
 a hand radius of 6 cm), so the geometry admits threading. What stalls it
 has not been isolated. The anchored patch does not keep up with the
 commanded anchor once the sleeve is caught, so the reference's hard
-kinematic pin is the remaining difference under test; strengths of 1e4 and
-above slow the solve severely. The Newton teacher's own reachability sweep
+kinematic pin remains the leading untested difference; the one attempt at a
+stiff hold was confounded by the no-move shell and by a solve that slowed to
+seconds per step, so it neither confirms nor rules the hypothesis out. The Newton teacher's own reachability sweep
 reaches the upper arm in 20 of 35 cells with the same expert under VBD cloth,
 where the cloth stretches and penetrates slightly. A learned policy's zero
 success on this solver is therefore not evidence about the learner until a
