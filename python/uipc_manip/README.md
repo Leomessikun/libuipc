@@ -93,6 +93,15 @@ PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac --task cloth_drag --policy
 PYTHONPATH=python $GENESIS_PY -m uipc_manip.preview output/uipc_manip/<run>/trajectories/episode_000.npz
 ```
 
+## Reward
+
+The reward is progress toward the goal measured in units of `max_translation`,
+so a unit action straight at the goal earns about +1 per decision, plus +1 on
+every decision whose marker centroid is within the task tolerance. Per-step
+rewards therefore stay on the reference's `[-1, 1]` scale. A ten-times smaller
+progress reward, tried first, left the SAC entropy term dominating the policy
+objective for tens of thousands of transitions.
+
 ## Observation and action
 
 The action is a three-dimensional tool displacement in `[-1, 1]`, scaled by

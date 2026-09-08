@@ -61,8 +61,14 @@ class EnvConfig:
     """Per simulation step clamp on the arm joint target, in radians."""
     tcp_offset: float = 0.1034
     """Distance from the hand frame origin to the tool centre point along the hand z axis."""
-    progress_scale: float = 10.0
-    success_bonus: float = 0.1
+    progress_scale: float = 1.0
+    """Reward per unit of progress, where one unit is ``max_translation`` of marker motion toward the goal.
+
+    A unit action straight at the goal therefore earns about +1 per decision, which keeps per-step
+    rewards on the reference's ``[-1, 1]`` scale that the SAC temperature and learning rates were
+    calibrated for. Ten times smaller rewards left the entropy term dominating the policy objective."""
+    success_bonus: float = 1.0
+    """Added on every decision whose marker is within the task tolerance of the goal."""
     show_viewer: bool = False
     logging_level: str = "warning"
 
@@ -402,7 +408,8 @@ class GenesisIPCManipEnv:
         centroids = self.marker_centroids(p)
         distance = np.linalg.norm(centroids - self.goals, axis=-1)
         success = distance < self.task.success_tolerance
-        rewards = cfg.progress_scale * (self._prev_distance - distance) + cfg.success_bonus * success
+        progress = (self._prev_distance - distance) / cfg.max_translation
+        rewards = cfg.progress_scale * progress + cfg.success_bonus * success
         self._prev_distance = distance
         self._episode_step += 1
         done = self._episode_step >= cfg.horizon
