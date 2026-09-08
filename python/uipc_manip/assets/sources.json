@@ -1,0 +1,17 @@
+{
+  "cloth": {
+    "path": "grid20x20.obj",
+    "source": "https://huggingface.co/datasets/Genesis-Intelligence/assets/blob/990a727788f11e34ad006c69bf769303b20cb11c/IPC/grid20x20.obj",
+    "sha256": "52085dd052bc8fa26a0613b84815be1f1256476fadb81d7f28e25e7a29f7b123",
+    "note": "Copied unmodified from the Genesis 1.1.2 example assets (examples/IPC_Solver/assets/robot_deformables)."
+  },
+  "cable": {
+    "source": "Genesis 1.1.2 genesis/assets/xml/cable.xml (composite count=26, capsule radius 0.005)",
+    "sha256": "444a78da12806dfdf891698d2f33355bf463ecaab720dd6c887cf5389bc5151f",
+    "conversion": "Only the point count and radius are reused. A straight 0.30 m IPC rod with Hookean stretch and Kirchhoff bending replaces the MJCF dynamics, welds, and payload."
+  },
+  "robot": {
+    "source": "Genesis 1.1.2 genesis/assets/xml/franka_emika_panda/panda_non_overlap.xml",
+    "note": "Loaded through Genesis at runtime; not copied into this repository."
+  }
+}
