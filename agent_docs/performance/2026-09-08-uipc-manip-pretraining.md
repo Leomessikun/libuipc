@@ -412,6 +412,41 @@ action error from 0.34 to 0.02, and the student loads and plays through the
 unchanged evaluator. None of this is a result: the paper filter keeps
 nothing at 0.7 because no policy here ends an episode dressed to 0.7.
 
+### Where Newton's working policies come from
+
+The 33 runs above are one directory. Scanning the other 55 event files in
+`runs/` finds the runs that do reach the upper arm, and their learning
+curves settle the question of whether zero at 100k transitions means a
+broken port. Mean of the per-episode maximum upper-arm ratio, by replay
+transitions (35 environments):
+
+| Run | 70k | 140k | 210k | 280k | 350k | 420k | 560k | 630k | 1.12M |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| single cell human 6 / tshirt_68 | 0.00 | 0.00 | 0.00 | 0.00 | 0.13 | 0.20 | 0.42 | 0.63 | |
+| regional teacher human 6, curriculum | 0.00 | 0.00 | | 0.00 | | 0.01 | 0.07 | | 0.45 |
+| five garments, eight humans, pure SAC | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 (0.52 once at 315k, then 0.00) | | | | |
+
+Every Newton run that later worked was at 0.00 through 280k transitions,
+almost three times this port's largest budget, and the first non-zero
+evaluation came between 315k and 560k. The strict success rate of all of
+them is 0.000 except one multi-scene run at 0.057. At equal budget this
+port's zeros match the reference's own curves; the difference at 100k is
+that the reference's per-transition cost is 4.4 times lower, so it reaches
+600k in the time this port reaches 140k.
+
+The runs with the highest ratios, `rc_v2` at 0.75 to 0.84, are a different
+recipe: a reverse curriculum over 418 demonstrations across 18 cells. Each
+round spawns episodes from a demonstration state some levels before its
+end, with a horizon budget growing from 20 to 189 decisions, and a cell
+advances one level when its success reaches 0.8. After twelve rounds its
+own log reads `0/18 at the start`: no cell dressed from the real initial
+state. Those ratios are for episodes that begin part-way through a
+demonstration. It is nonetheless the most sample-efficient path in the
+reference, 29k to 346k transitions per round, and this port's snapshot
+reset (`world.dump` / `recover`) can spawn from intermediate frames of the
+scripted expert's trajectory the same way; that is the recipe to port next
+if a working policy is wanted sooner than a million-transition run.
+
 ## Machine utilisation, measured
 
 At 16 environments one training process holds 7.8 GB of the 96 GB of GPU
