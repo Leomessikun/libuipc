@@ -340,4 +340,67 @@ at the cost of a larger IPC system. Making the cloth cheaper by moving it to
 PBD is not, and would in any case give up the penetration guarantee that is the
 reason for using this solver.
 
+## Why one world saturates, and what parallelism buys (agent measurement)
+
+A delegated measurement pass on the pure-pyuipc garment world (soft cloth,
+copies alternating tshirt_26 and tshirt_392, `Engine.frame_stats()` for
+iteration counts, 20 timed steps, GPU shared with two other jobs so absolute
+milliseconds are inflated and the foreign load varied two-fold within
+minutes; ratios inside one window are what to trust):
+
+| Copies | Degrees of freedom | ms per step | Newton iterations per step | PCG iterations per step | ms per Newton iteration | Copy-steps per second |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 11.7k | 421 | 3.2 | 302 | 131 | 2.4 |
+| 4 | 64k | 710 | 4.0 | 667 | 177 | 5.6 |
+| 8 | 129k | 593 | 4.65 | 800 | 127 | 13.5 |
+| 16 | 258k | 1148 | 5.05 | 840 | 227 | 13.9 |
+| 32 | 515k | 2695 (median 2339) | 6.15 | 1025 | 438 | 11.9 (13.7) |
+
+Two mechanisms, both measured. Below about 16 copies the device is
+latency-bound: a fused-PCG iteration is a serial chain of about eight small
+kernels plus the multilevel preconditioner on one stream, costing about a
+millisecond whatever the size, so the cost per Newton iteration rises only
+1.7 times for 22 times the degrees of freedom. By 32 the device is full and
+the same ratio is 1.9 for a doubling. On top of that the whole world iterates
+for its worst copy: Newton iterations per step rise from 3.2 to 6.15, because
+convergence is a global maximum displacement, the CCD time of impact is
+global, and every garment sits in one preconditioned system with one
+tolerance. Eight identical copies need 3.35 Newton iterations per step; eight
+heterogeneous ones need 4.65. Every extra iteration re-runs collision
+detection, assembly, the linear solve and the line search for all copies,
+converged or not. Host overhead is not a factor: `advance` blocks, `sync`
+costs 2.6 ms of 420, and Python runs only the animator callback (11 ms of
+1720). The step-time tree at 16 copies and five Newton iterations: linear
+solve 0.80 s (PCG proper 0.50), line search 0.38, contact gradient and
+Hessian 0.25, broad phase 0.24, total 1.72.
+
+The earlier record's 1.54 times for 16 to 32 copies was the stiff cloth in a
+different window and is not confirmed on the soft cloth here (13.9 against
+11.9 to 13.7); the mechanism predicts little past 24 to 32 and the pair needs
+re-measuring on a quiet GPU before 32 is adopted for this cloth.
+
+libuipc has no stream or asynchronous API: the backend runs on the legacy
+default stream, `advance` is synchronous, and `World.sync` is a device-wide
+synchronise. Two engines in one process work, but two 8-copy worlds on two
+threads run slower than one 16-copy world (10.7 against 13.9 copy-steps per
+second) because both threads feed one in-order stream, and two worlds stepped
+sequentially gain nothing (14.5).
+
+Across processes the picture matches Newton's own record. Without MPS two
+8-copy processes time-slice, each at half speed, for no aggregate gain. An
+MPS control daemon and server already run under this user (private pipe
+`~/.mps_pipe`, started 2026-08-26); neither training job uses it. Pointing two
+probe processes at it with `CUDA_MPS_PIPE_DIRECTORY` gave 16.1 copy-steps per
+second against 12.9 without, and 11.8 against 8.9 in a heavier window: 1.25
+to 1.32 times, with one pair in a rising-load window showing nothing. MPS
+clients share one fault domain, and mixing an MPS process with a non-MPS one
+only time-slices.
+
+What this leaves: one 16-copy world per process, optionally two such
+processes under the existing MPS server for about 1.25 times; not threads, not
+sequential worlds. Beyond that the evidence points at two backend changes,
+neither measured: per-world CUDA streams, and letting a converged subscene
+stop iterating so it no longer pays for the worst copy's Newton iterations.
+The second changes the numerics and would need its own validation.
+
 GPU grasp and reachability measurements are recorded below after completion.
