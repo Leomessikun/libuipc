@@ -1,5 +1,7 @@
 """CPU tests for the online drape bake's geometry and for live cell placement."""
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -118,3 +120,63 @@ def test_every_bakeable_garment_has_a_schedule_and_in_range_indices():
         assert float(tables.cloth_scales[garment]) > 0.0
         schedule = PULL_SCHEDULES[garment]
         assert schedule.distance_m > 0 and schedule.pull_seconds > 0 and schedule.settle_seconds > 0
+
+
+def _smplx_available() -> bool:
+    try:
+        import smplx  # noqa: F401
+    except Exception:
+        return False
+    from uipc_manip.dressing_body import BodyConfig
+
+    return Path(BodyConfig().model_dir).exists()
+
+
+smplx_only = pytest.mark.skipif(not _smplx_available(), reason="SMPL-X model or package is unavailable")
+
+
+@smplx_only
+def test_generated_bodies_vary_and_carry_a_usable_right_arm():
+    from uipc_manip.dressing_body import generate_body
+
+    bodies = [generate_body(seed) for seed in (0, 1, 2)]
+    for body in bodies:
+        assert body.vertices.shape == (10475, 3) and np.isfinite(body.vertices).all()
+        assert len(body.arm_points) > 500 and len(body.arm_faces) > 500
+        assert body.arm_faces.max() < len(body.arm_points)
+        # The three dressing landmarks must form a bent arm of plausible length.
+        forearm = np.linalg.norm(body.elbow - body.finger)
+        upper = np.linalg.norm(body.shoulder - body.elbow)
+        assert 0.2 < forearm < 0.6 and 0.15 < upper < 0.5
+        # Every arm vertex belongs to the arm: none should sit near the pelvis.
+        assert np.linalg.norm(body.arm_points - body.landmarks["pelvis"], axis=1).min() > 0.05
+    # Different seeds are different bodies, and one seed is reproducible.
+    assert not np.allclose(bodies[0].vertices, bodies[1].vertices)
+    assert np.allclose(generate_body(0).vertices, bodies[0].vertices)
+
+
+@smplx_only
+def test_the_generated_arm_is_a_closed_submesh_of_the_body():
+    from uipc_manip.dressing_body import generate_body, submesh
+
+    body = generate_body(5)
+    points, faces = submesh(body.vertices, body.faces, body.arm_indices)
+    assert points.shape == body.arm_points.shape and faces.shape == body.arm_faces.shape
+    # Every kept face indexes only selected vertices, and the remap is order preserving.
+    assert faces.min() >= 0 and faces.max() < len(points)
+    assert np.allclose(points, body.vertices[np.sort(body.arm_indices)])
+
+
+def test_body_pose_seats_the_body_and_randomises_only_the_right_arm():
+    from uipc_manip.dressing_body import sample_body_pose
+
+    rng = np.random.default_rng(0)
+    seated = sample_body_pose(rng, "dressing")
+    standing = sample_body_pose(np.random.default_rng(0), "dressing-standing")
+    assert seated.shape == (63,) and np.allclose(sample_body_pose(rng, "rest"), 0.0)
+    # Hips and knees are bent when seated and straight when standing.
+    assert seated[0] < -1.0 and standing[0] == 0.0
+    # Two draws differ only in the right shoulder and elbow entries.
+    other = sample_body_pose(np.random.default_rng(1), "dressing")
+    differing = set(np.flatnonzero(~np.isclose(seated, other)).tolist())
+    assert differing <= {48, 50, 54, 55, 56}

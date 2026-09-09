@@ -28,6 +28,7 @@ import numpy as np
 
 from .dressing_assets import DressingCache, DressingCell
 from .dressing_bake import PULL_SCHEDULES, BakeConfig, bake_in_subprocess, load_index_tables
+from .dressing_body import BodyConfig, generate_body
 
 OFFLINE_DRAPE_DIR = (
     "/home/ge47gax/kun/newton-fmvp/exts/newton_isaaclab_tasks/newton_isaaclab_tasks/dressing/data/canonical_drape"
@@ -47,9 +48,16 @@ class LiveCellConfig:
     2 mm clear of the garment, twice the contact activation distance."""
     scales: dict[str, float] | None = None
     """Per-garment mesh scale; ``None`` uses each garment's bake default."""
+    body: BodyConfig = field(default_factory=BodyConfig)
+    bodies: str = "smplx"
+    """``smplx`` generates each body here from shape and pose samples; ``cache`` reads
+    the eight bodies of the Newton state file instead."""
 
     def to_dict(self) -> dict:
-        return {"bake": self.bake.to_dict(), "clearance_m": float(self.clearance_m), "scales": dict(self.scales or {})}
+        return {
+            "bake": self.bake.to_dict(), "clearance_m": float(self.clearance_m),
+            "scales": dict(self.scales or {}), "bodies": self.bodies, "body": self.body.to_dict(),
+        }
 
 
 def _unit(v: np.ndarray, fallback: tuple[float, float, float] = (1.0, 0.0, 0.0)) -> np.ndarray:
@@ -96,6 +104,17 @@ def apply_transform(points: np.ndarray, transform: np.ndarray) -> np.ndarray:
     pts = np.asarray(points, dtype=np.float64).reshape(-1, 3)
     t = np.asarray(transform, dtype=np.float64)
     return pts @ t[:3, :3].T + t[:3, 3][None, :]
+
+
+@dataclass(frozen=True)
+class SimpleBody:
+    """The four things a dressing cell needs from a body, whatever produced it."""
+
+    arm_points: np.ndarray
+    arm_faces: np.ndarray
+    human_points: np.ndarray
+    landmarks: dict
+    source: str
 
 
 @dataclass(frozen=True)
@@ -216,38 +235,63 @@ def load_offline_drape(garment: str, cfg: LiveCellConfig | None = None) -> dict 
 
 
 class LiveCellFactory:
-    """Build dressing cells by draping any garment online and placing it on any cached body."""
+    """Build dressing cells by draping a garment online and placing it on a body.
+
+    With ``bodies="smplx"`` neither half comes from a saved state: the garment is
+    draped in libuipc from its raw mesh and the body is sampled from SMPL-X, so a
+    "human" is just a seed and the cell count is unbounded.
+    """
 
     def __init__(self, cfg: LiveCellConfig | None = None, cache: DressingCache | None = None) -> None:
         self.cfg = cfg or LiveCellConfig()
-        self.cache = cache or DressingCache()
+        self._cache = cache
         self._drapes: dict[str, CanonicalDrape] = {}
+        self._bodies: dict[int, object] = {}
         self.garments = available_garments(self.cfg)
         if not self.garments:
             raise FileNotFoundError(f"No bakeable garment found under {self.cfg.bake.garment_dir}")
 
-    def humans(self) -> list[int]:
-        return self.cache.humans()
+    @property
+    def cache(self) -> DressingCache:
+        if self._cache is None:
+            self._cache = DressingCache()
+        return self._cache
 
-    def cells(self) -> list[tuple[str, int]]:
-        """Every (garment, human) pair this factory can build, against the bake's 23."""
-        return [(g, h) for h in self.humans() for g in self.garments]
+    def humans(self, count: int = 8) -> list[int]:
+        """Body seeds. Generated bodies are unbounded, so this is just the first ``count``."""
+        return list(range(int(count))) if self.cfg.bodies == "smplx" else self.cache.humans()
+
+    def cells(self, humans: int = 8) -> list[tuple[str, int]]:
+        """Every (garment, body) pair this factory can build, against the bake's 23."""
+        return [(g, h) for h in self.humans(humans) for g in self.garments]
 
     def drape(self, garment: str) -> CanonicalDrape:
         if garment not in self._drapes:
             self._drapes[garment] = load_drape(garment, self.cfg)
         return self._drapes[garment]
 
-    def _body(self, human: int):
+    def body(self, human: int):
+        """The body for this seed: generated from SMPL-X, or read from the cache."""
+        key = int(human)
+        if key not in self._bodies:
+            self._bodies[key] = self._generate(key) if self.cfg.bodies == "smplx" else self._cached_body(key)
+        return self._bodies[key]
+
+    def _generate(self, seed: int):
+        body = generate_body(seed, self.cfg.body)
+        return SimpleBody(body.arm_points, body.arm_faces, body.vertices, body.landmarks, f"smplx_seed_{seed}")
+
+    def _cached_body(self, human: int):
         """Any cached cell of this human carries the same body; take the first."""
         for garment, h in self.cache.cells:
             if h == int(human):
-                return self.cache.load(garment, h)
+                cell = self.cache.load(garment, h)
+                return SimpleBody(cell.arm_points, cell.arm_faces, cell.human_points, cell.landmarks, f"cache_human_{human}")
         raise KeyError(f"Human {human} is not in the body cache; available: {self.cache.humans()}")
 
     def build(self, garment: str, human: int) -> DressingCell:
         drape = self.drape(garment)
-        body = self._body(human)
+        body = self.body(human)
         cloth, picker_pos = drape.place(body.landmarks, clearance=self.cfg.clearance_m)
         return DressingCell(
             garment=garment,

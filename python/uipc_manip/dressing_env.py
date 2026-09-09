@@ -84,6 +84,12 @@ class DressingConfig:
     radii plus ``d_hat``; the thin radius the Genesis sim2sim path validated keeps them legal."""
     cloth_bending_stiffness: float = 10.0
     cloth_strain_rate: float = 100.0
+    cloth_shear_ratio: float | None = None
+    """Shear Young's modulus as a fraction of the stretch modulus. libuipc measures stretch as
+    ``E*2r/(1-nu^2)`` but shear as ``E/(2(1+nu))``, with no thickness factor, so sharing one
+    modulus (``None``, the historical setting) makes shear about ``1/(2r)``, here 3,300, times
+    stiffer than stretch and the fabric effectively unshearable. The drape bake measured 1/100
+    as the ratio that reproduces the reference garment's hang."""
     """Baraff-Witkin over-stretch amplification of the strain-limiting shell; lower lets the opening
     stretch further over the hand."""
     sanity_check: bool = True
@@ -259,7 +265,12 @@ class GenesisIPCDressingEnv:
                 mesh = ipc_trimesh(cell.cloth, cell.faces)
                 label_surface(mesh)
                 moduli = ElasticModuli2D.youngs_poisson(cfg.cloth_youngs, cfg.cloth_poisson)
-                if cfg.cloth_model == "slbw":
+                if cfg.cloth_model == "slbw" and cfg.cloth_shear_ratio is not None:
+                    shear = ElasticModuli2D.youngs_poisson(cfg.cloth_youngs * float(cfg.cloth_shear_ratio), cfg.cloth_poisson)
+                    StrainLimitingBaraffWitkinShell().apply_to(
+                        mesh, moduli, shear, cfg.cloth_density, cfg.cloth_thickness, cfg.cloth_strain_rate
+                    )
+                elif cfg.cloth_model == "slbw":
                     StrainLimitingBaraffWitkinShell().apply_to(
                         mesh, moduli, cfg.cloth_density, cfg.cloth_thickness, cfg.cloth_strain_rate
                     )

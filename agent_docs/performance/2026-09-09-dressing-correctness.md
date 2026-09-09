@@ -219,4 +219,41 @@ factory falls back to it automatically and records which source each cell came
 from. All five compose with all eight bodies, so the cell count is 40 either
 way, and every placed garment clears the arm by 1.7 to 5.3 mm.
 
+## The body is generated too, so no saved state is read
+
+`uipc_manip.dressing_body` samples a body the way Wang's `gen_human_mesh.py`
+does: ten SMPL-X shape coefficients from U(-2, 5), a seated pose with the left
+arm tucked and the right shoulder and elbow randomised, the right hand pinned to
+a relaxed fist, and a standing height from U(1.5, 1.9). The right-arm collider
+is not a stored index list: it is every vertex whose dominant SMPL-X skinning
+weight lies on the right collar-to-fingertip chain, so it follows the body
+through every shape and pose sample. The dressing landmarks use the reference's
+own construction, the midpoint of each section's upper and lower surface vertex
+with the joint-derived hand offset carried onto the finger.
+
+Generated arms match the cached ones: forearm 33.8 to 40.7 cm against 37.0,
+upper arm 25.8 to 31.6 cm against 28.2, 1,409 arm vertices against 1,307. A
+body is now a seed, so the cell count is unbounded rather than 23. The `smplx`
+package is pure Python and was copied into the Genesis environment from the
+Newton checkout; the model files stay where Newton keeps them.
+
+## The episode cloth is far stiffer than the reference, and it costs upper-arm progress
+
+The shear defect above was measured on the drape. Its effect on the task was
+then measured directly: the same scripted expert, the same cell, 150 decisions
+of six simulation steps, the cuff held at 1e6, changing only the cloth.
+
+| Cloth | Forearm ratio | Upper-arm ratio at step 150 | Largest held-vertex error |
+|---|---:|---:|---:|
+| Episode setting: 6e4 stretch, shear shared, bending 10 | 1.00 by step 120 | 0.040 | 5.8 mm |
+| Reference-matched: 6e3 stretch, shear 1/100, bending 0.1 | 1.00 by step 120 | **0.127** | 2.0 mm |
+
+Both dress the forearm at the same rate, so the difference is entirely in what
+happens once the sleeve has to deform around the elbow: the corrected cloth
+gets three times as far up the upper arm in the same budget, and the expert is a
+stage further along its sequence when the horizon ends. Neither reaches the 0.7
+threshold in 150 decisions, and this is one cell of one garment, so it does not
+by itself explain the zero success rate. It does show that the material this
+port inherited suppresses the deformation the task is made of.
+
 GPU grasp and reachability measurements are recorded below after completion.
