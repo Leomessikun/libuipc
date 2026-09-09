@@ -146,4 +146,56 @@ back. The 350,000-simulation-step budget at which the reference first reached
 the upper arm therefore costs 11.2 hours at 16 environments and 7.3 hours at
 32. Training runs should use 32.
 
+## Online drape bake in libuipc, replacing the offline pre-worn states
+
+The owner asked why the states must be pre-baked at all: `ppf-contact-solver`
+baked them offline only because Newton's own VBD cloth collapses a closed
+tshirt's cuff opening, and libuipc is a solver of the same class. The bake is
+now `uipc_manip.dressing_bake`: it takes the raw garment mesh, applies Newton's
+canonical pre-transform, pins the grasp patch together with the six
+opening-polygon vertices, draws that pin set open along the garment's pull axis,
+and lets gravity drain the fabric, all in a standalone one-garment libuipc
+world. Semantics are then measured off the result and reproduce the offline
+socket frame to 2.6e-8. `uipc_manip.dressing_live` places the drape on any
+cached body through Newton's `runtime_align` map.
+
+Two consequences. The garment spawns a clearance step *outside* the fingertip,
+so it cannot interpenetrate the arm by construction: no arm erosion, and none
+of the bake's six rejected cells. And the garment axis is free, so the 23-cell
+pre-worn cache becomes 40 cells, five garments on eight bodies.
+
+The material had to be found rather than inherited, and one finding is a defect
+in the current episode cloth. libuipc's strain-limiting shell measures stretch
+as `E*2r/(1-nu^2)` but shear as `E/(2(1+nu))`, with no thickness factor, so
+sharing one modulus between them (the single-argument overload this port uses)
+makes shear about `1/(2r)`, here 3,300, times stiffer than stretch and the sheet
+effectively unshearable. Baking tshirt_26 and measuring how far the free fabric
+sags against the offline drape's 0.112 m:
+
+| Stretch modulus | Shear ratio | Bending | Free fabric sag | Opening radius |
+|---:|---:|---:|---:|---:|
+| 6e4 (episode setting) | shared | 10 | 0.007 m | 9.93 cm |
+| 6e4 | 1/100 | 10 | 0.014 m | 9.93 cm |
+| 6e4 | 1/100 | 0.1 | 0.037 m | 9.92 cm |
+| 6e3 | 1/100 | 0.1 | **0.105 m** | 9.92 cm |
+| 6e2 | 1/100 | 0.1 | 0.216 m | 9.93 cm |
+| 6e1 | 1/100 | 0.1 | 0.540 m | 9.93 cm |
+
+A 6 kPa stretch modulus with a hundredth of that in shear and bending 0.1
+reproduces the reference drape (0.105 m against 0.112 m) while the opening holds
+at 9.92 cm against 9.91 cm. Those are the bake defaults. `DressingConfig`'s
+episode cloth is ten times stiffer in stretch, a hundred times in bending, and
+about 3,300 times in shear; that is recorded, not yet changed, and is a
+candidate explanation for a sleeve that does not deform around the hand.
+
+Four of the five garments bake online: tshirt_26 in 62 s, tshirt_4 77 s (16
+tangled hem triangles dropped), tshirt_68 51 s, hospital_gown 87 s, each cached
+by a content hash of its inputs. The raw meshes ship with a few illegal
+primitives, which libuipc reports as a saved mesh and the bake drops in a
+retry loop, as the offline bake did. tshirt_392 is not yet bakeable: its rest
+mesh has two edges 19 um apart against a 300 um summed thickness, and dropping
+the triangles that touch them leaves a mesh libuipc still rejects without a
+further report. It needs a mesh repair the drop loop does not do; its offline
+drape still works.
+
 GPU grasp and reachability measurements are recorded below after completion.
