@@ -75,4 +75,33 @@ tracking error, coverage, and blocked translation. It can replay the same
 actions and compare traces while checking cell and action scaling. Its CPU
 `audit` mode does not establish physics validity or reachability.
 
+## Matched speed comparison
+
+Both sides are measured on this machine. Newton figures are the medians of
+its own `perf/` scalars from uncontended runs; the IPC figures are the
+fastest observed 20-step windows of runs that shared the GPU, so they are
+lower bounds on this port's speed. Decision cost is not comparable across
+decision rates, so the invariant to compare is simulation steps.
+
+| Configuration | Environments | Simulation steps per decision | Seconds per vector step | Replay transitions per second | Simulation steps per second |
+|---|---:|---:|---:|---:|---:|
+| Newton, horizon 900, decimation 1 | 40 | 1 | 1.03 | 38.8 | 38.8 |
+| Newton, horizon 150, decimation 6 | 40 | 6 | 3.48 | 11.5 | 69.0 |
+| This port, horizon 900, repeat 1 | 16 | 1 | 1.56 | 10.3 | 10.3 |
+| This port, horizon 150, repeat 6 | 16 | 6 | 9.50 | 1.7 | 10.1 |
+
+This port's physics throughput is the same 10 simulation steps per second at
+either decision rate: the solve dominates and the 16 gradient updates per
+vector step are small beside it. Newton's rises from 38.8 to 69.0 because its
+36 updates per vector step are a fixed cost that six simulation steps
+amortise. The gap is therefore 3.8 times at decimation 1 and 6.8 times at
+decimation 6, per simulation step and per transition alike.
+
+Budget, not rate, is what the zero results turn on. The Newton run that first
+reached the upper arm (single cell, human 6, tshirt_68) did so at 350,000
+transitions at decimation 1, which is 350,000 simulation steps. That budget
+costs 1.4 to 2.5 hours in Newton and 9.5 hours here, and it is the same 9.5
+hours at either decision rate. The current curriculum run stands at 147,840
+simulation steps after 9.1 hours of contended wall clock, 42 per cent of it.
+
 GPU grasp and reachability measurements are recorded below after completion.
