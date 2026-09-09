@@ -79,6 +79,10 @@ Where the IPC port departs from the Newton teacher, and why:
   Newton port), and the hospital gown is opt-in. FMVP's early-turn detector is reported per episode
   (`early_turn_rate`, `paper_filter_rate`) but, as in the paper, it filters
   trajectories rather than defining success.
+  Its elbow region is a pair of projected slabs with no bound on distance
+  from the arm, so `early_turn_rate` alone says little about episodes that
+  never dressed the arm; the paper applies it after the 0.7 ratio gate, as
+  the collector does.
 
 `--policy heuristic` runs a port of the Newton seven-stage dressing expert
 (approach, finger, middle, align-yaw, align-pitch, elbow-hook, last) as the
