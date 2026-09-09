@@ -304,7 +304,11 @@ concave side without ever touching the garment to the arm. The paper
 applies the test only after the 0.7 ratio gate, where the gripper is
 necessarily near the arm, and so does the collector here; the standalone
 `early_turn_rate` is meaningful only for dressed episodes. Pace 10.9 s per
-vector step beside the foreign Newton job.
+vector step beside the foreign Newton job. Second evaluation at step 1,200
+(both garments admitted, 14,400 replay transitions): still 0 of 16 and
+ratios 0.0, but the return rose from -14.7 to +9.6 per episode, which the
+reward composition attributes to the centre-alignment bonus and fewer
+collision penalties rather than to any insertion.
 
 The main fixed-hold run reached its 100,000-transition budget in 27,658 s
 of wall clock (7.7 h, most of it shared with one or two other GPU jobs);
