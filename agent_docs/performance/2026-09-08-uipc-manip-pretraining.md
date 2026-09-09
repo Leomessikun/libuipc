@@ -281,6 +281,13 @@ transitions: 0 of 16, ratios 0.0, return -123.3 against -84.5 before, cuff
 within 1.3 cm of the tool, Q mean 86; the second half of that run shared
 the GPU with the temperature ablation and the pipeline smoke.
 
+Temperature ablation, identical except an initial temperature of 0.0167
+(0.1 divided by the 900/150 horizon ratio), first evaluation at 28,800
+transitions: 0 of 16, ratios 0.0, return -177.2 against the main run's
+-84.5 at the same step, cuff within 3.5 cm, Q mean 0.74 against 52. The
+rescaled temperature removes the critic drift and does nothing for the task
+at this budget, so the drift was not what kept the policy from inserting.
+
 ## Newton reference compared, same machine
 
 The Newton teacher's own runs live in `runs/dressing_pointcloud_sac` of the
