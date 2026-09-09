@@ -256,4 +256,34 @@ threshold in 150 decisions, and this is one cell of one garment, so it does not
 by itself explain the zero success rate. It does show that the material this
 port inherited suppresses the deformation the task is made of.
 
+## The corrected cloth learns much faster and solves much slower
+
+A controlled run followed: the curriculum teacher at horizon 150 with six
+simulation steps per decision, 16 environments, the cuff held at 1e4, the
+garment curriculum admitting tshirt_392 at step 600, everything identical to
+the recorded baseline except the three cloth settings.
+
+| | Baseline cloth | Reference-matched cloth |
+|---|---|---|
+| Stretch modulus, shear ratio, bending | 6e4, shared, 10 | 6e3, 1/100, 0.1 |
+| Forearm ratio at 4,808 replay transitions | 0.000 | **0.667** |
+| Upper-arm ratio there | 0.000 | 0.008 |
+| Return there | -14.7 | +10.2 |
+| Forearm ratio at 24,648 transitions | 0.441 | not reached yet |
+| Seconds per vector step | 18 to 21 | 96 |
+
+At equal data the corrected cloth is not marginally better: it passes in one
+evaluation what the baseline had not reached in three, and it is the first run
+of any kind here to show a non-zero upper-arm ratio from a learned policy.
+
+It also costs five times the solve time per step, and that is not contention:
+both runs shared the GPU with the same foreign Newton job, and the baseline
+held 18 to 21 seconds while this one holds a flat 96. A floppier sheet folds
+against itself, so the contact set grows and the Newton solve does more work.
+Per transition the corrected cloth is worth more than five times as much, and
+per second it is roughly break-even, so the choice is not free either way. The
+open question is which of the three changes buys the learning and which buys
+the cost; bending is the one most likely to drive the contact growth, and
+shear is the one the constitution's own convention says was wrong.
+
 GPU grasp and reachability measurements are recorded below after completion.
