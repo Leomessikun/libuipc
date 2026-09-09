@@ -209,9 +209,20 @@ class GenesisIPCDressingEnv:
         gs = self._gs
         cfg = self.cfg
         cell0 = self.cells[0]
-        arm_eroded = erode_arm_mesh(cell0.arm_points, cell0.arm_faces, cfg.arm_erosion_m, cell0.finger, cell0.shoulder)
-        arm_path = write_obj(Path(cfg.workspace) / f"arm_human_{cfg.human}_eroded_{int(round(cfg.arm_erosion_m * 1000))}mm.obj", arm_eroded, cell0.arm_faces)
-        self.arm_collider_path = str(arm_path)
+        # One collider per slot: the slots may hold different bodies, and the IPC object is
+        # named after the cell's own body, so a shared mesh would silently dress every body
+        # with the first one's arm.
+        erosion = int(round(cfg.arm_erosion_m * 1000))
+        self.arm_meshes: list[tuple[np.ndarray, np.ndarray]] = []
+        arm_paths: list[str] = []
+        for cell in self.cells:
+            eroded = erode_arm_mesh(cell.arm_points, cell.arm_faces, cfg.arm_erosion_m, cell.finger, cell.shoulder)
+            self.arm_meshes.append((eroded, cell.arm_faces))
+            arm_paths.append(
+                str(write_obj(Path(cfg.workspace) / f"arm_human_{cell.human}_eroded_{erosion}mm.obj", eroded, cell.arm_faces))
+            )
+        self.arm_collider_paths = arm_paths
+        self.arm_collider_path = arm_paths[0]
         _install_solver_patch(cfg.fem_preconditioner, cfg.linear_system_cuda_graph)
         self.scene = gs.Scene(
             sim_options=gs.options.SimOptions(dt=cfg.dt, substeps=1, gravity=(0.0, 0.0, -9.8)),
@@ -243,8 +254,8 @@ class GenesisIPCDressingEnv:
         # Genesis re-tessellates imported meshes (1307 vertices became 4885 with duplicates),
         # and the duplicated vertices produced NaN distances in the IPC trajectory filter.
         # The native body is the exact cached ``right_arm_faces`` collider, eroded.
-        self.arm_vertices = arm_eroded
-        self.arm_faces = cell0.arm_faces
+        # These two are the viewer's and the trajectory export's slot-0 aliases.
+        self.arm_vertices, self.arm_faces = self.arm_meshes[0]
         coupler = self.scene.sim.coupler
         self.coupler = coupler
         coupler._ipc_contact_tabular.default_model(cfg.friction, cfg.contact_resistance)
@@ -268,7 +279,7 @@ class GenesisIPCDressingEnv:
         def add_objects_with_garments() -> None:
             original_add_objects()
             for env_idx, cell in enumerate(self.cells):
-                arm = ipc_trimesh(self.arm_vertices, self.arm_faces)
+                arm = ipc_trimesh(*self.arm_meshes[env_idx])
                 label_surface(arm)
                 # Open surface: use the explicit mass overload, the body is fixed anyway.
                 AffineBodyConstitution().apply_to(arm, 1e8, np.eye(12), 1.0)
@@ -481,6 +492,8 @@ class GenesisIPCDressingEnv:
                     "tool_translation_error": float(np.linalg.norm(self._actual_tcp(i, positions) - self._anchor[i])),
                     "early_turn": early_turn(self._anchor[i], cell.finger, cell.elbow, cell.shoulder),
                     "garment": cell.garment,
+                    "human": int(cell.human),
+                    "cell": cell.name,
                     "episode_step": int(self._episode_step),
                     "time_limit": bool(done),
                 }

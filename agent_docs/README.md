@@ -62,4 +62,10 @@ This directory is a structured summary of the libuipc codebase, allowing newly o
 - The current machine-specific performance reference is the four-scene
   `performance/2026-09-01-cross-domain-baseline.md`; older numbers in
   `handoff.md` are chronological experiment evidence.
+- The cloth-dressing reinforcement-learning port has its own records:
+  `performance/2026-09-08-uipc-manip-pretraining.md` for the environment and the
+  first runs, `performance/2026-09-09-dressing-correctness.md` for the
+  correctness pass, the cloth stiffness finding, the speed work and the first
+  learned successes, and `performance/2026-09-10-one-policy-protocol.md` for
+  what training one policy over many garments and bodies still requires.
 - XMake explicitly disables ccache, mirrors the active optional USD/VDB modules, and synchronizes pybind package copies before packaging.

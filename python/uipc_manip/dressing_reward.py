@@ -62,7 +62,10 @@ def nearest_body_distance(points: np.ndarray, human_points: np.ndarray) -> float
     key = id(human_points)
     cached = _BODY_TREES.get(key)
     if cached is None or cached[0] is not human_points:
-        _BODY_TREES.clear()
+        # One tree per body, not one in total: a multi-body world queries a different
+        # cloud per slot, and clearing on every miss rebuilt all of them every decision.
+        if len(_BODY_TREES) > 64:
+            _BODY_TREES.clear()
         cached = (human_points, cKDTree(np.asarray(human_points, dtype=np.float64)))
         _BODY_TREES[key] = cached
     distances, _ = cached[1].query(np.asarray(points, dtype=np.float64), k=1)
