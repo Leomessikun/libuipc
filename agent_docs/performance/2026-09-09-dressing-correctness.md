@@ -188,14 +188,35 @@ episode cloth is ten times stiffer in stretch, a hundred times in bending, and
 about 3,300 times in shear; that is recorded, not yet changed, and is a
 candidate explanation for a sleeve that does not deform around the hand.
 
-Four of the five garments bake online: tshirt_26 in 62 s, tshirt_4 77 s (16
-tangled hem triangles dropped), tshirt_68 51 s, hospital_gown 87 s, each cached
-by a content hash of its inputs. The raw meshes ship with a few illegal
-primitives, which libuipc reports as a saved mesh and the bake drops in a
-retry loop, as the offline bake did. tshirt_392 is not yet bakeable: its rest
-mesh has two edges 19 um apart against a 300 um summed thickness, and dropping
-the triangles that touch them leaves a mesh libuipc still rejects without a
-further report. It needs a mesh repair the drop loop does not do; its offline
-drape still works.
+Each bake runs in its own interpreter and is cached by a content hash of its
+inputs. That is not a convenience: libuipc's sanity checker carries state
+across worlds in one process, so a second garment's repair round sees the first
+garment's checks and fails without a report of its own. The offline tool ran one
+container per garment for the same reason.
+
+The raw meshes carry illegal primitives in the canonical rest pose, of two
+kinds that need opposite repairs. Parts that merely pass within the summed
+collision radius need a thinner radius, not surgery, and the bake shrinks it by
+a quarter per round down to 1 um; this is what unblocked tshirt_392, whose rest
+mesh has two edges 19 um apart against a 300 um summed thickness. Triangles that
+genuinely cross have to be separated: dropping them, which is what the offline
+bake did, leaves orphan vertices that libuipc's volume check then rejects
+without a report, so the bake instead displaces the reported vertices along
+their own normals, doubling the step each round.
+
+| Garment | Vertices | Source | Opening radius | Free-fabric sag | Bake |
+|---|---:|---|---:|---:|---:|
+| tshirt_26 | 3,889 | online | 9.92 cm (offline 9.91) | 0.105 m (offline 0.112) | 46 s |
+| tshirt_392 | 6,837 | online | 8.09 cm (offline 8.05) | 0.076 m (offline 0.187) | 86 s |
+| tshirt_4 | 5,761 | offline | 9.11 cm | | |
+| tshirt_68 | 3,529 | offline | 8.27 cm | | |
+| hospital_gown | 10,436 | offline | 8.14 cm | | |
+
+Two garments bake online today. The other three cross triangles that neither
+separation over six doubling rounds nor face dropping repairs, so they keep
+Newton's offline drape, which is the geometry the previous pipeline used; the
+factory falls back to it automatically and records which source each cell came
+from. All five compose with all eight bodies, so the cell count is 40 either
+way, and every placed garment clears the arm by 1.7 to 5.3 mm.
 
 GPU grasp and reachability measurements are recorded below after completion.

@@ -9,6 +9,7 @@ from uipc_manip.dressing_bake import (
     cuff_semantics,
     drop_reported_faces,
     load_index_tables,
+    separate_reported_vertices,
     socket_frame,
 )
 from uipc_manip.dressing_live import (
@@ -86,17 +87,24 @@ def test_canonical_transform_grounds_and_flips_to_z_up():
     assert not np.allclose(canonical_transform(raw, "hospital_gown", 4.0), placed)
 
 
-def test_dropping_reported_faces_removes_every_triangle_touching_them(tmp_path):
+def test_dropping_reported_faces_removes_every_triangle_touching_them():
     verts = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 0.0]])
     faces = np.array([[0, 1, 2], [1, 3, 2], [1, 4, 3]], dtype=np.int32)
-    report = tmp_path / "close_mesh.obj"
-    # An edge-only report: two vertices, no triangle. Vertex 4 belongs to one face.
-    report.write_text("v 2.0 0.0 0.0\nv 1.0 1.0 0.0\nl 1 2\n")
-    kept = drop_reported_faces(verts, faces, report)
-    assert kept.tolist() == [[0, 1, 2]]
+    # The checker hands back positions; vertices 4 and 3 sit on two of the faces.
+    reported = np.array([[2.0, 0.0, 0.0], [1.0, 1.0, 0.0]])
+    assert drop_reported_faces(verts, faces, reported).tolist() == [[0, 1, 2]]
     with pytest.raises(RuntimeError, match="back to the source mesh"):
-        (tmp_path / "far.obj").write_text("v 9.0 9.0 9.0\n")
-        drop_reported_faces(verts, faces, tmp_path / "far.obj")
+        drop_reported_faces(verts, faces, np.array([[9.0, 9.0, 9.0]]))
+
+
+def test_separating_reported_vertices_keeps_topology_and_moves_only_them():
+    verts = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]])
+    faces = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+    moved = separate_reported_vertices(verts, faces, np.array([[0.0, 0.0, 0.0]]), 0.01)
+    assert moved.shape == verts.shape
+    assert np.allclose(moved[1:], verts[1:])
+    # The flat sheet's normal is +z, so the flagged vertex leaves the plane by the step.
+    assert abs(moved[0, 2] - verts[0, 2]) == pytest.approx(0.01)
 
 
 def test_every_bakeable_garment_has_a_schedule_and_in_range_indices():

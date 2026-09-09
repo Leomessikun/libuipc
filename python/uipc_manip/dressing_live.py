@@ -27,7 +27,12 @@ from pathlib import Path
 import numpy as np
 
 from .dressing_assets import DressingCache, DressingCell
-from .dressing_bake import PULL_SCHEDULES, BakeConfig, bake_drape, load_index_tables
+from .dressing_bake import PULL_SCHEDULES, BakeConfig, bake_in_subprocess, load_index_tables
+
+OFFLINE_DRAPE_DIR = (
+    "/home/ge47gax/kun/newton-fmvp/exts/newton_isaaclab_tasks/newton_isaaclab_tasks/dressing/data/canonical_drape"
+)
+OFFLINE_MESH_DIR = "/home/ge47gax/kun/newton-fmvp/garments"
 
 
 @dataclass(frozen=True)
@@ -108,6 +113,8 @@ class CanonicalDrape:
     alignment_idx: np.ndarray
     socket_to_canonical: np.ndarray
     opening_radius_mean: float
+    source: str = "online"
+    """``online`` when libuipc baked it here, ``offline`` for Newton's pre-baked drape."""
 
     def place(self, cell_landmarks: dict[str, np.ndarray], *, clearance: float) -> tuple[np.ndarray, np.ndarray]:
         """Return the garment vertices and picker position placed on this arm."""
@@ -132,10 +139,24 @@ def available_garments(cfg: LiveCellConfig | None = None) -> list[str]:
 
 
 def load_drape(garment: str, cfg: LiveCellConfig | None = None, *, reuse: bool = True) -> CanonicalDrape:
-    """Drape one garment in libuipc, or reuse the cached result of an identical bake."""
+    """Drape one garment in libuipc, falling back to Newton's offline drape.
+
+    Three of the five raw meshes carry triangles that genuinely cross in the
+    canonical rest pose, which libuipc refuses and neither separating the layers
+    nor dropping the faces repairs. Those garments keep the offline drape, which
+    is the same geometry the previous pipeline used; the rest are baked here.
+    """
     cfg = cfg or LiveCellConfig()
     scale = (cfg.scales or {}).get(garment)
-    baked = bake_drape(garment, scale=scale, cfg=cfg.bake, reuse=reuse)
+    del reuse  # The bake is always cached by a content hash of its inputs.
+    try:
+        baked = bake_in_subprocess(garment, scale=scale, cfg=cfg.bake)
+        source = "online"
+    except RuntimeError as exc:
+        baked = load_offline_drape(garment, cfg)
+        if baked is None:
+            raise RuntimeError(f"{garment}: no online bake and no offline drape") from exc
+        source = "offline"
     return CanonicalDrape(
         garment=garment,
         scale=float(baked["scale"]),
@@ -148,7 +169,50 @@ def load_drape(garment: str, cfg: LiveCellConfig | None = None, *, reuse: bool =
         alignment_idx=baked["alignment_idx"],
         socket_to_canonical=baked["socket_to_canonical"],
         opening_radius_mean=float(baked["opening_radius_mean_m"]),
+        source=source,
     )
+
+
+def load_offline_drape(garment: str, cfg: LiveCellConfig | None = None) -> dict | None:
+    """Newton's pre-baked canonical drape for one garment, if it is on disk.
+
+    The npz holds the draped vertices plus one appended kinematic anchor; faces
+    come from the exported drape mesh, whose topology it shares.
+    """
+    from .dressing_bake import cuff_semantics
+
+    cfg = cfg or LiveCellConfig()
+    drape_dir = Path(OFFLINE_DRAPE_DIR)
+    mesh_dir = Path(OFFLINE_MESH_DIR)
+    tables = load_index_tables(cfg.bake.index_module)
+    for path in sorted(drape_dir.glob(f"{garment}__s*.npz")):
+        scale = float(path.stem.split("__s")[1])
+        mesh = mesh_dir / f"{garment}_final.obj"
+        if not mesh.exists():
+            continue
+        from .assets import load_obj
+
+        vertices, faces = load_obj(mesh)
+        with np.load(path, allow_pickle=True) as data:
+            cloth = np.asarray(data["particle_q"], dtype=np.float64)[: len(vertices)]
+            grasp = np.asarray(data["right_cuff_grasp_indices"], dtype=np.int64).reshape(-1)
+            opening = np.asarray(data["right_cuff_opening_indices"], dtype=np.int64).reshape(-1)
+            picker = np.asarray(data["right_cuff_picker_indices"], dtype=np.int64).reshape(-1)
+        alignment = np.asarray(tables.alignment_line_indices[garment], dtype=np.int64).reshape(-1)
+        semantics = cuff_semantics(cloth, opening, alignment)
+        return {
+            "garment": garment,
+            "scale": scale,
+            "cloth": cloth,
+            "faces": np.asarray(faces, dtype=np.int32),
+            "anchor": cloth[grasp].mean(axis=0),
+            "grasp_idx": grasp,
+            "picker_idx": picker[picker < len(vertices)],
+            "opening_idx": opening,
+            "alignment_idx": alignment,
+            **semantics,
+        }
+    return None
 
 
 class LiveCellFactory:

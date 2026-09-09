@@ -114,6 +114,13 @@ class BakeConfig:
     fem_preconditioner: str = "mas"
     sanity_check: bool = True
     max_clean_rounds: int = 6
+    min_bake_thickness: float = 1.0e-6
+    separation_step_m: float = 1.0e-3
+    """First displacement applied to vertices whose triangles cross at rest; it
+    doubles each repair round."""
+    """Floor for the automatic collision-radius reduction. Some raw meshes have two
+    parts passing within tens of micrometres; the radius is a modelling choice for
+    a garment-only bake, and IPC remains penetration-free at any radius."""
     """Rounds of dropping self-intersecting triangles from the canonical rest mesh.
     The raw meshes ship with a few tangled triangles in hem folds; the offline
     bake dropped them the same way, and they carry no cuff dynamics."""
@@ -223,36 +230,67 @@ def cuff_semantics(vertices: np.ndarray, opening_idx: np.ndarray, alignment_idx:
     }
 
 
+_REPORT_KINDS = (
+    ("intersected_mesh", "self-intersecting"),
+    ("close_mesh", "closer than the summed collision radius"),
+)
+
+
 def _obj_vertices(path: Path) -> np.ndarray:
-    """Vertices of an OBJ, tolerating meshes that carry edges but no triangles."""
-    points = []
-    for line in Path(path).read_text().splitlines():
-        parts = line.split()
-        if parts and parts[0] == "v":
-            points.append([float(x) for x in parts[1:4]])
+    """Vertices of an OBJ, tolerating a mesh that carries edges but no triangles."""
+    points = [
+        [float(x) for x in parts[1:4]]
+        for parts in (line.split() for line in Path(path).read_text().splitlines())
+        if parts and parts[0] == "v"
+    ]
     return np.asarray(points, dtype=np.float64).reshape(-1, 3)
 
 
-def drop_reported_faces(vertices: np.ndarray, faces: np.ndarray, reported_obj: Path) -> np.ndarray:
-    """Remove the faces libuipc flagged, matched back by vertex position.
+def separate_reported_vertices(
+    vertices: np.ndarray, faces: np.ndarray, reported_points: np.ndarray, step: float
+) -> np.ndarray:
+    """Push the flagged vertices apart along their own normals.
 
-    The sanity check writes either the self-intersecting triangles or the
-    too-close primitives as a standalone mesh whose vertices are copies of the
-    rest positions. Every source triangle touching one of those vertices is
-    dropped: for an intersection report that is the offending pair, and for an
-    edge-edge proximity report it is the sliver the near-duplicate seam forms.
-    The offline bake dropped the same tangled triangles, which carry no cuff
+    Two layers of fabric crossing in a hem fold have opposing surface normals,
+    so displacing each flagged vertex along its own normal separates them while
+    leaving the topology, and therefore every semantic index, untouched.
+    Dropping the faces instead leaves orphan vertices that libuipc's volume
+    check then rejects without a report of its own.
+    """
+    from .dressing_assets import vertex_normals
+
+    verts = np.asarray(vertices, dtype=np.float64).copy()
+    flagged = _match_reported(verts, reported_points)
+    normals = vertex_normals(verts, np.asarray(faces, dtype=np.int64))
+    index = np.array(sorted(flagged), dtype=np.int64)
+    verts[index] += normals[index] * float(step)
+    return verts
+
+
+def _match_reported(vertices: np.ndarray, reported_points: np.ndarray) -> set[int]:
+    """Source vertex indices for the points the sanity check reported."""
+    reported = np.asarray(reported_points, dtype=np.float64).reshape(-1, 3)
+    lookup = {tuple(np.round(p, 6)): i for i, p in enumerate(np.asarray(vertices, dtype=np.float64))}
+    flagged = {lookup[key] for key in (tuple(np.round(p, 6)) for p in reported) if key in lookup}
+    if not flagged:
+        raise RuntimeError("Could not map any reported point back to the source mesh")
+    return flagged
+
+
+def drop_reported_faces(vertices: np.ndarray, faces: np.ndarray, reported_points: np.ndarray) -> np.ndarray:
+    """Remove every source face touching a point the sanity check reported.
+
+    The checker hands back the offending primitives as a mesh whose vertices are
+    copies of the rest positions, so a rounded-position lookup maps them to
+    source vertices. Dropping the faces around them is what the offline bake did
+    with the few tangled triangles the raw meshes ship with; they carry no cuff
     dynamics.
     """
-    hit_v = _obj_vertices(reported_obj)
-    lookup = {tuple(np.round(p, 6)): i for i, p in enumerate(np.asarray(vertices, dtype=np.float64))}
-    flagged = {lookup[key] for key in (tuple(np.round(p, 6)) for p in hit_v) if key in lookup}
-    if not flagged:
-        raise RuntimeError(f"Could not map any vertex in {reported_obj} back to the source mesh")
+    flagged = _match_reported(vertices, reported_points)
     rows = np.asarray(faces, dtype=np.int64)
     keep = ~np.isin(rows, list(flagged)).any(axis=1)
     if not keep.any() or keep.all():
-        raise RuntimeError(f"Dropping the primitives reported in {reported_obj} would remove {'every' if not keep.any() else 'no'} face")
+        raise RuntimeError(f"Dropping the reported primitives would remove {'every' if not keep.any() else 'no'} face")
     return np.asarray(faces, dtype=np.int32)[keep]
 
 
@@ -314,20 +352,33 @@ def bake_drape(garment: str, *, scale: float | None = None, cfg: BakeConfig | No
     Logger.set_level(Logger.Level.Error)
     faces = np.asarray(faces, dtype=np.int32)
     dropped = 0
+    thickness = float(cfg.cloth_thickness)
     for attempt in range(int(cfg.max_clean_rounds) + 1):
         world_dir = workspace / f"world_{garment}_{attempt}"
         try:
-            built = _build_bake_world(world_dir, rest, faces, pin_idx, cfg, garment)
+            built = _build_bake_world(world_dir, rest, faces, pin_idx, cfg, garment, thickness=thickness)
             world, slot, state = built["world"], built["slot"], built["state"]
             break
-        except _RestIntersects as exc:
+        except _RestIllegal as exc:
             if attempt == int(cfg.max_clean_rounds):
                 raise RuntimeError(
-                    f"{garment}: the canonical rest mesh is still illegal after {attempt} cleaning rounds"
+                    f"{garment}: the canonical rest mesh is still illegal after {attempt} repair rounds ({exc})"
                 ) from exc
-            before = len(faces)
-            faces = drop_reported_faces(rest, faces, exc.intersected)
-            dropped += before - len(faces)
+            if exc.kind == "self-intersecting":
+                # Separate the crossing layers instead of cutting them out; the
+                # cut leaves orphan vertices the volume check then rejects.
+                separation = cfg.separation_step_m * (2.0**attempt)
+                rest = separate_reported_vertices(rest, faces, exc.points, separation)
+                dropped += 1
+            else:
+                # Two parts of the garment merely pass close by. The collision
+                # radius is a modelling choice, so shrink it rather than cut the
+                # mesh; IPC stays penetration-free at any radius.
+                if thickness <= cfg.min_bake_thickness:
+                    raise RuntimeError(
+                        f"{garment}: still too close at the minimum bake collision radius {thickness:g} m"
+                    ) from exc
+                thickness = max(cfg.min_bake_thickness, thickness / 4.0)
 
     t0 = time.time()
     step = (direction * schedule.distance_m) / pull_steps
@@ -351,20 +402,26 @@ def bake_drape(garment: str, *, scale: float | None = None, cfg: BakeConfig | No
         opening_idx=opening_idx,
         picker_idx=picker_idx,
         alignment_idx=alignment_idx,
-        config=json.dumps({"garment": garment, "scale": scale, "seconds": seconds, "dropped_faces": dropped, **cfg.to_dict()}),
+        config=json.dumps({"garment": garment, "scale": scale, "seconds": seconds, "repair_rounds": dropped, **cfg.to_dict()}),
     )
     return _drape_payload(garment, scale, drape, faces, grasp_idx, opening_idx, picker_idx, alignment_idx, cached, seconds)
 
 
-class _RestIntersects(RuntimeError):
-    """The canonical rest mesh is illegal; libuipc saved the offending primitives."""
+class _RestIllegal(RuntimeError):
+    """The canonical rest mesh is illegal, carrying the offending points.
 
-    def __init__(self, intersected: Path) -> None:
-        super().__init__(f"rest mesh self-intersects, see {intersected}")
-        self.intersected = intersected
+    ``kind`` separates the two causes, which need opposite repairs: triangles
+    that actually cross have to be dropped, while primitives that merely pass
+    within the summed collision radius only need a thinner radius.
+    """
+
+    def __init__(self, points: np.ndarray, kind: str, summary: str) -> None:
+        super().__init__(f"rest mesh is {kind}: {summary}")
+        self.points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+        self.kind = kind
 
 
-def _build_bake_world(world_dir: Path, rest, faces, pin_idx, cfg: "BakeConfig", garment: str):
+def _build_bake_world(world_dir: Path, rest, faces, pin_idx, cfg: "BakeConfig", garment: str, *, thickness: float):
     """Build a one-garment libuipc world; raise :class:`_RestIntersects` if the rest state is illegal."""
     import uipc
     from uipc import Logger, builtin, view
@@ -383,7 +440,7 @@ def _build_bake_world(world_dir: Path, rest, faces, pin_idx, cfg: "BakeConfig", 
     config["dt"] = cfg.dt
     config["gravity"] = [[g] for g in cfg.gravity]
     config["contact"]["d_hat"] = cfg.d_hat
-    config["sanity_check"]["enable"] = bool(cfg.sanity_check)
+    config["sanity_check"]["enable"] = int(bool(cfg.sanity_check))  # the config is JSON: a Python bool disables the check
     config["newton"]["velocity_tol"] = cfg.newton_tolerance
     config["newton"]["transrate_tol"] = cfg.newton_translation_tolerance
     config["line_search"]["max_iter"] = cfg.linesearch_iterations
@@ -398,12 +455,12 @@ def _build_bake_world(world_dir: Path, rest, faces, pin_idx, cfg: "BakeConfig", 
     stretch = ElasticModuli2D.youngs_poisson(cfg.cloth_youngs, cfg.cloth_poisson)
     if cfg.cloth_shear_ratio is None:
         StrainLimitingBaraffWitkinShell().apply_to(
-            mesh, stretch, cfg.cloth_density, cfg.cloth_thickness, cfg.cloth_strain_rate
+            mesh, stretch, cfg.cloth_density, thickness, cfg.cloth_strain_rate
         )
     else:
         shear = ElasticModuli2D.youngs_poisson(cfg.cloth_youngs * float(cfg.cloth_shear_ratio), cfg.cloth_poisson)
         StrainLimitingBaraffWitkinShell().apply_to(
-            mesh, stretch, shear, cfg.cloth_density, cfg.cloth_thickness, cfg.cloth_strain_rate
+            mesh, stretch, shear, cfg.cloth_density, thickness, cfg.cloth_strain_rate
         )
     DiscreteShellBending().apply_to(mesh, cfg.cloth_bending_stiffness)
     SoftPositionConstraint().apply_to(mesh, cfg.pin_strength)
@@ -423,14 +480,20 @@ def _build_bake_world(world_dir: Path, rest, faces, pin_idx, cfg: "BakeConfig", 
     slot = obj.geometries().create(mesh)[0]
     world.init(scene)
     if not world.is_valid():
-        # The sanity check writes its report mesh after init returns, so give the
-        # flush a moment before deciding there is nothing to clean.
-        for _ in range(20):
-            hits = sorted(Path(world_dir).glob("sanity_check/*/intersected_mesh.obj")) or sorted(
-                Path(world_dir).glob("sanity_check/*/close_mesh.obj")
-            )
-            if hits:
-                raise _RestIntersects(hits[-1])
+        # Prefer the checker's own report objects; they are empty on some builds,
+        # so fall back to the meshes it writes under this world's directory,
+        # polling because the flush lands after ``init`` returns.
+        for message in world.sanity_checker().errors().values():
+            geometries = message.geometries()
+            for key, kind in _REPORT_KINDS:
+                if key in geometries:
+                    points = np.asarray(uipc.view(geometries[key].positions()), dtype=np.float64).reshape(-1, 3)
+                    raise _RestIllegal(points, kind, str(message.message()).splitlines()[0])
+        for _ in range(50):
+            for key, kind in _REPORT_KINDS:
+                hits = sorted(Path(world_dir).glob(f"**/{key}.obj"))
+                if hits:
+                    raise _RestIllegal(_obj_vertices(hits[-1]), kind, f"see {hits[-1]}")
             time.sleep(0.1)
         raise RuntimeError(f"{garment}: the canonical rest mesh is not a valid libuipc scene")
     # Engine, world, scene and object must outlive this call or the backend expires.
@@ -453,3 +516,64 @@ def _drape_payload(garment, scale, drape, faces, grasp_idx, opening_idx, picker_
         "bake_seconds": float(seconds),
         **semantics,
     }
+
+
+def bake_in_subprocess(garment: str, *, scale: float | None = None, cfg: BakeConfig | None = None) -> dict:
+    """Bake one garment in a fresh interpreter, then load the cached result.
+
+    libuipc's sanity checker keeps state across worlds in one process, so a
+    second garment's repair round sees the previous garment's checks and fails
+    without a report. The offline tool ran one container per garment for the
+    same reason. Baking is a one-off per garment, and the result is cached by a
+    content hash of its inputs, so the process cost is paid once.
+    """
+    import subprocess
+    import sys
+
+    cfg = cfg or BakeConfig()
+    tables = load_index_tables(cfg.index_module)
+    scale = float(tables.cloth_scales[garment] if scale is None else scale)
+    cached = Path(cfg.workspace) / f"{garment}__s{scale:.4f}__{bake_key(garment, scale, cfg)}.npz"
+    if not cached.exists():
+        # The child changes directory, so every path it is handed must be absolute.
+        payload_cfg = cfg.to_dict()
+        for key in ("garment_dir", "index_module", "workspace"):
+            payload_cfg[key] = str(Path(payload_cfg[key]).resolve())
+        payload = json.dumps({"garment": garment, "scale": scale, "cfg": payload_cfg})
+        package_root = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join([str(package_root), env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
+        result = subprocess.run(
+            [sys.executable, "-m", "uipc_manip.dressing_bake", payload],
+            capture_output=True,
+            text=True,
+            cwd=str(package_root),
+            env=env,
+        )
+        if result.returncode != 0 or not cached.exists():
+            tail = (result.stderr or result.stdout or "").strip().splitlines()[-4:]
+            raise RuntimeError(f"{garment}: the drape bake subprocess failed\n" + "\n".join(tail))
+    return bake_drape(garment, scale=scale, cfg=cfg, reuse=True)
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Bake one garment described by a JSON payload; used by :func:`bake_in_subprocess`."""
+    import sys
+
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv:
+        raise SystemExit("usage: python -m uipc_manip.dressing_bake '{\"garment\": ..., \"scale\": ..., \"cfg\": {...}}'")
+    request = json.loads(argv[0])
+    fields = {f.name for f in BakeConfig.__dataclass_fields__.values()}
+    raw = {k: v for k, v in (request.get("cfg") or {}).items() if k in fields}
+    for key in ("garment_dir", "index_module", "workspace"):
+        if key in raw:
+            raw[key] = Path(raw[key])
+    if "gravity" in raw:
+        raw["gravity"] = tuple(raw["gravity"])
+    baked = bake_drape(request["garment"], scale=request.get("scale"), cfg=BakeConfig(**raw), reuse=True)
+    print(json.dumps({"garment": baked["garment"], "path": str(baked["path"]), "seconds": baked["bake_seconds"]}))
+
+
+if __name__ == "__main__":
+    main()
