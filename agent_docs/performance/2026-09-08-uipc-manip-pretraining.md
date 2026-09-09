@@ -1,6 +1,6 @@
 # 2026-09-08 — IPC manipulation pretraining throughput and task validation
 
-- Status: Accepted (baseline record, revised the same day for the batched world; no libuipc solver change)
+- Status: Historical baseline; see the [September 9 corrective audit](2026-09-09-dressing-correctness.md) for corrected interpretations and subsequent validation. No libuipc solver change.
 - Before commit: n/a, new package
 - After commit: `python/uipc_manip/` on `cloth-cable-manip-rl`
 - Benchmark manifest name and samples commit: n/a; this uses the package's own
@@ -357,11 +357,10 @@ final upper-arm ratio of at least 0.7.
 | Sleeve latched over the hand | 0.75 to 1.0 | the expert threads it |
 | Largest budget spent | 74,400 vector steps at 40 environments, 2.98M transitions, 72 hours | 50k transitions, 1.8 hours |
 
-So the reference reaches the same plateau this port reaches: the sleeve
-latches over the hand and then stalls a fifth to a third of the way up the
-arm. The scripted expert here, at 0.28, is inside the band of Newton's
-trained policies at horizon 900. That plateau is a property of the task as
-posed, not of the solver.
+These historical results do not establish a common plateau. They compare
+a scripted IPC expert with learned Newton policies on different cells and
+budgets. Similar ratios do not distinguish solver, grasp, policy, or task
+effects; a matched trajectory comparison is required.
 
 Newton's best upper-arm result came from its shortest-decision configuration,
 horizon 150 with decimation 6: the same 900 simulation steps per episode, but
@@ -426,11 +425,11 @@ transitions (35 environments):
 | regional teacher human 6, curriculum | 0.00 | 0.00 | | 0.00 | | 0.01 | 0.07 | | 0.45 |
 | five garments, eight humans, pure SAC | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 (0.52 once at 315k, then 0.00) | | | | |
 
-Every Newton run that later worked was at 0.00 through 280k transitions,
+The Newton runs tabulated in this scan were at 0.00 through 280k transitions,
 almost three times this port's largest budget, and the first non-zero
 evaluation came between 315k and 560k. The strict success rate of all of
-them is 0.000 except one multi-scene run at 0.057. At equal budget this
-port's zeros match the reference's own curves; the difference at 100k is
+them is 0.000 except one multi-scene run at 0.057. This comparison does not establish equal-budget equivalence across cells
+and training recipes; the difference at 100k is
 that the reference's per-transition cost is 4.4 times lower, so it reaches
 600k in the time this port reaches 140k.
 

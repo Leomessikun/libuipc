@@ -1443,3 +1443,15 @@ on the GPU with the scripted expert and a lowered filter; the paper's 0.7
 filter keeps nothing yet because no policy ends dressed. The Newton
 reference itself was compared on this machine: 4.4 times faster per
 transition and no better than one success in 40 after 2.98M transitions.
+
+Eighth pass (a Codex session working in the same tree, integrated here): six
+correctness fixes to the dressing port, recorded in
+`agent_docs/performance/2026-09-09-dressing-correctness.md`: overflowing
+observations no longer drop the garment, resume restores the saved
+experiment and refuses silent protocol changes, CSV logs keep their history
+and late columns, a failed simulator step aborts before polluting replay,
+evaluation covers every slot equally, and the curriculum budget counts only
+admitted transitions. `diagnose_dressing.py` records reproducible expert
+traces. Two of the earlier record's interpretations were withdrawn: the
+"solver-independent plateau" and the spring-period reading of the hold
+strength. GPU grasp measurements follow in the correctness record.

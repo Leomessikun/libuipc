@@ -5,8 +5,9 @@ solver. Each of the ``num_envs`` slots holds one pre-worn (garment, human)
 cell from the Newton bake cache; the human's right-arm mesh is a fixed rigid
 collider in Genesis, the garment is a native libuipc shell in its own IPC
 subscene, and a small patch of cuff vertices is held by a soft position
-constraint that follows the 6-D gripper action, translation and rotation,
-exactly as Newton's kinematic cuff grasp does. One libuipc world solves every
+constraint driven by the 6-D gripper action, translation and rotation.
+Unlike Newton's kinematic cuff pin, this penalty participates in the IPC
+contact solve and has measurable compliance. One libuipc world solves every
 slot together.
 
 The MDP follows the Wang RSS 2023 ``pointcloud_3`` preset that the Newton
@@ -27,7 +28,7 @@ from pathlib import Path
 import numpy as np
 
 from .dressing_assets import DressingCache, DressingCacheConfig, DressingCell, erode_arm_mesh, write_obj
-from .dressing_obs import DressingObsConfig, DressingObservationBuilder
+from .dressing_obs import DressingObsConfig, DressingObservationBuilder, sample_segmented_cloud
 from .dressing_reward import early_turn, WangRewardConfig, opening_threaded, wang_progress
 from .genesis_env import ViewerClosed, _ensure_genesis
 from .obs import FEATURE_DIM, FLAG_DEFORMABLE, FLAG_MARKER, ObsSpec
@@ -50,9 +51,11 @@ class DressingConfig:
     no_move_collision_threshold: float = 0.012
     point_budget: int = 768
     anchor_count: int = 12
-    constraint_strength: float = 1.0e4  # strength_rate: spring stiffness is this times the vertex mass
+    constraint_strength: float = 1.0e4
     """Soft position constraint strength of the anchored cuff vertices. Newton's FMVP preset pins
-    its 12 picker-patch particles kinematically; a weak hold (3) let the 0.5 kg/m^2 garment fall."""
+    its 12 picker-patch particles kinematically; a weak hold (3) let the 0.5 kg/m^2 garment fall.
+    The dimensionless strength multiplies vertex mass in the incremental energy;
+    equivalent physical spring stiffness is strength * mass / dt**2."""
     arm_erosion_m: float = 0.006
     friction: float = 0.3
     contact_resistance: float = 1e7
@@ -153,6 +156,7 @@ class GenesisIPCDressingEnv:
 
     action_dim = 6
     metric_keys = ("upperarm_ratio", "forearm_ratio", "threaded", "task_reward")
+    grasp_tracking_tolerance_m = 0.02
 
     def __init__(self, cfg: DressingConfig, num_envs: int = 1) -> None:
         if int(num_envs) < 1:
@@ -328,6 +332,10 @@ class GenesisIPCDressingEnv:
         picker = self._pickers[i]
         return float(np.linalg.norm(positions[i][picker["anchor_idx"]] - picker["targets"], axis=1).max())
 
+    def _actual_tcp(self, i: int, positions: list[np.ndarray]) -> np.ndarray:
+        """Least-squares tool translation implied by the held patch at its commanded orientation."""
+        return (positions[i][self._pickers[i]["anchor_idx"]] - self._offsets[i]).mean(axis=0)
+
     def _sim_step(self) -> None:
         try:
             self.scene.step()
@@ -400,6 +408,7 @@ class GenesisIPCDressingEnv:
         rotation = a[:, 3:] * cfg.max_rotation
         if cfg.clip_rotation_to_yz:
             rotation[:, 0] = 0.0
+        tracking_max = np.zeros(n, dtype=np.float64)
         try:
             for _ in range(cfg.action_repeat):
                 for i, cell in enumerate(self.cells):
@@ -410,6 +419,8 @@ class GenesisIPCDressingEnv:
                         self._anchor[i] = candidate
                 self._update_targets()
                 self._sim_step()
+                substep_positions = self.positions()
+                tracking_max = np.maximum(tracking_max, [self._tracking_error(i, substep_positions) for i in range(n)])
             self._check_world()
         except ViewerClosed:
             raise
@@ -426,9 +437,12 @@ class GenesisIPCDressingEnv:
         infos = []
         for i, (cell, pr, p) in enumerate(zip(self.cells, progress, positions, strict=True)):
             threaded, _ = opening_threaded(p, cell.opening_idx, cell.finger, cell.shoulder)
+            grasp_valid = bool(tracking_max[i] <= self.grasp_tracking_tolerance_m)
             infos.append(
                 {
                     "success": bool(pr.upperarm_ratio >= cfg.reward.success_upperarm_ratio),
+                    "grasp_valid": grasp_valid,
+                    "valid_grasp_success": bool(grasp_valid and pr.upperarm_ratio >= cfg.reward.success_upperarm_ratio),
                     "distance": float(1.0 - pr.upperarm_ratio),
                     "upperarm_ratio": float(pr.upperarm_ratio),
                     "forearm_ratio": float(pr.forearm_ratio),
@@ -437,7 +451,9 @@ class GenesisIPCDressingEnv:
                     "on_forearm": bool(pr.on_forearm),
                     "on_upperarm": bool(pr.on_upperarm),
                     "collision": float(pr.collision),
-                    "tracking_error": self._tracking_error(i, positions),
+                    "tracking_error": float(tracking_max[i]),
+                    "final_tracking_error": self._tracking_error(i, positions),
+                    "tool_translation_error": float(np.linalg.norm(self._actual_tcp(i, positions) - self._anchor[i])),
                     "early_turn": early_turn(self._anchor[i], cell.finger, cell.elbow, cell.shoulder),
                     "garment": cell.garment,
                     "episode_step": int(self._episode_step),
@@ -457,9 +473,7 @@ class GenesisIPCDressingEnv:
         budget = self.spec.deformable_budget
         for i, (cell, p) in enumerate(zip(self.cells, positions, strict=True)):
             arm, cloth = self._obs_builder.visible_points(cell.arm_points, p, cell.finger, cell.shoulder, self.rngs[i], self.cfg.augment_obs)
-            if arm.shape[0] + cloth.shape[0] > budget:
-                cloth = cloth[: max(0, budget - arm.shape[0])]
-                arm = arm[:budget]
+            arm, cloth = sample_segmented_cloud(arm, cloth, budget, self.rngs[i])
             tool = self._anchor[i]
             pts = np.concatenate([arm, cloth], axis=0) - tool[None, :]
             flags = np.zeros((pts.shape[0], FEATURE_DIM), dtype=np.float32)
@@ -485,7 +499,7 @@ class GenesisIPCDressingEnv:
         return [
             {
                 "positions": p,
-                "tcp": self._anchor[i].copy(),
+                "tcp": self._actual_tcp(i, positions),
                 "tcp_cmd": self._anchor[i].copy(),
                 "goal": cell.shoulder.copy(),
                 "marker_centroid": p[cell.opening_idx].mean(axis=0),
@@ -517,6 +531,7 @@ class GenesisIPCDressingEnv:
             "build_seconds": float(self.build_seconds),
             "settle_displacement_m": float(self.settle_displacement),
             "snapshot_tracking_error_m": float(self.snapshot_tracking_error),
+            "grasp_tracking_tolerance_m": float(self.grasp_tracking_tolerance_m),
         }
 
     def close(self) -> None:

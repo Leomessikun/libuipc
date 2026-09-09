@@ -18,12 +18,13 @@ seeds.
 from __future__ import annotations
 
 import json
+import sys
 import time
 from pathlib import Path
 
 import numpy as np
 
-from .train_sac import build_parser, make_env, resolve_defaults
+from .train_sac import build_parser, make_env, resolve_defaults, restore_resume_args
 
 
 class EpisodeCollector:
@@ -127,7 +128,20 @@ def add_collection_args(parser):
 
 def main(argv: list[str] | None = None) -> None:
     parser = add_collection_args(build_parser())
+    argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(argv)
+    payload = None
+    if args.checkpoint is not None:
+        from .sac import SACAgent
+
+        payload = SACAgent.read_checkpoint(args.checkpoint)
+        # Collection is policy playback: inherit the teacher's environment by
+        # default while allowing explicitly requested evaluation variants.
+        args.eval_only = True
+        restore_resume_args(args, argv, payload)
+        saved_task = payload.get("metadata", {}).get("task")
+        if saved_task is not None and saved_task != args.task:
+            raise ValueError(f"Checkpoint task {saved_task!r} does not match collection task {args.task!r}")
     resolve_defaults(args)
     np.random.seed(args.seed)
     run_name = args.run_name or f"rollouts_{args.task}_{args.policy if args.checkpoint is None else 'sac'}_seed{args.seed}"
@@ -144,7 +158,6 @@ def main(argv: list[str] | None = None) -> None:
         from .sac import SACAgent, SACConfig
 
         torch.manual_seed(args.seed)
-        payload = SACAgent.read_checkpoint(args.checkpoint)
         cfg = SACConfig.from_dict(payload["sac_config"])
         agent = SACAgent(ObsSpec(args.point_budget), env.action_dim, cfg, args.device)
         agent.load(args.checkpoint, load_optimizers=False)

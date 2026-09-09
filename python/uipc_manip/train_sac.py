@@ -16,8 +16,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 import time
-from dataclasses import replace
+from dataclasses import fields, is_dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -55,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--settle-steps", type=int, default=40)
     p.add_argument("--vis", action="store_true", help="Open the Genesis viewer (forces a single environment).")
     p.add_argument("--policy", choices=("sac", "heuristic", "random"), default="sac")
-    p.add_argument("--total-transitions", type=int, default=20_000)
+    p.add_argument("--total-transitions", type=int, default=20_000, help="Additional transitions admitted to replay (including on resume); curriculum-excluded slots do not consume this budget.")
     p.add_argument("--init-steps", type=int, default=0, help="Vector steps of uniform random actions before the policy acts.")
     p.add_argument("--updates-per-step", type=int, default=0, help="Gradient updates per vector step; 0 = one per collected transition.")
     p.add_argument("--batch-size", type=int, default=64)
@@ -101,6 +102,83 @@ def resolve_defaults(args) -> None:
         args.point_budget = 768 if args.task == "dressing" else 256
 
 
+def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
+    """Restore the saved experiment before constructing the simulator or agent.
+
+    An explicit incompatible option is an error on training continuation; playback
+    may override environment settings, but must still match the network protocol.
+    Older checkpoints recover the launcher fields present in their env metadata.
+    """
+    explicit = {token.split("=", 1)[0][2:].replace("-", "_") for token in argv if token.startswith("--")}
+    metadata = payload.get("metadata", {})
+    saved = dict(metadata.get("training_args", {}))
+    env = metadata.get("env", {})
+    args._resume_env = env
+    args._explicit_options = sorted(explicit)
+    saved.update({key: env[key] for key in ("human", "garments", "horizon", "action_repeat", "point_budget", "anchor_count") if key in env})
+    if "constraint_strength" in env and metadata.get("task") == "dressing":
+        saved["cuff_strength"] = env["constraint_strength"]
+    if "augment_obs" in env:
+        saved["no_obs_augment"] = not env["augment_obs"]
+    if metadata.get("task") != "dressing":
+        saved.update({key: env[key] for key in ("max_translation", "friction", "settle_steps") if key in env})
+    saved.update({key: metadata[key] for key in ("task", "seed", "num_envs") if key in metadata})
+    cfg = SACConfig.from_dict(payload["sac_config"])
+    cfg_names = {"actor": "actor_type", "point_jitter": "point_jitter_scale", "grad_clip_max_norm": "grad_clip_max_norm"}
+    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v"):
+        cfg_names[key] = key
+    saved.update({key: getattr(cfg, name) for key, name in cfg_names.items()})
+    saved.update(encoder=cfg.encoder.kind, sa_neighbors=cfg.encoder.sa_neighbors)
+    network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "sa_neighbors", "algo", "num_bins", "min_v", "max_v"}
+    for key, value in saved.items():
+        if not hasattr(args, key):
+            continue
+        current = getattr(args, key)
+        if key in explicit:
+            matches = list(current) == list(value) if isinstance(current, (list, tuple)) and isinstance(value, (list, tuple)) else current == value
+            if (not args.eval_only or key in network_keys) and not matches:
+                raise ValueError(f"Checkpoint requires saved --{key.replace('_', '-')}={value!r}; got {current!r}")
+        else:
+            setattr(args, key, value)
+    return cfg
+
+
+def restore_env_config(cfg, args):
+    """Retain saved physics/reward/camera fields even when they have no CLI flag."""
+    saved = getattr(args, "_resume_env", None)
+    if not saved:
+        return cfg
+    aliases = {"constraint_strength": "cuff_strength", "augment_obs": "no_obs_augment"}
+    explicit = set(getattr(args, "_explicit_options", ()))
+
+    def restore(current, data, top_level=False):
+        values = {}
+        for field in fields(current):
+            name = field.name
+            if name not in data or (top_level and (name in {"show_viewer", "logging_level", "workspace", "seed"} or aliases.get(name, name) in explicit)):
+                continue
+            before, value = getattr(current, name), data[name]
+            if is_dataclass(before):
+                value = restore(before, value)
+            elif isinstance(before, Path):
+                value = Path(value)
+            elif isinstance(before, tuple):
+                value = tuple(value)
+            values[name] = value
+        return replace(current, **values)
+
+    return restore(cfg, saved, top_level=True)
+
+
+def validate_resume_replay(payload: dict, replay_metadata: dict) -> None:
+    if int(replay_metadata.get("step", -1)) != int(payload["step"]):
+        raise ValueError("Resume replay must come from the same checkpoint step")
+    saved_scale = payload.get("metadata", {}).get("reward_scale")
+    replay_scale = replay_metadata.get("reward_scale")
+    if saved_scale is not None and replay_scale is not None and saved_scale != replay_scale:
+        raise ValueError("Resume replay reward scale does not match the checkpoint")
+
+
 def build_sac_config(args) -> SACConfig:
     """The reference SAC settings with the horizon-equivalent discount and temperature learning rate."""
     discount = wang_equivalent_discount(args.horizon) if args.discount is None else float(args.discount)
@@ -143,8 +221,8 @@ def make_env(args):
             augment_obs=not args.no_obs_augment,
             show_viewer=bool(args.vis),
         )
-        return GenesisIPCDressingEnv(cfg, num_envs=args.num_envs)
-    return GenesisIPCManipEnv(env_config(args), num_envs=args.num_envs)
+        return GenesisIPCDressingEnv(restore_env_config(cfg, args), num_envs=args.num_envs)
+    return GenesisIPCManipEnv(restore_env_config(env_config(args), args), num_envs=args.num_envs)
 
 
 def env_config(args) -> EnvConfig:
@@ -167,6 +245,14 @@ def heuristic_actions(obs: np.ndarray, spec: ObsSpec, max_translation: float) ->
 
 def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Path | None = None) -> dict:
     """Play deterministic episodes and report success and distance statistics."""
+    if episodes < 1:
+        raise ValueError("Evaluation requires at least one episode")
+    requested_episodes = episodes
+    # Fixed garment slots must each contribute equally, including when the
+    # requested count is smaller than the vector width or failures finish early.
+    episodes_per_slot = int(np.ceil(episodes / env.num_envs))
+    episodes = episodes_per_slot * env.num_envs
+    slot_finished = np.zeros(env.num_envs, dtype=np.int64)
     obs = env.reset([args.seed * 1000 + i for i in range(env.num_envs)])
     finished: list[dict] = []
     returns = np.zeros(env.num_envs)
@@ -206,8 +292,9 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
                     running_max[k][i] = -np.inf
                 if "garment" in info:
                     record["garment"] = str(info["garment"])
-                if len(finished) < episodes:
+                if slot_finished[i] < episodes_per_slot:
                     finished.append(record)
+                    slot_finished[i] += 1
                     if trajectories is not None:
                         static = None
                         if hasattr(env, "arm_vertices"):
@@ -221,6 +308,7 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
                     trajectories[i] = []
     distances = np.array([r["distance"] for r in finished])
     summary = {
+        "requested_episodes": requested_episodes,
         "episodes": len(finished),
         "success_rate": float(np.mean([r["success"] for r in finished])),
         "mean_final_distance": float(np.nanmean(distances)),
@@ -236,7 +324,11 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
     garments = sorted({r["garment"] for r in finished if "garment" in r})
     for g in garments:
         rows = [r for r in finished if r.get("garment") == g]
+        summary[f"episodes_{g}"] = len(rows)
         summary[f"success_rate_{g}"] = float(np.mean([r["success"] for r in rows]))
+        for k in metric_keys:
+            summary[f"mean_final_{k}_{g}"] = float(np.nanmean([r[f"final_{k}"] for r in rows]))
+            summary[f"mean_max_{k}_{g}"] = float(np.nanmean([r[f"max_{k}"] for r in rows]))
     summary["records"] = finished
     return summary
 
@@ -292,8 +384,22 @@ class CsvLogger:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._fields: list[str] | None = None
+        if self.path.exists() and self.path.stat().st_size:
+            with self.path.open(newline="") as handle:
+                self._fields = next(csv.reader(handle))
 
     def log(self, row: dict) -> None:
+        new_fields = [key for key in row if self._fields is not None and key not in self._fields]
+        if new_fields:
+            with self.path.open(newline="") as handle:
+                previous = list(csv.DictReader(handle))
+            self._fields.extend(new_fields)
+            temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+            with temporary.open("w", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=self._fields)
+                writer.writeheader()
+                writer.writerows(previous)
+            temporary.replace(self.path)
         if self._fields is None:
             self._fields = list(row)
             with self.path.open("w", newline="") as handle:
@@ -305,7 +411,19 @@ class CsvLogger:
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
     args = build_parser().parse_args(argv)
+    payload = None
+    saved_sac_cfg = None
+    if args.resume_replay and not args.resume:
+        raise ValueError("--resume-replay requires --resume")
+    if args.resume:
+        from .sac import SACAgent
+
+        payload = SACAgent.read_checkpoint(args.resume)
+        saved_sac_cfg = restore_resume_args(args, argv, payload)
+        if not args.eval_only and not args.resume_replay:
+            raise ValueError("Training continuation requires --resume-replay from the same checkpoint step")
     if args.vis:
         args.num_envs = 1
     np.random.seed(args.seed)
@@ -339,7 +457,7 @@ def main(argv: list[str] | None = None) -> None:
         from .sac import SACAgent
 
         torch.manual_seed(args.seed)
-        sac_cfg = build_sac_config(args)
+        sac_cfg = saved_sac_cfg if saved_sac_cfg is not None else build_sac_config(args)
         agent = SACAgent(spec, env.action_dim, sac_cfg, args.device)
         if args.resume:
             payload = agent.load(args.resume, load_optimizers=not args.eval_only)
@@ -368,12 +486,12 @@ def main(argv: list[str] | None = None) -> None:
     from .replay import FlatReplayBuffer
 
     replay = FlatReplayBuffer(env.obs_dim, env.action_dim, args.replay_capacity, args.batch_size, args.device)
-    reward_scale = wang_equivalent_reward_scale(agent.cfg.discount)
+    reward_scale = float(payload.get("metadata", {}).get("reward_scale", wang_equivalent_reward_scale(agent.cfg.discount))) if payload is not None else wang_equivalent_reward_scale(agent.cfg.discount)
     start_step = 0
     if args.resume:
-        start_step = int(agent.read_checkpoint(args.resume)["step"])
+        start_step = int(payload["step"])
         if args.resume_replay:
-            replay.load(args.resume_replay)
+            validate_resume_replay(payload, replay.load(args.resume_replay))
     metadata = {
         "task": args.task,
         "env": description["config"],
@@ -381,14 +499,17 @@ def main(argv: list[str] | None = None) -> None:
         "reward_scale": reward_scale,
         "seed": args.seed,
         "num_envs": env.num_envs,
+        "training_args": {key: getattr(args, key) for key in (
+            "garment_curriculum_interval", "garment_curriculum_order", "updates_per_step", "replay_capacity", "init_steps",
+        )},
     }
     (run_dir / "config.json").write_text(json.dumps({"args": vars(args), **metadata}, indent=2) + "\n")
     logger = CsvLogger(run_dir / "train_log.csv")
     eval_logger = CsvLogger(run_dir / "eval_log.csv")
-    total_vector_steps = int(np.ceil(args.total_transitions / env.num_envs))
+    target_transitions = replay.total_added + args.total_transitions
     print(
         f"[uipc-manip] discount={agent.cfg.discount:.6f} alpha_lr={agent.cfg.alpha_lr:.2e} reward_scale={reward_scale:.3f} "
-        f"vector_steps={total_vector_steps}",
+        f"additional_replay_transitions={args.total_transitions}",
         flush=True,
     )
 
@@ -403,18 +524,24 @@ def main(argv: list[str] | None = None) -> None:
 
     obs = env.reset(seeds)
     episode_return = np.zeros(env.num_envs)
-    updates_started = False
+    updates_started = agent.updates > 0
     best_score = None
     recent_returns: list[float] = []
     recent_success: list[float] = []
     t_start = time.time()
     stats: dict = {}
-    for vector_step in range(start_step + 1, start_step + total_vector_steps + 1):
+    vector_step = start_step
+    while replay.total_added < target_transitions:
+        vector_step += 1
         if vector_step <= args.init_steps:
             actions = np.random.uniform(-1.0, 1.0, size=(env.num_envs, env.action_dim)).astype(np.float32)
         else:
             actions = agent.act(obs, deterministic=False).astype(np.float32)
         next_obs, rewards, dones, infos = env.step(actions)
+        if any(info.get("sim_error") for info in infos):
+            env.close()
+            raise RuntimeError("Simulator failed during training; invalid transitions were excluded. "
+                               + str(next(info.get("error", "") for info in infos if info.get("sim_error"))))
         stage = garment_curriculum_stage(vector_step, interval=curriculum_interval, garment_count=max(1, len(order)))
         if stage != active_garments:
             active_garments = stage
@@ -452,6 +579,8 @@ def main(argv: list[str] | None = None) -> None:
             row = {
                 "step": vector_step,
                 "transitions": replay.total_added,
+                "simulated_transitions": vector_step * env.num_envs,
+                "simulated_steps": vector_step * env.num_envs * args.action_repeat,
                 "updates": agent.updates,
                 "elapsed_s": round(elapsed, 1),
                 "episode_return": float(np.mean(recent_returns[-20:])) if recent_returns else float("nan"),
@@ -463,11 +592,12 @@ def main(argv: list[str] | None = None) -> None:
             print("[uipc-manip] " + " ".join(f"{k}={v}" for k, v in row.items()), flush=True)
         do_eval = args.eval_freq > 0 and vector_step % args.eval_freq == 0
         do_ckpt = args.checkpoint_interval > 0 and vector_step % args.checkpoint_interval == 0
-        if do_eval or do_ckpt or vector_step == start_step + total_vector_steps:
+        finished_budget = replay.total_added >= target_transitions
+        if do_eval or do_ckpt or finished_budget:
             ckpt_dir = run_dir / "checkpoints"
             path = agent.save(ckpt_dir / f"checkpoint_{vector_step:07d}.pt", vector_step, metadata)
-            replay.save(ckpt_dir / f"replay_{vector_step:07d}", metadata={"step": vector_step})
-            if do_eval or vector_step == start_step + total_vector_steps:
+            replay.save(ckpt_dir / f"replay_{vector_step:07d}", metadata={"step": vector_step, "reward_scale": reward_scale})
+            if do_eval or finished_budget:
                 agent.train(False)
                 metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir)
                 agent.train(True)

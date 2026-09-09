@@ -348,6 +348,9 @@ class SACAgent:
                 f"Checkpoint protocol {json.dumps(payload['protocol'], sort_keys=True)} does not match "
                 f"{json.dumps(self.protocol(), sort_keys=True)}"
             )
+        if load_optimizers and SACConfig.from_dict(payload["sac_config"]).to_dict() != self.cfg.to_dict():
+            raise ValueError("Training resume requires the saved SACConfig; restoring optimizers with a different "
+                             "discount, reward protocol, or learning rate would silently mix experiments")
         self.actor.load_state_dict(payload["actor"])
         self.critic.load_state_dict(payload["critic"])
         self.critic_target.load_state_dict(payload["critic_target"])

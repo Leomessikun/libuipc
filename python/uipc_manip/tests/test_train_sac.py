@@ -1,0 +1,160 @@
+"""CPU regression tests for experiment continuation and unbiased evaluation."""
+
+import csv
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+pytest.importorskip("torch")
+
+from uipc_manip.dressing_env import DressingConfig
+from uipc_manip.obs import ObsSpec
+from uipc_manip.sac import SACConfig
+from uipc_manip.train_sac import (
+    CsvLogger,
+    build_parser,
+    evaluate,
+    resolve_defaults,
+    restore_env_config,
+    restore_resume_args,
+    validate_resume_replay,
+)
+
+
+def _checkpoint():
+    env = DressingConfig(horizon=150, action_repeat=6, constraint_strength=100.0)
+    env.reward.upper_w = 7.0
+    env.obs.pose_jitter_m = 0.08
+    return {
+        "step": 20,
+        "sac_config": SACConfig(discount=0.99, alpha_lr=3e-5, init_temperature=0.0167).to_dict(),
+        "metadata": {
+            "task": "dressing", "env": env.to_dict(), "reward_scale": 1.0,
+            "training_args": {"garment_curriculum_interval": 50},
+        },
+    }
+
+
+def test_resume_recovers_timing_reward_camera_and_temperature():
+    args = build_parser().parse_args([])
+    cfg = restore_resume_args(args, [], _checkpoint())
+    resolve_defaults(args)
+    assert (args.horizon, args.action_repeat) == (150, 6)
+    assert args.garment_curriculum_interval == 50
+    assert cfg.alpha_lr == 3e-5 and cfg.init_temperature == 0.0167
+    env_cfg = restore_env_config(DressingConfig(), args)
+    assert env_cfg.constraint_strength == 100.0
+    assert env_cfg.reward.upper_w == 7.0
+    assert env_cfg.obs.pose_jitter_m == 0.08
+    assert env_cfg.cache.cache_path.exists()
+
+
+def test_resume_rejects_silent_protocol_change_but_eval_allows_explicit_timing():
+    argv = ["--horizon", "900"]
+    with pytest.raises(ValueError, match="horizon"):
+        restore_resume_args(build_parser().parse_args(argv), argv, _checkpoint())
+    argv += ["--eval-only"]
+    args = build_parser().parse_args(argv)
+    restore_resume_args(args, argv, _checkpoint())
+    assert restore_env_config(DressingConfig(horizon=args.horizon), args).horizon == 900
+    argv += ["--encoder", "transformer"]
+    with pytest.raises(ValueError, match="encoder"):
+        restore_resume_args(build_parser().parse_args(argv), argv, _checkpoint())
+
+
+def test_resume_checks_replay_step_and_reward_scale():
+    validate_resume_replay(_checkpoint(), {"step": 20})  # legacy snapshots
+    with pytest.raises(ValueError, match="step"):
+        validate_resume_replay(_checkpoint(), {"step": 19})
+    with pytest.raises(ValueError, match="reward scale"):
+        validate_resume_replay(_checkpoint(), {"step": 20, "reward_scale": 1 / 6})
+
+
+def test_csv_preserves_history_and_late_optimizer_metrics(tmp_path):
+    path = tmp_path / "train.csv"
+    logger = CsvLogger(path)
+    logger.log({"step": 1, "transitions": 20})
+    logger.log({"step": 2, "transitions": 40, "alpha": 0.1})
+    CsvLogger(path).log({"step": 3, "transitions": 60, "actor_loss": 1.2})
+    with path.open() as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["step"] for row in rows] == ["1", "2", "3"]
+    assert rows[1]["alpha"] == "0.1" and rows[2]["actor_loss"] == "1.2"
+
+
+class UnequalEpisodeEnv:
+    num_envs = 3
+    metric_keys = ("forearm_ratio", "upperarm_ratio")
+
+    def reset(self, seeds):
+        self.step_count = 0
+        return np.zeros((3, 1))
+
+    def step(self, actions):
+        self.step_count += 1
+        # The failing first slot resets every step; it must not dominate the
+        # estimate or crowd the harder/longer garment out of the evaluation.
+        dones = np.array([True, self.step_count % 2 == 0, self.step_count % 3 == 0])
+        infos = [
+            {"success": i == 2, "distance": 1 - i / 2, "garment": f"garment_{i}",
+             "forearm_ratio": i / 2, "upperarm_ratio": i / 2}
+            for i in range(3)
+        ]
+        return np.zeros((3, 1)), np.zeros(3), dones, infos
+
+
+@pytest.mark.parametrize("requested, actual", [(1, 3), (4, 6)])
+def test_evaluation_covers_each_slot_equally(requested, actual):
+    result = evaluate(UnequalEpisodeEnv(), lambda obs, deterministic: obs, ObsSpec(3), SimpleNamespace(seed=0), requested)
+    assert result["requested_episodes"] == requested and result["episodes"] == actual
+    assert result["success_rate"] == pytest.approx(1 / 3)
+    assert result["mean_final_forearm_ratio"] == pytest.approx(0.5)
+    for i in range(3):
+        assert result[f"episodes_garment_{i}"] == actual // 3
+
+
+def test_training_budget_counts_only_admitted_curriculum_samples(monkeypatch, tmp_path):
+    from uipc_manip import sac, train_sac
+
+    class Agent:
+        def __init__(self, spec, action_dim, cfg, device):
+            self.cfg, self.updates = cfg, 0
+
+        def act(self, obs, deterministic):
+            return np.zeros((3, 1))
+
+        def train(self, training):
+            pass
+
+        def save(self, path, step, metadata):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return path
+
+    class Env:
+        num_envs, obs_dim, action_dim = 3, 1, 1
+        descriptions = [{"garment": g, "config": {}, "build_seconds": 0, "settle_displacement_m": 0}
+                        for g in ("tshirt_26", "tshirt_392", "tshirt_68")]
+        count = 0
+
+        def reset(self, seeds):
+            return np.zeros((3, 1))
+
+        def step(self, actions):
+            self.count += 1
+            return np.zeros((3, 1)), np.ones(3), np.ones(3, dtype=bool), [{"success": False}] * 3
+
+        def close(self):
+            pass
+
+    env = Env()
+    monkeypatch.setattr(sac, "SACAgent", Agent)
+    monkeypatch.setattr(train_sac, "make_env", lambda args: env)
+    monkeypatch.setattr(train_sac, "evaluate", lambda *a, **kw: {"success_rate": 0, "mean_final_distance": 1, "mean_return": 0})
+    train_sac.main(["--num-envs", "3", "--total-transitions", "6", "--garment-curriculum-interval", "100",
+                    "--point-budget", "3", "--replay-capacity", "10", "--device", "cpu", "--log-interval", "1",
+                    "--eval-freq", "0", "--checkpoint-interval", "0", "--work-dir", str(tmp_path)])
+    assert env.count == 6  # Only the first garment's slot writes to replay.
+    with (tmp_path / "dressing_sac_seed1" / "train_log.csv").open() as handle:
+        last = list(csv.DictReader(handle))[-1]
+    assert int(last["transitions"]) == 6 and int(last["simulated_transitions"]) == 18

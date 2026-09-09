@@ -34,6 +34,38 @@ class DressingObsConfig:
     dropout_radius_m: float = 0.06
 
 
+def sample_segmented_cloud(
+    arm: np.ndarray, cloth: np.ndarray, budget: int, rng: np.random.Generator
+) -> tuple[np.ndarray, np.ndarray]:
+    """Uniformly subsample each segment without discarding the garment.
+
+    Voxel centroids are spatially sorted, so prefix truncation hides one side
+    of the scene. Allocate proportionally, retaining both nonempty segments
+    when at least two points fit. A one-point budget prioritizes the cloth.
+    Clouds that already fit are returned unchanged and consume no randomness.
+    """
+    if budget < 1:
+        raise ValueError("The cloud budget must be positive")
+    n_arm, n_cloth = len(arm), len(cloth)
+    if n_arm + n_cloth <= budget:
+        return arm, cloth
+    if n_arm and n_cloth:
+        keep_cloth = min(n_cloth, max(1, round(budget * n_cloth / (n_arm + n_cloth))))
+        if budget > 1:
+            keep_cloth = min(keep_cloth, budget - 1)
+        keep_arm = min(n_arm, budget - keep_cloth)
+        keep_cloth = min(n_cloth, budget - keep_arm)
+    else:
+        keep_arm, keep_cloth = min(n_arm, budget), min(n_cloth, budget)
+
+    def sample(points, count):
+        if count == len(points):
+            return points
+        return points[rng.choice(len(points), size=count, replace=False)]
+
+    return sample(arm, keep_arm), sample(cloth, keep_cloth)
+
+
 def voxel_downsample_torch(pts: torch.Tensor, voxel_size: float) -> torch.Tensor:
     if pts.numel() == 0:
         return pts.new_zeros((0, 3))
