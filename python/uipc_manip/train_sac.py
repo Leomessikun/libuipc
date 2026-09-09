@@ -265,7 +265,11 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
     episodes_per_slot = int(np.ceil(episodes / env.num_envs))
     episodes = episodes_per_slot * env.num_envs
     slot_finished = np.zeros(env.num_envs, dtype=np.int64)
-    obs = env.reset([args.seed * 1000 + i for i in range(env.num_envs)])
+    # A fresh seed block per round: the physics and the deterministic actor repeat
+    # exactly, so reusing one block makes every round the same observation noise.
+    seed_base = args.seed * 1000 + 97 * int(getattr(args, "_eval_round", 0))
+    args._eval_round = int(getattr(args, "_eval_round", 0)) + 1
+    obs = env.reset([seed_base + i for i in range(env.num_envs)])
     finished: list[dict] = []
     returns = np.zeros(env.num_envs)
     max_tracking = np.zeros(env.num_envs)
@@ -383,10 +387,18 @@ def _hold_viewer(env, text: str) -> None:
 
 
 def checkpoint_score(metrics: dict) -> tuple:
-    """Lexicographic selection key: FMVP's final-ratio success first, then how far the arm was dressed."""
+    """Lexicographic selection key, led by the continuous dressed ratio.
+
+    FMVP's own criterion is a threshold on the final upper-arm ratio, but with a
+    handful of episodes per cell the thresholded rate is a coarse, high-variance
+    statistic: a run whose best evaluation scored 0.50 had one garment finish at
+    0.7528 against a 0.70 threshold, and the next evaluation's 0.00 was the same
+    garment at 0.4541. Ranking the ratio first makes the selection track the
+    quantity that actually moved; the threshold rate stays as the next key.
+    """
     return (
+        metrics.get("mean_final_upperarm_ratio", 0.0),
         metrics["success_rate"],
-        -metrics["mean_final_distance"],
         metrics.get("mean_max_upperarm_ratio", 0.0),
         metrics["mean_return"],
     )
@@ -585,7 +597,10 @@ def main(argv: list[str] | None = None) -> None:
         )
         if vector_step > args.init_steps:
             for _ in range(budget):
-                stats = agent.update(replay)
+                # The actor and temperature report only every ``actor_update_freq``
+                # updates, and the budget is a multiple of it, so keeping only the
+                # last update's dict drops those columns for the whole run.
+                stats = {**stats, **agent.update(replay)}
         if vector_step % args.log_interval == 0:
             elapsed = time.time() - t_start
             row = {
@@ -598,6 +613,7 @@ def main(argv: list[str] | None = None) -> None:
                 "episode_return": float(np.mean(recent_returns[-20:])) if recent_returns else float("nan"),
                 "episode_success": float(np.mean(recent_success[-20:])) if recent_success else float("nan"),
                 "active_garments": int(active_garments),
+                "alpha": round(float(agent.alpha), 6) if hasattr(agent, "alpha") else float("nan"),
                 **{k: round(v, 5) for k, v in stats.items()},
             }
             logger.log(row)

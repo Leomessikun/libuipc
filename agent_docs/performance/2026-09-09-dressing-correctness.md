@@ -291,11 +291,51 @@ baseline cloth at the same step had 0.00 success and a 0.441 forearm ratio.
 The reference's own best across 33 evaluated runs is one success in 40
 episodes after 2.98M transitions.
 
-The next evaluation fell back to zero success with the upper arm at 0.227, so
-this is a peak rather than a converged policy, and a single seed. The
-checkpoint is kept as `best.pt` at step 1,800. What it establishes is that the
-task is reachable by a learned policy on this solver, which every earlier
-result left open.
+The next evaluation reported zero success with the upper arm at 0.227. A
+delegated diagnosis established that this is not a collapse and that the
+"0.50" needs restating.
+
+Every slot of a garment holds the same cell, `reset` restores one fixed
+snapshot, and the evaluation used one fixed seed block, so the eight rollouts
+per garment differ only in observation noise: the effective sample size is two,
+and the pooled success rate can only be 0, 0.5 or 1. The peak is tshirt_26
+finishing at an upper-arm ratio of 0.7528 against a 0.70 threshold, a margin of
+0.053; the "collapse" is the same garment at 0.4541. One continuous quantity
+moved 0.30. tshirt_392 never exceeded 0.065 in any evaluation and its reward
+never exceeded 0.283 in 14,408 replay transitions, so the run's ceiling was
+0.5 by construction.
+
+The training side moved the other way across that window. Rolling twenty-episode
+success went 0.183, 0.253, 0.310 and the three highest-return episodes of the
+run all came after the peak; the step-2,400 dip is one synchronised sixteen-slot
+episode inside a twenty-episode mean, since all slots share an episode counter.
+No quantity in the checkpoints moves discontinuously there: the temperature
+decays on a straight line, weight norms rise smoothly, and the critic's bias
+against the Monte-Carlo soft return crosses zero between 1,800 and 2,400
+(-14.2 to +5.7), which is a real transition but a smooth one.
+
+So the claim this run supports is narrower than "the task is learned": a
+learned policy dressed one garment on one body past the threshold once, on an
+evaluation too coarse to resolve it, while never learning the second garment.
+It does establish that the upper arm is reachable by a learned policy on this
+solver, which every earlier result left open.
+
+Three consequences were applied. Checkpoint selection now ranks the continuous
+final upper-arm ratio ahead of the thresholded rate, so `best.pt` is no longer
+chosen on a 0.05 margin. Evaluation draws a fresh seed block per round. The
+training log now carries the temperature: the actor and temperature statistics
+report only every fourth update and the per-step budget is a multiple of four,
+so the last update of every step was never an actor update and those columns
+were empty for the entire run.
+
+Three findings were recorded and not yet acted on. The policy stalls at an
+upper-arm ratio of 0.55 to 0.61 while the threshold is 0.70, and the reward is
+steepest through the elbow rather than flat, so the reward is not what stops
+it. Leaving the arm costs a single-step reward drop of about 2.1, realised nine
+times in the replay. And the critic assigns 17.0 plus or minus 2.1 to every
+tshirt_392 state against 86.3 plus or minus 24.5 for tshirt_26, with an
+action-advantage-to-fitting-noise ratio of 0.20 against 1.15, so nearly half of
+every batch contributes policy gradient that is mostly critic noise.
 
 It is also faster, not slower. A first reading of these logs reported a
 five-fold slowdown; that was a mistake. The correctness pass added

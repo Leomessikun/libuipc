@@ -1438,11 +1438,17 @@ Ninth pass: the dressing task is solved by a learned policy for the first
 time. With the cloth corrected to the drape bake's measured stiffness (6e3
 stretch, a hundredth of that in shear, bending 0.1) the curriculum teacher at
 horizon 150 with six simulation steps per decision reaches a 0.50 success
-rate at 24,008 replay transitions, eight of sixteen episodes dressing the
-upper arm past 0.7. The next evaluation falls back to zero, so it is a peak on
-one seed, and the checkpoint is kept. The same run at the baseline stiffness
-had 0.00 success and less than half the forearm coverage. Details, and the
-speed work that came with it, are in the September 9 correctness record.
+rate at 24,008 replay transitions. That number needs its caveat: with one
+cell per garment, a fixed snapshot reset and a fixed evaluation seed block the
+effective sample size is two, and the peak is one garment finishing at 0.7528
+against a 0.70 threshold while the second garment never exceeded 0.065. The
+following evaluation's zero is the same garment at 0.4541, not a collapse:
+training success rose across that window. The same run at the baseline
+stiffness had 0.00 and less than half the forearm coverage, so the cloth
+finding stands. Selection now ranks the continuous ratio, evaluation reseeds
+per round, and the temperature is logged. Details, the speed work, and the
+open problems are in the September 9 correctness record; what training one
+policy over many cells still requires is in the September 10 protocol record.
 
 Seventh pass: the Wang RSS 2023 / FMVP simulation pipeline is ported around
 this encoder and solver: the garment curriculum gating replay writes, the
