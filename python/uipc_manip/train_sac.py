@@ -45,6 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--anchor-count", type=int, default=12, help="dressing: cuff vertices held by the picker.")
     p.add_argument("--cuff-strength", type=float, default=1.0e4, help="dressing: soft position constraint strength_rate of the held cuff; 100 lets the garment detach from the tool.")
     p.add_argument("--no-obs-augment", action="store_true", help="dressing: disable camera jitter and dropout.")
+    p.add_argument("--cloth-shear-ratio", type=float, default=None, help="dressing: shear modulus as a fraction of the stretch modulus. libuipc's shear term carries no thickness factor, so the default shared modulus is about 3,300 times stiffer than stretch; 0.01 is what reproduces the reference drape.")
+    p.add_argument("--cloth-youngs", type=float, default=None, help="dressing: stretch Young's modulus [Pa]; 6e3 matches the reference drape, 6e4 is the historical setting.")
+    p.add_argument("--cloth-bending", type=float, default=None, help="dressing: discrete-shell bending stiffness; 0.1 matches the reference drape, 10 is the historical setting.")
     p.add_argument("--garment-curriculum-interval", type=int, default=0, help="dressing: vector steps between admitting one more garment's slots to replay, easiest first (Wang's curriculum_update_freq); 0 trains on every garment from the start.")
     p.add_argument("--garment-curriculum-order", type=str, default=",".join(WANG_GARMENT_ORDER), help="dressing: comma-separated garment names, easiest first; garments not named are appended.")
     p.add_argument("--num-envs", type=int, default=32, help="Deformable and robot copies solved together in one IPC world.")
@@ -217,6 +220,15 @@ def make_env(args):
             point_budget=args.point_budget,
             anchor_count=args.anchor_count,
             constraint_strength=args.cuff_strength,
+            **{
+                name: value
+                for name, value in (
+                    ("cloth_shear_ratio", args.cloth_shear_ratio),
+                    ("cloth_youngs", args.cloth_youngs),
+                    ("cloth_bending_stiffness", args.cloth_bending),
+                )
+                if value is not None
+            },
             seed=args.seed,
             augment_obs=not args.no_obs_augment,
             show_viewer=bool(args.vis),
