@@ -269,12 +269,16 @@ the recorded baseline except the three cloth settings.
 | Forearm ratio at 4,808 replay transitions | 0.000 | **0.667** |
 | Upper-arm ratio there | 0.000 | 0.008 |
 | Return there | -14.7 | +10.2 |
+| Forearm ratio at 14,408 transitions | 0.344 | 0.637 (return +17.5) |
 | Forearm ratio at 24,648 transitions | 0.441 | not reached yet |
-| Seconds per vector step | 18 to 21 | 96 |
 
 At equal data the corrected cloth is not marginally better: it passes in one
 evaluation what the baseline had not reached in three, and it is the first run
 of any kind here to show a non-zero upper-arm ratio from a learned policy.
+Its second evaluation, at 14,408 transitions after 2.2 hours, holds the
+forearm at 0.637 against the baseline's 0.344 at the same data, with the
+return still rising (+17.5); the upper-arm ratio fell back to 0.0, so the
+elbow turn is not yet learned by either run.
 
 It is also faster, not slower. A first reading of these logs reported a
 five-fold slowdown; that was a mistake. The correctness pass added
