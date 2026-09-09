@@ -291,6 +291,21 @@ That run was paused for two hours so the main run could finish inside its
 job limit, and its own 28,000 s limit then ended it at 41,600 transitions
 with that single evaluation; its last checkpoint is at 28,800.
 
+Curriculum run, horizon 150 with six simulation steps per decision (the
+Wang-equivalent helpers return the reference values exactly there: discount
+0.99, temperature learning rate 1e-4, reward scale 1), tshirt_392 admitted
+at step 600. First evaluation at step 600, 4,808 replay transitions from the
+tshirt_26 slots alone: 0 of 16, ratios 0.0, return -14.7 per 150-decision
+episode, Q mean 6.2, cuff within 4.4 cm. Every evaluation episode was
+flagged as an early turn: the paper's elbow region is two projected
+quarter-segment slabs of unbounded width, so a policy that drifts the tool
+far from the arm at six times the per-decision travel lands in a slab on the
+concave side without ever touching the garment to the arm. The paper
+applies the test only after the 0.7 ratio gate, where the gripper is
+necessarily near the arm, and so does the collector here; the standalone
+`early_turn_rate` is meaningful only for dressed episodes. Pace 10.9 s per
+vector step beside the foreign Newton job.
+
 The main fixed-hold run reached its 100,000-transition budget in 27,658 s
 of wall clock (7.7 h, most of it shared with one or two other GPU jobs);
 its third evaluation at 86,400 transitions was 0 of 16, ratios 0.0, return
