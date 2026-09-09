@@ -305,10 +305,13 @@ applies the test only after the 0.7 ratio gate, where the gripper is
 necessarily near the arm, and so does the collector here; the standalone
 `early_turn_rate` is meaningful only for dressed episodes. Pace 10.9 s per
 vector step beside the foreign Newton job. Second evaluation at step 1,200
-(both garments admitted, 14,400 replay transitions): still 0 of 16 and
-ratios 0.0, but the return rose from -14.7 to +9.6 per episode, which the
-reward composition attributes to the centre-alignment bonus and fewer
-collision penalties rather than to any insertion.
+(both garments admitted, 14,400 replay transitions): still 0 of 16 and an
+upper-arm ratio of 0.0, but the mean forearm ratio is 0.34 at the end of
+the episode and the return rose from -14.7 to +9.6. That is the first
+learned insertion on this solver: every horizon-900 run stayed at a
+forearm ratio of 0.0 through 100k transitions, and this configuration
+reaches a third of the forearm at 14k, with six simulation steps per
+decision and the reference's own discount and temperature settings.
 
 The main fixed-hold run reached its 100,000-transition budget in 27,658 s
 of wall clock (7.7 h, most of it shared with one or two other GPU jobs);
