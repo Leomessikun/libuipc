@@ -313,6 +313,19 @@ forearm ratio of 0.0 through 100k transitions, and this configuration
 reaches a third of the forearm at 14k, with six simulation steps per
 decision and the reference's own discount and temperature settings.
 
+The third evaluation at 24,008 replay transitions continues it: forearm
+0.441 at the end of the episode and 0.484 at its best, return 11.2, task
+reward 0.139. Upper-arm ratio and success are still 0.0 and no episode is
+threaded by the winding test, so the policy is feeding the sleeve along the
+forearm and not yet turning it at the elbow. Both garments have been
+admitted since step 600.
+
+| Vector step | Replay transitions | Final forearm ratio | Return |
+|---:|---:|---:|---:|
+| 600 | 4,808 | 0.000 | -14.7 |
+| 1,200 | 14,408 | 0.344 | +9.6 |
+| 1,800 | 24,008 | 0.441 | +11.2 |
+
 The main fixed-hold run reached its 100,000-transition budget in 27,658 s
 of wall clock (7.7 h, most of it shared with one or two other GPU jobs);
 its third evaluation at 86,400 transitions was 0 of 16, ratios 0.0, return
