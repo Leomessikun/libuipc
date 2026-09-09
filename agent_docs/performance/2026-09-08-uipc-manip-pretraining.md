@@ -288,6 +288,14 @@ transitions: 0 of 16, ratios 0.0, return -177.2 against the main run's
 rescaled temperature removes the critic drift and does nothing for the task
 at this budget, so the drift was not what kept the policy from inserting.
 
+The main fixed-hold run reached its 100,000-transition budget in 27,658 s
+of wall clock (7.7 h, most of it shared with one or two other GPU jobs);
+its third evaluation at 86,400 transitions was 0 of 16, ratios 0.0, return
+-105.6, and the final checkpoint's evaluation was cut by the 28,000 s job
+limit and is being replayed offline. Q mean ended at 111. Three
+evaluations over 100k transitions show no insertion, which is the same
+outcome the Newton reference records at ten times that budget.
+
 ## Newton reference compared, same machine
 
 The Newton teacher's own runs live in `runs/dressing_pointcloud_sac` of the
