@@ -407,7 +407,12 @@ Running a second training process was measured rather than assumed:
 | GPU memory | 7.8 GB | 17.9 GB |
 
 A second process buys 1.16 times the aggregate throughput while making each
-run 64 per cent slower. Newton's eight-way MPS sweep measured the same shape,
+run 64 per cent slower. Every wall-clock figure taken after 02:00 on
+2026-09-09 (the main run's second half, the temperature ablation, the
+pipeline smoke, and the curriculum run) also shared the GPU with a Newton
+training job that this session did not start, `gown_diag` at 40
+environments, launched at 01:59:47 from the `newton` checkout; those
+numbers are lower bounds on speed, not measurements of it. Newton's eight-way MPS sweep measured the same shape,
 1.24 times aggregate. The GPU is saturated by small serial solver kernels, so
 neither more processes nor more environments per process helps: the earlier
 scaling measurement, 8 slots at 480 ms and 16 slots at 929 ms per step, is
