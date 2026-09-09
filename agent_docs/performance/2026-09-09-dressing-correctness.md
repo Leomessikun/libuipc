@@ -104,4 +104,46 @@ costs 1.4 to 2.5 hours in Newton and 9.5 hours here, and it is the same 9.5
 hours at either decision rate. The current curriculum run stands at 147,840
 simulation steps after 9.1 hours of contended wall clock, 42 per cent of it.
 
+## Where the dressing step's time goes
+
+Profiling one simulation step of the dressing environment, with the coupler's
+own phases timed individually and three other jobs sharing the GPU, so the
+absolute numbers are inflated but the shares are not:
+
+| Phase | 16 environments |
+|---|---:|
+| `ipc_world.advance`, the libuipc solve | 1848 ms |
+| `ipc_world.retrieve` | 3.1 ms |
+| Genesis rigid store and every other coupler phase | 0.5 ms |
+| Full `scene.step` | 1810 ms |
+| Garment position read-back | 0.1 ms |
+| Observation construction, once per decision | 1049 ms |
+
+Genesis contributes nothing measurable. The dressing scene has no robot: the
+arm is a fixed affine body inside libuipc and the garment is a native libuipc
+shell, so Genesis is a scene container and the IPC solve is the whole cost.
+The earlier record's "68 ms of a 120 ms scene step" came from the cloth-drag
+task, where a Franka arm and its inverse kinematics ran in Genesis; it does
+not describe this task. Genesis's own speed comes from its Taichi rigid, PBD,
+and MPM solvers, none of which is on this path, so nothing in this port can
+inherit it while the requirement is penetration-free IPC contact.
+
+Batched scaling was previously recorded as linear, which is wrong for the
+current environment. Measured under the same contention:
+
+| Environments | Milliseconds per simulation step | Per environment | Simulation steps per second |
+|---:|---:|---:|---:|
+| 1 | 666 | 666 | 1.5 |
+| 4 | 1479 | 370 | 2.7 |
+| 8 | 1758 | 220 | 4.6 |
+| 16 | 1848 | 116 | 8.7 |
+| 32 | 2396 | 75 | 13.4 |
+| 64 | 5060 | 79 | 12.6 |
+
+The solve does not fill the GPU until roughly 32 copies: going from 16 to 32
+raises throughput by 1.54 times at no cost in decisions, and 64 gives nothing
+back. The 350,000-simulation-step budget at which the reference first reached
+the upper arm therefore costs 11.2 hours at 16 environments and 7.3 hours at
+32. Training runs should use 32.
+
 GPU grasp and reachability measurements are recorded below after completion.
