@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 
 from .dressing_assets import DressingCache, DressingCacheConfig, DressingCell, erode_arm_mesh, write_obj
-from .dressing_obs import DressingObsConfig, DressingObservationBuilder, sample_segmented_cloud
+from .dressing_obs import BatchedDressingObservationBuilder, DressingObsConfig, DressingObservationBuilder, sample_segmented_cloud
 from .dressing_reward import early_turn, WangRewardConfig, opening_threaded, wang_progress
 from .genesis_env import ViewerClosed, _ensure_genesis
 from .obs import FEATURE_DIM, FLAG_DEFORMABLE, FLAG_MARKER, ObsSpec
@@ -183,6 +183,7 @@ class GenesisIPCDressingEnv:
             raise ValueError(f"No cached cells for human {cfg.human} among {cfg.garments}; cache has {self.cache.cells}")
         self.cells: list[DressingCell] = [self.cache.load(garments[i % len(garments)], cfg.human) for i in range(self.num_envs)]
         self._obs_builder = DressingObservationBuilder(cfg.obs, self._device)
+        self._batched_obs = BatchedDressingObservationBuilder(cfg.obs, self._device)
         self._episode_step = 0
         self._build_scene()
         self._prepare_start()
@@ -482,8 +483,12 @@ class GenesisIPCDressingEnv:
         positions = self.positions() if positions is None else positions
         out = np.empty((self.num_envs, self.spec.dim), dtype=np.float32)
         budget = self.spec.deformable_budget
-        for i, (cell, p) in enumerate(zip(self.cells, positions, strict=True)):
-            arm, cloth = self._obs_builder.visible_points(cell.arm_points, p, cell.finger, cell.shoulder, self.rngs[i], self.cfg.augment_obs)
+        clouds = self._batched_obs.visible_points(
+            [cell.arm_points for cell in self.cells], list(positions),
+            [cell.finger for cell in self.cells], [cell.shoulder for cell in self.cells],
+            self.rngs, self.cfg.augment_obs,
+        )
+        for i, (cell, (arm, cloth)) in enumerate(zip(self.cells, clouds, strict=True)):
             arm, cloth = sample_segmented_cloud(arm, cloth, budget, self.rngs[i])
             tool = self._anchor[i]
             pts = np.concatenate([arm, cloth], axis=0) - tool[None, :]

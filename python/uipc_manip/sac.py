@@ -153,11 +153,18 @@ class SACAgent:
         self.log_alpha = torch.tensor(np.log(cfg.init_temperature), dtype=torch.float32, device=self.device)
         self.log_alpha.requires_grad_(True)
         self.target_entropy = -float(cfg.target_entropy_scale) * float(action_dim)
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=cfg.actor_lr, betas=(cfg.actor_beta, 0.999))
-        self.critic_optimizer = torch.optim.Adam(
-            self.critic.parameters(), lr=cfg.critic_lr, betas=(cfg.critic_beta, 0.999)
+        # The fused kernel keeps Adam on the device; the default path reads two scalars per
+        # parameter tensor back to the host every step, over a hundred synchronisations per update.
+        fused = self.device.type == "cuda"
+        self.actor_optimizer = torch.optim.Adam(
+            self.actor.parameters(), lr=cfg.actor_lr, betas=(cfg.actor_beta, 0.999), fused=fused
         )
-        self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=cfg.alpha_lr, betas=(cfg.alpha_beta, 0.999))
+        self.critic_optimizer = torch.optim.Adam(
+            self.critic.parameters(), lr=cfg.critic_lr, betas=(cfg.critic_beta, 0.999), fused=fused
+        )
+        self.log_alpha_optimizer = torch.optim.Adam(
+            [self.log_alpha], lr=cfg.alpha_lr, betas=(cfg.alpha_beta, 0.999), fused=fused
+        )
         self.updates = 0
         self.train()
 

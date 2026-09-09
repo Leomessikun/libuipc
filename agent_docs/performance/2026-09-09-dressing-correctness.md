@@ -403,4 +403,51 @@ neither measured: per-world CUDA streams, and letting a converged subscene
 stop iterating so it no longer pays for the worst copy's Newton iterations.
 The second changes the numerics and would need its own validation.
 
+## The non-physics quarter of a decision (agent measurement, then applied)
+
+A delegated profile of everything outside the solve, 16 environments, six
+simulation steps per decision, every timing bracketed by a device
+synchronise, on the shared GPU so absolute numbers are inflated and ratios are
+what to trust. Of a 6.73 s decision, 4.95 s was physics and 1.78 s the rest:
+gradient updates 14 per cent, observation 7.6, reward 4.7.
+
+The observation was not slow because of arithmetic. Building 16 clouds one
+environment at a time issued about 3,400 kernels for 6.8 ms of kernel time and
+444 stream synchronisations; the time was spent waiting on the host-device
+round trips, 32 of them in `unique(dim=0)` alone. The reward's 315 ms was
+almost entirely one line: the cuff-to-body distance as a brute-force pairwise
+scan over the 10,475-point body, per environment, in float64. One SAC update
+spent about half its kernel time in float32 attention, and the host side ran
+114 to 218 `.item()` reads per update, all from the default Adam reading two
+scalars per parameter tensor.
+
+Three exact changes were made and measured in place at 16 environments:
+
+| Change | Before | After |
+|---|---:|---:|
+| Observation: one padded batch, one z-buffer per camera, one packed-key `unique`, same per-environment random draws in the same order | 935 ms | 71 ms |
+| Reward: KD-tree over the static body cloud, built once per body | about 315 ms | 24.7 ms (all sixteen rewards) |
+| Adam with the fused kernel on CUDA, no per-parameter host reads | 137 ms per update under contention | measured 0.88 of that by the agent |
+
+The batched builder is a twin of the per-environment one: a CPU test runs
+both on the same clouds with the same seeds, with and without augmentation,
+and requires identical outputs to 1e-5 and identical generator states
+afterwards. The KD-tree distance is checked against the pairwise scan to 1e-12.
+
+Not applied, with the evidence: bf16 autocast over the encoders halves the
+update (0.47 with fused Adam) but is a training-quality change that needs its
+own validation run; batch 256 with four updates per step is a protocol change;
+`torch.compile` and TF32 gave nothing outside noise; CUDA graphs over the
+update are the next lever once it is launch-bound, unmeasured.
+
+Taichi, assessed concretely. libuipc does expose a device-side position copy
+(`FiniteElementStateAccessorFeature.copy_position_to` into a torch buffer),
+and Genesis's `quadrants` kernels take torch CUDA tensors zero-copy, so the
+data path exists. It buys nothing: the host view already costs 0.09 ms because
+`retrieve` has copied, and the device-side observation was no faster than the
+host one. A Taichi z-buffer matched the torch one at the same speed; a Taichi
+dense-grid voxeliser was the one real win, 0.4 to 4.7 ms against 20 to 51 for
+`unique`, about 35 ms per decision, half a per cent, for a second GPU runtime
+and JIT in the package. Not adopted.
+
 GPU grasp and reachability measurements are recorded below after completion.

@@ -46,6 +46,29 @@ class DressingProgress:
     center_align: float
 
 
+_BODY_TREES: dict[int, tuple[np.ndarray, object]] = {}
+
+
+def nearest_body_distance(points: np.ndarray, human_points: np.ndarray) -> float:
+    """Smallest distance from any of ``points`` to the body cloud.
+
+    The body cloud is static for the life of a cell, so a KD-tree is built once
+    per array and reused; the brute-force pairwise distance over 10,475 body
+    points was the reward's whole cost (313 ms of 315 per decision at 16 slots).
+    Exact: the tree returns the same minimum as the pairwise scan.
+    """
+    from scipy.spatial import cKDTree
+
+    key = id(human_points)
+    cached = _BODY_TREES.get(key)
+    if cached is None or cached[0] is not human_points:
+        _BODY_TREES.clear()
+        cached = (human_points, cKDTree(np.asarray(human_points, dtype=np.float64)))
+        _BODY_TREES[key] = cached
+    distances, _ = cached[1].query(np.asarray(points, dtype=np.float64), k=1)
+    return float(np.min(distances))
+
+
 def _unit(v: np.ndarray, fallback: np.ndarray) -> np.ndarray:
     n = float(np.linalg.norm(v))
     return v / n if n > 1e-9 else fallback
@@ -127,7 +150,7 @@ def wang_progress(
         task = forearm_len + cfg.upper_w * upperarm_distance
 
     cuff = cloth[cuff_idx]
-    cuff_distance = float(np.min(np.linalg.norm(cuff[:, None, :] - human_points[None, :, :], axis=2)))
+    cuff_distance = float(nearest_body_distance(cuff, human_points))
     collision = -1.0 if cuff_distance < cfg.cloth_particle_radius + cfg.collision_threshold else 0.0
 
     center_align = 0.0

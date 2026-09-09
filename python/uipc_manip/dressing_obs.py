@@ -187,3 +187,167 @@ class DressingObservationBuilder:
         arm_vis = voxel_downsample_torch(arm_t[visible[:n_arm]], cfg.voxel_size_m)
         cloth_vis = voxel_downsample_torch(cloth_t[visible[n_arm:]], cfg.voxel_size_m)
         return arm_vis.cpu().numpy(), cloth_vis.cpu().numpy()
+
+
+# ---------------------------------------------------------------------------
+# Batched observation over all environments
+# ---------------------------------------------------------------------------
+def visible_mask_batched(pts, valid, cam, tgt, *, image_wh, depth_tolerance_m, fov_deg):
+    """``camera_visible_mask_torch`` on ``[B, N, 3]`` with a validity mask; padded rows never enter the z-buffer."""
+    n = int(pts.shape[0])
+    fwd = tgt - cam
+    fwd = fwd / torch.linalg.vector_norm(fwd, dim=-1, keepdim=True).clamp_min(1e-9)
+    world_up = torch.zeros_like(fwd)
+    world_up[..., 2] = 1.0
+    world_alt = torch.zeros_like(fwd)
+    world_alt[..., 1] = 1.0
+    up0 = torch.where(fwd[..., 2].abs().unsqueeze(-1) > 0.99, world_alt, world_up)
+    right = torch.linalg.cross(fwd, up0, dim=-1)
+    right = right / torch.linalg.vector_norm(right, dim=-1, keepdim=True).clamp_min(1e-9)
+    up = torch.linalg.cross(right, fwd, dim=-1)
+    rel = pts - cam.unsqueeze(1)
+    depth = (rel * fwd.unsqueeze(1)).sum(dim=-1)
+    x = (rel * right.unsqueeze(1)).sum(dim=-1)
+    y = (rel * up.unsqueeze(1)).sum(dim=-1)
+    half = math.tan(math.radians(float(fov_deg)) * 0.5)
+    safe_depth = depth.clamp_min(1e-4)
+    u, v = x / (safe_depth * half), y / (safe_depth * half)
+    in_frustum = valid & (depth > 1e-4) & (u.abs() < 1.0) & (v.abs() < 1.0)
+    w = int(image_wh)
+    px = (((u + 1.0) * 0.5) * w).long().clamp(0, w - 1)
+    py = (((v + 1.0) * 0.5) * w).long().clamp(0, w - 1)
+    pixel = py * w + px
+    inf = depth.new_full(depth.shape, float("inf"))
+    zbuf = depth.new_full((n, w * w), float("inf"))
+    zbuf.scatter_reduce_(1, pixel, torch.where(in_frustum, depth, inf), reduce="amin", include_self=True)
+    zmin = zbuf.gather(1, pixel)
+    return in_frustum & (depth <= zmin + float(depth_tolerance_m))
+
+
+def voxel_centroids_batched(pts, select, voxel_size, n_envs):
+    """Voxel centroids of the selected points of every environment, ordered ``(env, vx, vy, vz)``.
+
+    The key packs the environment id above the offset voxel coordinates, so one
+    sorted 1-D ``unique`` reproduces the per-environment ``unique(dim=0)`` order of
+    :func:`voxel_downsample_torch`. Returns ``(centroids [M, 3], counts_per_env [B])``.
+    """
+    b, n, _ = pts.shape
+    env_id = torch.arange(b, device=pts.device).unsqueeze(1).expand(b, n)
+    sel_pts = pts[select]
+    sel_env = env_id[select]
+    vox = torch.floor(sel_pts / float(voxel_size)).long() + (1 << 15)
+    key = (sel_env << 48) | (vox[:, 0] << 32) | (vox[:, 1] << 16) | vox[:, 2]
+    uniq, inverse = torch.unique(key, return_inverse=True)
+    m = int(uniq.shape[0])
+    sums = pts.new_zeros((m, 3))
+    sums.index_add_(0, inverse, sel_pts)
+    counts = pts.new_zeros((m,))
+    counts.index_add_(0, inverse, pts.new_ones((sel_pts.shape[0],)))
+    centroids = sums / counts.unsqueeze(-1).clamp_min(1.0)
+    per_env = torch.bincount(uniq >> 48, minlength=n_envs)
+    return centroids, per_env
+
+
+class BatchedDressingObservationBuilder:
+    """The visible cloud for every environment in one pass.
+
+    Twin of :class:`DressingObservationBuilder` with the same per-environment
+    random draws in the same order, so outputs match to float precision, but the
+    GPU work is issued once for the batch: one pinned upload, one z-buffer per
+    camera, one patch-dropout pass, and one 1-D ``unique`` on packed keys. The
+    per-environment version issues about 3,400 kernels and 440 stream
+    synchronisations for 16 environments and spends its time waiting on them.
+    """
+
+    def __init__(self, cfg: DressingObsConfig, device) -> None:
+        self.cfg = cfg
+        self.device = torch.device(device)
+        self._pinned = None
+
+    def _pad(self, arms, cloths):
+        b = len(arms)
+        n_arm = np.array([a.shape[0] for a in arms])
+        n_cloth = np.array([c.shape[0] for c in cloths])
+        n_tot = n_arm + n_cloth
+        n_max = int(n_tot.max())
+        if self._pinned is None or self._pinned.shape[0] != b or self._pinned.shape[1] != n_max:
+            host = torch.empty((b, n_max, 3), dtype=torch.float32, device="cpu")
+            self._pinned = host.pin_memory() if self.device.type == "cuda" else host
+        host = self._pinned.numpy()
+        for i, (a, c) in enumerate(zip(arms, cloths, strict=True)):
+            host[i, : n_arm[i]] = a
+            host[i, n_arm[i] : n_tot[i]] = c
+            host[i, n_tot[i] :] = 0.0
+        pts = self._pinned.to(self.device, non_blocking=True)
+        ar = torch.arange(n_max, device=self.device).unsqueeze(0)
+        is_arm = ar < torch.as_tensor(n_arm, device=self.device).unsqueeze(1)
+        valid = ar < torch.as_tensor(n_tot, device=self.device).unsqueeze(1)
+        return pts, is_arm, valid
+
+    def visible_points(self, arms, cloths, fingers, shoulders, rngs, augment: bool):
+        """Return a list of ``(arm_points, cloth_points)`` per environment."""
+        cfg, dev = self.cfg, self.device
+        pts, is_arm, valid = self._pad(arms, cloths)
+        b = int(pts.shape[0])
+        finger_t = torch.as_tensor(np.stack(fingers), dtype=torch.float32, device=dev)
+        shoulder_t = torch.as_tensor(np.stack(shoulders), dtype=torch.float32, device=dev)
+        if cfg.mode == "xray":
+            visible = valid.clone()
+        else:
+            cameras = derive_dressing_cameras_torch(
+                finger_t, shoulder_t, mode=cfg.mode, distance_m=cfg.camera_distance_m,
+                height_m=cfg.camera_height_m, side=cfg.camera_side,
+            )
+            n_cam = len(cameras)
+            active = np.ones((b, n_cam), dtype=bool)
+            jitter = np.zeros((b, n_cam, 3), dtype=np.float32)
+            if augment:
+                # Same draws, same order, as the per-environment builder.
+                for i, rng in enumerate(rngs):
+                    for c in range(n_cam):
+                        if cfg.camera_dropout_p > 0.0 and rng.random() < cfg.camera_dropout_p and n_cam > 1:
+                            active[i, c] = False
+                            continue
+                        if cfg.pose_jitter_m > 0.0:
+                            jitter[i, c] = rng.uniform(-cfg.pose_jitter_m, cfg.pose_jitter_m, size=3)
+            active_t = torch.as_tensor(active, device=dev)
+            jitter_t = torch.as_tensor(jitter, device=dev)
+            visible = torch.zeros_like(valid)
+            for c, (cam_pos, cam_tgt) in enumerate(cameras):
+                vis_c = visible_mask_batched(
+                    pts, valid, cam_pos + jitter_t[:, c], cam_tgt,
+                    image_wh=cfg.image_wh, depth_tolerance_m=cfg.depth_tolerance_m, fov_deg=cfg.fov_deg,
+                )
+                visible |= vis_c & active_t[:, c].unsqueeze(1)
+            none_active = ~active.any(axis=1)
+            if none_active.any():
+                cam_pos, cam_tgt = cameras[0]
+                vis0 = visible_mask_batched(
+                    pts, valid, cam_pos, cam_tgt,
+                    image_wh=cfg.image_wh, depth_tolerance_m=cfg.depth_tolerance_m, fov_deg=cfg.fov_deg,
+                )
+                visible = torch.where(torch.as_tensor(none_active, device=dev).unsqueeze(1), vis0, visible)
+        if augment and cfg.dropout_patches > 0 and cfg.dropout_radius_m > 0.0:
+            counts = visible.sum(dim=1)
+            cand = torch.nonzero(visible, as_tuple=False)
+            counts_np = counts.cpu().numpy()
+            starts = np.concatenate([[0], np.cumsum(counts_np)[:-1]])
+            picks = np.full((b, int(cfg.dropout_patches)), -1, dtype=np.int64)
+            for i, rng in enumerate(rngs):
+                if counts_np[i] > 0:
+                    for k in range(int(cfg.dropout_patches)):
+                        picks[i, k] = starts[i] + int(rng.integers(counts_np[i]))
+            picks_t = torch.as_tensor(picks, device=dev)
+            has = picks_t >= 0
+            seed_idx = cand[picks_t.clamp_min(0), 1]
+            seeds = torch.gather(pts, 1, seed_idx.unsqueeze(-1).expand(-1, -1, 3))
+            d = torch.linalg.vector_norm(pts.unsqueeze(1) - seeds.unsqueeze(2), dim=-1)
+            keep = (d > cfg.dropout_radius_m) | ~has.unsqueeze(-1)
+            visible &= keep.all(dim=1)
+        arm_c, arm_n = voxel_centroids_batched(pts, visible & is_arm, cfg.voxel_size_m, b)
+        cloth_c, cloth_n = voxel_centroids_batched(pts, visible & valid & ~is_arm, cfg.voxel_size_m, b)
+        arm_np, cloth_np = arm_c.cpu().numpy(), cloth_c.cpu().numpy()
+        arm_n, cloth_n = arm_n.cpu().numpy(), cloth_n.cpu().numpy()
+        a_off = np.concatenate([[0], np.cumsum(arm_n)])
+        c_off = np.concatenate([[0], np.cumsum(cloth_n)])
+        return [(arm_np[a_off[i] : a_off[i + 1]], cloth_np[c_off[i] : c_off[i + 1]]) for i in range(b)]
