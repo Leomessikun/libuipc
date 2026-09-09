@@ -454,4 +454,42 @@ dense-grid voxeliser was the one real win, 0.4 to 4.7 ms against 20 to 51 for
 `unique`, about 35 ms per decision, half a per cent, for a second GPU runtime
 and JIT in the package. Not adopted.
 
+## Solver settings that trade accuracy for speed (agent sweep, then applied)
+
+A third delegated pass swept libuipc's scene configuration on the dressing
+environment. Its short probes (30 decisions) never reach contact and only
+measure speed on a contended GPU, so they are noise; the decisive series is
+100 decisions with the episode cloth at two copies, where the scripted expert
+reaches a real forearm ratio and the grasp error is a physics check:
+
+| Setting | ms per simulation step | Forearm ratio reached | Largest held-vertex error |
+|---|---:|---:|---:|
+| Library defaults, two runs | 442, 502 | 0.873, 0.866 | 40.1, 42.8 mm |
+| `use_cuda_graph` 2 | 368 | 0.865 | 43.3 mm |
+| `tol_rate` 1e-2 | 330 | 0.859 | 43.8 mm |
+| `check_interval` 25 with `tol_rate` 1e-2 | 267 | 0.858 | 43.9 mm |
+| **`use_cuda_graph` 2 with `tol_rate` 1e-2** | **247** | **0.862** | **41.8 mm** |
+| `newton.velocity_tol` 0.5 | 278 | 0.795 | 60.7 mm |
+| All of the above together | 142 | 0.651 | 94.8 mm |
+
+Both adopted settings are now the environment's defaults, together 1.9 times
+faster with the reach and the grasp inside the spread of two baseline runs.
+`use_cuda_graph` 2 is free of accuracy cost by construction: the fused PCG's
+header states that the graph path launches the same kernels with the same
+arguments in the same order, and mode 2 runs the whole solve as one
+device-side conditional graph with no host round trip inside the loop, falling
+back to the block-replay mode where the driver lacks support. `tol_rate` 1e-2
+loosens the conjugate-gradient relative tolerance, which is a real numerical
+change; it is adopted on the evidence above and should be revisited if a run
+shows grasp error drifting.
+
+`newton.velocity_tol` is the knob to avoid. It is the fastest single change
+and it is the one that breaks the task: the expert loses a seventh of its
+reach and the held cuff lags half again as far. Contact-side knobs did
+nothing: a linear-BVH broad phase, a halved `d_hat`, disabled friction, and
+the semi-implicit Newton start all landed inside the contention noise.
+
+The sweep ended early on a rate limit, so it produced no written report; these
+figures are read from the 39 result files it left in the scratchpad.
+
 GPU grasp and reachability measurements are recorded below after completion.

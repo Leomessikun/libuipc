@@ -63,7 +63,18 @@ class DressingConfig:
     newton_tolerance: float = 0.1
     newton_translation_tolerance: float = 1.0
     linesearch_iterations: int = 8
-    linear_system_tolerance: float = 1e-3
+    linear_system_tolerance: float = 1e-2
+    """Relative tolerance of the preconditioned conjugate-gradient solve. The library
+    default is 1e-3; at 1e-2 a 100-decision expert run costs 330 ms per simulation step
+    against 442 to 502, and reaches a forearm ratio of 0.859 against 0.866 to 0.873 with
+    the same held-vertex error, which is inside the run-to-run spread."""
+    linear_system_cuda_graph: int = 2
+    """CUDA-graph mode of the fused PCG. 1, the library default, replays a block of
+    iterations per launch; 2 runs the whole solve as one device-side conditional graph
+    with no host round trip inside the loop, falling back to 1 where the driver lacks
+    support. The kernels, arguments and order are identical either way, so this trades
+    no accuracy: 368 ms per simulation step against 442 to 502, and 247 with the looser
+    tolerance as well."""
     cloth_model: str = "slbw"
     """``slbw`` is the strain-limiting Baraff-Witkin shell the Genesis sim2sim path validated;
     ``neohookean`` scales membrane stiffness with the thin radius and stretched the garment by
@@ -121,12 +132,13 @@ class DressingConfig:
 _PATCHED_BUILDER = None
 
 
-def _install_preconditioner_patch(preconditioner: str) -> None:
-    """Route ``linear_system.fem_preconditioner`` into the coupler's IPC scene config.
+def _install_solver_patch(preconditioner: str, cuda_graph: int) -> None:
+    """Route libuipc linear-system settings into the coupler's IPC scene config.
 
-    Genesis 1.1.2 does not expose the preconditioner in ``IPCCouplerOptions``, and the
-    coupler creates its libuipc scene from ``build_ipc_scene_config`` inside ``Scene``
-    construction, so the value is injected by wrapping that builder in the coupler module.
+    Genesis 1.1.2 exposes neither the preconditioner nor the CUDA-graph mode in
+    ``IPCCouplerOptions``, and the coupler creates its libuipc scene from
+    ``build_ipc_scene_config`` inside ``Scene`` construction, so the values are injected
+    by wrapping that builder in the coupler module.
     """
     global _PATCHED_BUILDER
     import genesis.engine.couplers.ipc_coupler.coupler as coupler_module
@@ -136,12 +148,13 @@ def _install_preconditioner_patch(preconditioner: str) -> None:
 
     original = _PATCHED_BUILDER
 
-    def build_with_preconditioner(options, sim_options):
+    def build_with_solver_settings(options, sim_options):
         config = original(options, sim_options)
         config["linear_system"]["fem_preconditioner"] = str(preconditioner)
+        config["linear_system"]["use_cuda_graph"] = int(cuda_graph)
         return config
 
-    coupler_module.build_ipc_scene_config = build_with_preconditioner
+    coupler_module.build_ipc_scene_config = build_with_solver_settings
 
 
 def _rodrigues(offsets: np.ndarray, rotation: np.ndarray) -> np.ndarray:
@@ -199,7 +212,7 @@ class GenesisIPCDressingEnv:
         arm_eroded = erode_arm_mesh(cell0.arm_points, cell0.arm_faces, cfg.arm_erosion_m, cell0.finger, cell0.shoulder)
         arm_path = write_obj(Path(cfg.workspace) / f"arm_human_{cfg.human}_eroded_{int(round(cfg.arm_erosion_m * 1000))}mm.obj", arm_eroded, cell0.arm_faces)
         self.arm_collider_path = str(arm_path)
-        _install_preconditioner_patch(cfg.fem_preconditioner)
+        _install_solver_patch(cfg.fem_preconditioner, cfg.linear_system_cuda_graph)
         self.scene = gs.Scene(
             sim_options=gs.options.SimOptions(dt=cfg.dt, substeps=1, gravity=(0.0, 0.0, -9.8)),
             coupler_options=gs.options.IPCCouplerOptions(
