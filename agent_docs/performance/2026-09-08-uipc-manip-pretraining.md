@@ -287,6 +287,9 @@ transitions: 0 of 16, ratios 0.0, return -177.2 against the main run's
 -84.5 at the same step, cuff within 3.5 cm, Q mean 0.74 against 52. The
 rescaled temperature removes the critic drift and does nothing for the task
 at this budget, so the drift was not what kept the policy from inserting.
+That run was paused for two hours so the main run could finish inside its
+job limit, and its own 28,000 s limit then ended it at 41,600 transitions
+with that single evaluation; its last checkpoint is at 28,800.
 
 The main fixed-hold run reached its 100,000-transition budget in 27,658 s
 of wall clock (7.7 h, most of it shared with one or two other GPU jobs);
