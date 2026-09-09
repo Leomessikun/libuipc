@@ -286,4 +286,43 @@ open question is which of the three changes buys the learning and which buys
 the cost; bending is the one most likely to drive the contact growth, and
 shear is the one the constitution's own convention says was wrong.
 
+## What runs beside IPC in this scene, and what could
+
+Genesis registers eight solvers and activates only the ones that own an
+entity. Printing them for a built dressing scene:
+
+| | |
+|---|---|
+| Registered | Tool, Rigid, Kinematic, MPM, SPH, PBD, FEM, SF |
+| Active | Rigid, holding one entity: the ground plane, spawned `coup_type="ipc_only"` |
+| Coupler | IPC |
+
+So nothing else is running. The arm is a native libuipc affine body and the
+garment a native libuipc shell, both created through the coupler's handles, so
+the only Genesis solver with work to do owns a ground plane that is itself
+handed to IPC. That is why the step profile puts 100 per cent of the time in
+`ipc_world.advance`.
+
+What the coupler can compose with is narrower than the solver list suggests.
+`IPCCoupler._add_objects_to_ipc` reads the FEM solver and the rigid solver and
+nothing else; the file contains no reference to PBD, SPH, or MPM. Volumetric
+FEM entities enter as stable Neo-Hookean bodies and rigid links as affine
+bodies, so a scene can mix rigid articulations, volumetric FEM, and cloth in
+one IPC contact framework, which is what the shipped examples do
+(`ipc_robot_grasp_cube`, `ipc_robot_cloth_teleop`, `ipc_objects_falling`). All
+of them use `materials.FEM.*`; none uses `materials.PBD.*`.
+
+Cloth in particular has only one path. `FEMSolver` line 1226 says its cloth
+entry point adds "vertices and surfaces for rendering only (no physics
+computation). Cloth is simulated by IPC". `materials.PBD.Cloth` exists but
+belongs to the PBD solver, which the IPC coupler never reads, so a PBD garment
+would step outside the contact framework and would not see the arm at all.
+There is no mode in which PBD carries the cloth while IPC guards the contact.
+
+The practical consequence for this task: adding a robot arm, a table, or
+volumetric objects is supported and would be solved together with the garment,
+at the cost of a larger IPC system. Making the cloth cheaper by moving it to
+PBD is not, and would in any case give up the penetration guarantee that is the
+reason for using this solver.
+
 GPU grasp and reachability measurements are recorded below after completion.
