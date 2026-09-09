@@ -275,10 +275,27 @@ the recorded baseline except the three cloth settings.
 At equal data the corrected cloth is not marginally better: it passes in one
 evaluation what the baseline had not reached in three, and it is the first run
 of any kind here to show a non-zero upper-arm ratio from a learned policy.
-Its second evaluation, at 14,408 transitions after 2.2 hours, holds the
-forearm at 0.637 against the baseline's 0.344 at the same data, with the
-return still rising (+17.5); the upper-arm ratio fell back to 0.0, so the
-elbow turn is not yet learned by either run.
+Its later evaluations are the first dressing successes of this port:
+
+| Vector step | Replay transitions | Success rate | Final upper-arm ratio | Final forearm ratio | Return |
+|---:|---:|---:|---:|---:|---:|
+| 600 | 4,808 | 0.00 | 0.008 | 0.667 | +10.2 |
+| 1,200 | 14,408 | 0.00 | 0.000 | 0.637 | +17.5 |
+| **1,800** | **24,008** | **0.50** | **0.376** | 0.789 | **+69.0** |
+| 2,400 | 33,608 | 0.00 | 0.227 | 0.500 | +32.2 |
+
+At 24,008 transitions eight of sixteen deterministic episodes ended with the
+upper arm dressed past the 0.7 threshold, all of them tshirt_26; tshirt_392
+scored zero. No simulation errors, the held cuff within 1 cm throughout. The
+baseline cloth at the same step had 0.00 success and a 0.441 forearm ratio.
+The reference's own best across 33 evaluated runs is one success in 40
+episodes after 2.98M transitions.
+
+The next evaluation fell back to zero success with the upper arm at 0.227, so
+this is a peak rather than a converged policy, and a single seed. The
+checkpoint is kept as `best.pt` at step 1,800. What it establishes is that the
+task is reachable by a learned policy on this solver, which every earlier
+result left open.
 
 It is also faster, not slower. A first reading of these logs reported a
 five-fold slowdown; that was a mistake. The correctness pass added

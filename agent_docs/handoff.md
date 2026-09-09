@@ -1434,6 +1434,16 @@ run was stopped as invalid (two evaluations, 0 of 16 each). Training is
 relaunched with the fixed hold. Friction, erosion, and cloth-model sweeps
 were all taken with the detached anchor and are void, not ruled out.
 
+Ninth pass: the dressing task is solved by a learned policy for the first
+time. With the cloth corrected to the drape bake's measured stiffness (6e3
+stretch, a hundredth of that in shear, bending 0.1) the curriculum teacher at
+horizon 150 with six simulation steps per decision reaches a 0.50 success
+rate at 24,008 replay transitions, eight of sixteen episodes dressing the
+upper arm past 0.7. The next evaluation falls back to zero, so it is a peak on
+one seed, and the checkpoint is kept. The same run at the baseline stiffness
+had 0.00 success and less than half the forearm coverage. Details, and the
+speed work that came with it, are in the September 9 correctness record.
+
 Seventh pass: the Wang RSS 2023 / FMVP simulation pipeline is ported around
 this encoder and solver: the garment curriculum gating replay writes, the
 decision-rate flag, FMVP's early-turn detector (bend-plane form), the
