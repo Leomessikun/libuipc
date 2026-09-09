@@ -509,4 +509,36 @@ the semi-implicit Newton start all landed inside the contention noise.
 The sweep ended early on a rate limit, so it produced no written report; these
 figures are read from the 39 result files it left in the scratchpad.
 
+## Where the speed comparison stands after this pass
+
+Re-measured with every change of this record in place (reference-matched
+cloth, the CUDA-graph and tolerance settings, the batched observation and
+KD-tree reward), one decision of six simulation steps, GPU still shared with
+the foreign Newton job and this port's own training run:
+
+| Configuration | Environments | Simulation steps per decision | Seconds per decision | Replay transitions per second | Simulation steps per second |
+|---|---:|---:|---:|---:|---:|
+| Newton, decimation 1 | 40 | 1 | 1.03 | 38.8 | 38.8 |
+| Newton, decimation 6 | 40 | 6 | 3.48 | 11.5 | 69.0 |
+| This port, 16 copies | 16 | 6 | 2.36 | 6.8 | 40.7 |
+| This port, 32 copies | 32 | 6 | 3.06 | 10.5 | 62.8 |
+
+Per simulation step at the matched decimation-6 configuration the gap has
+closed from 6.8 times to 1.10 at 32 copies and 1.70 at 16. The earlier figure
+was the stiff cloth on the library's solver defaults with the unbatched
+observation; component costs at 16 copies are now 323 ms per simulation step
+against 1131, observation 75 ms against 935, reward 25 ms against 315. The
+32-copy row also settles the earlier open question: with this cloth and these
+settings, 32 copies do give more throughput than 16 (62.8 against 40.7
+simulation steps per second), which the stiff-cloth measurement had not
+confirmed.
+
+Newton still runs more copies per process and reaches a given transition
+count sooner: 24,008 transitions, the budget at which this port first dressed
+the arm, costs 0.58 hours there against 0.64 at 32 copies here and 0.98 at 16.
+What that budget buys differs: here it produced a 0.50 success rate, and the
+reference's own 33 evaluated runs peak at one success in 40 episodes after
+2.98M transitions. Speed per transition and value per transition are separate
+axes and this port is now close on the first and ahead on the second.
+
 GPU grasp and reachability measurements are recorded below after completion.
