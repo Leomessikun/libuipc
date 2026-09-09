@@ -276,15 +276,30 @@ At equal data the corrected cloth is not marginally better: it passes in one
 evaluation what the baseline had not reached in three, and it is the first run
 of any kind here to show a non-zero upper-arm ratio from a learned policy.
 
-It also costs five times the solve time per step, and that is not contention:
-both runs shared the GPU with the same foreign Newton job, and the baseline
-held 18 to 21 seconds while this one holds a flat 96. A floppier sheet folds
-against itself, so the contact set grows and the Newton solve does more work.
-Per transition the corrected cloth is worth more than five times as much, and
-per second it is roughly break-even, so the choice is not free either way. The
-open question is which of the three changes buys the learning and which buys
-the cost; bending is the one most likely to drive the contact growth, and
-shear is the one the constitution's own convention says was wrong.
+It is also faster, not slower. A first reading of these logs reported a
+five-fold slowdown; that was a mistake. The correctness pass added
+`simulated_transitions` and `simulated_steps` columns to the training log, and
+the baseline run predates them, so reading the fourth column as elapsed seconds
+gave the new run a constant 96, which is exactly its 16 environments times six
+simulation steps. Against the real elapsed column:
+
+| | Baseline cloth | Reference-matched cloth |
+|---|---:|---:|
+| Median seconds per vector step | 14.2 | **4.8** |
+| Range | 9.5 to 217.7 | 4.4 to 31.6 |
+| Wall clock to 8,648 replay transitions | about 5 h | 1.4 h |
+
+Profiling one simulation step directly agrees: at 16 environments, after the
+expert has driven the sleeve into contact, the corrected cloth takes 825 ms
+against the baseline's 1131 ms. A stiff sheet is not cheap here. It resists the
+strain-limiting projection, so the Newton solve works harder, and the baseline's
+long tail (218 s against 32 s) is where it fights hardest.
+
+Which of the three changes matters, profiled at eight environments per
+simulation step: bending 10 to 0.1 alone takes 1414 ms to 515 ms, the shear
+ratio alone 1246 ms, the stretch modulus alone 1251 ms, and all three together
+753 ms. Bending carries most of the speed; shear is the one the constitution's
+own convention says was wrong.
 
 ## What runs beside IPC in this scene, and what could
 
