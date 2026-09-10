@@ -5,6 +5,11 @@ Usage (from the repository root, inside the Genesis environment)::
     PYTHONPATH=python python -m uipc_manip.train_sac --task cloth_drag --num-envs 4 \
         --total-transitions 20000 --work-dir output/uipc_manip --run-name cloth_drag_seed1
 
+Dressing binds one (garment, body) cell to every slot for the life of the world:
+``--body-seeds`` crosses ``--garments`` with a body axis, ``--heldout-bodies``
+keeps whole bodies out of replay, and every evaluation round scores each cell
+with ``heldout_``/``training_`` summaries (``cellplan``).
+
 ``--policy heuristic --eval-only`` runs the scripted reachability check that
 every task must pass before SAC is worth running. ``--resume`` continues from a
 checkpoint directory, and ``--eval-only`` with ``--resume`` plays a checkpoint
@@ -23,6 +28,15 @@ from pathlib import Path
 
 import numpy as np
 
+from .cellplan import (
+    checkpoint_score,
+    complete_bodies,
+    coverage_problems,
+    plan_slots,
+    select_heldout_bodies,
+    summarize,
+    training_rows,
+)
 from .curriculum import WANG_GARMENT_ORDER, curriculum_order, garment_curriculum_stage
 from .dressing_env import DEFAULT_GARMENTS, DressingConfig, GenesisIPCDressingEnv
 from .genesis_env import EnvConfig, GenesisIPCManipEnv, ViewerClosed
@@ -37,11 +51,23 @@ from .sac import (
 from .tasks import TASKS, heuristic_action
 
 
+def _int_list(text: str) -> list[int]:
+    """Parse a comma-separated list of integers such as ``0,1,2``."""
+    return [int(token) for token in str(text).split(",") if token.strip()]
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--task", choices=[*sorted(TASKS), "dressing"], default="dressing")
-    p.add_argument("--human", type=int, default=0, help="dressing: cached human whose cells fill every slot (a regional teacher).")
-    p.add_argument("--garments", type=str, nargs="+", default=list(DEFAULT_GARMENTS), help="dressing: garments cycled across slots.")
+    p.add_argument("--cell-source", choices=("cache", "live"), default="live", help="dressing: 'live' drapes each garment in libuipc and places it on a generated body, so every (garment, body) cell exists; 'cache' reads the Newton bake's 23 pre-worn cells over bodies 0-7.")
+    body_axis = p.add_mutually_exclusive_group()
+    body_axis.add_argument("--human", type=int, default=0, help="dressing: the single body whose cells fill every slot (a regional teacher); holds no body out.")
+    body_axis.add_argument("--body-seeds", type=_int_list, default=None, help="dressing: comma-separated bodies, SMPL-X seeds for live cells or cached ids for cache cells; every (garment, body) cell gets a slot.")
+    heldout_axis = p.add_mutually_exclusive_group()
+    heldout_axis.add_argument("--heldout-bodies", type=int, default=None, help="dressing: whole bodies whose slots step and are evaluated but never feed replay, the greatest that carry every garment; default 2 for live and 1 for cache (always leaving a training body), 0 for a single body.")
+    heldout_axis.add_argument("--heldout-body-seeds", type=_int_list, default=None, help="dressing: comma-separated held-out bodies, instead of --heldout-bodies.")
+    p.add_argument("--allow-partial-cell-coverage", action="store_true", help="dressing: run although a cell has no slot, a requested garment or body has no cell, or a round has fewer evaluation episodes than cells; smoke tests only.")
+    p.add_argument("--garments", type=str, nargs="+", default=list(DEFAULT_GARMENTS), help="dressing: garments of the cell grid, each crossed with every body.")
     p.add_argument("--anchor-count", type=int, default=12, help="dressing: cuff vertices held by the picker.")
     p.add_argument("--cuff-strength", type=float, default=1.0e4, help="dressing: soft position constraint strength_rate of the held cuff; 100 lets the garment detach from the tool.")
     p.add_argument("--no-obs-augment", action="store_true", help="dressing: disable camera jitter and dropout.")
@@ -81,7 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-alpha", type=float, default=0.0)
     p.add_argument("--init-temperature", type=float, default=0.1, help="Initial SAC temperature; the reference uses 0.1 at a 150-step horizon.")
     p.add_argument("--eval-freq", type=int, default=500, help="Vector steps between evaluations (0 disables).")
-    p.add_argument("--num-eval-episodes", type=int, default=4)
+    p.add_argument("--num-eval-episodes", type=int, default=None, help="Episodes per evaluation round, rounded up to a whole number per slot; default one per slot, which is one deterministic episode per cell when every cell has its own slot.")
     p.add_argument("--checkpoint-interval", type=int, default=500)
     p.add_argument("--log-interval", type=int, default=20)
     p.add_argument("--work-dir", type=str, default="output/uipc_manip", help="Runs land here; the repository ignores output/.")
@@ -103,6 +129,8 @@ def resolve_defaults(args) -> None:
         args.action_repeat = 1 if args.task == "dressing" else 5
     if args.point_budget is None:
         args.point_budget = 768 if args.task == "dressing" else 256
+    if args.num_eval_episodes is None:
+        args.num_eval_episodes = args.num_envs
 
 
 def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
@@ -111,6 +139,9 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     An explicit incompatible option is an error on training continuation; playback
     may override environment settings, but must still match the network protocol.
     Older checkpoints recover the launcher fields present in their env metadata.
+    The cell-plan options are pinned the same way; the plan itself also depends on
+    the cell library, so ``make_env`` compares it with the checkpoint's
+    (``reconcile_resume_cell_plan``) before building the world.
     """
     explicit = {token.split("=", 1)[0][2:].replace("-", "_") for token in argv if token.startswith("--")}
     metadata = payload.get("metadata", {})
@@ -119,6 +150,17 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     args._resume_env = env
     args._explicit_options = sorted(explicit)
     saved.update({key: env[key] for key in ("human", "garments", "horizon", "action_repeat", "point_budget", "anchor_count") if key in env})
+    if metadata.get("task") == "dressing":
+        # Checkpoints from before the cell plan all trained on the bake cache.
+        saved["cell_source"] = env.get("cell_source", "cache")
+        args._resume_cell_plan = {key: metadata[key] for key in ("cells", "heldout_cells", "heldout_bodies") if key in metadata}
+        if args.eval_only and explicit & {"human", "body_seeds", "garments", "cell_source"}:
+            # Playback on another cell axis plans that axis from its own defaults: an
+            # explicit --human replaces the saved body seeds, and a saved held-out row
+            # names bodies of the old axis. make_env then scores every cell the
+            # checkpoint never trained on as held out.
+            for key in {"heldout_bodies", "heldout_body_seeds", *(("body_seeds",) if "human" in explicit else ())} - explicit:
+                saved.pop(key, None)
     if "constraint_strength" in env and metadata.get("task") == "dressing":
         saved["cuff_strength"] = env["constraint_strength"]
     if "augment_obs" in env:
@@ -210,11 +252,129 @@ def build_sac_config(args) -> SACConfig:
     return sac_cfg
 
 
+def cell_bodies(args) -> list[int]:
+    """The body axis: ``--body-seeds``, else the single ``--human``."""
+    seeds = getattr(args, "body_seeds", None)
+    return sorted({int(b) for b in seeds}) if seeds else [int(args.human)]
+
+
+def library_cells(args, cfg: DressingConfig) -> list[tuple[str, int]]:
+    """Every cell the configured source can build for the requested garments and bodies."""
+    garments, bodies = set(args.garments), set(cell_bodies(args))
+    if args.cell_source == "cache":
+        from .dressing_assets import DressingCache
+
+        available = DressingCache(cfg.cache).cells
+    else:
+        from .dressing_live import available_garments
+
+        available = [(g, b) for g in available_garments(cfg.live) for b in bodies]
+    return sorted({(str(g), int(b)) for g, b in available if g in garments and int(b) in bodies})
+
+
+def plan_cells(args, library) -> dict:
+    """Bind one (garment, body) cell to every slot and hold whole bodies out of replay.
+
+    Held-out cells take the leading slots and the rest are stratified by garment
+    (``cellplan.plan_slots``). Unless ``--allow-partial-cell-coverage`` is given
+    (``--vis`` implies it, since it forces one slot), a library cell without a slot,
+    a requested garment or body without a cell, or a round of fewer evaluation
+    episodes than cells is refused before any world is built. Duplicate slots are
+    allowed, so a single-body regional teacher still cycles its garments over every
+    slot.
+    """
+    library = sorted({(str(g), int(b)) for g, b in library})
+    bodies = cell_bodies(args)
+    problems = coverage_problems(library, args.garments, bodies, args.num_envs, args.num_eval_episodes)
+    if problems and not (args.allow_partial_cell_coverage or args.vis):
+        raise ValueError(
+            "The slots do not cover the cell library: " + "; ".join(problems) + ". Pass --allow-partial-cell-coverage only for a smoke test."
+        )
+    if not library:
+        raise ValueError(f"No {args.cell_source} cell exists for garments {list(args.garments)} and bodies {bodies}")
+    garments = sorted({g for g, _ in library})
+    if args.heldout_body_seeds is not None:
+        heldout = sorted({int(b) for b in args.heldout_body_seeds})
+        incomplete = sorted(set(heldout) - set(complete_bodies(library, garments)))
+        if incomplete:
+            raise ValueError(f"Held-out bodies {incomplete} are not complete rows of the cell library, which needs every garment of {garments}")
+    else:
+        count = args.heldout_bodies
+        if count is None:
+            count = 0 if len(bodies) == 1 else min(2 if args.cell_source == "live" else 1, len(bodies) - 1)
+        heldout = select_heldout_bodies(library, garments, count)
+    slots, heldout_slots = plan_slots(library, args.num_envs, heldout)
+    return {"cells": [[g, b] for g, b in slots], "heldout_slots": heldout_slots, "heldout_bodies": heldout, "cell_source": args.cell_source}
+
+
+def reconcile_resume_cell_plan(args, plan: dict) -> dict:
+    """Hold a resumed run to its checkpoint's cell plan.
+
+    A training resume onto other cells, another slot binding or another held-out
+    row is refused. Playback may differ: the difference is printed, and every slot
+    whose cell the checkpoint never trained on is scored as held out, so a
+    zero-shot round on fresh bodies is not reported as ``training_``.
+    """
+    saved = getattr(args, "_resume_cell_plan", None) or {}
+    if "cells" not in saved:
+        return plan
+    old = [(str(g), int(b)) for g, b in saved["cells"]]
+    new = [(str(g), int(b)) for g, b in plan["cells"]]
+    old_heldout = sorted(int(b) for b in saved.get("heldout_bodies", []))
+    if old == new and old_heldout == list(plan["heldout_bodies"]):
+        return plan
+    added, removed = sorted(set(new) - set(old)), sorted(set(old) - set(new))
+    changes = [f"new cells {added}"] if added else []
+    changes += [f"dropped cells {removed}"] if removed else []
+    changes += ["the same cells bound to other slots"] if not added and not removed and old != new else []
+    changes += [f"held-out bodies {old_heldout} -> {list(plan['heldout_bodies'])}"] if old_heldout != list(plan["heldout_bodies"]) else []
+    if not args.eval_only:
+        raise ValueError(f"Checkpoint was trained on another cell plan ({'; '.join(changes)}); a training resume must keep its cells and held-out bodies")
+    trained = set(old) - {(str(g), int(b)) for g, b in saved.get("heldout_cells", [])}
+    heldout_slots = [i for i, cell in enumerate(new) if cell not in trained]
+    unseen_bodies = sorted(b for b in {b for _, b in new} if all(cell not in trained for cell in new if cell[1] == b))
+    print(
+        f"[uipc-manip] eval-only cell plan differs from the checkpoint: {'; '.join(changes)}; "
+        f"{len(heldout_slots)} of {len(new)} slots hold cells it never trained on and are scored as held out",
+        flush=True,
+    )
+    return {**plan, "heldout_slots": heldout_slots, "heldout_bodies": unseen_bodies}
+
+
+def describe_cell_plan(plan: dict) -> str:
+    """The ``[uipc-manip distribution]`` line: what the world trains on and what it holds out."""
+    cells = [(str(g), int(b)) for g, b in plan["cells"]]
+    heldout = set(plan["heldout_slots"])
+    training_cells = {cell for i, cell in enumerate(cells) if i not in heldout}
+    heldout_cells = {cell for i, cell in enumerate(cells) if i in heldout}
+    return (
+        f"[uipc-manip distribution] source={plan['cell_source']} slots={len(cells)} unique_cells={len(set(cells))} "
+        f"training_cells={len(training_cells)} heldout_cells={len(heldout_cells)} garments={sorted({g for g, _ in cells})} "
+        f"bodies={sorted({b for _, b in cells})} heldout_bodies={list(plan['heldout_bodies'])}"
+    )
+
+
+def built_cell_plan(env, plan: dict | None) -> tuple[list[tuple[str, int]] | None, list[int]]:
+    """Slot cells and held-out slots of the world ``make_env`` built from ``plan``.
+
+    Without a plan (non-dressing tasks) every slot trains and evaluation reads each
+    slot's cell from its episode infos.
+    """
+    if plan is None:
+        return None, []
+    cells = [(str(g), int(b)) for g, b in plan["cells"]]
+    built = [(str(d["garment"]), int(d["human"])) for d in env.descriptions if "human" in d]
+    if built and built != cells:
+        raise RuntimeError(f"The world bound cells {built} to its slots but the plan is {cells}")
+    return cells, [int(i) for i in plan["heldout_slots"]]
+
+
 def make_env(args):
     if args.task == "dressing":
         cfg = DressingConfig(
             human=args.human,
             garments=tuple(args.garments),
+            cell_source=args.cell_source,
             horizon=args.horizon,
             action_repeat=args.action_repeat,
             point_budget=args.point_budget,
@@ -233,7 +393,14 @@ def make_env(args):
             augment_obs=not args.no_obs_augment,
             show_viewer=bool(args.vis),
         )
-        return GenesisIPCDressingEnv(restore_env_config(cfg, args), num_envs=args.num_envs)
+        cfg = restore_env_config(cfg, args)
+        # The plan, not the checkpoint's env record, decides which cell each slot holds.
+        plan = reconcile_resume_cell_plan(args, plan_cells(args, library_cells(args, cfg)))
+        cfg = replace(cfg, cells=tuple((g, b) for g, b in plan["cells"]), cell_source=args.cell_source)
+        plan["live"] = cfg.live.to_dict() if cfg.cell_source == "live" else None
+        args._cell_plan = plan
+        print(describe_cell_plan(plan), flush=True)
+        return GenesisIPCDressingEnv(cfg, num_envs=args.num_envs)
     return GenesisIPCManipEnv(restore_env_config(env_config(args), args), num_envs=args.num_envs)
 
 
@@ -255,8 +422,18 @@ def heuristic_actions(obs: np.ndarray, spec: ObsSpec, max_translation: float) ->
     return np.stack([heuristic_action(marker_centroid_rel(o, spec), goal_rel(o, spec), max_translation) for o in obs])
 
 
-def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Path | None = None) -> dict:
-    """Play deterministic episodes and report success and distance statistics."""
+def evaluate(
+    env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Path | None = None,
+    *, slot_cells: list[tuple[str, int]] | None = None, heldout_slots=(),
+) -> dict:
+    """Play deterministic episodes and report success and distance statistics.
+
+    Every slot is scored whatever the curriculum stage, so rounds stay comparable.
+    ``slot_cells`` binds a (garment, body) cell to each slot and ``heldout_slots``
+    names the slots held out of replay; the summary then adds per-cell rates and the
+    ``heldout_``/``training_`` blocks of ``cellplan.summarize``. Without a plan each
+    slot's cell is read from its episode infos.
+    """
     if episodes < 1:
         raise ValueError("Evaluation requires at least one episode")
     requested_episodes = episodes
@@ -306,14 +483,20 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
                     record[f"final_{k}"] = float(info.get(k, np.nan))
                     record[f"max_{k}"] = float(running_max[k][i])
                     running_max[k][i] = -np.inf
-                if "garment" in info:
-                    record["garment"] = str(info["garment"])
+                record["slot"] = i
+                for key in ("garment", "cell"):
+                    if key in info:
+                        record[key] = str(info[key])
+                if "human" in info:
+                    record["human"] = int(info["human"])
                 if slot_finished[i] < episodes_per_slot:
                     finished.append(record)
                     slot_finished[i] += 1
                     if trajectories is not None:
                         static = None
-                        if hasattr(env, "arm_vertices"):
+                        if hasattr(env, "arm_meshes"):  # each slot has its own body
+                            static = {"vertices": env.arm_meshes[i][0], "faces": env.arm_meshes[i][1]}
+                        elif hasattr(env, "arm_vertices"):
                             static = {"vertices": env.arm_vertices, "faces": env.arm_faces}
                         _save_trajectory(trajectory_dir, episode_index, trajectories[i], env.descriptions[i], static)
                         episode_index += 1
@@ -337,16 +520,22 @@ def evaluate(env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Pa
     for k in metric_keys:
         summary[f"mean_final_{k}"] = float(np.nanmean([r[f"final_{k}"] for r in finished]))
         summary[f"mean_max_{k}"] = float(np.nanmean([r[f"max_{k}"] for r in finished]))
-    garments = sorted({r["garment"] for r in finished if "garment" in r})
-    for g in garments:
-        rows = [r for r in finished if r.get("garment") == g]
-        summary[f"episodes_{g}"] = len(rows)
-        summary[f"success_rate_{g}"] = float(np.mean([r["success"] for r in rows]))
-        for k in metric_keys:
-            summary[f"mean_final_{k}_{g}"] = float(np.nanmean([r[f"final_{k}"] for r in rows]))
-            summary[f"mean_max_{k}_{g}"] = float(np.nanmean([r[f"max_{k}"] for r in rows]))
+    if slot_cells is None:
+        slot_cells = _cells_from_records(finished, env.num_envs)
+    if slot_cells is not None:
+        ratio_keys = tuple(k for k in ("upperarm_ratio", "forearm_ratio") if k in metric_keys)
+        summary.update(summarize(finished, slot_cells, heldout_slots, ratio_keys))
     summary["records"] = finished
     return summary
+
+
+def _cells_from_records(records: list[dict], num_envs: int) -> list[tuple[str, int | None]] | None:
+    """Each slot's (garment, body) as its episode infos report it; ``None`` without garments."""
+    cells: list = [None] * num_envs
+    for record in records:
+        if "garment" in record:
+            cells[record["slot"]] = (record["garment"], record.get("human"))
+    return None if any(cell is None for cell in cells) else cells
 
 
 def _save_trajectory(directory: Path, index: int, states: list[dict], description: dict, static: dict | None = None) -> None:
@@ -384,24 +573,6 @@ def _hold_viewer(env, text: str) -> None:
     while viewer.is_alive():
         viewer.update(force=True)
         time.sleep(0.03)
-
-
-def checkpoint_score(metrics: dict) -> tuple:
-    """Lexicographic selection key, led by the continuous dressed ratio.
-
-    FMVP's own criterion is a threshold on the final upper-arm ratio, but with a
-    handful of episodes per cell the thresholded rate is a coarse, high-variance
-    statistic: a run whose best evaluation scored 0.50 had one garment finish at
-    0.7528 against a 0.70 threshold, and the next evaluation's 0.00 was the same
-    garment at 0.4541. Ranking the ratio first makes the selection track the
-    quantity that actually moved; the threshold rate stays as the next key.
-    """
-    return (
-        metrics.get("mean_final_upperarm_ratio", 0.0),
-        metrics["success_rate"],
-        metrics.get("mean_max_upperarm_ratio", 0.0),
-        metrics["mean_return"],
-    )
 
 
 class CsvLogger:
@@ -457,6 +628,7 @@ def main(argv: list[str] | None = None) -> None:
     seeds = [args.seed * 100 + i for i in range(args.num_envs)]
     resolve_defaults(args)
     env = make_env(args)
+    slot_cells, heldout_slots = built_cell_plan(env, getattr(args, "_cell_plan", None))
     spec = ObsSpec(args.point_budget)
     description = env.descriptions[0]
     print(
@@ -464,7 +636,8 @@ def main(argv: list[str] | None = None) -> None:
         f"settle_displacement={description['settle_displacement_m']:.4f} m",
         flush=True,
     )
-    (run_dir / "env.json").write_text(json.dumps(description, indent=2) + "\n")
+    # default=str: the dressing config's live-cell settings hold Path objects.
+    (run_dir / "env.json").write_text(json.dumps(description, indent=2, default=str) + "\n")
 
     if args.policy == "heuristic":
         if args.task == "dressing":
@@ -496,7 +669,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.vis:
             _set_viewer_caption(env, f"uipc_manip {args.task} | {args.policy} policy | blue: deformable, green: goal, red: marker centroid")
         try:
-            metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir)
+            metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir, slot_cells=slot_cells, heldout_slots=heldout_slots)
         except ViewerClosed:
             print("[uipc-manip] viewer closed; exiting", flush=True)
             return
@@ -516,6 +689,14 @@ def main(argv: list[str] | None = None) -> None:
         start_step = int(payload["step"])
         if args.resume_replay:
             validate_resume_replay(payload, replay.load(args.resume_replay))
+    # Wang's garment curriculum: slots of garments not yet admitted keep stepping but do not feed replay.
+    slot_garments = [str(d.get("garment", "")) for d in env.descriptions]
+    order = curriculum_order(args.garment_curriculum_order.split(","), [g for g in slot_garments if g]) if any(slot_garments) else []
+    slot_rank = np.array([order.index(g) if g else 0 for g in slot_garments], dtype=np.int64)
+    curriculum_interval = int(args.garment_curriculum_interval) if order else 0
+    # Held-out slots step with the policy and are evaluated, but never feed replay.
+    training_slot_mask = np.ones(env.num_envs, dtype=bool)
+    training_slot_mask[heldout_slots] = False
     metadata = {
         "task": args.task,
         "env": description["config"],
@@ -525,9 +706,18 @@ def main(argv: list[str] | None = None) -> None:
         "num_envs": env.num_envs,
         "training_args": {key: getattr(args, key) for key in (
             "garment_curriculum_interval", "garment_curriculum_order", "updates_per_step", "replay_capacity", "init_steps",
+            "cell_source", "body_seeds", "heldout_bodies", "heldout_body_seeds", "allow_partial_cell_coverage",
         )},
+        "curriculum_order": order,
     }
-    (run_dir / "config.json").write_text(json.dumps({"args": vars(args), **metadata}, indent=2) + "\n")
+    plan = getattr(args, "_cell_plan", None)
+    if plan is not None:
+        # restore_resume_args and reconcile_resume_cell_plan hold a resume to these.
+        metadata.update(
+            cells=plan["cells"], heldout_slots=plan["heldout_slots"], heldout_cells=[plan["cells"][i] for i in plan["heldout_slots"]],
+            heldout_bodies=plan["heldout_bodies"], cell_source=plan["cell_source"], live=plan["live"],
+        )
+    (run_dir / "config.json").write_text(json.dumps({"args": vars(args), **metadata}, indent=2, default=str) + "\n")
     logger = CsvLogger(run_dir / "train_log.csv")
     eval_logger = CsvLogger(run_dir / "eval_log.csv")
     target_transitions = replay.total_added + args.total_transitions
@@ -536,12 +726,6 @@ def main(argv: list[str] | None = None) -> None:
         f"additional_replay_transitions={args.total_transitions}",
         flush=True,
     )
-
-    # Wang's garment curriculum: slots of garments not yet admitted keep stepping but do not feed replay.
-    slot_garments = [str(d.get("garment", "")) for d in env.descriptions]
-    order = curriculum_order(args.garment_curriculum_order.split(","), [g for g in slot_garments if g]) if any(slot_garments) else []
-    slot_rank = np.array([order.index(g) if g else 0 for g in slot_garments], dtype=np.int64)
-    curriculum_interval = int(args.garment_curriculum_interval) if order else 0
     active_garments = -1
     if curriculum_interval > 0:
         print(f"[uipc-manip] garment curriculum every {curriculum_interval} vector steps, order={order}", flush=True)
@@ -552,6 +736,7 @@ def main(argv: list[str] | None = None) -> None:
     best_score = None
     recent_returns: list[float] = []
     recent_success: list[float] = []
+    recent_heldout_success: list[float] = []
     t_start = time.time()
     stats: dict = {}
     vector_step = start_step
@@ -571,12 +756,15 @@ def main(argv: list[str] | None = None) -> None:
             active_garments = stage
             if curriculum_interval > 0:
                 print(f"[uipc-manip] curriculum step={vector_step} active={stage}/{len(order)} garments={order[:stage]}", flush=True)
+        admitted = training_rows(training_slot_mask, slot_rank, stage, [bool(info.get("sim_error")) for info in infos])
         added = 0
         for i, info in enumerate(infos):
             if info.get("sim_error"):
                 episode_return[i] = 0.0
                 continue
-            if slot_rank[i] >= stage:
+            if not training_slot_mask[i] and dones[i]:
+                recent_heldout_success.append(float(info.get("success", False)))
+            if not admitted[i]:
                 continue
             # Time limits are not terminal states: bootstrap from the true final observation.
             terminal_obs = info.get("terminal_obs", None)
@@ -612,6 +800,7 @@ def main(argv: list[str] | None = None) -> None:
                 "elapsed_s": round(elapsed, 1),
                 "episode_return": float(np.mean(recent_returns[-20:])) if recent_returns else float("nan"),
                 "episode_success": float(np.mean(recent_success[-20:])) if recent_success else float("nan"),
+                **({"heldout_episode_success": float(np.mean(recent_heldout_success[-20:])) if recent_heldout_success else float("nan")} if heldout_slots else {}),
                 "active_garments": int(active_garments),
                 "alpha": round(float(agent.alpha), 6) if hasattr(agent, "alpha") else float("nan"),
                 **{k: round(v, 5) for k, v in stats.items()},
@@ -627,7 +816,7 @@ def main(argv: list[str] | None = None) -> None:
             replay.save(ckpt_dir / f"replay_{vector_step:07d}", metadata={"step": vector_step, "reward_scale": reward_scale})
             if do_eval or finished_budget:
                 agent.train(False)
-                metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir)
+                metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir, slot_cells=slot_cells, heldout_slots=heldout_slots)
                 agent.train(True)
                 summary = {k: v for k, v in metrics.items() if k != "records"}
                 eval_logger.log({"step": vector_step, **summary})

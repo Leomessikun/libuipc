@@ -149,6 +149,10 @@ class DressingConfig:
     def to_dict(self) -> dict:
         data = asdict(self)
         data["cache"] = {k: str(v) for k, v in data["cache"].items()}
+        # The live configuration nests Paths; its own to_dict renders them as strings so
+        # the whole config survives json.dumps (run config, checkpoint metadata, rollouts).
+        data["live"] = self.live.to_dict()
+        data["cells"] = [[str(g), int(b)] for g, b in self.cells]
         data["max_translation"] = self.max_translation
         return data
 

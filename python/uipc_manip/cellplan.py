@@ -16,6 +16,15 @@ import numpy as np
 
 
 # ---------------------------------------------------------------- slot planning
+def complete_bodies(cells, garments) -> list[int]:
+    """Bodies that carry a cell of every requested garment, ascending."""
+    requested = {str(g) for g in garments}
+    by_body: dict[int, set[str]] = {}
+    for garment, body in cells:
+        by_body.setdefault(int(body), set()).add(str(garment))
+    return sorted(b for b, gs in by_body.items() if requested <= gs)
+
+
 def select_heldout_bodies(cells, garments, count: int) -> list[int]:
     """Deterministically reserve whole bodies that carry every requested garment.
 
@@ -24,14 +33,10 @@ def select_heldout_bodies(cells, garments, count: int) -> list[int]:
     never confounded with garment composition, and takes the greatest such id so
     the choice is reproducible.
     """
-    requested = {str(g) for g in garments}
-    by_body: dict[int, set[str]] = {}
-    for garment, body in cells:
-        by_body.setdefault(int(body), set()).add(str(garment))
-    complete = sorted(b for b, gs in by_body.items() if requested <= gs)
+    complete = complete_bodies(cells, garments)
     if len(complete) < int(count):
         raise ValueError(
-            f"{count} held-out bodies requested but only {len(complete)} carry every garment {sorted(requested)}"
+            f"{count} held-out bodies requested but only {len(complete)} carry every garment {sorted({str(g) for g in garments})}"
         )
     return complete[len(complete) - int(count):]
 
@@ -66,9 +71,36 @@ def plan_slots(cells, num_envs: int, heldout_bodies) -> tuple[list[tuple[str, in
     return slots, heldout_slots
 
 
+def coverage_problems(library, garments, bodies, num_envs: int, eval_episodes: int | None = None) -> list[str]:
+    """Why ``num_envs`` slots would not train and score every requested cell; empty when they do.
+
+    The Newton launcher refuses these for a formal run: a library cell without a
+    slot is never trained or scored, a requested garment or body without a cell
+    silently narrows the distribution, and a round of fewer episodes than cells
+    cannot score each cell once. Duplicate slots are allowed, so a single-body
+    regional teacher can cycle its few garments over every slot.
+    """
+    cells = {(str(g), int(b)) for g, b in library}
+    problems = []
+    missing_garments = [str(g) for g in dict.fromkeys(garments) if all(c[0] != str(g) for c in cells)]
+    if missing_garments:
+        problems.append(f"no cell for garments {missing_garments}")
+    missing_bodies = [int(b) for b in dict.fromkeys(bodies) if all(c[1] != int(b) for c in cells)]
+    if missing_bodies:
+        problems.append(f"no cell for bodies {missing_bodies}")
+    if len(cells) > int(num_envs):
+        problems.append(
+            f"{len(cells)} cells do not fit in {num_envs} slots, so {len(cells) - int(num_envs)} would never be trained or scored"
+        )
+    if eval_episodes is not None and int(eval_episodes) < len(cells):
+        problems.append(f"{eval_episodes} evaluation episodes cannot score {len(cells)} cells once each")
+    return problems
+
+
 # ------------------------------------------------------------- evaluation summary
-def cell_label(garment: str, body: int) -> str:
-    return f"{garment}|human={int(body)}"
+def cell_label(garment: str, body: int | None) -> str:
+    """``garment|human=N``; just the garment when the body is unknown."""
+    return str(garment) if body is None else f"{garment}|human={int(body)}"
 
 
 def summarize(records, slot_cells, heldout_slots, metric_keys=("upperarm_ratio", "forearm_ratio")):
@@ -81,7 +113,7 @@ def summarize(records, slot_cells, heldout_slots, metric_keys=("upperarm_ratio",
     """
     heldout = {int(s) for s in heldout_slots}
     labels = [cell_label(g, b) for g, b in slot_cells]
-    out: dict[str, float] = {"episodes": float(len(records))}
+    out: dict[str, float | int] = {"episodes": len(records)}
 
     def block(prefix: str, rows):
         if not rows:
@@ -91,11 +123,11 @@ def summarize(records, slot_cells, heldout_slots, metric_keys=("upperarm_ratio",
             by_cell.setdefault(labels[int(r["slot"])], []).append(r)
         cell_rates = [float(np.mean([x["success"] for x in v])) for v in by_cell.values()]
         p = f"{prefix}_" if prefix else ""
-        out[f"{p}episode_count"] = float(len(rows))
-        out[f"{p}cell_count"] = float(len(by_cell))
+        out[f"{p}episode_count"] = len(rows)
+        out[f"{p}cell_count"] = len(by_cell)
         out[f"{p}success_rate"] = float(np.mean([r["success"] for r in rows]))
         out[f"{p}worst_cell_success_rate"] = float(min(cell_rates))
-        out[f"{p}zero_cell_count"] = float(sum(1 for r in cell_rates if r == 0.0))
+        out[f"{p}zero_cell_count"] = sum(1 for r in cell_rates if r == 0.0)
         out[f"{p}paper_filter_rate"] = float(np.mean([r["paper_filter"] for r in rows]))
         out[f"{p}mean_return"] = float(np.mean([r["return"] for r in rows]))
         for k in metric_keys:
@@ -108,35 +140,54 @@ def summarize(records, slot_cells, heldout_slots, metric_keys=("upperarm_ratio",
         rows = [r for r in records if labels[int(r["slot"])] == label]
         if rows:
             out[f"success_rate_{label}"] = float(np.mean([r["success"] for r in rows]))
-            out[f"mean_final_upperarm_ratio_{label}"] = float(np.nanmean([r["final_upperarm_ratio"] for r in rows]))
-    for garment in sorted({g for g, _ in slot_cells}):
-        rows = [r for r in records if slot_cells[int(r["slot"])][0] == garment]
+            if "final_upperarm_ratio" in rows[0]:
+                out[f"mean_final_upperarm_ratio_{label}"] = float(np.nanmean([r["final_upperarm_ratio"] for r in rows]))
+    for garment in sorted({str(g) for g, _ in slot_cells}):
+        rows = [r for r in records if str(slot_cells[int(r["slot"])][0]) == garment]
         if rows:
+            out[f"episodes_{garment}"] = len(rows)
             out[f"success_rate_{garment}"] = float(np.mean([r["success"] for r in rows]))
+            for k in metric_keys:
+                out[f"mean_final_{k}_{garment}"] = float(np.nanmean([r[f"final_{k}"] for r in rows]))
     return out
 
 
 # --------------------------------------------------------------- checkpoint score
 def checkpoint_score(metrics: dict) -> tuple:
-    """Rank held-out generalization first, exactly as ``policy_checkpoint_score``.
+    """Lexicographic best-checkpoint key: held-out first, each block led by the dressed ratio.
 
-    ``success_rate`` here is already FMVP's own criterion: the upper-arm ratio
-    the trajectory ENDS with, at least 0.7 (``dressing_env`` reports ``success``
-    from the final step's ratio at the shared time limit).
+    When a held-out subset was scored its keys lead, as in the reference's
+    ``policy_checkpoint_score``, so a policy that memorises its training cells
+    cannot outrank one that dresses an unseen body; the all-cell keys only break
+    ties. Inside each block the continuous final upper-arm ratio leads. ``success``
+    is FMVP's own criterion, that ratio at least 0.7 where the trajectory ends, but
+    with a handful of episodes per cell the thresholded rate is coarse and noisy: a
+    run whose best evaluation scored 0.50 had one garment finish at 0.7528 against
+    the 0.70 threshold, and the next evaluation's 0.00 was the same garment at
+    0.4541. The threshold rate follows, then the worst cell's rate, which exposes
+    the port's actual failure mode: one garment at exactly 0.00 behind a 0.50 mean.
+    ``paper_filter_rate`` stays out: the reference applies the early-turn test only
+    in the Stage I-B rollout filter, never in checkpoint selection. A missing or
+    non-finite value scores as the floor, so one NaN round cannot freeze ``best.pt``.
     """
-    p = "heldout_" if float(metrics.get("heldout_episode_count", 0.0)) > 0.0 else ""
+
+    def value(key: str, floor: float = 0.0) -> float:
+        try:
+            v = float(metrics.get(key, floor))
+        except (TypeError, ValueError):
+            return floor
+        return v if np.isfinite(v) else floor
+
+    p = "heldout_" if value("heldout_episode_count") > 0.0 else ""
     return (
-        float(metrics.get(f"{p}success_rate", 0.0)),
-        float(metrics.get(f"{p}worst_cell_success_rate", 0.0)),
-        # No paper_filter here: the reference uses the early-turn test only in
-        # the Stage I-B rollout filter, never in policy_checkpoint_score.
-        float(metrics.get(f"{p}mean_final_upperarm_ratio", 0.0)),
-        float(metrics.get(f"{p}mean_final_forearm_ratio", 0.0)),
-        float(metrics.get(f"{p}mean_return", float("-inf"))),
-        # All-cell metrics break ties without letting training-cell success
-        # outrank generalization to an unseen body.
-        float(metrics.get("success_rate", 0.0)),
-        float(metrics.get("mean_final_upperarm_ratio", 0.0)),
+        value(f"{p}mean_final_upperarm_ratio"),
+        value(f"{p}success_rate"),
+        value(f"{p}worst_cell_success_rate"),
+        # The all-cell key the single-body trainer ranked by, as tie-breakers.
+        value("mean_final_upperarm_ratio"),
+        value("success_rate"),
+        value("mean_max_upperarm_ratio"),
+        value("mean_return", float("-inf")),
     )
 
 

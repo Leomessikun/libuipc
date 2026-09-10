@@ -1,6 +1,8 @@
 # 2026-09-10 — Training one dressing policy for many garments and many bodies
 
-- Status: Accepted as the plan; only the per-slot arm collider is implemented so far
+- Status: Accepted and implemented in the trainer (cell planning, held-out bodies, per-cell
+  evaluation, generalisation-first checkpoint score, resume refusal); live cells build for
+  tshirt_26 and tshirt_4 on generated bodies, the other two garments are open
 - Scope: the `python/uipc_manip/` training and evaluation protocol; no libuipc solver change
 - Sources: Wang RSS 2023 in `/home/ge47gax/kun/dressing/curl/`, the Newton port's
   `dressing/docs/PIPELINE.md` and `dressing/training/`, and this port's own measurements in

@@ -1450,6 +1450,22 @@ per round, and the temperature is logged. Details, the speed work, and the
 open problems are in the September 9 correctness record; what training one
 policy over many cells still requires is in the September 10 protocol record.
 
+Tenth pass: one policy over many cells is wired end to end. The environment
+takes a (garment, body) per slot from the Newton cache or live, where live
+drapes the garment in libuipc and places it on an SMPL-X body generated from a
+seed. The trainer plans slots, reserves whole bodies from training (their slots
+step and are evaluated but never reach replay), summarises evaluation per cell
+with held-out and training blocks, ranks checkpoints on the held-out continuous
+ratio first, and refuses a resume onto a different plan. `--cell-source live` is
+the new default, so single-body commands need `--cell-source cache`. Two live
+blockers were found and fixed: a ground plane the task never used, which the
+hanging garment hit, and a Genesis initialisation order, where starting cuBLAS
+before gs.init (generating a GPU body first) makes Quadrants assert. A sixteen-
+cell world of tshirt_26 and tshirt_4 on bodies 0-7 steps at 1.32 s per decision
+with a 3.0 mm grasp error. tshirt_68 and tshirt_392 do not yet build live, and
+the settle is a free fall because the episode pins twelve anchors where the
+bake pinned the grasp patch and the opening.
+
 Seventh pass: the Wang RSS 2023 / FMVP simulation pipeline is ported around
 this encoder and solver: the garment curriculum gating replay writes, the
 decision-rate flag, FMVP's early-turn detector (bend-plane form), the
