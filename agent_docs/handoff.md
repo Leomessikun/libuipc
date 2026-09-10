@@ -1560,3 +1560,33 @@ of 8 gown bodies and passes 0.7 on the upper arm on 5, with a worst held-cuff er
 did not drop. `DEFAULT_GARMENTS` in `dressing_env.py` still calls the gown unusable
 after Newton's notes. Evidence and the variants tried are in the correctness record's
 "The hospital gown started upside down".
+
+Integration pass: the four parallel branches landed on `cloth-cable-manip-rl`.
+Each was fast-forwarded or cherry-picked, then pushed after the CPU suite passed:
+- The Wang pretraining infrastructure (`fb38b326`, `a1da4af3`, `9f8591bb`):
+  `pretrain_wang.py`, a rotating world, per-buffer replay and temperatures, a
+  held-out eval world, and `--dt`.
+- The gown's baked hang (`353e92e6`).
+- The camera-rig observation modes (`62233509` to `541498b0`). No rig decodes
+  the task state better than `visible_dual`; see `2026-09-10-camera-rigs.md`.
+- The tshirt placement fix (`30441b28`): tshirt_4 and tshirt_392 sleeve outward
+  as Wang places them, and tshirt_68 in its baked hang.
+
+The merged tree passes the four CUDA smoke tests. The gown note under
+`DEFAULT_GARMENTS` is corrected (`a9bf76c6`), and the time-step probes are in
+`2026-09-10-dressing-timestep.md`.
+
+A resumed live-cell run now also keeps its garment placement.
+`reconcile_resume_placement` compares `pre_insertion`, `hang_as_baked` and the
+per-garment lists against the checkpoint. It refuses a training resume onto a
+changed placement and prints the difference in playback. Checkpoints written
+before the lists existed read them as empty.
+
+Still open:
+- Orientation differs across garments. tshirt_26, tshirt_68 and the gown keep
+  the cuff-first flip; tshirt_4 and tshirt_392 are sleeve outward, as in Wang.
+- tshirt_392 reaches 0.7 of the upper arm on none of eight bodies. Its 3.8 cm
+  cuff is narrower than a hand.
+- Under the sleeve-outward placement the expert stalls at the elbow: the 12 mm
+  no-move rule drops almost every `elbow_hook` step. A proximity push fixed 3 of
+  4 cells in the garment agent's probe, but it is not merged.

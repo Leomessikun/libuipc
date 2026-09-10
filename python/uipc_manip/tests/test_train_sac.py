@@ -229,3 +229,18 @@ def test_training_budget_counts_only_admitted_curriculum_samples(monkeypatch, tm
     with (tmp_path / "dressing_sac_seed1" / "train_log.csv").open() as handle:
         last = list(csv.DictReader(handle))[-1]
     assert int(last["transitions"]) == 6 and int(last["simulated_transitions"]) == 18
+
+
+def test_resume_refuses_a_changed_garment_placement(capsys):
+    from types import SimpleNamespace
+
+    from uipc_manip.train_sac import reconcile_resume_placement
+
+    new = {"pre_insertion": True, "hang_as_baked": False, "hang_as_baked_garments": ["hospital_gown", "tshirt_68"], "sleeve_outward_garments": ["tshirt_4", "tshirt_392"]}
+    old = {"pre_insertion": True, "hang_as_baked": False}  # written before the per-garment lists existed
+    reconcile_resume_placement(SimpleNamespace(_resume_cell_plan={"live": dict(new)}, eval_only=False), new)
+    reconcile_resume_placement(SimpleNamespace(_resume_cell_plan={}, eval_only=False), new)
+    with pytest.raises(ValueError, match="placed its garments differently"):
+        reconcile_resume_placement(SimpleNamespace(_resume_cell_plan={"live": old}, eval_only=False), new)
+    reconcile_resume_placement(SimpleNamespace(_resume_cell_plan={"live": old}, eval_only=True), new)
+    assert "sleeve_outward_garments [] -> ['tshirt_392', 'tshirt_4']" in capsys.readouterr().out

@@ -163,7 +163,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     if metadata.get("task") == "dressing":
         # Checkpoints from before the cell plan all trained on the bake cache.
         saved["cell_source"] = env.get("cell_source", "cache")
-        args._resume_cell_plan = {key: metadata[key] for key in ("cells", "heldout_cells", "heldout_bodies") if key in metadata}
+        args._resume_cell_plan = {key: metadata[key] for key in ("cells", "heldout_cells", "heldout_bodies", "live") if key in metadata}
         if args.eval_only and explicit & {"human", "body_seeds", "garments", "cell_source"}:
             # Playback on another cell axis plans that axis from its own defaults: an
             # explicit --human replaces the saved body seeds, and a saved held-out row
@@ -378,6 +378,35 @@ def reconcile_resume_cell_plan(args, plan: dict) -> dict:
     return {**plan, "heldout_slots": heldout_slots, "heldout_bodies": unseen_bodies}
 
 
+PLACEMENT_KEYS = ("pre_insertion", "hang_as_baked", "hang_as_baked_garments", "sleeve_outward_garments")
+"""Live-cell fields that decide where a garment starts. A checkpoint written before a per-garment
+list existed placed every garment without it, so a missing list reads as empty."""
+
+
+def reconcile_resume_placement(args, live: dict | None) -> None:
+    """Hold a resumed live-cell run to its checkpoint's garment placement.
+
+    The cell plan names (garment, body) pairs, not where each garment starts, so a per-garment
+    placement change (the gown and tshirt_68 in their baked hang, tshirt_4 and tshirt_392 sleeve
+    outward) would otherwise resume training on another start state. Training refuses; playback
+    prints the difference.
+    """
+    saved = (getattr(args, "_resume_cell_plan", None) or {}).get("live")
+    if not saved or not live:
+        return
+
+    def read(block: dict, key: str):
+        value = block.get(key, [] if key.endswith("_garments") else None)
+        return sorted(str(g) for g in value) if isinstance(value, (list, tuple)) else value
+
+    changes = [f"{key} {read(saved, key)} -> {read(live, key)}" for key in PLACEMENT_KEYS if read(saved, key) is not None and read(saved, key) != read(live, key)]
+    if not changes:
+        return
+    if not args.eval_only:
+        raise ValueError(f"Checkpoint placed its garments differently ({'; '.join(changes)}); a training resume must keep the placement")
+    print(f"[uipc-manip] eval-only placement differs from the checkpoint: {'; '.join(changes)}", flush=True)
+
+
 def describe_cell_plan(plan: dict) -> str:
     """The ``[uipc-manip distribution]`` line: what the world trains on and what it holds out."""
     cells = [(str(g), int(b)) for g, b in plan["cells"]]
@@ -447,6 +476,7 @@ def make_env(args):
         plan = reconcile_resume_cell_plan(args, plan_cells(args, library_cells(args, cfg)))
         cfg = replace(cfg, cells=tuple((g, b) for g, b in plan["cells"]), cell_source=args.cell_source)
         plan["live"] = cfg.live.to_dict() if cfg.cell_source == "live" else None
+        reconcile_resume_placement(args, plan["live"])
         args._cell_plan = plan
         print(describe_cell_plan(plan), flush=True)
         return GenesisIPCDressingEnv(cfg, num_envs=args.num_envs)
