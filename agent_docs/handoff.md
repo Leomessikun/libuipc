@@ -1472,7 +1472,10 @@ which cut an update from 310 to 86 ms in the running job and a vector step from
 35-float arm-frame simulator state in place of point clouds; it runs as a
 controlled variant beside the unchanged baseline, as recorded in the correctness
 record. `--encoder-precision bf16` lowers only the point encoders; the two
-options together make an update 2.85 times faster.
+options together make an update 2.85 times faster. A profile at the run's
+configuration puts 98% of `env.step` in the libuipc solve and finds 62% of each
+point cloud is padding. Cutting a batch to its valid prefix is exact and makes
+the network passes about three times faster.
 
 Eleventh pass: live cells are dressable. A sixteen-cell expert check showed the
 tenth pass's placement was not: the opening sat 20 cm out on the fingertip-to-

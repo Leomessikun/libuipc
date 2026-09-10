@@ -1019,6 +1019,81 @@ time-slicing predicts. With the variant running, the baseline's simulation step
 went from 2.08 to about 6.1 s and its vector step to 8.8 s, and the variant steps
 at about 7 s, so the pair runs no faster than the two would one after the other.
 
+### Where a vector step goes now
+
+Measured at the run's configuration (28 slots, 16 live cells, six simulation
+steps per decision) in a separate process while both training runs held the
+GPU, so absolute times are inflated about two and a half times and shares are
+what to read. Alone, before the variant started, the baseline's vector step was
+4.15 s: 2.08 s of simulation and 2.07 s of point-critic updates.
+
+Inside `env.step`, with a device synchronise around every timed call:
+
+| Phase | Share of `env.step` |
+|---|---:|
+| libuipc `advance` and `retrieve` (through the Genesis coupler) | 98.4% |
+| Observation build | 1.1% |
+| Reward and progress | 0.1% |
+| Privileged state | 0.1% |
+| Position reads | 0.1% |
+| Everything else in Python | 0.2% |
+
+The host side of the environment is finished as a lever. Inside the solve,
+libuipc's own timers (graph mode 0 so that host timers see each stage; mode 2
+runs the same kernels without the host round trips) put 85% of a frame in the
+global linear system and 78% in the fused PCG, whose SpMV and MAS
+preconditioner take a fifth each. System assembly takes 7%, line search 6%,
+contact topology 5% and discrete collision detection 2%. A frame averages 6.2
+Newton iterations and about 49 PCG iterations per Newton iteration. The
+preconditioner is already MAS, the tolerance already 1e-2, and the velocity
+tolerance, the one knob that cuts Newton iterations, breaks the task (see the
+solver sweep above). What is left is physics per decision: vertices, simulation
+steps per decision, and the four held-out slots, which are 14% of the solve and
+never write to replay. An evaluation round adds 300 simulation-only vector
+steps per 1000 training steps, 15 to 20% of wall clock.
+
+The update is device-bound: the host spends it in `cudaStreamSynchronize`, and
+kernel launches take 1 to 2 ms. Its kernels are matrix products, ReLU, copies and
+masking over the grouped `[64, 768, k, C]` tensors of the two set-abstraction
+levels, which run at sampling ratio 1 on every point. Most of those points are
+padding. Live observations carry 205 to 318 valid points of the 768-slot budget
+(mean 293 over the 18 observations of the smoke run), with 1.8 neighbours within
+5 cm and 9.6 within 10 cm. The valid points are always a prefix and the tool is
+the last of them, so cutting a batch to its longest valid prefix changes
+nothing: Q is identical and the actor's mean action moves by 1.3e-8.
+
+| Pass, batch 64 | Full 768 slots | Cut to the valid prefix (318) |
+|---|---:|---:|
+| Ball query, one level | 7.6 ms | 1.1 ms |
+| Actor forward | 53 ms | 16 ms |
+| Actor forward and backward | 105 ms | 38 ms |
+| Point critic forward and backward | 96 ms | 33 ms |
+
+About three times faster for both critic forms. The prefix length should be
+checked over a full replay snapshot before it is relied on, since a later-episode
+cloud can be larger. Sampling the batch from host replay costs 0.30 ms against
+0.04 ms from device memory, so replay placement is not a lever.
+
+Two runs sharing the GPU did about 0.86 of the work the same two would do one
+after the other (the variant's solo speed is an estimate), consistent with one
+run already keeping the GPU busy: 97% utilisation at 511 W with the baseline
+alone. With the privileged critic and the cut, the update would be roughly
+0.3 to 0.5 s per vector step against the 2.08 s solve, so the physics solve
+becomes 80 to 85% of training time.
+
+Teacher budgets for scale. Wang RSS 2023 trains 27 regional teachers, one per
+arm-pose region of 45 training poses and 5 garments. The best checkpoints listed
+in its launcher (`dressing/curl/launch_train_curl.py:319-345`) sit at 0.52 to
+1.96M environment steps each, median 0.75M, about 23.5M over the 27. One
+environment step is one FleX step, with a 150-step horizon, one update per step
+and a 400k replay. The paper reports neither hardware nor wall clock, and its
+single policy trained directly across all 27 regions was its weak baseline. The
+Newton regional teacher logged 4,000 vector steps of 35 transitions per 91
+minutes (25.6 per second) and reached 1.54M transitions in 14.8 h. Here, alone,
+the point critic gives 5.8 replay transitions per second, 48 h per million. The
+privileged critic gives about 7.8, and cutting the padding as well about 9 to 10,
+against a ceiling of 11.5 when only the solve costs anything.
+
 ## Differentiable simulation: neither library provides a usable gradient here
 
 The owner asked whether Genesis's differentiability or libuipc's own could train
