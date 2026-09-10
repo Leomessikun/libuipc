@@ -633,4 +633,40 @@ The default is now the subset that builds for every cached body, the failure
 names the cells in the world, and the assets module's full inventory is renamed
 so it is not mistaken for a default.
 
+## tshirt_392 is not reachable at an affordable hold, and it cost the run half its batch
+
+The diagnosis above found the critic assigning 17.0 plus or minus 2.1 to every
+tshirt_392 state for the whole run while tshirt_26 climbed from 35 to 86. The
+scripted expert explains it. On the corrected cloth at the default hold of 1e4,
+150 decisions of six simulation steps:
+
+| | Result |
+|---|---|
+| Final forearm ratio | 0.864 |
+| Final upper-arm ratio | 0.000 |
+| Threaded at some point | yes |
+| Largest held-cuff error | 26.8 mm |
+
+The sleeve passes the hand and travels the forearm, and then stops. The grasp
+error is the tell: 26.8 mm is past the environment's own 20 mm tolerance, so
+the cuff is slipping on this garment, which at 6,837 vertices is nearly twice
+tshirt_26. The same expert on tshirt_26 holds 3.3 to 5.4 mm.
+
+The obvious remedy is not affordable. At a hold of 1e6 the same evaluation did
+not finish 150 decisions in 90 minutes and was killed; its settle alone
+displaces the garment 0.278 m against 0.061 at 1e4. A hold stiff enough to
+carry this garment makes the contact solve too slow to train with, which is the
+same wall the 1e5 probe hit earlier.
+
+So from the moment the curriculum admitted it at step 600, tshirt_392 occupied
+eight of sixteen slots and contributed a policy gradient that the diagnosis
+measured at an advantage-to-noise ratio of 0.20 against tshirt_26's 1.15. Half
+the batch was noise for the rest of the run, and the run's success ceiling was
+0.5 before it started.
+
+The consequence for the protocol: the curriculum order must be measured on the
+current settings rather than inherited, and a garment the expert cannot dress
+does not belong in the training world until it can. The one-policy record's
+pre-flight sweep is where that measurement belongs.
+
 GPU grasp and reachability measurements are recorded below after completion.
