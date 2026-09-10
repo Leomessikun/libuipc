@@ -1471,7 +1471,8 @@ which cut an update from 310 to 86 ms in the running job and a vector step from
 9.5 to 4.15 s. `--critic-input privileged` adds an asymmetric critic on a
 35-float arm-frame simulator state in place of point clouds; it runs as a
 controlled variant beside the unchanged baseline, as recorded in the correctness
-record.
+record. `--encoder-precision bf16` lowers only the point encoders; the two
+options together make an update 2.85 times faster.
 
 Eleventh pass: live cells are dressable. A sixteen-cell expert check showed the
 tenth pass's placement was not: the opening sat 20 cm out on the fingertip-to-

@@ -98,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", choices=("wang-flow", "flat"), default="wang-flow", help="wang-flow is the reference tool-point actor.")
     p.add_argument("--algo", choices=("sac", "flashsac"), default="sac", help="Scalar reference critic or bounded categorical critic.")
     p.add_argument("--critic-input", choices=("points", "privileged"), default="points", help="dressing: the critic encodes the point cloud (reference) or reads the simulator's privileged state.")
+    p.add_argument("--encoder-precision", choices=("fp32", "bf16"), default="fp32", help="Run the point encoders under bfloat16 autocast; heads, targets and losses stay fp32.")
     p.add_argument("--encoder", choices=("pointnet2", "transformer"), default="pointnet2")
     p.add_argument("--num-bins", type=int, default=51, help="flashsac: value atoms per critic head.")
     p.add_argument("--min-v", type=float, default=-50.0, help="flashsac: lowest value atom.")
@@ -171,7 +172,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     saved.update({key: metadata[key] for key in ("task", "seed", "num_envs") if key in metadata})
     cfg = SACConfig.from_dict(payload["sac_config"])
     cfg_names = {"actor": "actor_type", "point_jitter": "point_jitter_scale", "grad_clip_max_norm": "grad_clip_max_norm"}
-    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v", "critic_input"):
+    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v", "critic_input", "encoder_precision"):
         cfg_names[key] = key
     saved.update({key: getattr(cfg, name) for key, name in cfg_names.items()})
     saved.update(encoder=cfg.encoder.kind, sa_neighbors=cfg.encoder.sa_neighbors)
@@ -246,6 +247,7 @@ def build_sac_config(args) -> SACConfig:
         min_v=args.min_v,
         max_v=args.max_v,
         critic_input=args.critic_input,
+        encoder_precision=args.encoder_precision,
     )
     neighbors = [int(n) for n in args.sa_neighbors]
     if len(neighbors) == 1:

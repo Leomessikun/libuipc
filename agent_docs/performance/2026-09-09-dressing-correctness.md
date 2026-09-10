@@ -990,6 +990,26 @@ setting and starts from scratch beside it. Because the two runs share the GPU,
 wall-clock columns are compared only as ratios within the shared period, and
 learning is compared per transition.
 
+Measured on the run's configuration, interleaved, while both training runs held
+the GPU, so absolute times sit above the earlier table's:
+
+| Update | ms per update | Speed-up |
+|---|---:|---:|
+| Point critic, fp32 | 230 | 1.00 |
+| Point critic, bf16 encoders | 143 | 1.61 |
+| Privileged critic, fp32 | 109 | 2.10 |
+| Privileged critic, bf16 actor encoder | 81 | 2.85 |
+
+The privileged critic gains 2.1 times rather than the 2.9 the pass split
+predicts. The difference is the part of an update that is not point work:
+sampling and copying the batch, the optimizer steps, the soft updates and the
+per-update scalar reads. `--encoder-precision bf16` is the autocast confined to
+the point encoders that the whole-update figure above called for. On one batch
+with shared weights, its encoder features differ from fp32 by 0.5% relative,
+the actor's mean action by 0.05%, and the critic gradient keeps its direction
+(cosine 1.0000) and norm. The variant run stays fp32, so precision does not
+confound the critic comparison.
+
 ## Differentiable simulation: neither library provides a usable gradient here
 
 The owner asked whether Genesis's differentiability or libuipc's own could train

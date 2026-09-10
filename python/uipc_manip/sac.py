@@ -13,6 +13,7 @@ scale for other horizons exactly as the Newton port does.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -98,6 +99,9 @@ class SACConfig:
     critic on the simulator's low-dimensional state, which only training reads."""
     privileged_dim: int = 0
     """Length of that state; the trainer sets it from the environment."""
+    encoder_precision: str = "fp32"
+    """``bf16`` runs the point encoders under bfloat16 autocast and hands their features on in fp32; the
+    heads, targets, and losses stay fp32 either way. Weights are unchanged, so checkpoints load across both."""
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
 
     def to_dict(self) -> dict:
@@ -115,6 +119,18 @@ class SACConfig:
 def soft_update(src: torch.nn.Module, tgt: torch.nn.Module, tau: float) -> None:
     for sp, tp in zip(src.parameters(), tgt.parameters(), strict=True):
         tp.data.copy_(tau * sp.data + (1.0 - tau) * tp.data)
+
+
+def bf16_forward(forward, device_type: str):
+    """``forward`` under bfloat16 autocast, returning fp32 so that only the wrapped module changes precision."""
+
+    @functools.wraps(forward)
+    def run(*args, **kwargs):
+        with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+            out = forward(*args, **kwargs)
+        return out.float()
+
+    return run
 
 
 @contextlib.contextmanager
@@ -161,6 +177,13 @@ class SACAgent:
         self.critic = make_critic().to(self.device)
         self.critic_target = make_critic().to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
+        if cfg.encoder_precision == "bf16":
+            # Q values here run near 90 where bfloat16 resolves about 0.5, so only the point work is lowered.
+            for module in (self.actor, self.critic, self.critic_target):
+                if getattr(module, "encoder", None) is not None:
+                    module.encoder.forward = bf16_forward(module.encoder.forward, self.device.type)
+        elif cfg.encoder_precision != "fp32":
+            raise ValueError(f"Unknown encoder_precision {cfg.encoder_precision!r}")
         self.log_alpha = torch.tensor(np.log(cfg.init_temperature), dtype=torch.float32, device=self.device)
         self.log_alpha.requires_grad_(True)
         self.target_entropy = -float(cfg.target_entropy_scale) * float(action_dim)

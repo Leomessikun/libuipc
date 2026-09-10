@@ -221,6 +221,34 @@ def test_privileged_critic_trains_roundtrips_and_refuses_the_other_form(tmp_path
         with pytest.raises(ValueError, match="privileged"):
             SACAgent(spec, 3, wrong, "cpu")
 
+
+def test_bf16_encoders_hand_fp32_features_to_fp32_heads():
+    torch.manual_seed(0)
+    spec = ObsSpec(10)
+    env = ToyEnv(spec)
+    cfg = _small_cfg("wang-flow")
+    half = SACConfig.from_dict({**cfg.to_dict(), "encoder_precision": "bf16"})
+    ref, agent = SACAgent(spec, 3, cfg, "cpu"), SACAgent(spec, 3, half, "cpu")
+    for name in ("actor", "critic", "critic_target"):
+        getattr(agent, name).load_state_dict(getattr(ref, name).state_dict())
+    obs = agent._unpack(torch.as_tensor(np.stack([env.reset() for _ in range(4)])))
+    action = torch.zeros(4, 3)
+    assert agent.critic.encoder(*obs[:3]).dtype == torch.float32
+    q, q_ref = agent.critic(obs, action)[0], ref.critic(obs, action)[0]
+    assert q.dtype == torch.float32 and torch.allclose(q, q_ref, rtol=0.05, atol=0.05) and not torch.equal(q, q_ref)
+    replay = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu")
+    o = env.reset()
+    for _ in range(32):
+        a = np.random.uniform(-1, 1, size=3)
+        n, r, _ = env.step(a)
+        replay.add(o, a, r, n, False)
+        o = n
+    for _ in range(4):
+        stats = agent.update(replay)
+    assert np.isfinite(stats["critic_loss"]) and np.isfinite(stats["actor_loss"])
+    with pytest.raises(ValueError, match="encoder_precision"):
+        SACAgent(spec, 3, SACConfig.from_dict({**cfg.to_dict(), "encoder_precision": "fp16"}), "cpu")
+
 def test_garment_curriculum_follows_wang_schedule():
     from uipc_manip.curriculum import WANG_GARMENT_ORDER, curriculum_order, garment_curriculum_stage
 
