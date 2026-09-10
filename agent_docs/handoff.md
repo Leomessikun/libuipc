@@ -1501,6 +1501,29 @@ tshirt_4 reaches nothing; the other garments' ceilings follow in the correctness
 record, which also records why a stiffer grip and differentiable simulation were
 rejected.
 
+Thirteenth pass: tshirt_4 and tshirt_392 are placed the way Wang places them.
+The tshirts' opening
+polygon is the armhole seam, not the sleeve's cuff, and the live factory had
+turned every garment so the opening faced the fingertips, which laid the sleeve
+along the forearm with its cuff toward the hand: the expert's forearm ceilings
+followed the cuff radius (9.3, 6.6, 6.0 and 3.8 cm on tshirt_26, tshirt_68,
+tshirt_4 and tshirt_392), not the opening's. `dressing_live.SLEEVE_OUTWARD_GARMENTS` now
+places tshirt_4 and tshirt_392 with the insertion axis along the forearm, the
+torso over it and the sleeve pointing away from the hand. They hang as baked and
+use the online drape, as Wang's reset and Newton's cached cells do. The expert now
+reaches the forearm on all eight bodies of each, where before it reached none,
+and passes the upper-arm threshold on three tshirt_4 bodies. tshirt_26 and
+tshirt_68 keep the flip. Placed sleeve outward they also reach the forearm on
+every body, but they lose their upper-arm ceilings: the opening stops at the
+elbow, where the environment's no-move rule drops nearly every `elbow_hook`
+step. The hospital gown keeps its placement, although its opening shows the same
+signature (a 5.5 cm cuff 12.7 cm out on the sleeve side), and it hangs as baked
+through `hang_as_baked_garments`, with which the table composes. The flip had also
+started tshirt_392 upside down (156 to 180 degrees). tshirt_68 now hangs as
+baked too. On bodies 0 to 7 the expert reaches its forearm on 8 and passes the
+upper-arm threshold on 5, against 5 and 3 on the measured socket. The ceilings are
+in the correctness record.
+
 Seventh pass: the Wang RSS 2023 / FMVP simulation pipeline is ported around
 this encoder and solver: the garment curriculum gating replay writes, the
 decision-rate flag, FMVP's early-turn detector (bend-plane form), the

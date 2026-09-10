@@ -216,8 +216,9 @@ def cuff_semantics(vertices: np.ndarray, opening_idx: np.ndarray, alignment_idx:
     centred = ring - centre
     normal = _unit(np.linalg.svd(centred)[2][2], np.array([0.0, 0.0, 1.0]))
     align = np.asarray(alignment_idx, dtype=np.int64).reshape(-1)
-    # ``alignment_line_indices`` is [shoulder_end, hand_end]; the insertion axis
-    # runs from the cuff into the sleeve.
+    # ``alignment_line_indices`` is [shoulder_end, hand_end]; the insertion axis runs
+    # from the sleeve side of the opening polygon into the garment body. On the tshirts
+    # that polygon is the armhole seam, not the sleeve's cuff.
     axis = _unit(v[align[0]] - v[align[1]], normal) if align.size == 2 else _unit(v.mean(axis=0) - centre, normal)
     radial = centred - np.outer(centred @ axis, axis)
     radii = np.linalg.norm(radial, axis=1)

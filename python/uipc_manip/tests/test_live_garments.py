@@ -211,3 +211,136 @@ def test_a_cell_whose_sleeve_would_reach_the_arm_moves_out_until_it_clears():
     tight._bodies[0], tight._drapes["long"] = body, drape(0.25)
     with pytest.raises(NoClearPlacement, match="long on body 0"):
         tight.clearance_for("long", 0)
+
+
+def _free_loops(faces):
+    """Vertex sets of a triangle mesh's free boundary loops."""
+    f = np.asarray(faces, dtype=np.int64)
+    edges = np.sort(np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]]), axis=1)
+    unique, count = np.unique(edges, axis=0, return_counts=True)
+    parent: dict[int, int] = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a, b in unique[count == 1]:
+        parent[find(int(a))] = find(int(b))
+    loops: dict[int, list[int]] = {}
+    for v in np.unique(unique[count == 1]):
+        loops.setdefault(find(int(v)), []).append(int(v))
+    return [np.array(v) for v in loops.values()]
+
+
+def _cuff_loop(points, faces, opening_centre):
+    """The sleeve cuff: the small free loop nearest the opening (the hem has hundreds of vertices)."""
+    return min((L for L in _free_loops(faces) if len(L) < 64), key=lambda L: np.linalg.norm(points[L].mean(0) - opening_centre))
+
+
+def test_sleeve_outward_garments_are_placed_the_wang_way_and_other_garments_keep_the_configured_placement():
+    from uipc_manip.dressing_live import SLEEVE_OUTWARD_GARMENTS, LiveCellConfig
+
+    cfg = LiveCellConfig()
+    assert set(SLEEVE_OUTWARD_GARMENTS) == {"tshirt_4", "tshirt_392"}
+    for garment in SLEEVE_OUTWARD_GARMENTS:
+        assert cfg.placement(garment) == {"pre_insertion": False, "hang_as_baked": True}
+    assert cfg.placement("tshirt_26") == {"pre_insertion": True, "hang_as_baked": False}
+    # The gown and tshirt_68 keep the flip and hang as baked through ``hang_as_baked_garments``.
+    for garment in ("tshirt_68", "hospital_gown"):
+        assert cfg.placement(garment) == {"pre_insertion": True, "hang_as_baked": True}
+    assert not cfg.hangs_as_baked("tshirt_392")  # the sleeve-outward table re-rolls it, not hang_as_baked_garments
+    # The table, not the garment's name, is what turns the flip off.
+    assert LiveCellConfig(sleeve_outward_garments=()).placement("tshirt_392") == {"pre_insertion": True, "hang_as_baked": False}
+    custom = LiveCellConfig(pre_insertion=False, hang_as_baked=True, sleeve_outward_garments=())
+    assert custom.placement("tshirt_26") == {"pre_insertion": False, "hang_as_baked": True}
+    assert cfg.to_dict()["sleeve_outward_garments"] == list(SLEEVE_OUTWARD_GARMENTS)
+
+
+@pytest.mark.skipif(not _index_tables_present(), reason="garment index tables or raw meshes are unavailable")
+@pytest.mark.parametrize("garment", ["tshirt_4", "tshirt_26", "tshirt_68", "tshirt_392"])
+def test_the_opening_polygon_is_the_armhole_seam_and_the_cuff_lies_beyond_it_on_the_sleeve_side(garment):
+    """The index tables' opening is a seam; the alignment line's +Z leaves the cuff behind."""
+    from uipc_manip.assets import load_obj
+    from uipc_manip.dressing_bake import RAW_MESH_FILENAME, canonical_transform, cuff_semantics, load_index_tables
+    from uipc_manip.dressing_live import LiveCellConfig
+
+    cfg = LiveCellConfig()
+    tables = load_index_tables(cfg.bake.index_module)
+    raw, faces = load_obj(Path(cfg.bake.garment_dir) / RAW_MESH_FILENAME[garment])
+    rest = canonical_transform(raw, garment, tables.cloth_scales[garment])
+    opening = np.asarray(tables.shoulder_polygon_particle_indices[garment], dtype=np.int64)
+    sem = cuff_semantics(rest, opening, np.asarray(tables.alignment_line_indices[garment], dtype=np.int64))
+    on_a_loop = set(np.concatenate(_free_loops(faces)).tolist())
+    assert not set(opening.tolist()) & on_a_loop
+    cuff = _cuff_loop(rest, faces, sem["opening_center"])
+
+    def along(p):
+        return float((np.asarray(p) - sem["opening_center"]) @ sem["insertion_axis"])
+
+    assert along(rest[cuff].mean(axis=0)) < -0.10  # the sleeve runs 16 to 44 cm out to its cuff
+    assert along(rest.mean(axis=0)) > 0.10  # and the garment body lies the other way
+
+
+@pytest.mark.skipif(
+    not (_index_tables_present() and Path(OFFLINE_DRAPE_DIR).exists()), reason="index tables or offline drapes are unavailable"
+)
+@pytest.mark.parametrize("garment", ["tshirt_4", "tshirt_26", "tshirt_68", "tshirt_392"])
+def test_a_placed_armhole_garment_points_its_sleeve_away_from_the_hand_and_hangs_as_baked(garment):
+    """Along fingertip to elbow: cuff, then opening, then the garment body; grasp above the opening.
+
+    tshirt_26 and tshirt_68 are placed this way only when listed, which is what this does."""
+    from uipc_manip.dressing_live import CanonicalDrape, LiveCellConfig, LiveCellFactory, SimpleBody, load_offline_drape
+
+    offline = load_offline_drape(garment)
+    if offline is None:
+        pytest.skip(f"no offline drape of {garment}")
+    drape = CanonicalDrape(
+        garment, offline["scale"], offline["cloth"], offline["faces"], offline["anchor"], offline["grasp_idx"],
+        offline["picker_idx"], offline["opening_idx"], offline["alignment_idx"], offline["socket_to_canonical"],
+        offline["opening_radius_mean_m"], "offline",
+    )
+    finger, elbow, shoulder = np.array([0.0, 0.0, 1.0]), np.array([0.42, 0.0, 1.0]), np.array([0.7, 0.0, 1.05])
+    arm, arm_faces = _box([0.0, -0.02, 0.98], [0.42, 0.02, 1.02])
+    landmarks = {"right_finger": finger, "right_elbow": elbow, "right_shoulder": shoulder}
+    factory = LiveCellFactory(LiveCellConfig(sleeve_outward_garments=(garment,)))
+    factory._bodies[0], factory._drapes[garment] = SimpleBody(arm, arm_faces, arm, landmarks, "test"), drape
+    cell = factory.build(garment, 0)
+    forearm = (elbow - finger) / np.linalg.norm(elbow - finger)
+    ring = cell.cloth[cell.opening_idx].mean(axis=0)
+
+    def along(p):
+        return float((np.asarray(p) - finger) @ forearm)
+
+    cuff = _cuff_loop(cell.cloth, cell.faces, ring)
+    assert along(cell.cloth[cuff].mean(axis=0)) < along(ring) < 0.0
+    assert along(cell.cloth.mean(axis=0)) > along(ring)
+    assert np.linalg.norm((ring - finger) - along(ring) * forearm) < 1e-9  # the opening starts on the forearm axis
+    assert cell.cloth[cell.grasp_idx].mean(axis=0)[2] > ring[2]  # the garment hangs from its grasp
+
+
+def test_a_sleeve_outward_garment_keeps_its_online_drape_however_far_its_sleeve_reaches(monkeypatch):
+    """The reach fallback keeps a cantilevered sleeve off the forearm under the flip; sleeve-outward garments skip it."""
+    import dataclasses
+
+    import uipc_manip.dressing_live as dl
+
+    def drape(reach):
+        cloth = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, -reach], [0.0, 0.0, 0.3]])
+        return {
+            "scale": 3.0, "cloth": cloth, "faces": np.array([[0, 1, 2]], dtype=np.int32), "anchor": cloth[2],
+            "grasp_idx": np.array([2]), "picker_idx": np.array([2]), "opening_idx": np.array([0]),
+            "alignment_idx": np.array([0, 2]), "socket_to_canonical": np.eye(4), "opening_radius_mean_m": 0.08,
+        }
+
+    monkeypatch.setattr(dl, "bake_in_subprocess", lambda garment, scale=None, cfg=None: drape(0.44))
+    monkeypatch.setattr(dl, "load_offline_drape", lambda garment, cfg=None: drape(0.15))
+    cfg = dl.LiveCellConfig()
+    assert [dl.load_drape(g, cfg).source for g in ("tshirt_4", "tshirt_392")] == ["online", "online"]
+    assert [dl.load_drape(g, cfg).source for g in ("tshirt_26", "tshirt_68")] == ["offline", "offline"]
+    assert dl.load_drape("tshirt_392", dataclasses.replace(cfg, sleeve_outward_garments=())).source == "offline"
+    # Within the tolerance every garment keeps the online drape.
+    monkeypatch.setattr(dl, "load_offline_drape", lambda garment, cfg=None: drape(0.42))
+    assert dl.load_drape("tshirt_68", cfg).source == "online"

@@ -61,7 +61,8 @@ def test_placement_puts_the_opening_outside_the_fingertip_on_the_arm_axis():
     shoulder = np.array([0.5, 0.1, 1.0])
     clearance = 0.1
     arm_axis = (shoulder - finger) / np.linalg.norm(shoulder - finger)
-    # Pre-worn placement lays the sleeve along the arm; pre-insertion turns it outward.
+    # Without pre_insertion the insertion axis runs along the arm, which lays an armhole
+    # opening's torso over it; pre-insertion turns the axis outward.
     worn = build_target_socket_frame(finger, shoulder, clearance=clearance, pre_insertion=False)
     assert np.allclose(worn[:3, 2], arm_axis)
     target = build_target_socket_frame(finger, shoulder, clearance=clearance)
@@ -207,15 +208,15 @@ def test_region_bodies_sample_inside_their_wang_region_and_plain_ids_keep_their_
         pose_region(28_000)
 
 
-def test_only_the_hospital_gown_hangs_as_baked_by_default():
-    """The measured socket starts the gown upside down, so it alone keeps its baked hang by default."""
+def test_the_hospital_gown_and_tshirt_68_hang_as_baked_by_default():
+    """The measured socket starts the gown upside down and tilts tshirt_68 64 to 72 degrees; both keep their baked hang."""
     cfg = LiveCellConfig()
-    assert cfg.hangs_as_baked("hospital_gown")
-    for garment in ("tshirt_4", "tshirt_26", "tshirt_68", "tshirt_392"):
+    assert cfg.hangs_as_baked("hospital_gown") and cfg.hangs_as_baked("tshirt_68")
+    for garment in ("tshirt_4", "tshirt_26", "tshirt_392"):
         assert not cfg.hangs_as_baked(garment)
     assert all(LiveCellConfig(hang_as_baked=True).hangs_as_baked(g) for g in ("tshirt_26", "hospital_gown"))
     assert not LiveCellConfig(hang_as_baked_garments=()).hangs_as_baked("hospital_gown")
-    assert cfg.to_dict()["hang_as_baked_garments"] == ["hospital_gown"]
+    assert cfg.to_dict()["hang_as_baked_garments"] == ["hospital_gown", "tshirt_68"]
 
 
 @pytest.mark.skipif(

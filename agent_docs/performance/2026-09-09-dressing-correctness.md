@@ -1270,3 +1270,191 @@ every rollout, against a discontinuous reward. Probes and results are in the
 session scratchpad (`probe_diffsim.py`, `tiny_ift2.py`, `dress_ift2.py`).
 
 GPU grasp and reachability measurements are recorded below after completion.
+
+## The tshirts open at the armhole, and the live placement handed the hand the cuff
+
+The live factory turned every garment so that its opening faced the fingertips
+(`pre_insertion`), on the reading, in `build_target_socket_frame`'s docstring,
+that the canonical socket's +Z runs "from the cuff into the sleeve". It does not.
+On all four tshirts none of the six opening-polygon vertices lies on a free
+boundary loop of the raw mesh: the polygon Wang calls the shoulder polygon is the
+armhole seam. Each sleeve's own cuff, the free 32-vertex loop beyond it, lies on
+the -Z side, and +Z (the alignment line, shoulder end minus hand end) runs from
+the sleeve into the torso:
+
+| Garment | Opening to cuff | Cuff radius | Opening radius | Forearm reached under the flip |
+|---|---:|---:|---:|---|
+| tshirt_26 | 16 cm | 9.3 cm | 9.9 cm | 8 of 8 |
+| tshirt_68 | 20 cm | 6.6 cm | 8.3 cm | 5 of 8; 8 of 24 region-13 bodies |
+| tshirt_4 | 43.5 cm | 6.0 cm | 9.1 cm | 0 of 8 |
+| tshirt_392 | 44 cm | 3.8 cm | 8.1 cm | 0 of 8 |
+
+The flip therefore laid the sleeve along the forearm with its cuff toward the
+hand, and the hand had to enter the cuff and thread the whole sleeve before it
+reached the opening the reward measures. The ceilings follow the cuff, not the
+opening: the opening radii do not order the garments, the cuff radii and sleeve
+lengths do, tshirt_68's all-or-nothing split over region 13 is the hand entering
+a 6.6 cm cuff or not, and tshirt_392's cuff is narrower than a hand. Where the
+flip did dress, as on tshirt_26, the arm went in through the cuff and out through
+the armhole, which leaves the sleeve beyond the shoulder and the torso around the
+arm.
+
+Wang turns the alignment line onto the forearm, fingertip to elbow, before every
+episode (`dress_env.generate_env_variation` with `align_initial_rotation`, the
+tool 10 cm outside the fingertip and above the hand), and Newton's `runtime_align`
+builds the same frame. Newton's fifteen cached tshirt_26, tshirt_68 and tshirt_392
+cells show the geometry this gives: the opening 8.8 to 9.4 cm outside the
+fingertip on the forearm axis, the sleeve pointing away from the hand (7 to 31 cm
+out), the torso over the forearm in all twelve 30-degree sectors around it, and
+the grasp 7 to 11 cm straight above the opening, which is the drape's baked hang.
+Pulling the opening to the shoulder from there puts the sleeve on as it is worn:
+the hand passes the armhole, runs along the sleeve and leaves through the cuff. In
+that geometry the cached tshirt_392 cell had reached a forearm ratio of 0.864
+(above), where no live tshirt_392 cell reached the forearm at all. The cache is at
+Wang's scales (2.69 for tshirt_392, not Newton's default 3.0), so scale was not
+the difference.
+
+`LiveCellConfig.placement` places a garment listed in
+`dressing_live.SLEEVE_OUTWARD_GARMENTS` without the flip and with
+`gravity_aligned_socket`'s roll; the hospital gown keeps the configured
+placement. The per-cell clearance search is unchanged. With all four tshirts
+listed and tshirt_4 and tshirt_392 on Newton's drape, it finds a legal start on
+all 32 cells of bodies 0 to 7, matching on GPU-generated bodies what it finds on
+the CPU:
+
+| Garment | Drape | Clearance, bodies 0 to 7 (m) | Surface gap | Nearest cloth to the arm |
+|---|---|---|---:|---|
+| tshirt_26 | online | .10 .18 .17 .16 .20 .18 .09 .18 | 3.3 to 6.4 mm | torso, 21 to 31 cm up the forearm |
+| tshirt_68 | online | .09 .16 .15 .14 .18 .16 .09 .16 | 3.8 to 11.2 mm | torso, 22 to 30 cm up the forearm |
+| tshirt_4 | Newton offline | .22 .23 .23 .23 .23 .24 .24 .23 | 3.0 to 10.0 mm | torso, at the fingertip |
+| tshirt_392 | Newton offline | .23 .24 .24 .09 .24 .25 .15 .24 | 3.2 to 6.0 mm | torso, at the fingertip |
+
+On the online drapes the torso bag stays open around the forearm; on the offline
+ones it hangs lower and the search stops where its front clears the fingertip.
+The settle moves a vertex at most 0.511 m in the tshirt_4 and tshirt_392 world
+and 0.588 m in the tshirt_26 and tshirt_68 world, against 0.745 and 1.545 m for
+tshirt_4 and tshirt_392 under the flip, and after it every opening sits 9 to 26 cm
+outside the fingertip within 3 cm of the forearm axis, with every cuff further
+out.
+
+This is the orientation of the pre-worn probe in the forearm-axis section, which
+libuipc refused at 9 and 11 cm on tshirt_26 body 3 and tshirt_4 body 0. The
+per-cell clearance search, which came after that probe, is what makes it
+buildable: it moves those two cells to 16 and 22 cm. The roll matters as well:
+under the measured socket tshirt_26 body 3 needs 20 cm.
+
+### Only tshirt_4 and tshirt_392 are listed
+
+The expert ran on bodies 0 to 7 with 48 anchors, a 1e4 hold, and 300 decisions of
+six 1/60 s steps. The ceilings are the highest reading over the episode. The
+flip rows are the forearm-axis section's.
+
+| Garment | Placement | Drape | Clearance, bodies 0 to 7 (m) | Forearm reached | Upper arm >= 0.7 | Upper-arm ceilings, bodies 0 to 7 |
+|---|---|---|---|---:|---:|---|
+| tshirt_4 | flip, before | Newton offline | | 0 of 8 | 0 of 8 | |
+| tshirt_4 | sleeve outward | online | .09 on all eight | 8 of 8 | 3 of 8 | .40 .27 .43 .27 .35 .98 1.00 .99 |
+| tshirt_392 | flip, before | Newton offline | | 0 of 8 | 0 of 8 | |
+| tshirt_392 | sleeve outward | online | .09 .12 .09 .09 .13 .13 .09 .11 | 8 of 8 | 0 of 8 | .22 .17 .26 .23 .24 .21 .24 .19 |
+| tshirt_26 | flip, kept | online | .09 .16 .16 .09 .16 .18 .13 .16 | 8 of 8 | 5 of 8 | bodies 0, 2, 3, 5 and 7 past 0.7 |
+| tshirt_26 | sleeve outward | online | .10 .18 .17 .16 .20 .18 .09 .18 | 8 of 8 | 0 of 8 | .16 .18 .11 .30 .24 .12 .28 .13 |
+| tshirt_68 | flip, kept | online | .09 .20 .19 .14 .20 .21 .19 .20 | 5 of 8 | 3 of 8 | bodies 0, 2 and 3 past 0.7 |
+| tshirt_68 | sleeve outward | online | .09 .16 .15 .14 .18 .16 .09 .16 | 8 of 8 | 0 of 8 | .18 .20 .14 .12 .25 .17 .25 .16 |
+
+With the sleeve pointing outward, every tshirt reaches the forearm on every body,
+which under the flip only tshirt_26 did. tshirt_4 also passes the upper-arm
+threshold on bodies 5, 6 and 7. tshirt_26 and tshirt_68, which pass it on 5 and 3
+bodies under the flip, then pass it on none. On eight region-13 tshirt_68 bodies
+it is the same trade. The six that never reached the forearm under the flip
+(14000, 14001, 14004, 14009, 14011 and 14016) reach it, with the upper arm at .31
+.28 .24 .22 .30 .31. The two that passed the threshold (14006 and 14007, at 0.983
+and 0.988) stop at .33 and .13. The regression guard on tshirt_26 and tshirt_68
+holds, so only tshirt_4 and tshirt_392 are listed. The other two keep the flip on
+the measured socket's roll here, and the committed defaults reproduce their
+clearances above on the CPU. tshirt_68 later moves to its baked hang (below). The list is a config field, so the choice is a one-line change.
+
+The opening stops at the elbow because of the environment's no-move rule, not the
+cloth. Four cells were instrumented: tshirt_68 on region-13 bodies 14006 and
+14007, and tshirt_26 on bodies 0 and 2. By decision 140 every cell is in
+`elbow_hook`, with the ring 38 to 42 cm along the forearm. From then on the rule
+drops 24 or 25 of every 25 commanded tool steps. The tool stays 1.2 to 1.6 cm
+from the arm, the held-cuff error stays at 27 to 37 mm, and the ring does not
+move until the stage times out before `last`. In the baked hang the grasp sits
+straight above the opening, about 9 cm over the arm line. The flip's measured
+roll turns it 50 to 64 degrees off vertical, so it has room to follow the
+opening. `elbow_hook` has no proximity push; only `last` has one. Monkeypatching
+`last`'s push into `elbow_hook` (`proximity_push_z` whenever the tool is within
+`proximity_push_distance` of the arm) removes the dropped steps and keeps the
+tool 3.2 to 4.8 cm clear. On three of the four cells the upper arm then reaches
+0.89, 0.97 and 1.00 within 200 decisions; on the fourth (14006) it reaches 0.31.
+That change belongs in `dressing_heuristic.py`, and this pass does not make it.
+
+tshirt_4 and tshirt_392 now keep the online drape. `load_drape` skips the reach
+comparison for listed garments, because the long sleeve it guarded against now
+points away from the hand. On Newton's drape the torso hangs lower: the clearance
+search starts 14 of the 16 cells 22 to 25 cm out, against 9 to 13 cm on the
+online drape. By decision 100 the expert had the forearm on all 16 online cells
+(ratio 0.97 to 1.0). On Newton's drape 6 of 16 were still at 0, and none of the
+rest was past 0.67. Two of those zeros had the opening's centre on the forearm
+axis, 42 and 46 cm out, with no forearm counted through it. That run was stopped
+at decision 100. The settle on the online drape moves a vertex at most 0.937 m.
+
+Against what was already tried:
+- `hang_as_baked` is reused, in a different orientation. It is the roll Newton's
+  cache hangs with. It is probably also what puts the grasp over the arm at the
+  elbow, which is why the flip's measured roll does better on tshirt_26's and
+  tshirt_68's upper arm.
+- The offline-drape fallback is skipped for the listed garments.
+- The forearm axis, the per-cell clearance search, the 48 anchors and the 1e4
+  hold are unchanged.
+- No roll sweep was run in the sleeve-outward orientation. Such a sweep might
+  keep the grasp off the arm line at the elbow without the expert change.
+
+### The gown's re-roll, and how far the placement tilts each tshirt
+
+The hospital gown's fix, `LiveCellConfig.hang_as_baked_garments`, re-rolls
+garments whose measured socket starts them upside down. It composes with this
+pass's table: `LiveCellConfig.placement` gives a garment in either list its baked
+hang, and drops the flip only for garments in `SLEEVE_OUTWARD_GARMENTS`.
+
+The tilt is the angle between the drape's baked down and world down after
+placement. It was measured on the CPU under the flip and the measured socket, on
+bodies 0 to 7, as the gown fix measured it:
+
+| Garment | Drape | Tilt (degrees) | Centroid below the grasp |
+|---|---|---|---:|
+| tshirt_392 | Newton offline | 156 to 180 | 35 to 38 cm above it |
+| tshirt_68 | online | 64 to 72 | 12 cm |
+| tshirt_26 | online | 50 to 57 | 21 to 22 cm |
+| tshirt_4 | Newton offline | 12 to 40 | 30 to 38 cm |
+
+Under the flip tshirt_392 started upside down, like the gown. The sleeve-outward
+placement re-rolls it, so it needs no entry in the gown's list. tshirt_68's tilt
+is moderate and about the same on every body. It is 65, 65 and 64 degrees on
+bodies 1, 4 and 7, which never reach the forearm under the flip, and 72, 66 and
+65 degrees on bodies 0, 2 and 3, which pass the upper-arm threshold. The tilt does
+not separate them.
+
+The `elbow_hook` push that clears tshirt_26's and tshirt_68's stall does not
+clear tshirt_392's. On bodies 0 to 7 the rule still drops 24 or 25 of every 25
+steps, the tool stays 1.2 to 1.3 cm from the arm, and the upper arm stops at .20
+.14 .23 .24 .18 .17 .18 .17. On tshirt_392 the missing push is not the whole
+story.
+
+### tshirt_68 hangs as baked
+
+Under the flip, tshirt_68 does better re-rolled (listed in `hang_as_baked_garments`)
+than on the measured socket. On bodies 0 to 7, at the default 1/60 s step:
+
+| Placement | Clearance, bodies 0 to 7 (m) | Forearm reached | Upper arm >= 0.7 | Upper-arm ceilings, bodies 0 to 7 |
+|---|---|---:|---:|---|
+| flip, measured socket (before) | .09 .20 .19 .14 .20 .21 .19 .20 | 5 of 8 | 3 of 8 | bodies 0, 2 and 3 past 0.7 |
+| flip, baked hang | .09 .17 .17 .09 .20 .21 .20 .16 | 8 of 8 | 5 of 8 | .98 .17 1.00 .99 .18 .98 .13 .98 |
+
+Bodies 1, 4 and 7 never reached the forearm on the measured socket; now all
+three reach it, and body 7 also passes the upper-arm threshold. Bodies 1, 4 and 6
+stop at the elbow, between 0.13 and 0.18. The settle moves a vertex at most
+0.258 m. The per-body tilt did not predict which bodies failed, but re-rolling
+removes the failure. That fits the reading that the tilted drape swings at the
+start and loses the grip. On eight region-13 bodies the re-roll had the forearm on all eight by decision 175 of 300, including the six that never reached it on the measured socket (14000, 14001, 14004, 14009, 14011 and 14016); the shared GPU slowed the run, and the full result is not recorded here. At decision 175 the upper arm was at 0.79 on 14000 and 0.66 on 14007, and between 0 and 0.34 on the rest, including 14006 at 0.32, which passed the threshold on the measured socket (0.983). tshirt_68 is listed beside the gown. tshirt_26 is
+not: the measured socket's 50 to 57 degrees already dresses it, and re-rolling it
+under the flip cost body 0 the forearm.

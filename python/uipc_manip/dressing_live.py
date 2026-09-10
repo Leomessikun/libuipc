@@ -10,9 +10,12 @@ without any pre-baked state. :mod:`uipc_manip.dressing_bake` drapes the raw
 garment mesh online in libuipc; placing that drape on a body is then a rigid
 transform, ported from Newton's ``runtime_align``: build a socket frame from the
 arm landmarks, put the opening one clearance step *outside* the fingertip along
-the forearm axis, and map the canonical socket onto it. The garment therefore starts
-in free air in front of the hand, never inside the arm, so any garment composes
-with any body and no arm erosion is required.
+the forearm axis, and map the canonical socket onto it. The clearance is checked
+against the whole arm mesh, so the garment never starts inside the arm, any garment
+composes with any body, and no arm erosion is required. tshirt_4 and tshirt_392,
+whose opening polygon is the armhole seam with a long narrow sleeve beyond it, are
+placed the way Wang places them: sleeve pointing away from the hand, torso over the
+forearm (see :data:`SLEEVE_OUTWARD_GARMENTS`).
 
 Bodies come from the cached states, which carry the SMPL-X arm submesh, the full
 body point cloud, and the joint landmarks. The garment axis is free, so the
@@ -35,6 +38,26 @@ OFFLINE_DRAPE_DIR = (
 )
 OFFLINE_MESH_DIR = "/home/ge47gax/kun/newton-fmvp/garments"
 
+SLEEVE_OUTWARD_GARMENTS = ("tshirt_4", "tshirt_392")
+"""Garments placed with the sleeve pointing away from the hand, as Wang places every tshirt.
+
+On all four tshirts the opening polygon (``shoulder_polygon_particle_indices``) is the armhole
+seam: none of its six vertices lies on a free boundary loop of the raw mesh; the sleeve's own
+cuff, the free loop beyond them, sits 16 cm (tshirt_26), 20 cm (tshirt_68), 43.5 cm
+(tshirt_4) and 44 cm (tshirt_392) further out, with a radius of 9.3, 6.6, 6.0 and 3.8 cm.
+The canonical +Z (``alignment_line_indices``, shoulder end minus hand end) runs from the
+sleeve into the torso. Wang turns it onto the forearm, fingertip to elbow, before every
+episode (``dress_env.generate_env_variation``), as Newton's ``runtime_align`` does: the torso
+lies over the forearm, the sleeve points away from the hand, and pulling the opening to the
+shoulder puts the sleeve on the way it is worn.
+
+``pre_insertion`` presents the cuff to the hand instead. tshirt_4's and tshirt_392's cuffs are
+too narrow for the scripted expert to thread (forearm reached on 0 of 8 bodies), so they are
+placed the Wang way. tshirt_26 and tshirt_68 keep the flip: the expert threads their wider
+cuffs, and the upper-arm ceilings it then reaches (past 0.7 on 5 and 3 of 8 bodies) are higher
+than in the Wang placement, where it reaches the forearm on every body but the opening stops
+at the elbow (upper arm at most 0.3)."""
+
 
 @dataclass(frozen=True)
 class LiveCellConfig:
@@ -42,9 +65,16 @@ class LiveCellConfig:
 
     bake: BakeConfig = field(default_factory=BakeConfig)
     pre_insertion: bool = True
-    """Spawn the garment before insertion, its opening facing the fingertips and its
-    body hanging clear of the arm, instead of the reference's pre-worn placement,
-    which lays the sleeve through the arm and which libuipc refuses."""
+    """For garments outside ``sleeve_outward_garments``: turn the socket so that the side of the
+    opening the alignment line starts from faces the fingertips. Where the opening polygon
+    is the armhole seam, that side is the sleeve, so this presents the sleeve's cuff to the
+    hand, which then has to thread the whole sleeve before it reaches the opening. Under it
+    the tshirts' expert ceilings followed the cuff radius, not the opening radius."""
+    sleeve_outward_garments: tuple[str, ...] = SLEEVE_OUTWARD_GARMENTS
+    """Garments placed the way Wang places them, whatever ``pre_insertion`` and
+    ``hang_as_baked`` say: insertion axis along the forearm (torso over it, sleeve pointing
+    away from the hand) and the drape's baked hang (:func:`gravity_aligned_socket`), as in
+    Newton's cached cells, whose grasp sits 7 to 11 cm straight above the opening."""
     clearance_m: float = 0.09
     """Distance the opening centre starts outside the fingertip along the insertion axis.
     Wang's cached states hold the opening 8.8 to 9.4 cm outside the fingertip, coaxial
@@ -71,20 +101,24 @@ class LiveCellConfig:
     reach_tolerance_m: float = 0.05
     """How much further past the opening an online drape may reach than Newton's offline drape
     of the same garment before the offline one is used. The online bake cannot hang a long
-    sleeve: on tshirt_392 and tshirt_4 the sleeve beyond the (armhole) opening stays a drooping
+    sleeve: on tshirt_392 and tshirt_4 the sleeve beyond the armhole opening stays a drooping
     cantilever reaching 0.44 m, against 0.15 and 0.25 m in the reference where it hangs down the
-    body, and pre-insertion placement lays that sleeve along the forearm. A 6 s settle leaves it
-    at 0.44 m, so this is the sleeve's statics under libuipc's strain-limited shell, not time."""
+    body. A 6 s settle leaves it at 0.44 m, so this is the sleeve's statics under libuipc's
+    strain-limited shell, not time. Under ``pre_insertion`` that sleeve lay along the forearm;
+    that is why the test applies only outside ``sleeve_outward_garments``, which point it away
+    from the hand and keep the online drape. Newton's drape, whose torso hangs lower, starts 22
+    to 25 cm out on 14 of 16 tshirt_4 and tshirt_392 cells against 9 to 13 cm, and after 100
+    decisions the expert had the forearm on all 16 on the online drape (ratio 0.97 to 1.0),
+    against 10 of 16 (at most 0.67) on Newton's."""
     hang_as_baked: bool = False
-    """Re-roll the canonical socket so the garment keeps its baked hang (see
-    :func:`gravity_aligned_socket`). Off by default because it costs the expert the one
-    garment it could dress: on tshirt_26, body 0, 150 decisions of six steps at a 1e4 hold,
-    the measured socket reaches forearm 1.0 and upper arm 0.32 with a 4.2 mm held-cuff error,
-    the re-rolled one forearm 0.0 with 22.7 mm. tshirt_392's frame is upside down under the
-    measured socket, but that is not what kept it off the arm; its offline drape clears the
-    arm by 111 to 128 mm at either roll. :attr:`hang_as_baked_garments` re-rolls single
-    garments whatever this flag says."""
-    hang_as_baked_garments: tuple[str, ...] = ("hospital_gown",)
+    """For garments outside ``sleeve_outward_garments``: re-roll the canonical socket so the garment
+    keeps its baked hang (see :func:`gravity_aligned_socket`). Off by default because under
+    ``pre_insertion`` it costs the expert tshirt_26: body 0, 150 decisions of six steps at a
+    1e4 hold, the measured socket reaches forearm 1.0 and upper arm 0.32 with a 4.2 mm
+    held-cuff error, the re-rolled one forearm 0.0 with 22.7 mm. The sleeve-outward placement
+    always re-rolls, and :attr:`hang_as_baked_garments` re-rolls single garments whatever this
+    flag says."""
+    hang_as_baked_garments: tuple[str, ...] = ("hospital_gown", "tshirt_68")
     """Garments that keep their baked hang even with :attr:`hang_as_baked` off. The measured
     socket turns the hospital gown's drape 114 to 123 degrees on SMPL-X bodies 0 to 7, which
     starts its 0.64 kg body 24 to 31 cm above the held cuff instead of 53 cm below it: the
@@ -94,8 +128,11 @@ class LiveCellConfig:
     bodies. Re-rolled, the settle moves a vertex at most 0.43 m on the same bodies and the
     opening crosses the fingertip on the axis at its full radius; over 300 decisions the
     expert then reaches the forearm on seven bodies and passes 0.7 on the upper arm on
-    five. tshirt_26 turns 50 to 57 degrees on the same bodies and, like tshirt_68, stays
-    on the measured socket."""
+    five. tshirt_68 turns 64 to 72 degrees. Re-rolled, the expert reaches its forearm on eight
+    bodies instead of five, and passes 0.7 on the upper arm on five instead of three (bodies
+    0 to 7, 300 decisions of six 1/60 s steps). tshirt_26 turns 50 to 57 degrees and stays
+    on the measured socket, which dresses it. tshirt_392, upside down under it as well (156
+    to 180 degrees), gets its baked hang from :data:`SLEEVE_OUTWARD_GARMENTS`."""
     scales: dict[str, float] | None = None
     """Per-garment mesh scale; ``None`` uses each garment's bake default."""
     body: BodyConfig = field(default_factory=BodyConfig)
@@ -109,6 +146,7 @@ class LiveCellConfig:
             "scales": dict(self.scales or {}), "bodies": self.bodies, "body": self.body.to_dict(),
             "pre_insertion": bool(self.pre_insertion), "hang_as_baked": bool(self.hang_as_baked),
             "hang_as_baked_garments": list(self.hang_as_baked_garments),
+            "sleeve_outward_garments": list(self.sleeve_outward_garments),
             "axis_landmark": str(self.axis_landmark),
             "min_arm_gap_m": float(self.min_arm_gap_m),
             "max_clearance_m": float(self.max_clearance_m), "reach_tolerance_m": float(self.reach_tolerance_m),
@@ -117,6 +155,11 @@ class LiveCellConfig:
     def hangs_as_baked(self, garment: str) -> bool:
         """Whether ``garment`` is placed through :func:`gravity_aligned_socket`."""
         return bool(self.hang_as_baked) or str(garment) in self.hang_as_baked_garments
+
+    def placement(self, garment: str) -> dict[str, bool]:
+        """``pre_insertion`` and ``hang_as_baked`` for placing this garment."""
+        outward = str(garment) in self.sleeve_outward_garments
+        return {"pre_insertion": bool(self.pre_insertion) and not outward, "hang_as_baked": outward or self.hangs_as_baked(garment)}
 
 
 def _unit(v: np.ndarray, fallback: tuple[float, float, float] = (1.0, 0.0, 0.0)) -> np.ndarray:
@@ -137,15 +180,16 @@ def build_target_socket_frame(
 
     The arm axis runs from ``finger`` toward ``axis_end``: the elbow for the forearm
     axis, the shoulder for Newton's chord. The canonical socket's +Z runs from the
-    cuff into the sleeve, so aligning it with that axis lays the sleeve along the arm: that is a
-    *pre-worn* state, and it is what Newton's ``runtime_align`` builds, because
-    VBD tolerates the interpenetration that follows. libuipc refuses it, and a
-    training episode should start before insertion anyway.
+    sleeve side of the opening polygon into the garment body. Aligning it with the arm
+    axis is what Wang's reset and Newton's ``runtime_align`` build: for an armhole
+    opening the torso lies over the forearm and the sleeve points away from the hand,
+    so pulling the opening to the shoulder puts the sleeve on the way it is worn. The
+    clearance search keeps that torso off the arm.
 
-    With ``pre_insertion`` the sleeve is turned to run the other way, so the
-    opening faces the fingertips and the garment hangs off the end of the hand in
-    free space. The tool then has to carry the opening over the hand, which is
-    the motion the task is about.
+    ``pre_insertion`` turns +Z to run the other way. For an armhole opening that lays
+    the sleeve along the arm with its cuff toward the fingertips, so the hand has to
+    thread the cuff and the whole sleeve before it reaches the opening; the tshirts no
+    longer use it (see :data:`SLEEVE_OUTWARD_GARMENTS`).
     """
     finger = np.asarray(finger, dtype=np.float64).reshape(3)
     axis_end = np.asarray(axis_end, dtype=np.float64).reshape(3)
@@ -175,9 +219,10 @@ def gravity_aligned_socket(
     are turned 50 and 64 degrees. Building the source
     +Y from the canonical up, as the target builds its own from world up, makes every
     garment hang the way it hung in the bake. Origin and insertion axis are kept.
-    Opt-in through ``LiveCellConfig.hang_as_baked``, or per garment through
-    ``LiveCellConfig.hang_as_baked_garments``, which holds the hospital gown because its
-    measured socket starts it upside down; the scripted expert dresses tshirt_26 only
+    The sleeve-outward placement always uses it. For other garments it is opt-in through
+    ``LiveCellConfig.hang_as_baked``, or per garment through
+    ``LiveCellConfig.hang_as_baked_garments``, which holds tshirt_68 and the hospital gown,
+    whose measured socket starts it upside down; the scripted expert dresses tshirt_26 only
     under the measured socket.
     """
     T = np.asarray(socket_to_canonical, dtype=np.float64).reshape(4, 4).copy()
@@ -218,8 +263,9 @@ def canonical_to_world_transform(
 def reach_past_opening(cloth: np.ndarray, socket_to_canonical: np.ndarray) -> float:
     """How far a drape extends outward past its opening along the insertion axis [m].
 
-    Pre-insertion placement turns that side toward the hand, so this is the length of
-    garment that would lie over the arm at zero clearance.
+    That side is the sleeve of an armhole opening. Pre-insertion placement turns it toward
+    the hand, where this is the length of garment that would lie over the arm at zero
+    clearance; the sleeve-outward placement turns it away.
     """
     T = np.asarray(socket_to_canonical, dtype=np.float64).reshape(4, 4)
     along = (np.asarray(cloth, dtype=np.float64).reshape(-1, 3) - T[:3, 3]) @ T[:3, 2]
@@ -342,9 +388,11 @@ def load_drape(garment: str, cfg: LiveCellConfig | None = None, *, reuse: bool =
 
     The bake untangles the raw meshes' crossing triangles and opens their near
     pairs, so every tshirt bakes. Newton's drape is used instead when the bake
-    fails, or when the online drape reaches past the opening more than
-    ``reach_tolerance_m`` further than Newton's does: a long sleeve that the bake
-    leaves sticking out would lie along the forearm at placement.
+    fails, or, for a garment outside ``sleeve_outward_garments``, when the online
+    drape reaches past the opening more than ``reach_tolerance_m`` further than
+    Newton's does: the bake leaves a long sleeve sticking out as a cantilever
+    instead of hanging it down the body, and ``pre_insertion`` lays that sleeve
+    along the forearm. The sleeve-outward placement points it away from the hand.
     """
     cfg = cfg or LiveCellConfig()
     scale = (cfg.scales or {}).get(garment)
@@ -352,7 +400,7 @@ def load_drape(garment: str, cfg: LiveCellConfig | None = None, *, reuse: bool =
     try:
         baked = bake_in_subprocess(garment, scale=scale, cfg=cfg.bake)
         source = "online"
-        reference = load_offline_drape(garment, cfg)
+        reference = None if garment in cfg.sleeve_outward_garments else load_offline_drape(garment, cfg)
         if (
             reference is not None
             and abs(float(reference["scale"]) - float(baked["scale"])) < 1.0e-6
@@ -503,8 +551,8 @@ class LiveCellFactory:
                         f"{self.cfg.max_clearance_m:.2f} m leaves {self.cfg.min_arm_gap_m * 1000:.0f} mm to the arm"
                     )
                 cloth, _ = drape.place(
-                    body.landmarks, clearance=clearance, pre_insertion=self.cfg.pre_insertion,
-                    hang_as_baked=self.cfg.hangs_as_baked(garment), axis_landmark=self.cfg.axis_landmark,
+                    body.landmarks, clearance=clearance, axis_landmark=self.cfg.axis_landmark,
+                    **self.cfg.placement(garment),
                 )
                 if garment_arm_gap(cloth, drape.faces, body.arm_points, body.arm_faces) >= float(self.cfg.min_arm_gap_m):
                     break
@@ -516,8 +564,8 @@ class LiveCellFactory:
         drape = self.drape(garment)
         body = self.body(human)
         cloth, picker_pos = drape.place(
-            body.landmarks, clearance=self.clearance_for(garment, human), pre_insertion=self.cfg.pre_insertion,
-            hang_as_baked=self.cfg.hangs_as_baked(garment), axis_landmark=self.cfg.axis_landmark,
+            body.landmarks, clearance=self.clearance_for(garment, human), axis_landmark=self.cfg.axis_landmark,
+            **self.cfg.placement(garment),
         )
         return DressingCell(
             garment=garment,
