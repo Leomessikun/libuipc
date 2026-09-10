@@ -918,6 +918,18 @@ feature propagation only at the tool point 0.98, TF32 1.12, bf16 autocast 1.07,
 and batches of 128 and 256 cost the same per sample as 64. The reuse is scoped
 to one `SACAgent.update`, and its keys carry the tensors' version counters.
 
+Measured in the relaunched run at commit f40fa300, steps 20 to 60:
+
+| Phase per vector step | Before | After |
+|---|---:|---:|
+| 24 gradient updates | 7.5 s | 2.07 s |
+| Environment | 2.0 s | 2.08 s |
+| Total | 9.5 s | 4.15 s |
+
+One update now takes 86 ms against 310 ms, and the run spends about as long
+learning as simulating. At this rate the 300,000-transition budget takes about
+14 hours of stepping plus evaluation.
+
 ## Differentiable simulation: neither library provides a usable gradient here
 
 The owner asked whether Genesis's differentiability or libuipc's own could train
