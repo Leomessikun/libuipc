@@ -1495,3 +1495,24 @@ against 18 before this pass. The runs are single samples on a shared GPU; the dt
 twins in the time-step record reproduced earlier figures of this kind exactly. The
 probe script is `perf/diag_outward.py` in the session scratchpad: agent A's
 `diag_elbow.py` with a per-tag workspace.
+
+The committed configuration, `638e63f6`, then ran once more on the same bodies with
+`perf/expert_dt.py`:
+
+| Garment | Placement | Forearm reached | Upper arm >= 0.7 |
+|---|---|---:|---:|
+| tshirt_26 | sleeve outward | 8 of 8 | 5 of 8 |
+| tshirt_68 | flip, baked hang | 8 of 8 | 5 of 8 |
+| hospital_gown | flip, baked hang | 7 of 8 | 6 of 8 |
+| tshirt_4 | sleeve outward | 8 of 8 | 5 of 8 |
+| tshirt_392 | sleeve outward | 8 of 8 | 0 of 8 |
+
+That is 21 of 40, not the 23 above. Both probes record the maximum over the episode.
+Two cells moved: tshirt_26 on body 3 (1.00 to 0.25) and the gown on body 0, whose
+forearm now stops at 0.15. The two runs read different drape bakes. The table above
+used agent A's bake workspace, and this run baked its own into the default
+`output/uipc_manip/drape_bake`. The code differs too: the probe patched the lift into
+`06b49176`, and this run has it committed. Which of the two moved the cells is not
+separated. The bake workspace is relative to the working directory, so the teachers
+bake their own drapes as well, and their expert ceiling sits near 21 to 23 of 40
+depending on the bake.

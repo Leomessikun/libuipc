@@ -1603,3 +1603,29 @@ tshirt_26 6, tshirt_68 5, the gown 7, tshirt_4 5 and tshirt_392 0. Before this p
 was 18. The tables are in the correctness record's "tshirt_26 goes sleeve outward, and
 the expert lifts at the elbow". The dt probes in `2026-09-10-dressing-timestep.md` keep
 the simulation step at 1/60 s.
+
+The committed configuration (`638e63f6`) then measured 21 of 40 on the same bodies,
+not 23: tshirt_26 5, tshirt_68 5, the gown 6, tshirt_4 5 and tshirt_392 0, with the
+forearm reached on 39 of 40. The correctness record has the table.
+
+Wang pretraining launch, 2026-09-11 01:45 CEST:
+- `output/uipc_manip/launch_wang_chain.sh` trains the teachers for regions 13, 4 and
+  22 one after another, then the student on all three. A crashed stage resumes from
+  its latest checkpoint, up to four attempts. A second process on this GPU buys 1.16
+  times the aggregate throughput while slowing each run by 64 per cent
+  (`2026-09-08-uipc-manip-pretraining.md`), so the stages run back to back and
+  region 13 shows whether the task is learnable before the other two start.
+- Every stage passes `--obs-mode wang_static_arm --no-obs-augment` and otherwise runs
+  Wang's defaults: 24 environments, 600k transitions, one 400k buffer for a teacher
+  and one per region for the student, a shared temperature, horizon 300 at six 1/60 s
+  steps, the 25 held-out configurations evaluated every 10k transitions and a
+  checkpoint every 50k.
+- The chain imports from the detached worktree `.claude/worktrees/pretrain-638e63f6`.
+  Runs land in `output/uipc_manip/wang_teacher_r{13,4,22}_s1` and
+  `wang_student_r4-13-22_s1`, logs in `output/uipc_manip/logs/`, and a finished stage
+  gets `CHAIN_DONE`. `watch_wang_chain.sh` next to the launcher prints checkpoint
+  saves, failures and a 45-minute stale-log alarm.
+- The exact command passed a smoke first: 4 environments, horizon 20, 320
+  transitions, four rotations, three evaluations, two checkpoints, exit 0. The first
+  world took 528 s because it baked the garments online; later worlds rebuilt in 21 to
+  30 s.
