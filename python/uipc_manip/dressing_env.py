@@ -32,7 +32,7 @@ import numpy as np
 
 from .dressing_assets import DressingCache, DressingCacheConfig, DressingCell, erode_arm_mesh, write_obj
 from .dressing_body import pose_region
-from .dressing_obs import BatchedDressingObservationBuilder, DressingObsConfig, DressingObservationBuilder, sample_segmented_cloud
+from .dressing_obs import RIG_MODES, BatchedDressingObservationBuilder, DressingObsConfig, DressingObservationBuilder, RigInputs, sample_segmented_cloud
 from .dressing_privileged import PRIVILEGED_DIM, privileged_state
 from .dressing_reward import early_turn, WangRewardConfig, opening_threaded, wang_progress
 from .genesis_env import ViewerClosed, _ensure_genesis
@@ -621,10 +621,11 @@ class GenesisIPCDressingEnv:
         positions = self.positions() if positions is None else positions
         out = np.empty((self.num_envs, self.spec.dim), dtype=np.float32)
         budget = self.spec.deformable_budget
+        rig = RigInputs.from_cells(self.cells, self._anchor, self._offsets, self._initial_offsets) if self.cfg.obs.mode in RIG_MODES else None
         clouds = self._batched_obs.visible_points(
             [cell.arm_points for cell in self.cells], list(positions),
             [cell.finger for cell in self.cells], [cell.shoulder for cell in self.cells],
-            self.rngs, self.cfg.augment_obs,
+            self.rngs, self.cfg.augment_obs, rig=rig,
         )
         for i, (cell, (arm, cloth)) in enumerate(zip(self.cells, clouds, strict=True)):
             arm, cloth = sample_segmented_cloud(arm, cloth, budget, self.rngs[i])
