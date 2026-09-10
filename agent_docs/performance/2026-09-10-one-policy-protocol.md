@@ -664,6 +664,22 @@ curriculum on, evaluation of every garment at every stage.
   about ten decisions, 3% of a 300-decision episode when every episode rotates;
   the ratio, not the seconds, is what carries to an unshared GPU. Each build runs
   the 30-step settle and 2 hold steps against the episode's 1,800 simulation steps.
+- The gate at the protocol's scale (`fork/gate24.py`): four 24-cell worlds of four
+  garments, drawn from region 13 by `ConfigPool`, built through one shared factory,
+  stepped three decisions and closed. Every teardown returned the process to
+  4,420 MB, against 7.8 to 7.9 GB with a world. Of each build's 147 to 195 s, the
+  Genesis scene build was 5.6 to 6.2 s and the rest the 30-step settle, at 35 to
+  42 s per decision; the placement checks took 33, 24, 13 and 5 s as the factory's
+  cache filled.
+- One failure is not attributed. The 24-slot measurement run
+  (`fork/measure_g4_n24.log`) died with a segmentation fault about 50 s into
+  building its second training world, after the first world's teardown had
+  released 3.6 GB; the GPU then held about 80 GB of other jobs' memory and the
+  process 14.3 GB. gate24 then rebuilt four such worlds without a fault. The
+  session's only other GPU failure, a device-side assert in the first build of
+  `test_dressing_env.py`, recurred neither on the base commit nor on this branch,
+  whose three GPU environment tests pass. A long run under less memory pressure is
+  the remaining check.
 - Evaluation: the 20-configuration evaluation world built in 159 s and its first
   round, 5 decisions, took 139 s. A 300-decision round steps about as many cells
   as one training episode, and Wang's cadence of 10,000 transitions is 1.4
