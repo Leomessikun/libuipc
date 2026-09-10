@@ -947,9 +947,9 @@ figure is an upper bound: Q values here run about 86 with a spread of 24, where
 bf16 resolves only about 0.5, so a shipped version would autocast the point
 encoders alone and keep the heads, targets and losses in fp32. The order that
 follows: a privileged-critic variant first, in fp32 and otherwise identical to
-the baseline, then encoder-only bf16; overlapping simulation with learning is
-worth at most about 15% once the privileged critic lands, and libuipc does
-release the GIL in `advance` and `retrieve`, so it stays possible later.
+the baseline, then encoder-only bf16.
+Overlapping simulation with learning comes after both; libuipc releases the GIL
+in `advance` and `retrieve`, so a learner thread stays possible.
 
 ### An asymmetric critic on the simulator state
 
@@ -1009,6 +1009,15 @@ with shared weights, its encoder features differ from fp32 by 0.5% relative,
 the actor's mean action by 0.05%, and the critic gradient keeps its direction
 (cosine 1.0000) and norm. The variant run stays fp32, so precision does not
 confound the critic comparison.
+
+In the run's terms, 24 updates per vector step cost about 1.0 s with the
+privileged critic and 0.7 s with bf16 as well, against a 2.08 s simulation step,
+so overlapping the two would save a quarter to a third of a step. Two runs
+sharing the GPU are no measure of that: separate processes time-slice the GPU,
+while streams within one process can overlap. Sharing did cost what
+time-slicing predicts. With the variant running, the baseline's simulation step
+went from 2.08 to about 6.1 s and its vector step to 8.8 s, and the variant steps
+at about 7 s, so the pair runs no faster than the two would one after the other.
 
 ## Differentiable simulation: neither library provides a usable gradient here
 
