@@ -891,6 +891,33 @@ training log carries the wall-clock seconds spent in action selection, the
 environment step and the gradient updates as cumulative `act_s`, `env_s` and
 `update_s` columns, evaluation excluded.
 
+### The SAC update was mostly a distance computation
+
+With the phase columns, steps 140 to 200 of the first run took 9.5 s each:
+2.0 s in the environment, 7.5 s in the 24 gradient updates and 0.04 s choosing
+actions, so one update took about 310 ms. A profile of the update at the run's
+exact configuration, on the GPU it shared with that run, put 72% of the
+update's GPU time in `torch.cdist`: seven calls per update, one per
+set-abstraction level and encoder pass, about 56 ms each, in the path without
+the matrix product, which is slow for three-dimensional points. Squared
+distances from explicit coordinate differences, compared with the squared
+radius, leave every validity mask unchanged over 60 batches at both levels.
+Neighbour order differs in 98 of 117 million valid slots through rounding ties,
+which the masked max ignores, and a test batch's actor and critic outputs are
+identical with gradients within 1.5e-8. Interleaved on the shared GPU:
+
+| Update | ms per update | Speed-up |
+|---|---:|---:|
+| `cdist` | 616 | 1.00 |
+| Explicit squared differences | 210 | 2.93 |
+| Plus one ball query per batch for every pass | 187 | 3.30 |
+
+The rest was measured and not applied: moving each set abstraction's first
+linear layer before the neighbour gather gave 1.05, evaluating the actor's
+feature propagation only at the tool point 0.98, TF32 1.12, bf16 autocast 1.07,
+and batches of 128 and 256 cost the same per sample as 64. The reuse is scoped
+to one `SACAgent.update`, and its keys carry the tensors' version counters.
+
 ## Differentiable simulation: neither library provides a usable gradient here
 
 The owner asked whether Genesis's differentiability or libuipc's own could train

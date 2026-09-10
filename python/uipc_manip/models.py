@@ -11,6 +11,7 @@ below one use farthest point sampling.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import asdict, dataclass, field
 
 import numpy as np
@@ -79,6 +80,26 @@ def farthest_point_sample(pos: torch.Tensor, valid: torch.Tensor, n_samples: int
     return out
 
 
+_NEIGHBOURHOOD_CACHE: dict | None = None
+
+
+@contextlib.contextmanager
+def reuse_neighbourhoods():
+    """Compute each ball query once per set of position tensors inside the block.
+
+    One SAC update runs the point encoders five to seven times on the same two
+    observation batches, and a neighbourhood depends only on the positions, the
+    validity masks, the radius and the count. Keys include the tensors' version
+    counters, so an in-place change is never served from the cache.
+    """
+    global _NEIGHBOURHOOD_CACHE
+    previous, _NEIGHBOURHOOD_CACHE = _NEIGHBOURHOOD_CACHE, {}
+    try:
+        yield
+    finally:
+        _NEIGHBOURHOOD_CACHE = previous
+
+
 def ball_query(
     pos: torch.Tensor,
     valid: torch.Tensor,
@@ -87,13 +108,32 @@ def ball_query(
     radius: float,
     k: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Up to ``k`` valid points within ``radius`` of every centre (nearest first)."""
-    d = torch.cdist(centers, pos, compute_mode="donot_use_mm_for_euclid_dist")
-    within = (d <= radius) & valid[:, None, :] & center_valid[:, :, None]
-    score = torch.where(within, d, torch.full_like(d, float("inf")))
+    """Up to ``k`` valid points within ``radius`` of every centre (nearest first).
+
+    Distances are compared squared, from explicit coordinate differences. The
+    previous ``torch.cdist`` without its matrix-product path took 72% of a SAC
+    update's GPU time on these three-dimensional distances; the neighbour sets
+    and validity are the same, see the dressing-correctness record.
+    """
+    cache = _NEIGHBOURHOOD_CACHE
+    if cache is not None:
+        key = tuple((t.data_ptr(), t._version, tuple(t.shape)) for t in (pos, valid, centers, center_valid)) + (float(radius), int(k))
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+    d2 = (
+        (centers[:, :, None, 0] - pos[:, None, :, 0]) ** 2
+        + (centers[:, :, None, 1] - pos[:, None, :, 1]) ** 2
+        + (centers[:, :, None, 2] - pos[:, None, :, 2]) ** 2
+    )
+    within = (d2 <= float(radius) * float(radius)) & valid[:, None, :] & center_valid[:, :, None]
+    score = torch.where(within, d2, torch.full_like(d2, float("inf")))
     k = min(int(k), pos.shape[1])
     values, idx = score.topk(k, dim=-1, largest=False)
-    return idx, torch.isfinite(values)
+    result = (idx, torch.isfinite(values))
+    if cache is not None:
+        cache[key] = result
+    return result
 
 
 class SetAbstraction(nn.Module):

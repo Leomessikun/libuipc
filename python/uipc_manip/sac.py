@@ -21,7 +21,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .models import Actor, CategoricalCritic, Critic, EncoderConfig, WangFlowActor
+from .models import Actor, CategoricalCritic, Critic, EncoderConfig, WangFlowActor, reuse_neighbourhoods
 from .obs import FLAG_TOOL, ObsSpec
 
 WANG_HORIZON_STEPS = 150
@@ -286,6 +286,10 @@ class SACAgent:
 
     def update(self, replay) -> dict:
         """One optimizer update following the Wang actor/target schedule."""
+        with reuse_neighbourhoods():
+            return self._update(replay)
+
+    def _update(self, replay) -> dict:
         obs_flat, action, reward, next_obs_flat, not_done = replay.sample(self.cfg.batch_size)
         obs = self._unpack(obs_flat, augment=True)
         next_obs = self._unpack(next_obs_flat, augment=True)
