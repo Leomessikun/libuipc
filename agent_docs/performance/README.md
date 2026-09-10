@@ -25,6 +25,7 @@ when iteration counts change. Report both and state which is the primary signal.
 | [2026-09-01 cross-domain main baseline](2026-09-01-cross-domain-baseline.md) | Current reference | Three-run ABD, FEM/MAS, cloth/contact envelope and synchronized stage diagnostics |
 | [2026-09-08 IPC manipulation pretraining](2026-09-08-uipc-manip-pretraining.md) | Accepted | Robot cloth/cable RL environment throughput, coupler phase split, vector scaling, scripted task gate |
 | [2026-09-10 dressing time step](2026-09-10-dressing-timestep.md) | Proposed | dt 1/30 x 3 against dt 1/60 x 6 per decision: exact Newton/PCG counts, expert ceilings on 16 live cells, friction and settle probes |
+| [2026-09-10 camera rigs](2026-09-10-camera-rigs.md) | Options, measured | Stretch 3 head and gripper cameras and Wang's static arm as dressing observation modes: sources, Wang's code audit, visibility and decodability on recorded expert states |
 | [2026-08-30 case2 assembly roll-up](2026-08-30-case2-assembly-rollup.md) | Accepted with caveats | Buffer growth, collision readback, line-search aggregation, contact/FEM assembly, rejected split |
 | [`handoff.md`](../handoff.md) | Historical source | Earlier MAS, CUDA graph, CUB, DyTopo, lifecycle, and detailed command history |
 
