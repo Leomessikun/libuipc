@@ -704,6 +704,55 @@ episode holds only twelve anchors, so after placement the garment drops 0.17 m
 in ten settle steps and 0.47 to 0.88 m in thirty. It never triggers an assert,
 but it means the episode does not start from the drape that was baked.
 
+## Live cells: the scripted expert cannot dress them yet
+
+The protocol asks for the expert to be verified on live cells before any
+training. Done now, on the committed code (a02eaec5): one scripted-expert
+episode of 150 decisions on each of the sixteen cells tshirt_26 and tshirt_4
+times SMPL-X bodies 0 to 7, cuff strength 1e4, run twice.
+
+| Anchors | tshirt_26 forearm reached | tshirt_26 final upper arm | tshirt_4 forearm reached | Settle |
+|---:|---:|---|---:|---:|
+| 12 | 1 of 8 | 0.275 on body 3, 0 elsewhere | 0 of 8 | 0.879 m |
+| 48 | 8 of 8 | 0.054 to 0.484 | 0 of 8 | 0.860 m |
+
+No cell reaches the 0.70 threshold under either count, and no simulation
+error occurred. With 48 anchors the held-cuff error is 2.7 to 4.2 mm on five
+tshirt_26 bodies but 27 to 49 mm on the three with the lowest upper-arm ratio
+(bodies 0, 1, 6), so the grip slips late in the pull there. The steps took
+6.3 and 7.4 s per decision because four processes shared the GPU; those are not
+throughput figures. A cell the expert leaves at zero is an asset defect, so
+fifteen of these sixteen cells could not have trained anything at twelve
+anchors, and none of the eight tshirt_4 cells can at either count.
+
+A geometry probe on three of the cells finds the defect in the placement. It
+measures the opening centre against the forearm, fingertip to elbow, which is
+the segment the hand travels through first:
+
+| State | Along forearm from fingertip | Off the forearm axis | Opening radius |
+|---|---:|---:|---:|
+| Wang's cached states, all 23 cells | -8.8 to -9.4 cm | 0.0 cm | 8.1 to 9.9 cm |
+| Live cell as placed | -15.7 to -17.2 cm | 10.3 to 12.4 cm | 9.5 to 9.9 cm |
+| Live cell after the settle | -13.2 to -30.5 cm | 18.4 to 18.8 cm | 9.8 to 10.3 cm |
+
+The placement puts the opening centre exactly one clearance, 20.0 cm, out along
+the fingertip-to-shoulder chord. That chord is 31 to 38 degrees off the forearm
+on these bent arms, so the opening starts about one radius off the axis the hand
+travels along. Wang's reference states are coaxial with the forearm at 9 cm,
+with the opening plane facing along it (normal cosine 0.94 to 1.00). The free
+fall then drops the opening a further 6 to 13 cm. The expert dresses only where
+its approach happens to re-centre the opening. On tshirt_26 body 3 the opening
+crossed the fingertip plane 1.8 cm off axis and the forearm filled. On body 0
+it crossed 8.3 cm off axis against an 8.7 cm radius and missed. On tshirt_4
+body 0 it crossed near the axis, but the opening had turned almost parallel to
+the forearm (normal cosine 0.05 to 0.32), and the hand never entered.
+
+So the multi-cell run is not launched on these cells. The next placement puts
+the socket on the forearm axis at about Wang's clearance, then moves it out only
+as far as the garment needs to start clear of the arm. It also keeps 48 anchors
+and settles the drape under the episode's own pin set; the expert must be
+re-verified before training.
+
 ## Differentiable simulation: neither library provides a usable gradient here
 
 The owner asked whether Genesis's differentiability or libuipc's own could train
