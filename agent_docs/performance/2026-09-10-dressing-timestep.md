@@ -1,6 +1,6 @@
 # 2026-09-10 — Dressing time step: dt 1/30 x 3 against dt 1/60 x 6
 
-- Status: Accepted for pretraining (`pretrain_wang --dt 1/30`) once the merged garment placements pass at dt 1/30. The trainer default stays 1/60.
+- Status: Rejected as the pretraining default. dt 1/30 is 2.13 times faster, but on the merged placements it loses elbow-stage successes. dt 1/60 stays, and dt 1/40 x 4 is being probed.
 - Code under test: `0b9ccfc9`, from a detached worktree. The `--dt` flag landed later in `fb38b326`.
 - Benchmark manifest: none. These are expert-ceiling probes on the dressing environment.
 
@@ -128,6 +128,28 @@ dt 1/60, giving forearm 8/8 and upper arm >= 0.7 on 5/8 over bodies 0-7.
 So the start-state swing accounts for most of B's ceiling advantage on tshirt_68. The
 speed gain does not depend on it.
 
+### Re-validation on the merged placements (`06b49176`)
+
+The merged placements put the gown and tshirt_68 in their baked hang, and tshirt_4 and
+tshirt_392 sleeve outward. Each garment ran on bodies 0-7 in its own world, with dt 1/60
+twins on the same commit.
+
+| Garment | dt 1/60 forearm | dt 1/60 upper >= 0.7 | dt 1/30 forearm | dt 1/30 upper >= 0.7 |
+|---|---|---|---|---|
+| tshirt_26 | 8/8 | 5/8 | 8/8 | 5/8 |
+| tshirt_68, baked hang | 8/8 | 5/8 | 8/8 | 3/8 |
+| hospital_gown, baked hang | 7/8 | 5/8 | 8/8 | 2/8 |
+| tshirt_392, sleeve outward | 8/8 in the garment agent's run | 0/8 | 8/8 | 0/8 |
+
+- The dt 1/60 twins reproduce the garment agents' figures exactly: tshirt_68 on bodies 0, 2, 3, 5 and 7, the gown on 1, 2, 4, 5 and 7, and tshirt_4 at 8/8 and 3/8.
+- Under dt 1/30, tshirt_68 bodies 3 and 5 and gown bodies 1, 2 and 7 hook at the elbow at an upper-arm ratio of 0.21-0.30.
+
+The no-move rule's granularity is ruled out. The rule is checked once per physics step, so
+at dt 1/30 each check covers twice the tool motion. A prototype that checks the tool path in
+1/60 s increments whatever the step left both results unchanged: tshirt_68 at 3/8 and the
+gown at 2/8. The patch is archived in the session scratchpad as
+`perf/no_move_granularity.patch`.
+
 ## Interpretation
 
 Measured directly:
@@ -153,17 +175,18 @@ contention.
 
 ## Decision
 
-B is adopted for pretraining, and A remains the trainer default for existing runs.
-`pretrain_wang --dt 1/30` fills in 3 steps, cuff strength 4e4 and settle 15.
+dt 1/30 is rejected as the pretraining default, and the trainer and `pretrain_wang` stay at
+dt 1/60.
 
-Two of the three checks this record set are done:
-- The production wall-clock pair gives 2.13 times over the shared window. The
-  non-solver share of a decision keeps this below the 2.3 times PCG ratio.
-- The swing hypothesis holds, as the section above shows.
+The baked hang removed the start-state swing that had flattered dt 1/30. What remains of
+its effect is at the elbow, where it costs 5 of 16 successes on tshirt_68 and the gown.
+The mechanism is not established. Candidates are implicit Euler's larger numerical damping
+and friction at the larger step.
 
-The third check is running: re-validating the merged garment placements at dt 1/30
-(`06b49176`: gown and tshirt_68 in their baked hang, tshirt_4 and tshirt_392 sleeve
-outward) on bodies 0-7 of all five garments.
+`--dt` stays available, and `pretrain_wang --dt 1/30` still fills in the matched cuff
+strength and settle, for runs that trade elbow fidelity for the 2.1 times speed.
+
+dt 1/40 x 4 (cuff strength 2.25e4, settle 20) is being probed on tshirt_68 and the gown.
 
 ## Reproduction and artifacts
 
