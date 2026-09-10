@@ -930,6 +930,27 @@ One update now takes 86 ms against 310 ms, and the run spends about as long
 learning as simulating. At this rate the 300,000-transition budget takes about
 14 hours of stepping plus evaluation.
 
+With the distance computation gone the remaining levers re-measure
+differently, interleaved on the GPU shared with the run:
+
+| Update, fixed code | ms per update | Speed-up |
+|---|---:|---:|
+| fp32 | 177 | 1.00 |
+| TF32 matrix products | 158 | 1.12 |
+| bf16 autocast over the whole update | 95 | 1.86 |
+
+Per pass on one batch: actor forward 24 ms, target-critic forward 22 ms,
+critic forward and backward 54 ms, actor forward and backward 74 ms. On the
+update schedule that is 124 ms, of which a critic on a low-dimensional
+privileged state would leave the actor's 43 ms, 34%. The whole-update bf16
+figure is an upper bound: Q values here run about 86 with a spread of 24, where
+bf16 resolves only about 0.5, so a shipped version would autocast the point
+encoders alone and keep the heads, targets and losses in fp32. The order that
+follows: a privileged-critic variant first, in fp32 and otherwise identical to
+the baseline, then encoder-only bf16; overlapping simulation with learning is
+worth at most about 15% once the privileged critic lands, and libuipc does
+release the GIL in `advance` and `retrieve`, so it stays possible later.
+
 ## Differentiable simulation: neither library provides a usable gradient here
 
 The owner asked whether Genesis's differentiability or libuipc's own could train
