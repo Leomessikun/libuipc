@@ -1,6 +1,6 @@
 # 2026-09-10 — Dressing time step: dt 1/30 x 3 against dt 1/60 x 6
 
-- Status: Rejected as the pretraining default. dt 1/30 is 2.13 times faster, but on the merged placements it loses elbow-stage successes. dt 1/60 stays, and dt 1/40 x 4 is being probed.
+- Status: Rejected as the pretraining default. dt 1/30 is 2.13 times faster, but on the merged placements it and dt 1/40 x 4 both lose elbow-stage successes, so dt 1/60 stays.
 - Code under test: `0b9ccfc9`, from a detached worktree. The `--dt` flag landed later in `fb38b326`.
 - Benchmark manifest: none. These are expert-ceiling probes on the dressing environment.
 
@@ -144,6 +144,18 @@ twins on the same commit.
 - The dt 1/60 twins reproduce the garment agents' figures exactly: tshirt_68 on bodies 0, 2, 3, 5 and 7, the gown on 1, 2, 4, 5 and 7, and tshirt_4 at 8/8 and 3/8.
 - Under dt 1/30, tshirt_68 bodies 3 and 5 and gown bodies 1, 2 and 7 hook at the elbow at an upper-arm ratio of 0.21-0.30.
 
+A middle step, dt 1/40 x 4 (cuff strength 2.25e4, settle 20), was probed on the two
+garments that lose successes:
+
+| Garment | dt 1/60 upper >= 0.7 | dt 1/40 upper >= 0.7 | dt 1/30 upper >= 0.7 |
+|---|---|---|---|
+| tshirt_68, baked hang | 5/8 | 5/8 | 3/8 |
+| hospital_gown, baked hang | 5/8 | 3/8 (bodies 4 and 7 hook) | 2/8 |
+
+Every run reached the forearm on 8/8, except the gown at dt 1/60 (7/8). Over the two
+garments, elbow successes fall as the step grows: 10, 8 and 5 of 16 at dt 1/60, 1/40
+and 1/30.
+
 The no-move rule's granularity is ruled out. The rule is checked once per physics step, so
 at dt 1/30 each check covers twice the tool motion. A prototype that checks the tool path in
 1/60 s increments whatever the step left both results unchanged: tshirt_68 at 3/8 and the
@@ -186,7 +198,7 @@ and friction at the larger step.
 `--dt` stays available, and `pretrain_wang --dt 1/30` still fills in the matched cuff
 strength and settle, for runs that trade elbow fidelity for the 2.1 times speed.
 
-dt 1/40 x 4 (cuff strength 2.25e4, settle 20) is being probed on tshirt_68 and the gown.
+dt 1/40 x 4 is not adopted either. It keeps tshirt_68 but drops the gown from 5 to 3 of 8. Its speed was not measured, because the loss already decides it.
 
 ## Reproduction and artifacts
 
