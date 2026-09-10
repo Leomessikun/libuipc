@@ -41,6 +41,10 @@ class LiveCellConfig:
     """How the garment is baked and how far in front of the hand it spawns."""
 
     bake: BakeConfig = field(default_factory=BakeConfig)
+    pre_insertion: bool = True
+    """Spawn the garment before insertion, its opening facing the fingertips and its
+    body hanging clear of the arm, instead of the reference's pre-worn placement,
+    which lays the sleeve through the arm and which libuipc refuses."""
     clearance_m: float = 0.10
     """Distance the opening centre sits outside the fingertip along the arm axis.
     Newton's runtime alignment uses the same quantity so the arm has to travel
@@ -57,6 +61,7 @@ class LiveCellConfig:
         return {
             "bake": self.bake.to_dict(), "clearance_m": float(self.clearance_m),
             "scales": dict(self.scales or {}), "bodies": self.bodies, "body": self.body.to_dict(),
+            "pre_insertion": bool(self.pre_insertion),
         }
 
 
@@ -67,32 +72,52 @@ def _unit(v: np.ndarray, fallback: tuple[float, float, float] = (1.0, 0.0, 0.0))
 
 
 def build_target_socket_frame(
-    finger: np.ndarray, shoulder: np.ndarray, *, clearance: float, world_up: tuple[float, float, float] = (0.0, 0.0, 1.0)
+    finger: np.ndarray,
+    shoulder: np.ndarray,
+    *,
+    clearance: float,
+    world_up: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    pre_insertion: bool = True,
 ) -> np.ndarray:
-    """World socket frame for an arm: +Z along finger to shoulder, origin outside the fingertip.
+    """World socket frame for an arm, with the opening a clearance step outside the fingertip.
 
-    Ported from Newton ``runtime_align.build_target_socket_frame``.
+    The canonical socket's +Z runs from the cuff into the sleeve, so aligning it
+    with the finger-to-shoulder axis lays the sleeve along the arm: that is a
+    *pre-worn* state, and it is what Newton's ``runtime_align`` builds, because
+    VBD tolerates the interpenetration that follows. libuipc refuses it, and a
+    training episode should start before insertion anyway.
+
+    With ``pre_insertion`` the sleeve is turned to run the other way, so the
+    opening faces the fingertips and the garment hangs off the end of the hand in
+    free space. The tool then has to carry the opening over the hand, which is
+    the motion the task is about.
     """
     finger = np.asarray(finger, dtype=np.float64).reshape(3)
     shoulder = np.asarray(shoulder, dtype=np.float64).reshape(3)
     arm_axis = _unit(shoulder - finger)
+    insertion = -arm_axis if pre_insertion else arm_axis
     up = np.asarray(world_up, dtype=np.float64).reshape(3)
-    up = up - arm_axis * float(np.dot(up, arm_axis))
+    up = up - insertion * float(np.dot(up, insertion))
     y_axis = _unit(up, fallback=(0.0, 0.0, 1.0))
-    x_axis = _unit(np.cross(y_axis, arm_axis), fallback=(0.0, 1.0, 0.0))
-    y_axis = _unit(np.cross(arm_axis, x_axis), fallback=(0.0, 0.0, 1.0))
+    x_axis = _unit(np.cross(y_axis, insertion), fallback=(0.0, 1.0, 0.0))
+    y_axis = _unit(np.cross(insertion, x_axis), fallback=(0.0, 0.0, 1.0))
     T = np.eye(4, dtype=np.float64)
-    T[:3, 0], T[:3, 1], T[:3, 2] = x_axis, y_axis, arm_axis
+    T[:3, 0], T[:3, 1], T[:3, 2] = x_axis, y_axis, insertion
     T[:3, 3] = finger - arm_axis * float(clearance)
     return T
 
 
 def canonical_to_world_transform(
-    socket_to_canonical: np.ndarray, finger: np.ndarray, shoulder: np.ndarray, *, clearance: float
+    socket_to_canonical: np.ndarray,
+    finger: np.ndarray,
+    shoulder: np.ndarray,
+    *,
+    clearance: float,
+    pre_insertion: bool = True,
 ) -> np.ndarray:
     """``T_target @ inv(T_source)``: map canonical drape points onto this arm."""
     source = np.asarray(socket_to_canonical, dtype=np.float64).reshape(4, 4)
-    target = build_target_socket_frame(finger, shoulder, clearance=clearance)
+    target = build_target_socket_frame(finger, shoulder, clearance=clearance, pre_insertion=pre_insertion)
     rotation, translation = source[:3, :3], source[:3, 3]
     inverse = np.eye(4, dtype=np.float64)
     inverse[:3, :3] = rotation.T
@@ -135,10 +160,13 @@ class CanonicalDrape:
     source: str = "online"
     """``online`` when libuipc baked it here, ``offline`` for Newton's pre-baked drape."""
 
-    def place(self, cell_landmarks: dict[str, np.ndarray], *, clearance: float) -> tuple[np.ndarray, np.ndarray]:
-        """Return the garment vertices and picker position placed on this arm."""
+    def place(
+        self, cell_landmarks: dict[str, np.ndarray], *, clearance: float, pre_insertion: bool = True
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return the garment vertices and picker position placed for this arm."""
         transform = canonical_to_world_transform(
-            self.socket_to_canonical, cell_landmarks["right_finger"], cell_landmarks["right_shoulder"], clearance=clearance
+            self.socket_to_canonical, cell_landmarks["right_finger"], cell_landmarks["right_shoulder"],
+            clearance=clearance, pre_insertion=pre_insertion,
         )
         return apply_transform(self.cloth, transform), apply_transform(self.anchor[None, :], transform)[0]
 
@@ -292,7 +320,7 @@ class LiveCellFactory:
     def build(self, garment: str, human: int) -> DressingCell:
         drape = self.drape(garment)
         body = self.body(human)
-        cloth, picker_pos = drape.place(body.landmarks, clearance=self.cfg.clearance_m)
+        cloth, picker_pos = drape.place(body.landmarks, clearance=self.cfg.clearance_m, pre_insertion=self.cfg.pre_insertion)
         return DressingCell(
             garment=garment,
             human=int(human),

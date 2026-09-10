@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -130,14 +131,36 @@ def sample_body_pose(rng: np.random.Generator, mode: str) -> np.ndarray:
     return pose
 
 
+@contextmanager
+def _cpu_default_device():
+    """Run with the CPU as torch's default device, restoring whatever was set.
+
+    Genesis calls ``torch.set_default_device`` globally. SMPL-X both registers
+    buffers and converts some of them to numpy while it builds, so a model created
+    under a device default ends up half on the GPU and fails on the first
+    conversion. Body generation is a handful of small products run once per body,
+    so pinning it to the CPU costs nothing.
+    """
+    import torch
+
+    previous = torch.get_default_device() if hasattr(torch, "get_default_device") else None
+    torch.set_default_device("cpu")
+    try:
+        yield
+    finally:
+        if previous is not None:
+            torch.set_default_device(previous)
+
+
 @lru_cache(maxsize=8)
 def _model(model_dir: str, gender: str, num_betas: int):
     import smplx
 
-    return smplx.create(
-        model_dir, model_type="smplx", gender=gender, num_betas=int(num_betas),
-        use_pca=True, num_pca_comps=6, batch_size=1,
-    )
+    with _cpu_default_device():
+        return smplx.create(
+            model_dir, model_type="smplx", gender=gender, num_betas=int(num_betas),
+            use_pca=True, num_pca_comps=6, batch_size=1,
+        )
 
 
 @lru_cache(maxsize=8)
@@ -221,12 +244,13 @@ def generate_body(seed: int, cfg: BodyConfig | None = None) -> Body:
     rot = np.array([[1.0, 0.0, 0.0], [0.0, np.cos(angle), -np.sin(angle)], [0.0, np.sin(angle), np.cos(angle)]])
 
     def evaluate(body_pose: np.ndarray):
-        out = model(
-            betas=torch.as_tensor(betas).unsqueeze(0),
-            body_pose=torch.as_tensor(body_pose).unsqueeze(0),
-            right_hand_pose=torch.as_tensor(hand).view(1, -1),
-            return_verts=True,
-        )
+        with _cpu_default_device():
+            out = model(
+                betas=torch.as_tensor(betas, device="cpu").unsqueeze(0),
+                body_pose=torch.as_tensor(body_pose, device="cpu").unsqueeze(0),
+                right_hand_pose=torch.as_tensor(hand, device="cpu").view(1, -1),
+                return_verts=True,
+            )
         return (out.vertices.detach().cpu().numpy()[0].astype(np.float64) @ rot.T,
                 out.joints.detach().cpu().numpy()[0].astype(np.float64) @ rot.T)
 
@@ -244,7 +268,7 @@ def generate_body(seed: int, cfg: BodyConfig | None = None) -> Body:
     if vertices.shape[0] != SMPLX_VERTEX_COUNT:
         raise RuntimeError(f"SMPL-X returned {vertices.shape[0]} vertices, expected {SMPLX_VERTEX_COUNT}")
 
-    faces = np.asarray(model.faces, dtype=np.int32)
+    faces = np.asarray(getattr(model, "faces_tensor", model.faces).cpu() if hasattr(getattr(model, "faces_tensor", model.faces), "cpu") else model.faces, dtype=np.int32)
     arm_indices = np.asarray(right_arm_vertex_indices(str(cfg.model_dir), gender, cfg.num_betas), dtype=np.int64)
     arm_points, arm_faces = submesh(vertices, faces, arm_indices)
     landmarks = {name: joints[index].copy() for name, index in JOINT_INDEX.items()}

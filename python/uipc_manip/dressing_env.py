@@ -47,6 +47,15 @@ as unusable at the reference solver budget, so it is opt-in."""
 class DressingConfig:
     human: int = 0
     garments: tuple[str, ...] = DEFAULT_GARMENTS
+    cells: tuple[tuple[str, int], ...] = ()
+    """The (garment, body) bound to each slot, in slot order. Empty keeps the legacy
+    shorthand of cycling ``garments`` over the single ``human``. A slot's cell is fixed
+    for the life of the world because ``reset`` restores one settled snapshot."""
+    cell_source: str = "cache"
+    """``cache`` reads the Newton bake's pre-worn states; ``live`` drapes each garment in
+    libuipc and places it on a generated body, which admits any (garment, body) pair."""
+    live: "LiveCellConfig" = field(default_factory=lambda: __import__("uipc_manip.dressing_live", fromlist=["LiveCellConfig"]).LiveCellConfig())
+    """How live cells are baked and placed; ignored when ``cell_source`` is ``cache``."""
     horizon: int = 900
     dt: float = 1.0 / 60.0
     action_repeat: int = 1
@@ -200,11 +209,28 @@ class GenesisIPCDressingEnv:
         self._uipc = __import__("uipc")
         self._device = self._gs.device
         self._debug_objects: list = []
-        self.cache = DressingCache(cfg.cache)
-        garments = [g for g in cfg.garments if (g, int(cfg.human)) in self.cache.cells]
-        if not garments:
-            raise ValueError(f"No cached cells for human {cfg.human} among {cfg.garments}; cache has {self.cache.cells}")
-        self.cells: list[DressingCell] = [self.cache.load(garments[i % len(garments)], cfg.human) for i in range(self.num_envs)]
+        self.cache = DressingCache(cfg.cache) if cfg.cell_source == "cache" else None
+        plan = list(cfg.cells)
+        if not plan:
+            if cfg.cell_source == "cache":
+                garments = [g for g in cfg.garments if (g, int(cfg.human)) in self.cache.cells]
+                if not garments:
+                    raise ValueError(f"No cached cells for human {cfg.human} among {cfg.garments}; cache has {self.cache.cells}")
+            else:
+                garments = list(cfg.garments)
+            plan = [(garments[i % len(garments)], int(cfg.human)) for i in range(self.num_envs)]
+        if len(plan) != self.num_envs:
+            raise ValueError(f"{len(plan)} cells for {self.num_envs} slots; every slot needs its own cell")
+        if cfg.cell_source == "live":
+            from .dressing_live import LiveCellFactory
+
+            factory = LiveCellFactory(cfg.live)
+            self.cells: list[DressingCell] = [factory.build(g, b) for g, b in plan]
+        elif cfg.cell_source == "cache":
+            self.cells = [self.cache.load(g, b) for g, b in plan]
+        else:
+            raise ValueError(f"Unknown cell_source {cfg.cell_source!r}; use 'cache' or 'live'")
+        self.cell_labels = [cell.name for cell in self.cells]
         self._obs_builder = DressingObservationBuilder(cfg.obs, self._device)
         self._batched_obs = BatchedDressingObservationBuilder(cfg.obs, self._device)
         self._episode_step = 0
@@ -222,11 +248,14 @@ class GenesisIPCDressingEnv:
         # One collider per slot: the slots may hold different bodies, and the IPC object is
         # named after the cell's own body, so a shared mesh would silently dress every body
         # with the first one's arm.
-        erosion = int(round(cfg.arm_erosion_m * 1000))
+        # The bake's pre-worn states interpenetrate and need eroding; a live cell spawns
+        # the garment a clearance step outside the fingertip and must not be eroded.
+        erosion_m = cfg.arm_erosion_m if cfg.cell_source == "cache" else 0.0
+        erosion = int(round(erosion_m * 1000))
         self.arm_meshes: list[tuple[np.ndarray, np.ndarray]] = []
         arm_paths: list[str] = []
         for cell in self.cells:
-            eroded = erode_arm_mesh(cell.arm_points, cell.arm_faces, cfg.arm_erosion_m, cell.finger, cell.shoulder)
+            eroded = erode_arm_mesh(cell.arm_points, cell.arm_faces, erosion_m, cell.finger, cell.shoulder)
             self.arm_meshes.append((eroded, cell.arm_faces))
             arm_paths.append(
                 str(write_obj(Path(cfg.workspace) / f"arm_human_{cell.human}_eroded_{erosion}mm.obj", eroded, cell.arm_faces))
