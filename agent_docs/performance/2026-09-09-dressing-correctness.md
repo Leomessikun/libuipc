@@ -863,6 +863,31 @@ against 0.879 m before, and tshirt_392 starts upside down under the measured
 roll. The anchor default is now 48 and the cuff strength stays 1e4. Held-cuff
 errors and rates above were measured on a GPU shared with other jobs.
 
+### The other garments' ceilings, and the first multi-cell training set
+
+Same placement, 48 anchors, 300 decisions, highest readings over the episode:
+
+| Garment | Reaches the forearm | Passes 0.70 on the upper arm | Notes |
+|---|---:|---:|---|
+| tshirt_26 | 8 of 8 | 5 of 8 | bodies 0, 2, 3, 5, 7 |
+| tshirt_68 | 5 of 8 | 3 of 8 | bodies 0, 2, 3; body 5 peaks at 0.541, body 6 at 0.197 |
+| tshirt_4 | 0 of 8 | 0 of 8 | the opening closes against the forearm |
+| tshirt_392 | 0 of 8 | 0 of 8 | the drape hangs upside down and the expert never leaves its elbow pull |
+| hospital_gown | 0 of 8 | 0 of 8 | the held cuff drifts by up to 143 mm |
+
+tshirt_68 bodies 1, 4 and 7 never reach the forearm. All three sit at a 20 cm
+clearance, but body 5 threads at 21 cm, so the clearance alone does not explain
+them. The first multi-cell run therefore trains tshirt_26 and tshirt_68 on
+bodies 0 to 7 with bodies 6 and 7 held out: 28 copies, two slots per training
+cell, 300 decisions of six steps, 48 anchors, a 300,000-transition screening
+budget, and saved evaluation trajectories so that a tube-coverage metric can
+later be checked against the ray metric on the same rollouts. The trainer cannot
+drop single cells, so the three tshirt_68 cells the expert cannot thread stay
+in: two take 4 of the 24 training slots and one is among the four held-out
+cells. Of the held-out cells only tshirt_26 body 7 is dressable by the expert,
+which bounds the held-out success rate the scripted expert would score at one
+in four; checkpoints are ranked on the continuous held-out upper-arm ratio.
+
 ## Differentiable simulation: neither library provides a usable gradient here
 
 The owner asked whether Genesis's differentiability or libuipc's own could train
