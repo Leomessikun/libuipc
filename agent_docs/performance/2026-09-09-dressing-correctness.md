@@ -704,4 +704,56 @@ episode holds only twelve anchors, so after placement the garment drops 0.17 m
 in ten settle steps and 0.47 to 0.88 m in thirty. It never triggers an assert,
 but it means the episode does not start from the drape that was baked.
 
+## Differentiable simulation: neither library provides a usable gradient here
+
+The owner asked whether Genesis's differentiability or libuipc's own could train
+the policy faster. A delegated pass answered it from source and measurement.
+
+Genesis cannot: its IPC coupler's `couple_grad` is `pass` with the comment "IPC
+doesn't support gradients yet" (coupler.py:876-879), and this scene runs no
+Genesis solver that has one.
+
+libuipc's diff-sim is an unfinished stub in the 0.0.28 wheel. Any geometry or
+contact-model attribute, including the soft constraint's `aim_position`, can be
+registered as a parameter through a `diff/<name>` companion attribute
+(src/core/core/diff_sim.cpp:37-100), and `broadcast()` writes it; that is all.
+The derivative matrices are private with no accessor (diff_sim.cpp:118-121),
+the CUDA manager's `update`, `assemble` and `write_scene` are empty and marked
+"Waiting for later version merging" (global_diff_sim_manager.cu:187-200), every
+reporter registration is commented out (finite_element_method.cu:171-183,
+affine_body_dynamics.cu:106), and no constitution implements a parameter
+derivative. There is no test or sample that exercises it.
+
+Action gradients are obtainable anyway, without a rebuild: the debug option
+`extras/debug/dump_linear_system` writes each Newton iteration's matrix, which
+already contains the shell, bending, the soft constraint, contact and friction,
+and an implicit-function adjoint through the frames runs in Python on it. Checked
+against central finite differences:
+
+| Solver setting | 1 step | 5 steps | 10 steps |
+|---|---:|---:|---:|
+| Tight, about 6 Newton iterations per step | 2.8 % | 5.9 % | 25 % |
+| One Newton iteration, exact linear solve | 0.7 to 0.9 % | 3.5 % | 22 % |
+| The environment's settings | 48 % | | cosine 0.1 to 0.4 |
+
+The machinery is exact for one step; the multi-step drift comes from terms the
+Hessian leaves out (lagged friction, adaptive contact stiffness) and from its
+positive-semidefinite projections. At the environment's own tolerances the
+gradient does not predict the simulator: on the dressing cell a gradient step
+fails to move the target the predicted way in 3 of 16 trials, a random direction
+moves it half as much as the gradient direction, and two identical replays from
+the same state already differ by up to 3 mm, which also rules out finite
+differences. Gradient-grade accuracy needs a solve eight to twenty-five times
+tighter, on a step that is already entirely solve.
+
+Ranked conclusion: keep differentiable simulation out of the SAC loop. It works
+for refining the scripted expert's demonstrations over five-step windows with a
+tight solve, but the gains are local and the actual failure, reaching the upper
+arm, is a strategy problem the gradient does not see. Cloth parameter
+identification would need a new CUDA derivative per material model, and the fit
+is three scalars already found by a six-point sweep. A SHAC-style analytic policy
+gradient is not viable: it needs a batched native adjoint and the slower solve on
+every rollout, against a discontinuous reward. Probes and results are in the
+session scratchpad (`probe_diffsim.py`, `tiny_ift2.py`, `dress_ift2.py`).
+
 GPU grasp and reachability measurements are recorded below after completion.
