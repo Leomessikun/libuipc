@@ -1073,8 +1073,13 @@ About three times faster for both critic forms. `SACAgent._unpack` now takes
 this cut on every batch when the encoder is PointNet++ at sampling ratio one: it
 drops the trailing columns that no cloud in the batch reaches, which is exact
 whatever the batch's longest cloud is. Only the size of the gain depends on the
-prefix length, which should still be measured over a full replay snapshot,
-since a later-episode cloud can be larger. Sampling the batch from host replay costs 0.30 ms against
+prefix length. Over the baseline's step-1000 replay snapshot, 24,000
+observations from every episode stage, the valid count has a mean of 289, a 99th
+percentile of 383 and a maximum of 409, and the longest cloud in a batch of 64
+averages 383. On a real batch cut to 377 columns the pass times fall from 106
+to 47 ms (actor forward and backward) and from 95 to 41 ms (point critic), with
+the ball query at 7.7 against 1.7 ms: 2.3 times rather than the 3 times of the
+early-episode sample, with the same exactness. Sampling the batch from host replay costs 0.30 ms against
 0.04 ms from device memory, so replay placement is not a lever.
 
 Two runs sharing the GPU did about 0.86 of the work the same two would do one
