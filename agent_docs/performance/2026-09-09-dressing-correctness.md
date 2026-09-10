@@ -812,7 +812,15 @@ and the expert's last target overshoots the shoulder by 10 cm, so an opening
 pushed past the shoulder is invisible and both ratios read 0. The expert's
 ceiling is therefore its highest reading, not its last: four of eight bodies
 reach the upper-arm threshold within 300 decisions (2, 3, 5, 7). The four that
-fail are the four whose grip slips by 29 to 49 mm. The episode length for training is to be set from the expert ceiling on the
+fail are the four whose grip slips by 29 to 49 mm.
+
+A stronger grip does not rescue them. At a cuff strength of 1e5 instead of 1e4,
+the same four bodies peak at 0.232, 0.174, 0 and 0.144 on the upper arm against
+0.218, 0.156, 0 and 0.141, and their held-cuff error stays at 16 to 46 mm. A pin
+ten times stiffer that leaves the error where it was is being displaced by
+contact, not stretched, so the lever is the placement and the strength stays
+1e4. The stiffer pin also cost 3.6 s per decision for four cells against 2.4 s
+for eight at 1e4, both on a shared GPU. The episode length for training is to be set from the expert ceiling on the
 final placement, which shortens the approach.
 
 ## Differentiable simulation: neither library provides a usable gradient here
