@@ -1069,9 +1069,12 @@ nothing: Q is identical and the actor's mean action moves by 1.3e-8.
 | Actor forward and backward | 105 ms | 38 ms |
 | Point critic forward and backward | 96 ms | 33 ms |
 
-About three times faster for both critic forms. The prefix length should be
-checked over a full replay snapshot before it is relied on, since a later-episode
-cloud can be larger. Sampling the batch from host replay costs 0.30 ms against
+About three times faster for both critic forms. `SACAgent._unpack` now takes
+this cut on every batch when the encoder is PointNet++ at sampling ratio one: it
+drops the trailing columns that no cloud in the batch reaches, which is exact
+whatever the batch's longest cloud is. Only the size of the gain depends on the
+prefix length, which should still be measured over a full replay snapshot,
+since a later-episode cloud can be larger. Sampling the batch from host replay costs 0.30 ms against
 0.04 ms from device memory, so replay placement is not a lever.
 
 Two runs sharing the GPU did about 0.86 of the work the same two would do one

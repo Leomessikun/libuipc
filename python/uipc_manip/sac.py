@@ -200,6 +200,10 @@ class SACAgent:
             [self.log_alpha], lr=cfg.alpha_lr, betas=(cfg.alpha_beta, 0.999), fused=fused
         )
         self.updates = 0
+        # Clouds are packed valid-first and every PointNet++ stage masks by validity, so the columns
+        # no cloud in a batch reaches change nothing. A sampling ratio below one would draw its
+        # centres from the padded length, so the cut is taken only at ratio one.
+        self._cut_padding = cfg.encoder.kind == "pointnet2" and all(float(r) >= 1.0 for r in cfg.encoder.sa_ratio)
         self.train()
 
     def train(self, training: bool = True) -> None:
@@ -214,6 +218,10 @@ class SACAgent:
     # ------------------------------------------------------------------
     def _unpack(self, flat: torch.Tensor, augment: bool = False):
         pos, feat, valid, extra = self.spec.unpack_torch(flat)
+        if self._cut_padding:
+            used = valid.any(dim=0).nonzero()
+            n = int(used.max()) + 1 if used.numel() else 1
+            pos, feat, valid = pos[:, :n], feat[:, :n], valid[:, :n]
         if augment:
             pos = self._augment(pos, feat, valid)
         return pos, feat, valid, extra

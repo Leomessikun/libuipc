@@ -249,6 +249,29 @@ def test_bf16_encoders_hand_fp32_features_to_fp32_heads():
     with pytest.raises(ValueError, match="encoder_precision"):
         SACAgent(spec, 3, SACConfig.from_dict({**cfg.to_dict(), "encoder_precision": "fp16"}), "cpu")
 
+
+@pytest.mark.parametrize("actor_type", ["wang-flow", "flat"])
+def test_unpack_cuts_padding_without_changing_actor_or_critic(actor_type):
+    torch.manual_seed(0)
+    spec = ObsSpec(40)
+    env = ToyEnv(spec)
+    agent = SACAgent(spec, 3, _small_cfg(actor_type), "cpu")
+    flat = torch.as_tensor(np.stack([env.reset() for _ in range(5)]))
+    cut, full = agent._unpack(flat), spec.unpack_torch(flat)
+    last = int(full[2].any(dim=0).nonzero().max()) + 1
+    assert cut[0].shape[1] == last < spec.point_budget
+    action = torch.rand(5, 3) * 2 - 1
+    with torch.no_grad():
+        mu_cut = agent.actor(cut, compute_pi=False, compute_log_pi=False)[0]
+        mu_full = agent.actor(full, compute_pi=False, compute_log_pi=False)[0]
+        assert torch.allclose(mu_cut, mu_full, atol=1e-6)
+        assert torch.allclose(agent.critic(cut, action)[0], agent.critic(full, action)[0], atol=1e-6)
+    # A sampling ratio below one draws centres from the padded length, so nothing is cut there.
+    sparse = _small_cfg(actor_type)
+    sparse.encoder.sa_ratio = [0.5, 0.5]
+    if actor_type == "flat":
+        assert SACAgent(spec, 3, sparse, "cpu")._unpack(flat)[0].shape[1] == spec.point_budget
+
 def test_garment_curriculum_follows_wang_schedule():
     from uipc_manip.curriculum import WANG_GARMENT_ORDER, curriculum_order, garment_curriculum_stage
 
