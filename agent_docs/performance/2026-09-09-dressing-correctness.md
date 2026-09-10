@@ -1458,3 +1458,40 @@ removes the failure. That fits the reading that the tilted drape swings at the
 start and loses the grip. On eight region-13 bodies the re-roll had the forearm on all eight by decision 175 of 300, including the six that never reached it on the measured socket (14000, 14001, 14004, 14009, 14011 and 14016); the shared GPU slowed the run, and the full result is not recorded here. At decision 175 the upper arm was at 0.79 on 14000 and 0.66 on 14007, and between 0 and 0.34 on the rest, including 14006 at 0.32, which passed the threshold on the measured socket (0.983). tshirt_68 is listed beside the gown. tshirt_26 is
 not: the measured socket's 50 to 57 degrees already dresses it, and re-rolling it
 under the flip cost body 0 the forearm.
+
+### tshirt_26 goes sleeve outward, and the expert lifts at the elbow
+
+After the tshirt pass, the expert also got its `last`-stage proximity push in
+`elbow_hook`: 1 cm up per decision whenever the tool is within 5 cm of the arm. Each
+garment then ran on bodies 0 to 7 under both placements, with 300 decisions of six
+1/60 s steps, 48 anchors and a 1e4 hold, on `06b49176`. The rows without the lift
+under sleeve outward for tshirt_26 and tshirt_68 are the previous section's.
+
+| Garment | Placement | Upper arm >= 0.7, no lift | Upper arm >= 0.7, lift |
+|---|---|---:|---:|
+| tshirt_26 | flip, measured socket | 5 of 8 | 4 of 8 |
+| tshirt_26 | sleeve outward | 0 of 8 | 6 of 8 |
+| tshirt_68 | flip, baked hang | 5 of 8 | 5 of 8 |
+| tshirt_68 | sleeve outward | 0 of 8 | 2 of 8 |
+| hospital_gown | flip, baked hang | 5 of 8 | 7 of 8 |
+| hospital_gown | sleeve outward | | 5 of 8 |
+| tshirt_4 | sleeve outward | 3 of 8 | 5 of 8 |
+| tshirt_392 | sleeve outward | 0 of 8 | 0 of 8 |
+
+Every run reached the forearm on all eight bodies, except the gown without the lift,
+which reached it on seven.
+
+The lift now applies to every cell. The only place it costs anything is tshirt_26
+under the flip, which tshirt_26 no longer uses.
+
+tshirt_26 joins `SLEEVE_OUTWARD_GARMENTS`: 6 of 8 is the best of its four
+combinations. tshirt_68 and the gown keep the flip in their baked hang, which is a
+recorded deviation from Wang's sleeve-outward reset; sleeve outward costs them three
+and two elbows. tshirt_392 stays at none, because its 3.8 cm cuff is narrower than a
+hand.
+
+Over bodies 0 to 7, the expert now passes 0.7 on the upper arm on 23 of 40 cells,
+against 18 before this pass. The runs are single samples on a shared GPU; the dt 1/60
+twins in the time-step record reproduced earlier figures of this kind exactly. The
+probe script is `perf/diag_outward.py` in the session scratchpad: agent A's
+`diag_elbow.py` with a per-tag workspace.

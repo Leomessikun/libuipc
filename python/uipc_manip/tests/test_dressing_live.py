@@ -240,7 +240,8 @@ def test_the_factory_re_rolls_only_the_gown_and_keeps_its_mass_under_the_opening
     arm, arm_faces = np.asarray(box.vertices, dtype=np.float64), np.asarray(box.faces, dtype=np.int64)
     landmarks = {"right_finger": np.array([0.0, 0.0, 1.0]), "right_elbow": np.array([0.3, 0.0, 1.0]),
                  "right_shoulder": np.array([0.6, 0.0, 1.3])}
-    factory = LiveCellFactory(LiveCellConfig())
+    # tshirt_26 is sleeve outward by default; an empty table keeps it on the measured socket this test pins.
+    factory = LiveCellFactory(LiveCellConfig(sleeve_outward_garments=()))
     factory._bodies[0] = SimpleBody(arm, arm_faces, arm, landmarks, "test")
     factory._drapes["hospital_gown"] = factory._drapes["tshirt_26"] = drape
     shirt, gown = factory.build("tshirt_26", 0), factory.build("hospital_gown", 0)

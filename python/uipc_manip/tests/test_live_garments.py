@@ -244,10 +244,11 @@ def test_sleeve_outward_garments_are_placed_the_wang_way_and_other_garments_keep
     from uipc_manip.dressing_live import SLEEVE_OUTWARD_GARMENTS, LiveCellConfig
 
     cfg = LiveCellConfig()
-    assert set(SLEEVE_OUTWARD_GARMENTS) == {"tshirt_4", "tshirt_392"}
+    assert {"tshirt_26", "tshirt_4", "tshirt_392"} <= set(SLEEVE_OUTWARD_GARMENTS)
+    assert "tshirt_68" not in SLEEVE_OUTWARD_GARMENTS  # it loses three elbows sleeve outward, so it keeps the flip
     for garment in SLEEVE_OUTWARD_GARMENTS:
         assert cfg.placement(garment) == {"pre_insertion": False, "hang_as_baked": True}
-    assert cfg.placement("tshirt_26") == {"pre_insertion": True, "hang_as_baked": False}
+    assert cfg.placement("jacket_vest_1") == {"pre_insertion": True, "hang_as_baked": False}  # listed nowhere
     # The gown and tshirt_68 keep the flip and hang as baked through ``hang_as_baked_garments``.
     for garment in ("tshirt_68", "hospital_gown"):
         assert cfg.placement(garment) == {"pre_insertion": True, "hang_as_baked": True}
@@ -338,8 +339,8 @@ def test_a_sleeve_outward_garment_keeps_its_online_drape_however_far_its_sleeve_
     monkeypatch.setattr(dl, "bake_in_subprocess", lambda garment, scale=None, cfg=None: drape(0.44))
     monkeypatch.setattr(dl, "load_offline_drape", lambda garment, cfg=None: drape(0.15))
     cfg = dl.LiveCellConfig()
-    assert [dl.load_drape(g, cfg).source for g in ("tshirt_4", "tshirt_392")] == ["online", "online"]
-    assert [dl.load_drape(g, cfg).source for g in ("tshirt_26", "tshirt_68")] == ["offline", "offline"]
+    assert [dl.load_drape(g, cfg).source for g in ("tshirt_4", "tshirt_392", "tshirt_26")] == ["online", "online", "online"]
+    assert dl.load_drape("tshirt_68", cfg).source == "offline"
     assert dl.load_drape("tshirt_392", dataclasses.replace(cfg, sleeve_outward_garments=())).source == "offline"
     # Within the tolerance every garment keeps the online drape.
     monkeypatch.setattr(dl, "load_offline_drape", lambda garment, cfg=None: drape(0.42))

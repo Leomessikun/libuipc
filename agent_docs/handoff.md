@@ -1590,3 +1590,16 @@ Still open:
 - Under the sleeve-outward placement the expert stalls at the elbow: the 12 mm
   no-move rule drops almost every `elbow_hook` step. A proximity push fixed 3 of
   4 cells in the garment agent's probe, but it is not merged.
+
+Orientation pass:
+- tshirt_26 now starts sleeve outward, as Wang places it.
+- The scripted expert applies its `last`-stage lift during `elbow_hook` too, where the
+  12 mm no-move rule otherwise drops almost every step.
+- tshirt_68 and the gown keep the cuff-first flip in their baked hang, a recorded
+  deviation, because sleeve outward costs them three and two elbows.
+
+Over bodies 0 to 7 at dt 1/60 the expert passes 0.7 on the upper arm on 23 of 40 cells:
+tshirt_26 6, tshirt_68 5, the gown 7, tshirt_4 5 and tshirt_392 0. Before this pass it
+was 18. The tables are in the correctness record's "tshirt_26 goes sleeve outward, and
+the expert lifts at the elbow". The dt probes in `2026-09-10-dressing-timestep.md` keep
+the simulation step at 1/60 s.

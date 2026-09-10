@@ -127,6 +127,11 @@ class HeuristicDressingPolicy:
             elif stage == 5:
                 self._translate(a, i, opening, t["elbow_hook"], self.translation_max_steps)
                 self._continuous_align(a, line_dir, line_valid, target_dir, max_r)
+                # The last stage's lift, applied at the elbow too: the tool reaches it 1.2-1.6 cm off the arm,
+                # where the 12 mm no-move rule drops almost every step. On bodies 0-7 it takes the gown from 5
+                # to 7 elbows of 8 and tshirt_4 from 3 to 5, and leaves tshirt_68 at 5 (dressing-correctness record).
+                if int(self.stage[i]) == 5 and arm_min < self.proximity_push_distance:
+                    a[2] += self.proximity_push_z / max_t
             elif stage == 6:
                 self._translate(a, i, opening, t["last"], self.translation_max_steps)
                 self._continuous_align(a, line_dir, line_valid, target_dir, max_r)

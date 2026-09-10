@@ -86,7 +86,9 @@ Where the IPC port departs from the Newton teacher, and why:
 
 `--policy heuristic` runs a port of the Newton seven-stage dressing expert
 (approach, finger, middle, align-yaw, align-pitch, elbow-hook, last) as the
-reachability baseline. With the cuff held at strength 1e4 it dresses the
+reachability baseline. It also applies the last stage's upward proximity push during
+elbow-hook, where the 12 mm no-move rule otherwise drops almost every step (see
+the dressing-correctness record). With the cuff held at strength 1e4 it dresses the
 whole forearm (ratio 1.0) and 0.28 of the upper arm on tshirt_26/human_0
 within 900 decisions, which is below the success threshold of 0.7 but is
 sustained upper-arm progress of the kind the reference says appears only

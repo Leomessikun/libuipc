@@ -12,8 +12,8 @@ transform, ported from Newton's ``runtime_align``: build a socket frame from the
 arm landmarks, put the opening one clearance step *outside* the fingertip along
 the forearm axis, and map the canonical socket onto it. The clearance is checked
 against the whole arm mesh, so the garment never starts inside the arm, any garment
-composes with any body, and no arm erosion is required. tshirt_4 and tshirt_392,
-whose opening polygon is the armhole seam with a long narrow sleeve beyond it, are
+composes with any body, and no arm erosion is required. tshirt_26, tshirt_4 and
+tshirt_392, whose opening polygon is the armhole seam with the sleeve beyond it, are
 placed the way Wang places them: sleeve pointing away from the hand, torso over the
 forearm (see :data:`SLEEVE_OUTWARD_GARMENTS`).
 
@@ -38,7 +38,7 @@ OFFLINE_DRAPE_DIR = (
 )
 OFFLINE_MESH_DIR = "/home/ge47gax/kun/newton-fmvp/garments"
 
-SLEEVE_OUTWARD_GARMENTS = ("tshirt_4", "tshirt_392")
+SLEEVE_OUTWARD_GARMENTS = ("tshirt_26", "tshirt_4", "tshirt_392")
 """Garments placed with the sleeve pointing away from the hand, as Wang places every tshirt.
 
 On all four tshirts the opening polygon (``shoulder_polygon_particle_indices``) is the armhole
@@ -53,10 +53,12 @@ shoulder puts the sleeve on the way it is worn.
 
 ``pre_insertion`` presents the cuff to the hand instead. tshirt_4's and tshirt_392's cuffs are
 too narrow for the scripted expert to thread (forearm reached on 0 of 8 bodies), so they are
-placed the Wang way. tshirt_26 and tshirt_68 keep the flip: the expert threads their wider
-cuffs, and the upper-arm ceilings it then reaches (past 0.7 on 5 and 3 of 8 bodies) are higher
-than in the Wang placement, where it reaches the forearm on every body but the opening stops
-at the elbow (upper arm at most 0.3)."""
+placed the Wang way. In the Wang placement the expert reaches the forearm on every body but
+the opening stalls at the elbow, where the 12 mm no-move rule drops almost every step; the
+expert's elbow lift (``HeuristicDressingPolicy``) clears it. With the lift, on bodies 0-7 at
+dt 1/60, tshirt_26 passes 0.7 on the upper arm on 6 of 8 bodies sleeve outward against 4 under
+the flip, and tshirt_4 on 5. tshirt_68 and the gown keep the flip, in their baked hang: sleeve
+outward they pass 0.7 on 2 and 5 of 8 against 5 and 7, a recorded deviation from Wang."""
 
 
 @dataclass(frozen=True)
