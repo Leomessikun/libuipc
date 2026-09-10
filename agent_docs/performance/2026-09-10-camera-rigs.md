@@ -81,3 +81,96 @@ How the rigs render occlusion:
 - Each point covers the pixels its 1 cm radius spans at its depth, so a garment sampled at its vertices stays opaque 10 cm in front of the wrist camera.
 
 The environment passes the rigs' extra inputs through `RigInputs.from_cells`: the elbow, the shoulders' lateral direction, the floor, the body points, the tool point and the grip rotation. The legacy modes ignore every new field and keep their observations bit for bit, which `test_rig_fields_leave_the_legacy_modes_untouched` holds.
+
+`pretrain_wang.py` forwards `--obs-mode` to the trainer: `prepare(["teacher", "--region", "13", "--obs-mode", "stretch3_head_wrist"])` gives that mode in `dressing_config`.
+
+## What each rig sees
+
+**Setup.**
+- **States.** The scripted expert was recorded for 300 decisions of six steps, from a frozen snapshot of `0b9ccfc9`, on 24 cells:
+  - tshirt_26 and tshirt_68 on bodies 0-7;
+  - the same two garments on region-13 bodies 14006, 14007, 14013 and 14015.
+  - That makes 7,200 cell-decisions.
+- **Rendering.** Every rig re-renders the same states offline, without augmentation.
+- **What the fractions count.** They are of arm points, assigned to the hand, forearm or upper arm by their nearest limb segment, and of garment vertices.
+- **GPU.** The observation time is for one 16-cell batch on the shared RTX PRO 6000, one run each, with other jobs on the GPU.
+
+**Caveat.** `visible_dual` and `visible_single` keep the legacy depth buffer: no body occluders, and a 2 cm tolerance between arm and garment. Skin up to 2 cm under the sleeve therefore counts as seen, so their arm fractions are upper bounds against the rigs.
+
+| Rig | Obs ms | Hand | Forearm | Upper arm | Opening ring | Arm within 15 cm of opening | Garment within 10 cm of tool | Voxels arm / garment | Voxel IoU, step to step |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `visible_dual` | 30.0 | 0.76 | 0.31 | 0.53 | 0.49 | 0.29 | 0.57 | 62 / 180 | 0.91 |
+| `visible_single` | 28.5 | 0.73 | 0.21 | 0.35 | 0.34 | 0.19 | 0.44 | 52 / 151 | 0.90 |
+| `wang_static_arm` | 52.1 | 0.91 | 0.30 | 0.47 | 0.29 | 0.45 | 0.39 | 62 / 139 | 0.91 |
+| `stretch3_head` | 28.5 | 0.53 | 0.33 | 0.25 | 0.30 | 0.23 | 0.49 | 49 / 134 | 0.90 |
+| `stretch3_head_wrist` | 31.3 | 0.58 | 0.35 | 0.27 | 0.39 | 0.28 | 0.60 | 52 / 139 | 0.90 |
+| `stretch3_head_wrist`, `static_arm` | 35.8 | 0.71 | 0.44 | 0.41 | 0.39 | 0.51 | 0.60 | 63 / 139 | 0.91 |
+| `xray` | 42.8 | 1 | 1 | 1 | 1 | 1 | 1 | 82 / 228 | 0.95 |
+
+By expert stage (sample counts: approach 962, middle 2,187, align_yaw 655, elbow_hook 856, last 1,183, done 1,136):
+
+| Rig | Opening ring: approach / middle / align / hook / last / done | Arm within 15 cm of opening: same stages |
+|---|---|---|
+| `visible_dual` | 0.68 / 0.30 / 0.44 / 0.51 / 0.52 / 0.67 | 0.24 / 0.25 / 0.25 / 0.28 / 0.31 / 0.45 |
+| `wang_static_arm` | 0.35 / 0.13 / 0.30 / 0.33 / 0.38 / 0.40 | 0.49 / 0.38 / 0.39 / 0.37 / 0.49 / 0.63 |
+| `stretch3_head` | 0.45 / 0.35 / 0.20 / 0.37 / 0.23 / 0.16 | 0.15 / 0.22 / 0.23 / 0.25 / 0.19 / 0.36 |
+| `stretch3_head_wrist` | 0.56 / 0.45 / 0.33 / 0.48 / 0.30 / 0.24 | 0.31 / 0.25 / 0.27 / 0.33 / 0.22 / 0.36 |
+| `stretch3_head_wrist`, `static_arm` | 0.56 / 0.45 / 0.33 / 0.48 / 0.30 / 0.24 | 0.63 / 0.48 / 0.42 / 0.57 / 0.44 / 0.60 |
+
+**The wrist camera adds what it was placed to add, but cannot see through the sleeve.**
+- Against the head alone, it lifts the opening ring from 0.30 to 0.39 and the garment by the tool from 0.49 to 0.60.
+- The gain is largest on the forearm pull: the ring rises from 0.35 to 0.45 during `middle`.
+- The arm near the opening rises only from 0.23 to 0.28.
+
+**The Stretch head sees less of the upper arm than the port's two cameras, and loses the opening late.**
+- It sees 0.25 of the upper arm, against 0.53.
+- The opening ring falls to 0.23 in `last` and 0.16 in `done`.
+- From the front-right, 1.3 m up, the torso and the stretched garment stand between the head and the shoulder.
+
+**Only a static arm restores the arm near the opening.** That is the information the sleeve hides: 0.45 with Wang's one camera, and 0.51 with the Stretch pair.
+
+## Decodability
+
+**Probe design.**
+- **Model.** The actor's PointNet++ encoder and extra vector, with a 256-256 MLP head.
+- **Data.** Observations packed as the environment packs them, every second decision:
+  - training on 2,400 from bodies 0-5, 14006 and 14007, for 20 epochs;
+  - testing on 1,200 from bodies 6, 7, 14013 and 14015.
+- **Targets.** Relative to the tool: the opening centroid, the opening normal and the garment centroid, plus the forearm and upper-arm ratios.
+- **Seeds.** Three, reported as mean and standard deviation.
+- **Overfitting.** Training error on the opening is about 2 cm, so the probe overfits this set. Differences under about 0.5 cm are within the seed spread.
+
+| Rig | Opening, cm | Normal, deg | Garment, cm | Forearm ratio RMSE | Upper-arm ratio RMSE |
+|---|---:|---:|---:|---:|---:|
+| blind: goal and tool points only | 6.46 +- 0.27 | 27.3 +- 0.3 | 10.48 +- 0.69 | 0.44 | 0.31 |
+| `visible_dual` | 4.08 +- 0.17 | 15.1 +- 0.4 | 4.87 +- 0.29 | 0.30 +- 0.02 | 0.27 +- 0.02 |
+| `wang_static_arm` | 4.53 +- 0.28 | 17.1 +- 1.4 | 5.65 +- 0.22 | 0.29 +- 0.02 | 0.26 +- 0.02 |
+| `stretch3_head` | 4.72 +- 0.35 | 18.5 +- 1.0 | 6.29 +- 0.23 | 0.35 +- 0.04 | 0.31 +- 0.04 |
+| `stretch3_head_wrist` | 4.46 +- 0.51 | 19.5 +- 1.0 | 5.98 +- 0.20 | 0.36 +- 0.03 | 0.31 +- 0.04 |
+| `stretch3_head_wrist`, `static_arm` | 4.68 +- 0.16 | 18.3 +- 0.4 | 6.01 +- 0.26 | 0.35 +- 0.05 | 0.31 +- 0.04 |
+| `xray`: every point | 4.36 +- 0.41 | 15.1 +- 1.4 | 5.39 +- 0.10 | 0.30 +- 0.02 | 0.26 +- 0.03 |
+
+**No rig decodes better than `visible_dual`.**
+- Every rig beats blind by a wide margin, so the cloud carries the state.
+- None beats `visible_dual`, and neither does `xray`, which sees everything. Here the 6.25 cm voxel and the encoder bound what is read, not the cameras.
+- The Stretch rigs are 0.4 to 0.6 cm worse on the opening, about 1 cm worse on the garment, and 0.05 worse on both progress ratios. The wrist camera's visibility gain does not survive the voxel.
+
+## Decision
+
+- **Default.** It stays `visible_dual`. No RL A/B is queued: a rig change is not expected to speed training in simulation.
+- **Wang-faithful pretraining.** Use `--obs-mode wang_static_arm --no-obs-augment`.
+  - It is Wang's observation: one camera, the arm captured before dressing, the garment hidden by the body, and no observation randomisation.
+  - It decodes within 0.5 cm of `visible_dual`, and keeps the arm near the opening in view.
+  - Its camera pose is the port's, not Wang's world-fixed one.
+- **Sim-to-real on a Stretch 3.** Train with `stretch3_head_wrist`, so the observation is the one the robot will produce.
+  - It costs about 0.4 cm on the opening and 1 cm on the garment.
+  - `static_arm=True` needs the arm scanned before the gripper approaches, which the pan-tilt head can do.
+  - If the real robot is another platform, match its actual camera; Wang and FMVP both used one external D435i.
+
+**Reproduce.** The scripts are in the session scratchpad, under `camera/`:
+- `record_expert.py`;
+- `analyze_rigs.py`;
+- `probe_rigs.py`;
+- `rigs_common.py`.
+
+They write `rig_metrics.json`, `rig_probe.json` and `rig_probe_seeds12.json`.
