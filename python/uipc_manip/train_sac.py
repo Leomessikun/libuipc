@@ -39,6 +39,7 @@ from .cellplan import (
 )
 from .curriculum import WANG_GARMENT_ORDER, curriculum_order, garment_curriculum_stage
 from .dressing_env import DEFAULT_GARMENTS, DressingConfig, GenesisIPCDressingEnv
+from .dressing_obs import RIG_MODES, DressingObsConfig
 from .genesis_env import EnvConfig, GenesisIPCManipEnv, ViewerClosed
 from .obs import ObsSpec, goal_rel, marker_centroid_rel
 from .sac import (
@@ -71,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--anchor-count", type=int, default=48, help="dressing: cuff vertices held by the picker; 12 is Newton's patch, which lets the cuff slip off the hand on live cells.")
     p.add_argument("--cuff-strength", type=float, default=1.0e4, help="dressing: soft position constraint strength_rate of the held cuff; 100 lets the garment detach from the tool.")
     p.add_argument("--no-obs-augment", action="store_true", help="dressing: disable camera jitter and dropout.")
+    p.add_argument("--obs-mode", choices=("visible_dual", "visible_single", "xray", *RIG_MODES), default="visible_dual", help="dressing: the cameras behind the point cloud; visible_dual is the FMVP preset, wang_static_arm Wang's single camera with the arm captured before dressing, stretch3_head and stretch3_head_wrist a Hello Robot Stretch 3's head and gripper cameras (dressing_obs.py).")
     p.add_argument("--cloth-shear-ratio", type=float, default=None, help="dressing: shear modulus as a fraction of the stretch modulus. libuipc's shear term carries no thickness factor, so the default shared modulus is about 3,300 times stiffer than stretch; 0.01 is what reproduces the reference drape.")
     p.add_argument("--cloth-youngs", type=float, default=None, help="dressing: stretch Young's modulus [Pa]; 6e3 matches the reference drape, 6e4 is the historical setting.")
     p.add_argument("--cloth-bending", type=float, default=None, help="dressing: discrete-shell bending stiffness; 0.1 matches the reference drape, 10 is the historical setting.")
@@ -173,6 +175,8 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
         saved["cuff_strength"] = env["constraint_strength"]
     if "augment_obs" in env:
         saved["no_obs_augment"] = not env["augment_obs"]
+    if isinstance(env.get("obs"), dict) and "mode" in env["obs"]:
+        saved["obs_mode"] = env["obs"]["mode"]
     if metadata.get("task") != "dressing":
         saved.update({key: env[key] for key in ("max_translation", "friction") if key in env})
     saved.update({key: metadata[key] for key in ("task", "seed", "num_envs") if key in metadata})
@@ -426,9 +430,14 @@ def dressing_config(args) -> DressingConfig:
         },
         seed=args.seed,
         augment_obs=not args.no_obs_augment,
+        obs=DressingObsConfig(mode=args.obs_mode),
         show_viewer=bool(args.vis),
     )
-    return restore_env_config(cfg, args)
+    cfg = restore_env_config(cfg, args)
+    if "obs_mode" in set(getattr(args, "_explicit_options", ())):
+        # Playback may look through another rig; the saved camera fields stay.
+        cfg = replace(cfg, obs=replace(cfg.obs, mode=args.obs_mode))
+    return cfg
 
 
 def make_env(args):

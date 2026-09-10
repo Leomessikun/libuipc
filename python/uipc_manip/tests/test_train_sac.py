@@ -100,6 +100,22 @@ def test_time_step_and_settle_reach_the_dressing_config_and_are_pinned_on_resume
         restore_resume_args(build_parser().parse_args(argv), argv, payload)
 
 
+def test_resume_keeps_the_obs_mode_and_playback_may_look_through_another_rig():
+    payload = _checkpoint()
+    payload["metadata"]["env"]["obs"]["mode"] = "stretch3_head_wrist"
+    args = build_parser().parse_args([])
+    restore_resume_args(args, [], payload)
+    assert args.obs_mode == "stretch3_head_wrist"
+    assert restore_env_config(DressingConfig(), args).obs.mode == "stretch3_head_wrist"
+    argv = ["--obs-mode", "visible_dual"]
+    with pytest.raises(ValueError, match="obs-mode"):
+        restore_resume_args(build_parser().parse_args(argv), argv, payload)
+    argv += ["--eval-only"]
+    args = build_parser().parse_args(argv)
+    restore_resume_args(args, argv, payload)
+    assert args.obs_mode == "visible_dual"
+
+
 def test_teachers_are_keyed_by_the_one_region_their_training_cells_share(tmp_path):
     from uipc_manip.models import EncoderConfig
     from uipc_manip.sac import SACAgent
