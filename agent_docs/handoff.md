@@ -1466,6 +1466,13 @@ with a 3.0 mm grasp error. tshirt_68 and tshirt_392 do not yet build live, and
 the settle is a free fall because the episode pins twelve anchors where the
 bake pinned the grasp patch and the opening.
 
+Twelfth pass: the SAC update's ball query no longer goes through `cdist`,
+which cut an update from 310 to 86 ms in the running job and a vector step from
+9.5 to 4.15 s. `--critic-input privileged` adds an asymmetric critic on a
+35-float arm-frame simulator state in place of point clouds; it runs as a
+controlled variant beside the unchanged baseline, as recorded in the correctness
+record.
+
 Eleventh pass: live cells are dressable. A sixteen-cell expert check showed the
 tenth pass's placement was not: the opening sat 20 cm out on the fingertip-to-
 shoulder chord, one opening radius off the forearm, and the expert got the sleeve

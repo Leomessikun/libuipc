@@ -951,6 +951,45 @@ the baseline, then encoder-only bf16; overlapping simulation with learning is
 worth at most about 15% once the privileged critic lands, and libuipc does
 release the GIL in `advance` and `retrieve`, so it stays possible later.
 
+### An asymmetric critic on the simulator state
+
+The critic does two thirds of an update's point work and training discards it,
+so the first lever is to stop feeding it point clouds. `--critic-input
+privileged` swaps in the asymmetric critic of Pinto et al. (2018): the actor is
+unchanged and reads the segmented cloud, while the twin Q heads read a 35-float
+simulator state and the action (`dressing_privileged.py`). Every position is in a
+frame fixed to the arm, origin at the fingertip, first axis toward the elbow and
+second toward the shoulder, so bodies presenting the same relative geometry give
+the same state:
+
+| Block | Floats | Content |
+|---|---:|---|
+| Arm | 3 | forearm length; shoulder along and across the forearm |
+| Tool | 3 + 1 | tool point; its distance to the nearest arm point |
+| Grip | 6 | first two columns of the grip rotation since the reset, Kabsch on the held offsets |
+| Opening | 3 + 3 + 2 | ring centroid, unit normal, mean radius and radius range |
+| Garment | 3 | centroid of every vertex |
+| Progress | 5 | forearm and upper-arm ratios, whether on each, the winding test |
+| Hold | 1 | largest held-vertex tracking error, in centimetres |
+| Identity | 5 | garment one-hot |
+
+The episode step is left out. Time limits are stored as non-terminal and
+bootstrapped, which assumes a value that does not depend on time, and a time
+input at the horizon would appear only inside bootstrap targets. The data path
+mirrors the observation's: `env.privileged()` is the state behind the current
+observation, a horizon end hands the pre-reset state over in
+`info["terminal_privileged"]` next to `terminal_obs`, replay stores both states
+per transition, and neither critic form resumes from the other's checkpoint or
+snapshot. Point-critic checkpoints saved before the change keep loading, because
+the protocol gains keys only for the privileged form.
+
+From the per-pass split above, the update keeps the actor's forward on the next
+observation every update and its forward and backward every fourth, about 43 of
+124 ms. The comparison run uses the baseline's cells, seed and every other
+setting and starts from scratch beside it. Because the two runs share the GPU,
+wall-clock columns are compared only as ratios within the shared period, and
+learning is compared per transition.
+
 ## Differentiable simulation: neither library provides a usable gradient here
 
 The owner asked whether Genesis's differentiability or libuipc's own could train

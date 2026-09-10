@@ -30,6 +30,7 @@ import numpy as np
 
 from .dressing_assets import DressingCache, DressingCacheConfig, DressingCell, erode_arm_mesh, write_obj
 from .dressing_obs import BatchedDressingObservationBuilder, DressingObsConfig, DressingObservationBuilder, sample_segmented_cloud
+from .dressing_privileged import PRIVILEGED_DIM, privileged_state
 from .dressing_reward import early_turn, WangRewardConfig, opening_threaded, wang_progress
 from .genesis_env import ViewerClosed, _ensure_genesis
 from .obs import FEATURE_DIM, FLAG_DEFORMABLE, FLAG_MARKER, ObsSpec
@@ -208,6 +209,7 @@ class GenesisIPCDressingEnv:
     action_dim = 6
     metric_keys = ("upperarm_ratio", "forearm_ratio", "threaded", "task_reward")
     grasp_tracking_tolerance_m = 0.02
+    privileged_dim = PRIVILEGED_DIM
 
     def __init__(self, cfg: DressingConfig, num_envs: int = 1) -> None:
         if int(num_envs) < 1:
@@ -483,6 +485,31 @@ class GenesisIPCDressingEnv:
             )
         return out
 
+    def privileged(self) -> np.ndarray:
+        """The simulator state behind the current observation, one row per slot, for an asymmetric critic."""
+        return self._privileged.copy()
+
+    def _privileged_state(self, positions: list[np.ndarray], progress) -> np.ndarray:
+        return np.stack(
+            [
+                privileged_state(
+                    p,
+                    opening_idx=cell.opening_idx,
+                    finger=cell.finger,
+                    elbow=cell.elbow,
+                    shoulder=cell.shoulder,
+                    arm_points=cell.arm_points,
+                    tool=self._anchor[i],
+                    offsets=self._offsets[i],
+                    initial_offsets=self._initial_offsets[i],
+                    progress=pr,
+                    tracking_error=self._tracking_error(i, positions),
+                    garment=cell.garment,
+                )
+                for i, (cell, p, pr) in enumerate(zip(self.cells, positions, progress, strict=True))
+            ]
+        )
+
     # ------------------------------------------------------------------
     # RL interface
     # ------------------------------------------------------------------
@@ -506,7 +533,9 @@ class GenesisIPCDressingEnv:
         self._episode_step = 0
         if getattr(self, "_heuristic", None) is not None:
             self._heuristic.reset()
-        return self.observation(self.positions())
+        positions = self.positions()
+        self._privileged = self._privileged_state(positions, self._progress(positions))
+        return self.observation(positions)
 
     def step(self, actions: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict]]:
         cfg = self.cfg
@@ -542,6 +571,7 @@ class GenesisIPCDressingEnv:
         done = self._episode_step >= cfg.horizon
         rewards = np.array([pr.reward for pr in progress], dtype=np.float32)
         obs = self.observation(positions)
+        self._privileged = self._privileged_state(positions, progress)
         infos = []
         for i, (cell, pr, p) in enumerate(zip(self.cells, progress, positions, strict=True)):
             threaded, _ = opening_threaded(p, cell.opening_idx, cell.finger, cell.shoulder)
@@ -574,6 +604,7 @@ class GenesisIPCDressingEnv:
         if done:
             for i in range(n):
                 infos[i]["terminal_obs"] = obs[i]
+                infos[i]["terminal_privileged"] = self._privileged[i]
             obs = self.reset()
         return obs, rewards, dones, infos
 

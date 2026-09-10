@@ -150,6 +150,7 @@ are there to be compared against it, not assumed better.
 |---|---|---|---|
 | `--actor` | `wang-flow`, `flat` | `wang-flow` | tool-point readout of a segmentation encoder (reference) or a globally pooled encoder |
 | `--algo` | `sac`, `flashsac` | `sac` | scalar twin critic (reference) or the bounded categorical critic from the Newton `flashsac` path |
+| `--critic-input` | `points`, `privileged` | `points` | dressing: the critic encodes the point cloud as the actor does (reference), or reads the simulator's 35-float state in a frame fixed to the arm (`dressing_privileged.py`): an asymmetric critic, used only in training, that takes the critic's point encoder out of every update. Replay then stores that state beside each observation, so the two forms do not resume from each other's checkpoints or snapshots |
 | `--encoder` | `pointnet2`, `transformer` | `pointnet2` | dense masked PointNet++ (reference) or a set transformer with a learned global token |
 | `--action-repeat` | int | `1` dressing, `5` otherwise | simulation steps per decision. The tool speed cap covers the whole decision, as Newton's `decimation` does, so `--horizon 150 --action-repeat 6` is the reference's 900 simulation steps with six times fewer decisions: the configuration Newton's own sweep found best for upper-arm progress |
 | `--garment-curriculum-interval` | int | `0` | dressing: Wang's `curriculum_update_freq`. Every this many vector steps one more garment's slots are admitted to replay, easiest first; all slots keep stepping. Use a multiple of the horizon so a garment joins at an episode boundary. `0` trains on every garment from the start. Wang's value is in neither the original nor the Newton checkout, so any interval used in a run is a choice of this port. Evaluation plays every garment at every stage, unlike Wang's `evaluate`, which scores only the admitted ones |
@@ -272,7 +273,8 @@ and the networks.
 * `gradient_update_budget`, the replay-prefill rule that keeps one gradient
   update per collected transition without over-training the first minibatch.
 * The time-limit bootstrap convention: a horizon end is stored with
-  `not_done = 1` and the observation captured before the reset, so the critic
+  `not_done = 1` and the observation (and, for the privileged critic, the
+  state) captured before the reset, so the critic
   never bootstraps across an episode boundary.
 * A checkpoint protocol covering the point budget, observation and action
   dimensions, trunk width, and full encoder configuration. Loading refuses a

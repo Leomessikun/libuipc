@@ -343,6 +343,29 @@ class Critic(nn.Module):
         return self.Q1(z), self.Q2(z)
 
 
+
+class PrivilegedCritic(nn.Module):
+    """Twin Q critic on the simulator's low-dimensional state, ``Q(s_priv, a)``.
+
+    The asymmetric actor-critic of Pinto et al. (2018): the actor keeps the
+    point cloud, and only the critic, which training discards, reads the
+    privileged state. With no point encoder, the critic's forward and backward
+    passes drop out of the update's point work, leaving the actor's.
+    """
+
+    encoder = None
+
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int) -> None:
+        super().__init__()
+        in_dim = int(state_dim) + int(action_dim)
+        self.Q1 = QHead(in_dim, hidden_dim)
+        self.Q2 = QHead(in_dim, hidden_dim)
+        self.apply(_weight_init)
+
+    def forward(self, state: torch.Tensor, action: torch.Tensor, detach_encoder: bool = False):
+        z = torch.cat([state, action], dim=-1)
+        return self.Q1(z), self.Q2(z)
+
 # ---------------------------------------------------------------------------
 # Segmentation PointNet++ (per-point features) for the Wang flow actor
 # ---------------------------------------------------------------------------

@@ -63,6 +63,17 @@ def test_resume_rejects_silent_protocol_change_but_eval_allows_explicit_timing()
         restore_resume_args(build_parser().parse_args(argv), argv, _checkpoint())
 
 
+
+def test_resume_keeps_the_critic_input():
+    argv = ["--critic-input", "privileged"]
+    with pytest.raises(ValueError, match="critic-input"):
+        restore_resume_args(build_parser().parse_args(argv), argv, _checkpoint())
+    payload = _checkpoint()
+    payload["sac_config"].update(critic_input="privileged", privileged_dim=35)
+    args = build_parser().parse_args(["--eval-only"])
+    cfg = restore_resume_args(args, ["--eval-only"], payload)
+    assert args.critic_input == "privileged" and cfg.privileged_dim == 35
+
 def test_resume_checks_replay_step_and_reward_scale():
     validate_resume_replay(_checkpoint(), {"step": 20})  # legacy snapshots
     with pytest.raises(ValueError, match="step"):

@@ -167,6 +167,60 @@ def test_agent_variants_update_and_roundtrip(tmp_path, actor_type, algo, encoder
         other.load(path)
 
 
+
+def test_privileged_critic_trains_roundtrips_and_refuses_the_other_form(tmp_path):
+    torch.manual_seed(0)
+    spec = ObsSpec(10)
+    env = ToyEnv(spec)
+    cfg = _small_cfg("wang-flow")
+    cfg.critic_input, cfg.privileged_dim = "privileged", 6
+    agent = SACAgent(spec, 3, cfg, "cpu")
+    assert agent.critic.encoder is None
+    replay = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu", priv_dim=6)
+    obs = env.reset()
+    state = np.concatenate([env.tool, env.goal])
+    for _ in range(64):
+        action = np.random.uniform(-1, 1, size=3)
+        next_obs, reward, _ = env.step(action)
+        next_state = np.concatenate([env.tool, env.goal])
+        replay.add(obs, action, reward, next_obs, False, priv=state, next_priv=next_state)
+        obs, state = next_obs, next_state
+    target = [p.detach().clone() for p in agent.critic_target.parameters()]
+    for _ in range(8):
+        stats = agent.update(replay)
+    assert np.isfinite(stats["critic_loss"]) and np.isfinite(stats["actor_loss"])
+    assert any(not torch.equal(b, a) for b, a in zip(target, agent.critic_target.parameters(), strict=True))
+    # The actor still learns from dQ/da, now through the state critic.
+    _, pi, _, _ = agent.actor(agent._unpack(torch.as_tensor(np.stack([obs, obs]))))
+    q1, _ = agent.critic(torch.as_tensor(np.stack([state, state]), dtype=torch.float32), pi)
+    assert torch.autograd.grad(q1.sum(), pi)[0].abs().sum() > 0.0
+    batch = np.stack([obs, obs])
+    path = agent.save(tmp_path / "privileged.pt", step=3)
+    replay.save(tmp_path / "replay", metadata={"step": 3})
+    restored = SACAgent(spec, 3, cfg, "cpu")
+    restored.load(path)
+    np.testing.assert_allclose(restored.act(batch, deterministic=True), agent.act(batch, deterministic=True), atol=1e-6)
+    other = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu", priv_dim=6)
+    other.load(tmp_path / "replay")
+    np.testing.assert_array_equal(other._next_priv[: other.size], replay._next_priv[: replay.size])
+    # Neither form resumes from the other's checkpoint or replay, and nothing trains on a state it lacks.
+    with pytest.raises(ValueError):
+        SACAgent(spec, 3, _small_cfg("wang-flow"), "cpu").load(path)
+    with pytest.raises(ValueError, match="privileged"):
+        FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu").load(tmp_path / "replay")
+    plain = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu")
+    for _ in range(20):
+        plain.add(obs, np.zeros(3), 0.0, obs, False)
+    with pytest.raises(ValueError, match="privileged"):
+        agent.update(plain)
+    with pytest.raises(ValueError, match="privileged"):
+        replay.add(obs, np.zeros(3), 0.0, obs, False)
+    for bad in ({"privileged_dim": 0}, {"algo": "flashsac"}):
+        wrong = _small_cfg("wang-flow", bad.get("algo", "sac"))
+        wrong.critic_input, wrong.privileged_dim = "privileged", bad.get("privileged_dim", 6)
+        with pytest.raises(ValueError, match="privileged"):
+            SACAgent(spec, 3, wrong, "cpu")
+
 def test_garment_curriculum_follows_wang_schedule():
     from uipc_manip.curriculum import WANG_GARMENT_ORDER, curriculum_order, garment_curriculum_stage
 

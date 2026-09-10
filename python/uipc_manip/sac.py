@@ -21,7 +21,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .models import Actor, CategoricalCritic, Critic, EncoderConfig, WangFlowActor, reuse_neighbourhoods
+from .models import Actor, CategoricalCritic, Critic, EncoderConfig, PrivilegedCritic, WangFlowActor, reuse_neighbourhoods
 from .obs import FLAG_TOOL, ObsSpec
 
 WANG_HORIZON_STEPS = 150
@@ -93,6 +93,11 @@ class SACConfig:
     num_bins: int = 51
     min_v: float = -50.0
     max_v: float = 50.0
+    critic_input: str = "points"
+    """``points`` encodes the point cloud as the actor does (the reference); ``privileged`` is an asymmetric
+    critic on the simulator's low-dimensional state, which only training reads."""
+    privileged_dim: int = 0
+    """Length of that state; the trainer sets it from the environment."""
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
 
     def to_dict(self) -> dict:
@@ -139,7 +144,13 @@ class SACAgent:
         self.actor = actor_cls(
             spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.actor_log_std_min, cfg.actor_log_std_max
         ).to(self.device)
-        if cfg.algo == "sac":
+        if cfg.critic_input == "privileged":
+            if cfg.algo != "sac" or int(cfg.privileged_dim) <= 0:
+                raise ValueError("The privileged critic is the scalar 'sac' critic and needs privileged_dim > 0")
+            make_critic = lambda: PrivilegedCritic(cfg.privileged_dim, action_dim, cfg.hidden_dim)  # noqa: E731
+        elif cfg.critic_input != "points":
+            raise ValueError(f"Unknown critic_input {cfg.critic_input!r}")
+        elif cfg.algo == "sac":
             make_critic = lambda: Critic(spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra)  # noqa: E731
         elif cfg.algo == "flashsac":
             make_critic = lambda: CategoricalCritic(  # noqa: E731
@@ -208,15 +219,16 @@ class SACAgent:
             return pi.cpu().numpy()
 
     # ------------------------------------------------------------------
-    def _update_critic(self, obs, action, reward, next_obs, not_done) -> dict:
+    def _update_critic(self, obs, action, reward, next_obs, not_done, state=None, next_state=None) -> dict:
+        """``state`` and ``next_state``, when given, are what the critic reads; the actor always reads observations."""
         with torch.no_grad():
             _, next_pi, next_log_pi, _ = self.actor(next_obs)
-            target_q1, target_q2 = self.critic_target(next_obs, next_pi)
+            target_q1, target_q2 = self.critic_target(next_obs if next_state is None else next_state, next_pi)
             target_v = torch.min(target_q1, target_q2) - self.alpha.detach() * next_log_pi
             target_q = reward + not_done * self.cfg.discount * target_v
             bound = float(self.cfg.reward_abs_bound) / max(1.0 - float(self.cfg.discount), 1e-6)
             target_q = target_q.clamp(-bound, bound)
-        current_q1, current_q2 = self.critic(obs, action)
+        current_q1, current_q2 = self.critic(obs if state is None else state, action)
         critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
@@ -258,10 +270,10 @@ class SACAgent:
         probs.scatter_add_(1, upper, frac)
         return probs
 
-    def _update_actor_and_alpha(self, obs) -> dict:
+    def _update_actor_and_alpha(self, obs, state=None) -> dict:
         _, pi, log_pi, _ = self.actor(obs)
         with frozen_parameters(self.critic):
-            q1, q2 = self._critic_scalar(obs, pi, detach_encoder=True)
+            q1, q2 = self._critic_scalar(obs if state is None else state, pi, detach_encoder=True)
         actor_loss = (self.alpha.detach() * log_pi - torch.min(q1, q2)).mean()
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
@@ -290,27 +302,34 @@ class SACAgent:
             return self._update(replay)
 
     def _update(self, replay) -> dict:
-        obs_flat, action, reward, next_obs_flat, not_done = replay.sample(self.cfg.batch_size)
+        batch = replay.sample(self.cfg.batch_size)
+        obs_flat, action, reward, next_obs_flat, not_done = batch[:5]
+        state = next_state = None
+        if self.cfg.critic_input == "privileged":
+            if len(batch) != 7:
+                raise ValueError("The privileged critic needs a replay buffer that stores the privileged state")
+            state, next_state = batch[5:]
         obs = self._unpack(obs_flat, augment=True)
         next_obs = self._unpack(next_obs_flat, augment=True)
         if self.cfg.algo == "flashsac":
             stats = self._update_critic_categorical(obs, action, reward, next_obs, not_done)
         else:
-            stats = self._update_critic(obs, action, reward, next_obs, not_done)
+            stats = self._update_critic(obs, action, reward, next_obs, not_done, state, next_state)
         stats["batch_reward"] = float(reward.mean().item())
         self.updates += 1
         if self.updates % self.cfg.actor_update_freq == 0:
-            stats.update(self._update_actor_and_alpha(obs))
+            stats.update(self._update_actor_and_alpha(obs, state))
         if self.updates % self.cfg.critic_target_update_freq == 0:
             soft_update(self.critic.Q1, self.critic_target.Q1, self.cfg.critic_tau)
             soft_update(self.critic.Q2, self.critic_target.Q2, self.cfg.critic_tau)
-            soft_update(self.critic.encoder, self.critic_target.encoder, self.cfg.encoder_tau)
+            if self.critic.encoder is not None:
+                soft_update(self.critic.encoder, self.critic_target.encoder, self.cfg.encoder_tau)
         return stats
 
     # ------------------------------------------------------------------
     def protocol(self) -> dict:
         """Settings a checkpoint must agree on before its weights can be reused."""
-        return {
+        protocol = {
             "point_budget": int(self.spec.point_budget),
             "obs_dim": int(self.spec.dim),
             "action_dim": int(self.action_dim),
@@ -323,6 +342,10 @@ class SACAgent:
             "max_v": float(self.cfg.max_v),
             "encoder": self.cfg.encoder.to_dict(),
         }
+        if self.cfg.critic_input != "points":
+            # Only a privileged critic adds these keys, so point-critic checkpoints saved before them still load.
+            protocol.update(critic_input=str(self.cfg.critic_input), privileged_dim=int(self.cfg.privileged_dim))
+        return protocol
 
     def save(self, path: str | Path, step: int, metadata: dict | None = None) -> Path:
         path = Path(path)

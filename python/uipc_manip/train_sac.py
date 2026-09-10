@@ -97,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hidden-dim", type=int, default=1024)
     p.add_argument("--actor", choices=("wang-flow", "flat"), default="wang-flow", help="wang-flow is the reference tool-point actor.")
     p.add_argument("--algo", choices=("sac", "flashsac"), default="sac", help="Scalar reference critic or bounded categorical critic.")
+    p.add_argument("--critic-input", choices=("points", "privileged"), default="points", help="dressing: the critic encodes the point cloud (reference) or reads the simulator's privileged state.")
     p.add_argument("--encoder", choices=("pointnet2", "transformer"), default="pointnet2")
     p.add_argument("--num-bins", type=int, default=51, help="flashsac: value atoms per critic head.")
     p.add_argument("--min-v", type=float, default=-50.0, help="flashsac: lowest value atom.")
@@ -170,11 +171,11 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     saved.update({key: metadata[key] for key in ("task", "seed", "num_envs") if key in metadata})
     cfg = SACConfig.from_dict(payload["sac_config"])
     cfg_names = {"actor": "actor_type", "point_jitter": "point_jitter_scale", "grad_clip_max_norm": "grad_clip_max_norm"}
-    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v"):
+    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v", "critic_input"):
         cfg_names[key] = key
     saved.update({key: getattr(cfg, name) for key, name in cfg_names.items()})
     saved.update(encoder=cfg.encoder.kind, sa_neighbors=cfg.encoder.sa_neighbors)
-    network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "sa_neighbors", "algo", "num_bins", "min_v", "max_v"}
+    network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "sa_neighbors", "algo", "num_bins", "min_v", "max_v", "critic_input"}
     for key, value in saved.items():
         if not hasattr(args, key):
             continue
@@ -244,6 +245,7 @@ def build_sac_config(args) -> SACConfig:
         num_bins=args.num_bins,
         min_v=args.min_v,
         max_v=args.max_v,
+        critic_input=args.critic_input,
     )
     neighbors = [int(n) for n in args.sa_neighbors]
     if len(neighbors) == 1:
@@ -655,6 +657,14 @@ def main(argv: list[str] | None = None) -> None:
 
         torch.manual_seed(args.seed)
         sac_cfg = saved_sac_cfg if saved_sac_cfg is not None else build_sac_config(args)
+        if sac_cfg.critic_input == "privileged":
+            env_dim = int(getattr(env, "privileged_dim", 0))
+            if env_dim <= 0:
+                raise ValueError("--critic-input privileged needs an environment that reports a privileged state; only dressing does")
+            if saved_sac_cfg is None:
+                sac_cfg.privileged_dim = env_dim
+            elif sac_cfg.privileged_dim != env_dim:
+                raise ValueError(f"The checkpoint's critic reads a {sac_cfg.privileged_dim}-float state; this environment reports {env_dim}")
         agent = SACAgent(spec, env.action_dim, sac_cfg, args.device)
         if args.resume:
             payload = agent.load(args.resume, load_optimizers=not args.eval_only)
@@ -682,7 +692,10 @@ def main(argv: list[str] | None = None) -> None:
 
     from .replay import FlatReplayBuffer
 
-    replay = FlatReplayBuffer(env.obs_dim, env.action_dim, args.replay_capacity, args.batch_size, args.device)
+    privileged = agent.cfg.critic_input == "privileged"
+    replay = FlatReplayBuffer(
+        env.obs_dim, env.action_dim, args.replay_capacity, args.batch_size, args.device, priv_dim=agent.cfg.privileged_dim if privileged else 0
+    )
     reward_scale = float(payload.get("metadata", {}).get("reward_scale", wang_equivalent_reward_scale(agent.cfg.discount))) if payload is not None else wang_equivalent_reward_scale(agent.cfg.discount)
     start_step = 0
     if args.resume:
@@ -731,6 +744,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"[uipc-manip] garment curriculum every {curriculum_interval} vector steps, order={order}", flush=True)
 
     obs = env.reset(seeds)
+    priv = env.privileged() if privileged else None
     episode_return = np.zeros(env.num_envs)
     updates_started = agent.updates > 0
     best_score = None
@@ -753,6 +767,7 @@ def main(argv: list[str] | None = None) -> None:
         t_phase = time.time()
         next_obs, rewards, dones, infos = env.step(actions)
         phase_s["env_s"] += time.time() - t_phase
+        next_priv = env.privileged() if privileged else None
         if any(info.get("sim_error") for info in infos):
             env.close()
             raise RuntimeError("Simulator failed during training; invalid transitions were excluded. "
@@ -774,7 +789,12 @@ def main(argv: list[str] | None = None) -> None:
                 continue
             # Time limits are not terminal states: bootstrap from the true final observation.
             terminal_obs = info.get("terminal_obs", None)
-            replay.add(obs[i], actions[i], float(rewards[i]) * reward_scale, next_obs[i] if terminal_obs is None else terminal_obs, False)
+            state_pair = {}
+            if privileged:
+                # The terminal state pairs with the terminal observation, not with the reset one.
+                terminal_priv = info.get("terminal_privileged", None)
+                state_pair = {"priv": priv[i], "next_priv": next_priv[i] if terminal_priv is None else terminal_priv}
+            replay.add(obs[i], actions[i], float(rewards[i]) * reward_scale, next_obs[i] if terminal_obs is None else terminal_obs, False, **state_pair)
             added += 1
             episode_return[i] += float(rewards[i])
             if dones[i]:
@@ -782,6 +802,7 @@ def main(argv: list[str] | None = None) -> None:
                 recent_success.append(float(info.get("success", False)))
                 episode_return[i] = 0.0
         obs = next_obs
+        priv = next_priv
         budget, updates_started = gradient_update_budget(
             transitions_added=added,
             replay_size=replay.size,
@@ -835,6 +856,7 @@ def main(argv: list[str] | None = None) -> None:
                     best_score = score
                     agent.save(ckpt_dir / "best.pt", vector_step, {**metadata, "eval": summary})
                 obs = env.reset(seeds)
+                priv = env.privileged() if privileged else None
                 episode_return[:] = 0.0
             print(f"[uipc-manip] saved {path}", flush=True)
     env.close()

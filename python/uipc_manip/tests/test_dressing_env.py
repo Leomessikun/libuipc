@@ -25,6 +25,7 @@ def test_batched_dressing_env_steps():
     obs = env.reset([0, 1])
     assert obs.shape == (2, env.spec.dim) and np.isfinite(obs).all()
     assert env.reset_restore_error < 1e-9
+    assert env.privileged().shape == (2, env.privileged_dim) and np.isfinite(env.privileged()).all()
     # The opening starts in front of the fingertips: pre-insertion reward, no progress yet.
     actions = env.scripted_actions()
     assert actions.shape == (2, 6) and np.all(np.abs(actions) <= 1.0)
@@ -36,6 +37,9 @@ def test_batched_dressing_env_steps():
     assert all(0.0 <= info["upperarm_ratio"] <= 1.0 for info in infos)
     assert all(info["garment"] == "tshirt_26" for info in infos)
     assert all("terminal_obs" in info for info in infos)
+    # The terminal state is the one before the reset, which the post-reset state replaces.
+    assert all(info["terminal_privileged"].shape == (env.privileged_dim,) for info in infos)
+    assert not np.allclose(np.stack([info["terminal_privileged"] for info in infos]), env.privileged())
     env.close()
 
 
