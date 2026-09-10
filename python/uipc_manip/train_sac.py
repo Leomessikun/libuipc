@@ -738,15 +738,21 @@ def main(argv: list[str] | None = None) -> None:
     recent_success: list[float] = []
     recent_heldout_success: list[float] = []
     t_start = time.time()
+    # Wall-clock seconds spent in each phase of the loop, cumulative over the run; evaluation is excluded.
+    phase_s = {"act_s": 0.0, "env_s": 0.0, "update_s": 0.0}
     stats: dict = {}
     vector_step = start_step
     while replay.total_added < target_transitions:
         vector_step += 1
+        t_phase = time.time()
         if vector_step <= args.init_steps:
             actions = np.random.uniform(-1.0, 1.0, size=(env.num_envs, env.action_dim)).astype(np.float32)
         else:
             actions = agent.act(obs, deterministic=False).astype(np.float32)
+        phase_s["act_s"] += time.time() - t_phase
+        t_phase = time.time()
         next_obs, rewards, dones, infos = env.step(actions)
+        phase_s["env_s"] += time.time() - t_phase
         if any(info.get("sim_error") for info in infos):
             env.close()
             raise RuntimeError("Simulator failed during training; invalid transitions were excluded. "
@@ -783,12 +789,14 @@ def main(argv: list[str] | None = None) -> None:
             updates_started=updates_started,
             updates_per_step=args.updates_per_step,
         )
+        t_phase = time.time()
         if vector_step > args.init_steps:
             for _ in range(budget):
                 # The actor and temperature report only every ``actor_update_freq``
                 # updates, and the budget is a multiple of it, so keeping only the
                 # last update's dict drops those columns for the whole run.
                 stats = {**stats, **agent.update(replay)}
+        phase_s["update_s"] += time.time() - t_phase
         if vector_step % args.log_interval == 0:
             elapsed = time.time() - t_start
             row = {
@@ -798,6 +806,7 @@ def main(argv: list[str] | None = None) -> None:
                 "simulated_steps": vector_step * env.num_envs * args.action_repeat,
                 "updates": agent.updates,
                 "elapsed_s": round(elapsed, 1),
+                **{k: round(v, 1) for k, v in phase_s.items()},
                 "episode_return": float(np.mean(recent_returns[-20:])) if recent_returns else float("nan"),
                 "episode_success": float(np.mean(recent_success[-20:])) if recent_success else float("nan"),
                 **({"heldout_episode_success": float(np.mean(recent_heldout_success[-20:])) if recent_heldout_success else float("nan")} if heldout_slots else {}),

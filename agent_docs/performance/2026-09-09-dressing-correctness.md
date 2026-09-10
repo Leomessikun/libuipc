@@ -886,7 +886,10 @@ drop single cells, so the three tshirt_68 cells the expert cannot thread stay
 in: two take 4 of the 24 training slots and one is among the four held-out
 cells. Of the held-out cells only tshirt_26 body 7 is dressable by the expert,
 which bounds the held-out success rate the scripted expert would score at one
-in four; checkpoints are ranked on the continuous held-out upper-arm ratio.
+in four; checkpoints are ranked on the continuous held-out upper-arm ratio. The
+training log carries the wall-clock seconds spent in action selection, the
+environment step and the gradient updates as cumulative `act_s`, `env_s` and
+`update_s` columns, evaluation excluded.
 
 ## Differentiable simulation: neither library provides a usable gradient here
 
