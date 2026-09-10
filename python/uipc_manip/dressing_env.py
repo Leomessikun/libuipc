@@ -51,6 +51,10 @@ class DressingConfig:
     """The (garment, body) bound to each slot, in slot order. Empty keeps the legacy
     shorthand of cycling ``garments`` over the single ``human``. A slot's cell is fixed
     for the life of the world because ``reset`` restores one settled snapshot."""
+    ground_plane: bool = False
+    """Add a floor to the IPC scene. The arm is fixed in the air and the garment is
+    carried by the tool, so the floor is never part of the task; a shirt hanging from a
+    point near the hand reaches it, and libuipc then refuses the scene."""
     cell_source: str = "cache"
     """``cache`` reads the Newton bake's pre-worn states; ``live`` drapes each garment in
     libuipc and places it on a generated body, which admits any (garment, body) pair."""
@@ -288,7 +292,8 @@ class GenesisIPCDressingEnv:
             ),
             show_viewer=cfg.show_viewer,
         )
-        self.scene.add_entity(gs.morphs.Plane(), material=gs.materials.Rigid(coup_type="ipc_only"))
+        if cfg.ground_plane:
+            self.scene.add_entity(gs.morphs.Plane(), material=gs.materials.Rigid(coup_type="ipc_only"))
         # The arm is a native libuipc fixed affine body rather than a Genesis mesh entity:
         # Genesis re-tessellates imported meshes (1307 vertices became 4885 with duplicates),
         # and the duplicated vertices produced NaN distances in the IPC trajectory filter.

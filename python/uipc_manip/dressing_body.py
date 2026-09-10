@@ -68,10 +68,14 @@ class BodyConfig:
     narrows that randomisation; ``dressing-standing`` keeps the body upright."""
     hand_pca: float = -1.0
     """Right-hand PCA coefficients, pinned as in the reference so the fist stays relaxed."""
+    device: str = "cuda"
+    """Device the SMPL-X forward runs on. Construction is always on the CPU because the
+    model registers buffers and converts some of them to numpy while it builds, which
+    fails under a device default; the evaluation then moves to this device."""
 
     def to_dict(self) -> dict:
         return {
-            "model_dir": str(self.model_dir), "gender": self.gender, "num_betas": int(self.num_betas),
+            "model_dir": str(self.model_dir), "gender": self.gender, "num_betas": int(self.num_betas), "device": self.device,
             "beta_range": list(self.beta_range), "height_range": list(self.height_range) if self.height_range else None,
             "pose_mode": self.pose_mode, "hand_pca": float(self.hand_pca),
         }
@@ -235,6 +239,8 @@ def generate_body(seed: int, cfg: BodyConfig | None = None) -> Body:
     if gender == "random":
         gender = str(rng.choice(["male", "female"]))
     model = _model(str(cfg.model_dir), gender, cfg.num_betas)
+    device = cfg.device if (cfg.device.startswith("cuda") and torch.cuda.is_available()) else "cpu"
+    model = model.to(device)
     betas = rng.uniform(*cfg.beta_range, size=cfg.num_betas).astype(np.float32)
     pose = sample_body_pose(rng, cfg.pose_mode)
     hand = np.full(6, float(cfg.hand_pca), dtype=np.float32)
@@ -244,13 +250,12 @@ def generate_body(seed: int, cfg: BodyConfig | None = None) -> Body:
     rot = np.array([[1.0, 0.0, 0.0], [0.0, np.cos(angle), -np.sin(angle)], [0.0, np.sin(angle), np.cos(angle)]])
 
     def evaluate(body_pose: np.ndarray):
-        with _cpu_default_device():
-            out = model(
-                betas=torch.as_tensor(betas, device="cpu").unsqueeze(0),
-                body_pose=torch.as_tensor(body_pose, device="cpu").unsqueeze(0),
-                right_hand_pose=torch.as_tensor(hand, device="cpu").view(1, -1),
-                return_verts=True,
-            )
+        out = model(
+            betas=torch.as_tensor(betas, device=device).unsqueeze(0),
+            body_pose=torch.as_tensor(body_pose, device=device).unsqueeze(0),
+            right_hand_pose=torch.as_tensor(hand, device=device).view(1, -1),
+            return_verts=True,
+        )
         return (out.vertices.detach().cpu().numpy()[0].astype(np.float64) @ rot.T,
                 out.joints.detach().cpu().numpy()[0].astype(np.float64) @ rot.T)
 

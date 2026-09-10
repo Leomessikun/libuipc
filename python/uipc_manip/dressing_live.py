@@ -45,11 +45,13 @@ class LiveCellConfig:
     """Spawn the garment before insertion, its opening facing the fingertips and its
     body hanging clear of the arm, instead of the reference's pre-worn placement,
     which lays the sleeve through the arm and which libuipc refuses."""
-    clearance_m: float = 0.10
+    clearance_m: float = 0.20
     """Distance the opening centre sits outside the fingertip along the arm axis.
     Newton's runtime alignment uses the same quantity so the arm has to travel
-    before it reaches the opening plane; 0.10 m keeps every cached body at least
-    2 mm clear of the garment, twice the contact activation distance."""
+    before it reaches the opening plane. At 0.10 m the hanging garment still grazes
+    the hand and libuipc refuses the scene; 0.20 m leaves it clear with the ground
+    plane off, and the tool then has 20 cm to travel before the opening reaches the
+    fingertips."""
     scales: dict[str, float] | None = None
     """Per-garment mesh scale; ``None`` uses each garment's bake default."""
     body: BodyConfig = field(default_factory=BodyConfig)
