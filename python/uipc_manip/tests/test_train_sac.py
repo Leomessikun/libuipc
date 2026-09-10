@@ -75,6 +75,31 @@ def test_resume_keeps_the_critic_input():
     assert args.critic_input == "privileged" and cfg.privileged_dim == 35
 
 
+def test_time_step_and_settle_reach_the_dressing_config_and_are_pinned_on_resume():
+    from uipc_manip.train_sac import dressing_config
+
+    args = build_parser().parse_args([])
+    resolve_defaults(args)
+    cfg, default = dressing_config(args), DressingConfig()
+    assert (cfg.dt, cfg.settle_steps, cfg.constraint_strength) == (default.dt, default.settle_steps, 1.0e4)
+    argv = ["--dt", repr(1.0 / 30.0), "--action-repeat", "3", "--cuff-strength", "4e4", "--settle-steps", "15"]
+    args = build_parser().parse_args(argv)
+    resolve_defaults(args)
+    cfg = dressing_config(args)
+    assert (cfg.dt, cfg.action_repeat, cfg.constraint_strength, cfg.settle_steps) == (1.0 / 30.0, 3, 4.0e4, 15)
+    args = build_parser().parse_args(["--task", "cloth_drag"])
+    resolve_defaults(args)
+    assert args.settle_steps == 40
+    payload = _checkpoint()
+    payload["metadata"]["env"].update(dt=1.0 / 30.0, settle_steps=15)
+    args = build_parser().parse_args([])
+    restore_resume_args(args, [], payload)
+    assert (args.dt, args.settle_steps) == (1.0 / 30.0, 15)
+    argv = ["--dt", repr(1.0 / 60.0)]
+    with pytest.raises(ValueError, match="dt"):
+        restore_resume_args(build_parser().parse_args(argv), argv, payload)
+
+
 def test_teachers_are_keyed_by_the_one_region_their_training_cells_share(tmp_path):
     from uipc_manip.models import EncoderConfig
     from uipc_manip.sac import SACAgent

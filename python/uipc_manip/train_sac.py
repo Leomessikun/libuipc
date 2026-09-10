@@ -79,10 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--num-envs", type=int, default=32, help="Deformable and robot copies solved together in one IPC world.")
     p.add_argument("--horizon", type=int, default=None, help="Decisions per episode; 900 for dressing, 150 otherwise.")
     p.add_argument("--action-repeat", type=int, default=None, help="Simulation steps per decision; 1 for dressing (the reference decides at 60 Hz), 5 otherwise. The tool speed cap is held over the whole decision.")
+    p.add_argument("--dt", type=float, default=1.0 / 60.0, help="dressing: simulation step [s]; --action-repeat x --dt is the decision period, 0.1 s in the reference configuration. The held cuff's physical stiffness is --cuff-strength x mass / dt^2 and the settle lasts --settle-steps steps, so a matched run at dt 1/30 passes --action-repeat 3 --cuff-strength 4e4 --settle-steps 15; none of them is scaled automatically. Horizon and discount count decisions and do not change.")
     p.add_argument("--max-translation", type=float, default=0.006)
     p.add_argument("--point-budget", type=int, default=None, help="Points per observation; 768 for dressing, 256 otherwise.")
     p.add_argument("--friction", type=float, default=0.6)
-    p.add_argument("--settle-steps", type=int, default=40)
+    p.add_argument("--settle-steps", type=int, default=None, help="Simulation steps the world settles before its reset snapshot; 40 for the manipulation tasks, the dressing config's 30 for dressing.")
     p.add_argument("--vis", action="store_true", help="Open the Genesis viewer (forces a single environment).")
     p.add_argument("--policy", choices=("sac", "heuristic", "random"), default="sac")
     p.add_argument("--total-transitions", type=int, default=20_000, help="Additional transitions admitted to replay (including on resume); curriculum-excluded slots do not consume this budget.")
@@ -133,6 +134,9 @@ def resolve_defaults(args) -> None:
         args.action_repeat = 1 if args.task == "dressing" else 5
     if args.point_budget is None:
         args.point_budget = 768 if args.task == "dressing" else 256
+    if args.settle_steps is None and args.task != "dressing":
+        # Dressing keeps its config's own settle unless the flag is given.
+        args.settle_steps = 40
     if args.num_eval_episodes is None:
         args.num_eval_episodes = args.num_envs
 
@@ -153,7 +157,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     env = metadata.get("env", {})
     args._resume_env = env
     args._explicit_options = sorted(explicit)
-    saved.update({key: env[key] for key in ("human", "garments", "horizon", "action_repeat", "point_budget", "anchor_count") if key in env})
+    saved.update({key: env[key] for key in ("human", "garments", "horizon", "action_repeat", "dt", "settle_steps", "point_budget", "anchor_count") if key in env})
     if metadata.get("task") == "dressing":
         # Checkpoints from before the cell plan all trained on the bake cache.
         saved["cell_source"] = env.get("cell_source", "cache")
@@ -170,7 +174,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     if "augment_obs" in env:
         saved["no_obs_augment"] = not env["augment_obs"]
     if metadata.get("task") != "dressing":
-        saved.update({key: env[key] for key in ("max_translation", "friction", "settle_steps") if key in env})
+        saved.update({key: env[key] for key in ("max_translation", "friction") if key in env})
     saved.update({key: metadata[key] for key in ("task", "seed", "num_envs") if key in metadata})
     cfg = SACConfig.from_dict(payload["sac_config"])
     cfg_names = {"actor": "actor_type", "point_jitter": "point_jitter_scale", "grad_clip_max_norm": "grad_clip_max_norm"}
@@ -398,31 +402,38 @@ def built_cell_plan(env, plan: dict | None) -> tuple[list[tuple[str, int]] | Non
     return cells, [int(i) for i in plan["heldout_slots"]]
 
 
+def dressing_config(args) -> DressingConfig:
+    """The dressing settings the launcher flags ask for, with a resumed run's saved fields restored."""
+    cfg = DressingConfig(
+        human=args.human,
+        garments=tuple(args.garments),
+        cell_source=args.cell_source,
+        horizon=args.horizon,
+        action_repeat=args.action_repeat,
+        dt=args.dt,
+        point_budget=args.point_budget,
+        anchor_count=args.anchor_count,
+        constraint_strength=args.cuff_strength,
+        **{
+            name: value
+            for name, value in (
+                ("cloth_shear_ratio", args.cloth_shear_ratio),
+                ("cloth_youngs", args.cloth_youngs),
+                ("cloth_bending_stiffness", args.cloth_bending),
+                ("settle_steps", args.settle_steps),
+            )
+            if value is not None
+        },
+        seed=args.seed,
+        augment_obs=not args.no_obs_augment,
+        show_viewer=bool(args.vis),
+    )
+    return restore_env_config(cfg, args)
+
+
 def make_env(args):
     if args.task == "dressing":
-        cfg = DressingConfig(
-            human=args.human,
-            garments=tuple(args.garments),
-            cell_source=args.cell_source,
-            horizon=args.horizon,
-            action_repeat=args.action_repeat,
-            point_budget=args.point_budget,
-            anchor_count=args.anchor_count,
-            constraint_strength=args.cuff_strength,
-            **{
-                name: value
-                for name, value in (
-                    ("cloth_shear_ratio", args.cloth_shear_ratio),
-                    ("cloth_youngs", args.cloth_youngs),
-                    ("cloth_bending_stiffness", args.cloth_bending),
-                )
-                if value is not None
-            },
-            seed=args.seed,
-            augment_obs=not args.no_obs_augment,
-            show_viewer=bool(args.vis),
-        )
-        cfg = restore_env_config(cfg, args)
+        cfg = dressing_config(args)
         # The plan, not the checkpoint's env record, decides which cell each slot holds.
         plan = reconcile_resume_cell_plan(args, plan_cells(args, library_cells(args, cfg)))
         cfg = replace(cfg, cells=tuple((g, b) for g, b in plan["cells"]), cell_source=args.cell_source)
