@@ -873,7 +873,7 @@ Same placement, 48 anchors, 300 decisions, highest readings over the episode:
 | tshirt_68 | 5 of 8 | 3 of 8 | bodies 0, 2, 3; body 5 peaks at 0.541, body 6 at 0.197 |
 | tshirt_4 | 0 of 8 | 0 of 8 | the opening closes against the forearm |
 | tshirt_392 | 0 of 8 | 0 of 8 | the drape hangs upside down and the expert never leaves its elbow pull |
-| hospital_gown | 0 of 8 | 0 of 8 | the held cuff drifts by up to 143 mm |
+| hospital_gown | 0 of 8 | 0 of 8 | the held cuff drifts by up to 143 mm; the measured socket started it upside down, see the next subsection |
 
 tshirt_68 bodies 1, 4 and 7 never reach the forearm. All three sit at a 20 cm
 clearance, but body 5 threads at 21 cm, so the clearance alone does not explain
@@ -890,6 +890,121 @@ in four; checkpoints are ranked on the continuous held-out upper-arm ratio. The
 training log carries the wall-clock seconds spent in action selection, the
 environment step and the gradient updates as cumulative `act_s`, `env_s` and
 `update_s` columns, evaluation excluded.
+
+### The hospital gown started upside down
+
+The gown's 0 of 8 above is not a mesh-resolution, grip or solver defect. The live
+placement maps the canonical socket onto the arm with the socket's measured roll,
+whose +X comes from the first opening-ring vertex, so that roll is arbitrary per
+garment (see `gravity_aligned_socket`). For the gown it turns the drape 114 to 123
+degrees away from its baked hang on every body, and the garment starts upside down.
+Measured on the CPU for bodies 0 to 7, relative to the grasp centroid:
+
+| Garment and socket | Baked down direction turned by | Garment centre of mass below the grasp |
+|---|---:|---:|
+| tshirt_26, measured | 50 to 57 degrees | 21 to 22 cm |
+| hospital_gown, measured | 114 to 123 degrees | -24 to -31 cm, above it |
+| hospital_gown, re-rolled | 0.3 to 20 degrees | 50 to 53 cm |
+
+The 0.64 kg gown then falls through the settle and is still swinging when the expert
+starts. An instrumented copy of the expert harness logged the opening in the forearm
+frame at every decision, on bodies 1 and 5 with 48 anchors, a 1e4 hold and 150
+decisions:
+
+| | Gown, measured socket | Gown, re-rolled | tshirt_26, measured socket |
+|---|---:|---:|---:|
+| Settle displacement | 1.78 m | 0.15 m | 0.58 m |
+| Held-cuff error in the settled snapshot | 5.5 mm | 0.6 mm | 1.2 mm |
+| Mean vertex speed at decision 0 | 2.2 m/s | 0.27 to 0.32 m/s | 0.04 m/s |
+| Opening off the forearm axis where it passes the fingertip | 4.1 to 4.8 cm | 0.6 to 0.7 cm | 1.4 to 2.3 cm |
+| Opening radius there | 6.0 to 6.2 cm | 8.8 to 8.9 cm | 9.4 to 9.5 cm |
+| Largest held-cuff error before decision 20 | 6.5 to 6.8 mm | 4.5 to 4.9 mm | 1.8 to 1.9 mm |
+| Highest forearm ratio | 0, 0 | 1.0, 1.0 | 1.0, 1.0 |
+| Highest upper-arm ratio | 0, 0 | 0.10, 0.11 | 0.15, 0.33 |
+
+Upside down, the swinging gown drags its opening off the axis and squeezes it from its
+baked 8.14 cm to about 6 cm, so the hand catches the rim. The rim then turns flat onto
+the arm (opening normal cosine 0.86 to 0.93 at the fingertip, 0.08 to 0.09 by decision
+70), the expert's middle stage drives the tool along the top of the forearm until the
+12 mm no-move check parks it, and 5 to 22 of the 48 held targets end up inside the
+arm. That is where the 30 to 143 mm held-cuff errors come from; before the rim catches,
+the hold stays at 3 to 9 mm. The static numbers that looked like causes are not: the
+gown's 48 anchors hold 0.49% of its mass against tshirt_26's 1.08%, and its edges are
+12.4 mm long against 17 to 19 mm, but neither a larger held patch nor a longer settle
+rescues it while it starts inverted.
+
+What was tried, on bodies 1 and 5. Runs stopped before their last decision were stopped
+once the mechanism was clear, to leave the shared GPU to the confirmation runs:
+
+| Variant | Decisions run | Highest forearm ratio | Largest held-cuff error | What happened |
+|---|---:|---|---|---|
+| Measured socket, as committed | 150 | 0, 0 | 45, 60 mm | rim caught, opening flat on the arm |
+| Tool 0.06, 0.08 or 0.10 m above the arm instead of 0.12 | 120, 80, 70 | 0, 0 each | 11 to 31 mm | opening centred but 5 to 6 cm in radius; at 0.06 the tool parks on the hand |
+| 82 anchors, tshirt_26's held mass | 90 | 0, 0 | 34, 47 mm | opening rides above the arm, held targets pushed into it |
+| 152 anchors, Wang's whole grasp patch | 60 | 0, 0 | 35, 37 mm | as with 82 |
+| Settle of 150 steps instead of 30 | 70 | 0, 0 | 9, 15 mm | still 0.94 m/s at decision 0 |
+| Re-rolled, tool 0.16 or 0.20 m | 130, 110 | 0.05, 0.01 and 0, 0 | 13 to 22 mm | opening 4 to 7 cm above the axis at the fingertip |
+| Re-rolled, 82 anchors | 100 | 0.69, 0.16 | 18, 14 mm | no clear gain over 48 anchors at the same point (0.30, 0.14) |
+| Re-rolled, 48 anchors, tool 0.12 m | 150 | 1.0, 1.0 | 38, 47 mm | threads the forearm |
+
+A stiffer hold was not re-run: the record already rejected it for every garment, and
+here the held-cuff error follows the caught rim instead of causing it.
+
+The fix is a per-garment placement entry, `LiveCellConfig.hang_as_baked_garments`,
+which holds only `hospital_gown`: the gown is placed through `gravity_aligned_socket`,
+every other garment keeps the measured socket, and a CPU test asserts that a shirt's
+placed cloth is identical to the measured placement. This repeats `hang_as_baked`,
+which is on the list of things already tried, with a new reason and a narrower scope:
+it was rejected for all garments on tshirt_26, whose drape the measured socket turns
+only 50 to 57 degrees, and tshirt_26 stays on the measured socket. tshirt_392 is
+recorded above as upside down under the measured roll as well; that garment is outside
+this change.
+
+Over 300 decisions on bodies 0 to 7, 48 anchors and the trainer's default hold of 1e4,
+highest readings over the episode, both runs in the same worktree, the first before the
+change. The GPU was shared with 17 other compute processes at 100% utilization, so the
+rates are not throughput figures:
+
+| hospital_gown body | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Forearm, measured socket | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Forearm, re-rolled | 0.14 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| Upper arm, measured socket | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Upper arm, re-rolled | 0 | 0.99 | 1.00 | 0.25 | 0.99 | 0.99 | 0.21 | 0.98 |
+| Largest held-cuff error, measured socket, mm | 33 | 110 | 53 | 35 | 41 | 148 | 48 | 38 |
+| Largest held-cuff error, re-rolled, mm | 18 | 56 | 46 | 14 | 44 | 51 | 24 | 47 |
+
+Re-rolled, the settle moves a vertex 0.43 m instead of 1.78 m, the settled snapshot
+holds the cuff to 0.83 mm instead of 5.82 mm, and neither run had a simulation error.
+The regression runs used the same protocol and worktree:
+
+| Garment | Reaches the forearm | Passes 0.70 on the upper arm | Largest held-cuff error, median and worst | s per decision |
+|---|---:|---:|---|---:|
+| hospital_gown, measured socket | 0 of 8 | 0 of 8 | 48, 148 mm | 15.6 |
+| hospital_gown, re-rolled | 7 of 8 | 5 of 8: bodies 1, 2, 4, 5, 7 | 46, 56 mm | 12.1 |
+| tshirt_26 | 8 of 8 | 5 of 8: bodies 0, 2, 4, 5, 7 | 20, 40 mm | 9.1 |
+| tshirt_68 | 6 of 8 | 4 of 8: bodies 0, 1, 3, 5 | 45, 52 mm | 5.5 |
+
+Neither shirt dropped against the ceilings above (8 and 5 of 8; 5 and 3 of 8). Their
+placement is unchanged and pinned by the new test, so the shift in which bodies pass
+(tshirt_26 body 4 instead of 3) is not this change; the tshirt_26 drape was re-baked in
+this worktree and settles by the same 0.605 m as the recorded one. Over 300 decisions
+the shirts' held-cuff errors are tens of millimetres too, and the re-rolled gown's
+worst, 56 mm, is within 4 mm of tshirt_68's.
+
+Re-rolled, the gown's middle stage is slower than a shirt's. In the baked hang its grasp
+sits only 7.2 cm behind and 7.3 cm above the opening, against 12.5 and 11.6 cm for
+tshirt_26, and the tool pulls ahead of the ring instead of staying with it: on bodies 1
+and 5 the tool led the opening by 11 cm at decision 60 and by 47 cm at decision 140,
+while tshirt_26's opening stays between 3 cm behind and 9 cm ahead of its tool. The
+ring tilts flat onto the forearm (normal cosine 0.01 to 0.05) and stretches into a loop
+of about 23 cm radius, and the opening reaches the middle stage's target 8 cm past the
+elbow only at decision 143 to 148, against about 112 for tshirt_26. Within 300
+decisions that still leaves enough for the upper arm on five bodies. Of the three that
+fail, body 0 never takes the forearm past 0.14, and bodies 3 and 6 stop at 0.25 and
+0.21 on the upper arm, as tshirt_26 does on the same two bodies. A larger stage
+tolerance would not shorten the middle stage: the opening passes within 1.0 to 1.2 cm
+of its target, so a 3 to 4 cm tolerance would end it only 5 to 10 decisions earlier.
 
 ### The SAC update was mostly a distance computation
 

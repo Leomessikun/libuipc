@@ -206,3 +206,47 @@ def test_region_bodies_sample_inside_their_wang_region_and_plain_ids_keep_their_
     with pytest.raises(ValueError):
         pose_region(28_000)
 
+
+def test_only_the_hospital_gown_hangs_as_baked_by_default():
+    """The measured socket starts the gown upside down, so it alone keeps its baked hang by default."""
+    cfg = LiveCellConfig()
+    assert cfg.hangs_as_baked("hospital_gown")
+    for garment in ("tshirt_4", "tshirt_26", "tshirt_68", "tshirt_392"):
+        assert not cfg.hangs_as_baked(garment)
+    assert all(LiveCellConfig(hang_as_baked=True).hangs_as_baked(g) for g in ("tshirt_26", "hospital_gown"))
+    assert not LiveCellConfig(hang_as_baked_garments=()).hangs_as_baked("hospital_gown")
+    assert cfg.to_dict()["hang_as_baked_garments"] == ["hospital_gown"]
+
+
+@pytest.mark.skipif(
+    not (Path(LiveCellConfig().bake.index_module).exists() and Path(LiveCellConfig().bake.garment_dir).exists()),
+    reason="garment index tables or raw meshes are unavailable",
+)
+def test_the_factory_re_rolls_only_the_gown_and_keeps_its_mass_under_the_opening():
+    """A drape the measured socket turns over: the gown is re-rolled, a shirt keeps the measured placement."""
+    import trimesh
+
+    from uipc_manip.dressing_live import CanonicalDrape, LiveCellFactory, SimpleBody
+
+    centre = np.array([0.12, -0.5, 0.9])
+    axis = np.array([1.0, 0.0, 0.1]) / np.linalg.norm([1.0, 0.0, 0.1])
+    ring = np.roll(_ring(centre, axis, 0.09), 4, axis=0)  # this first ring vertex turns the measured socket over
+    cloth = np.vstack([ring, centre + np.array([0.05, 0.0, -0.3])])
+    faces = np.array([[k, (k + 1) % 6, 6] for k in range(6)], dtype=np.int32)
+    drape = CanonicalDrape("g", 1.0, cloth, faces, cloth[6], np.array([6]), np.array([6]), np.arange(6),
+                           np.array([0, 3]), socket_frame(centre, axis, ring), 0.09)
+    box = trimesh.creation.box(bounds=np.array([[0.0, -0.01, 0.99], [0.6, 0.01, 1.01]]))
+    arm, arm_faces = np.asarray(box.vertices, dtype=np.float64), np.asarray(box.faces, dtype=np.int64)
+    landmarks = {"right_finger": np.array([0.0, 0.0, 1.0]), "right_elbow": np.array([0.3, 0.0, 1.0]),
+                 "right_shoulder": np.array([0.6, 0.0, 1.3])}
+    factory = LiveCellFactory(LiveCellConfig())
+    factory._bodies[0] = SimpleBody(arm, arm_faces, arm, landmarks, "test")
+    factory._drapes["hospital_gown"] = factory._drapes["tshirt_26"] = drape
+    shirt, gown = factory.build("tshirt_26", 0), factory.build("hospital_gown", 0)
+    measured, _ = drape.place(landmarks, clearance=factory.clearance_for("tshirt_26", 0))
+    rerolled, _ = drape.place(landmarks, clearance=factory.clearance_for("hospital_gown", 0), hang_as_baked=True)
+    np.testing.assert_array_equal(shirt.cloth, measured)
+    np.testing.assert_array_equal(gown.cloth, rerolled)
+    assert gown.cloth[6, 2] < gown.cloth[:6].mean(axis=0)[2] - 0.25  # the hanging mass stays under the opening
+    assert shirt.cloth[6, 2] > shirt.cloth[:6].mean(axis=0)[2] + 0.2  # the measured socket turns it over
+

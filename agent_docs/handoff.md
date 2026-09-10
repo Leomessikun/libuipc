@@ -1522,3 +1522,18 @@ admitted transitions. `diagnose_dressing.py` records reproducible expert
 traces. Two of the earlier record's interpretations were withdrawn: the
 "solver-independent plateau" and the spring-period reading of the hold
 strength. GPU grasp measurements follow in the correctness record.
+
+Gown pass (branch `agent/garment-gown`): the hospital gown's live cells started
+upside down. The measured socket's roll turns its drape 114 to 123 degrees from its
+baked hang on SMPL-X bodies 0 to 7, so the 0.64 kg gown fell through the settle, was
+still swinging when the expert approached, and met the hand with its opening 4 to 5 cm
+off the forearm and squeezed to 6 cm. The expert reached the forearm on none of eight
+bodies, and the held-cuff drift of up to 148 mm was the caught rim, not the grip.
+`LiveCellConfig.hang_as_baked_garments` now re-rolls the gown alone through
+`gravity_aligned_socket`; every shirt keeps the measured socket, which a CPU test pins
+exactly. Over 300 decisions on bodies 0 to 7 the expert now reaches the forearm on 7
+of 8 gown bodies and passes 0.7 on the upper arm on 5, with a worst held-cuff error of
+56 mm against tshirt_68's 52 mm; tshirt_26 (8 and 5 of 8) and tshirt_68 (6 and 4 of 8)
+did not drop. `DEFAULT_GARMENTS` in `dressing_env.py` still calls the gown unusable
+after Newton's notes. Evidence and the variants tried are in the correctness record's
+"The hospital gown started upside down".

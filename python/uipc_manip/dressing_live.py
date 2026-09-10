@@ -82,7 +82,20 @@ class LiveCellConfig:
     the measured socket reaches forearm 1.0 and upper arm 0.32 with a 4.2 mm held-cuff error,
     the re-rolled one forearm 0.0 with 22.7 mm. tshirt_392's frame is upside down under the
     measured socket, but that is not what kept it off the arm; its offline drape clears the
-    arm by 111 to 128 mm at either roll."""
+    arm by 111 to 128 mm at either roll. :attr:`hang_as_baked_garments` re-rolls single
+    garments whatever this flag says."""
+    hang_as_baked_garments: tuple[str, ...] = ("hospital_gown",)
+    """Garments that keep their baked hang even with :attr:`hang_as_baked` off. The measured
+    socket turns the hospital gown's drape 114 to 123 degrees on SMPL-X bodies 0 to 7, which
+    starts its 0.64 kg body 24 to 31 cm above the held cuff instead of 53 cm below it: the
+    settle moves a vertex 1.78 m, the gown still swings at 2.2 m/s mean vertex speed when the
+    episode starts, and it meets the hand with its opening 4 to 5 cm off the forearm and
+    squeezed to a 6 cm radius, so the scripted expert reaches the forearm on none of eight
+    bodies. Re-rolled, the settle moves a vertex at most 0.43 m on the same bodies and the
+    opening crosses the fingertip on the axis at its full radius; over 300 decisions the
+    expert then reaches the forearm on seven bodies and passes 0.7 on the upper arm on
+    five. tshirt_26 turns 50 to 57 degrees on the same bodies and, like tshirt_68, stays
+    on the measured socket."""
     scales: dict[str, float] | None = None
     """Per-garment mesh scale; ``None`` uses each garment's bake default."""
     body: BodyConfig = field(default_factory=BodyConfig)
@@ -95,10 +108,15 @@ class LiveCellConfig:
             "bake": self.bake.to_dict(), "clearance_m": float(self.clearance_m),
             "scales": dict(self.scales or {}), "bodies": self.bodies, "body": self.body.to_dict(),
             "pre_insertion": bool(self.pre_insertion), "hang_as_baked": bool(self.hang_as_baked),
+            "hang_as_baked_garments": list(self.hang_as_baked_garments),
             "axis_landmark": str(self.axis_landmark),
             "min_arm_gap_m": float(self.min_arm_gap_m),
             "max_clearance_m": float(self.max_clearance_m), "reach_tolerance_m": float(self.reach_tolerance_m),
         }
+
+    def hangs_as_baked(self, garment: str) -> bool:
+        """Whether ``garment`` is placed through :func:`gravity_aligned_socket`."""
+        return bool(self.hang_as_baked) or str(garment) in self.hang_as_baked_garments
 
 
 def _unit(v: np.ndarray, fallback: tuple[float, float, float] = (1.0, 0.0, 0.0)) -> np.ndarray:
@@ -157,8 +175,10 @@ def gravity_aligned_socket(
     are turned 50 and 64 degrees. Building the source
     +Y from the canonical up, as the target builds its own from world up, makes every
     garment hang the way it hung in the bake. Origin and insertion axis are kept.
-    Opt-in through ``LiveCellConfig.hang_as_baked``; the scripted expert dresses
-    tshirt_26 only under the measured socket.
+    Opt-in through ``LiveCellConfig.hang_as_baked``, or per garment through
+    ``LiveCellConfig.hang_as_baked_garments``, which holds the hospital gown because its
+    measured socket starts it upside down; the scripted expert dresses tshirt_26 only
+    under the measured socket.
     """
     T = np.asarray(socket_to_canonical, dtype=np.float64).reshape(4, 4).copy()
     z_axis = _unit(T[:3, 2], fallback=(0.0, 0.0, 1.0))
@@ -484,7 +504,7 @@ class LiveCellFactory:
                     )
                 cloth, _ = drape.place(
                     body.landmarks, clearance=clearance, pre_insertion=self.cfg.pre_insertion,
-                    hang_as_baked=self.cfg.hang_as_baked, axis_landmark=self.cfg.axis_landmark,
+                    hang_as_baked=self.cfg.hangs_as_baked(garment), axis_landmark=self.cfg.axis_landmark,
                 )
                 if garment_arm_gap(cloth, drape.faces, body.arm_points, body.arm_faces) >= float(self.cfg.min_arm_gap_m):
                     break
@@ -497,7 +517,7 @@ class LiveCellFactory:
         body = self.body(human)
         cloth, picker_pos = drape.place(
             body.landmarks, clearance=self.clearance_for(garment, human), pre_insertion=self.cfg.pre_insertion,
-            hang_as_baked=self.cfg.hang_as_baked, axis_landmark=self.cfg.axis_landmark,
+            hang_as_baked=self.cfg.hangs_as_baked(garment), axis_landmark=self.cfg.axis_landmark,
         )
         return DressingCell(
             garment=garment,
