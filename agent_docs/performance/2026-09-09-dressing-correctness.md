@@ -812,7 +812,9 @@ and the expert's last target overshoots the shoulder by 10 cm, so an opening
 pushed past the shoulder is invisible and both ratios read 0. The expert's
 ceiling is therefore its highest reading, not its last: four of eight bodies
 reach the upper-arm threshold within 300 decisions (2, 3, 5, 7). The four that
-fail are the four whose grip slips by 29 to 49 mm.
+fail are the four whose grip slips by 29 to 49 mm. The episode length for
+training is to be set from the expert ceiling on the final placement, which
+shortens the approach.
 
 A stronger grip does not rescue them. At a cuff strength of 1e5 instead of 1e4,
 the same four bodies peak at 0.232, 0.174, 0 and 0.144 on the upper arm against
@@ -820,8 +822,46 @@ the same four bodies peak at 0.232, 0.174, 0 and 0.144 on the upper arm against
 ten times stiffer that leaves the error where it was is being displaced by
 contact, not stretched, so the lever is the placement and the strength stays
 1e4. The stiffer pin also cost 3.6 s per decision for four cells against 2.4 s
-for eight at 1e4, both on a shared GPU. The episode length for training is to be set from the expert ceiling on the
-final placement, which shortens the approach.
+for eight at 1e4, both on a shared GPU.
+
+### Per-cell clearance on the forearm axis
+
+The live factory now builds the socket on the fingertip-to-elbow axis and
+chooses each cell's clearance with an exact check against the whole arm mesh:
+any edge-triangle crossing in either direction counts as zero gap, otherwise the
+true point-to-surface distance. The check agrees with libuipc's build on every
+cell tried. The search starts at 9 cm, steps out 1 cm at a time until the garment
+is at least 3 mm from the arm, does not assume a larger clearance is safer, and
+raises `NoClearPlacement` past 50 cm. The bake re-keys its cache (revision 2):
+its crossing repair now moves the offending vertex along the crossed triangle's
+normal, and it opens reported close pairs to the full gap instead of shrinking
+the collision radius. Every cell of the four garments builds on bodies 0 to 7:
+
+| Garment | Drape | Clearance, bodies 0 to 7 (m) | Surface gap | Settle |
+|---|---|---|---:|---:|
+| tshirt_26 | online | .09 .16 .16 .09 .16 .18 .13 .16 | 3.1 to 6.3 mm | 0.605 m |
+| tshirt_392 | Newton offline | .09 on all | 25.7 to 35.3 mm | 1.545 m |
+| tshirt_4 | Newton offline | .11 .12 .12 .12 .12 .13 .12 .12 | 5.0 to 11.2 mm | 0.745 m |
+| tshirt_68 | online | .09 .20 .19 .14 .20 .21 .19 .20 | 3.4 to 11.2 mm | 0.673 m |
+
+The expert over 300 decisions with 48 anchors, highest upper-arm reading:
+
+| tshirt_26 body | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Committed placement | 0.218 | 0.156 | 0.989 | 1.000 | 0 | 0.936 | 0.141 | 0.952 |
+| Forearm axis | 0.984 | 0.117 | 0.999 | 1.000 | 0.231 | 0.942 | 0.136 | 0.948 |
+| Held-cuff error on the forearm axis, mm | 3.2 | 41.6 | 9.4 | 17.3 | 27.6 | 17.3 | 36.0 | 13.3 |
+
+Five of eight tshirt_26 bodies reach the threshold against four. Only body 0
+changed, and its held-cuff error fell from 29.3 to 3.2 mm with the same pin,
+which confirms that the slip is contact set by the placement. Bodies 1, 4 and 6
+fail under both placements at the same clearances as bodies that succeed, so
+that failure follows the body. tshirt_4 reaches the forearm on none of eight.
+The settle is still not an equilibrium: the placement tilts the baked down
+direction by 50 to 177 degrees, the sixteen-cell settle moves a vertex 0.743 m
+against 0.879 m before, and tshirt_392 starts upside down under the measured
+roll. The anchor default is now 48 and the cuff strength stays 1e4. Held-cuff
+errors and rates above were measured on a GPU shared with other jobs.
 
 ## Differentiable simulation: neither library provides a usable gradient here
 

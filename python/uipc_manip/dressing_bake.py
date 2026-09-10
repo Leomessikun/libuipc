@@ -246,6 +246,17 @@ def _obj_vertices(path: Path) -> np.ndarray:
     return np.asarray(points, dtype=np.float64).reshape(-1, 3)
 
 
+def _obj_primitives(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Edges (``l``) and triangles (``f``) of a checker report OBJ, zero-based."""
+    edges, tris = [], []
+    for parts in (line.split() for line in Path(path).read_text().splitlines()):
+        if parts and parts[0] == "l" and len(parts) >= 3:
+            edges.append([int(x.split("/")[0]) - 1 for x in parts[1:3]])
+        elif parts and parts[0] == "f" and len(parts) >= 4:
+            tris.append([int(x.split("/")[0]) - 1 for x in parts[1:4]])
+    return np.asarray(edges, dtype=np.int64).reshape(-1, 2), np.asarray(tris, dtype=np.int64).reshape(-1, 3)
+
+
 def separate_reported_vertices(
     vertices: np.ndarray, faces: np.ndarray, reported_points: np.ndarray, step: float
 ) -> np.ndarray:
@@ -294,9 +305,193 @@ def drop_reported_faces(vertices: np.ndarray, faces: np.ndarray, reported_points
     return np.asarray(faces, dtype=np.int32)[keep]
 
 
+def mesh_edges(faces: np.ndarray) -> np.ndarray:
+    """Unique undirected edges of a triangle mesh, each row sorted."""
+    f = np.asarray(faces, dtype=np.int64)
+    e = np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+    return np.unique(np.sort(e, axis=1), axis=0)
+
+
+def segments_through_triangles(
+    points_a: np.ndarray, edges_a: np.ndarray, points_b: np.ndarray, faces_b: np.ndarray, *, same_mesh: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
+    """Rows of ``edges_a`` whose segment passes through a triangle of ``faces_b``, with those rows.
+
+    With ``same_mesh`` both index one vertex array and pairs sharing a vertex are skipped.
+    """
+    from scipy.spatial import cKDTree
+
+    va, vb = np.asarray(points_a, dtype=np.float64), np.asarray(points_b, dtype=np.float64)
+    e = np.asarray(edges_a, dtype=np.int64).reshape(-1, 2)
+    f = np.asarray(faces_b, dtype=np.int64).reshape(-1, 3)
+    if len(e) == 0 or len(f) == 0:
+        return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64)
+    tri = vb[f]
+    centre = tri.mean(axis=1)
+    radius = np.linalg.norm(tri - centre[:, None], axis=2).max(axis=1)
+    a, b = va[e[:, 0]], va[e[:, 1]]
+    half = 0.5 * np.linalg.norm(b - a, axis=1)
+    near = cKDTree(centre).query_ball_point(0.5 * (a + b), float(radius.max() + half.max()))
+    ei = np.repeat(np.arange(len(e)), [len(n) for n in near])
+    ti = np.fromiter((t for n in near for t in n), dtype=np.int64, count=len(ei))
+    if same_mesh:
+        shared = (f[ti] == e[ei, :1]).any(axis=1) | (f[ti] == e[ei, 1:]).any(axis=1)
+        ei, ti = ei[~shared], ti[~shared]
+    # Moller-Trumbore on the segment a + t (b - a), t in [0, 1].
+    p0 = vb[f[ti, 0]]
+    e1, e2 = vb[f[ti, 1]] - p0, vb[f[ti, 2]] - p0
+    d = va[e[ei, 1]] - va[e[ei, 0]]
+    h = np.cross(d, e2)
+    det = np.einsum("ij,ij->i", e1, h)
+    ok = np.abs(det) > 1.0e-20
+    inv = 1.0 / np.where(ok, det, 1.0)
+    s = va[e[ei, 0]] - p0
+    u = np.einsum("ij,ij->i", s, h) * inv
+    q = np.cross(s, e1)
+    w = np.einsum("ij,ij->i", d, q) * inv
+    t = np.einsum("ij,ij->i", e2, q) * inv
+    hit = ok & (u >= 0.0) & (w >= 0.0) & (u + w <= 1.0) & (t >= 0.0) & (t <= 1.0)
+    return ei[hit], ti[hit]
+
+
+def crossing_pairs(vertices: np.ndarray, faces: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Every edge that passes through a triangle it does not share a vertex with.
+
+    Returns the crossing edges (vertex pairs) and the rows of ``faces`` they cross.
+    This is the CPU counterpart of libuipc's self-intersection check, which reports
+    the primitives but not which edge crosses which triangle.
+    """
+    e = mesh_edges(faces)
+    ei, ti = segments_through_triangles(vertices, e, vertices, faces, same_mesh=True)
+    return e[ei], ti
+
+
+def untangle_crossings(
+    vertices: np.ndarray, faces: np.ndarray, *, margin: float = 1.0e-3, max_rounds: int = 50
+) -> tuple[np.ndarray, np.ndarray]:
+    """Move every vertex that pokes through a triangle back to its own side of it.
+
+    For each crossing edge the endpoint nearer the triangle's plane is the one that
+    went through; it moves along *the triangle's* normal to the side of the edge's
+    other endpoint, ``margin`` clear of the plane. Pushing the flagged vertices along
+    their own normals instead fails whenever the crossing layers' normals are not
+    opposed, as in a folded hem, which is why that repair never cleared tshirt_68.
+    Topology, and so every semantic index, is untouched. Returns the vertices and
+    the indices that moved.
+    """
+    v = np.asarray(vertices, dtype=np.float64).copy()
+    f = np.asarray(faces, dtype=np.int64)
+    moved: set[int] = set()
+    for _ in range(int(max_rounds)):
+        edges, tris = crossing_pairs(v, f)
+        if len(tris) == 0:
+            return v, np.array(sorted(moved), dtype=np.int64)
+        corner = v[f[tris]]
+        normal = np.cross(corner[:, 1] - corner[:, 0], corner[:, 2] - corner[:, 0])
+        normal /= np.linalg.norm(normal, axis=1, keepdims=True)
+        da = np.einsum("ij,ij->i", v[edges[:, 0]] - corner[:, 0], normal)
+        db = np.einsum("ij,ij->i", v[edges[:, 1]] - corner[:, 0], normal)
+        first = np.abs(da) <= np.abs(db)
+        poker = np.where(first, edges[:, 0], edges[:, 1])
+        depth, other = np.where(first, da, db), np.where(first, db, da)
+        step = normal * (np.where(other >= 0.0, 1.0, -1.0) * float(margin) - depth)[:, None]
+        # One move per vertex per round, the largest any of its crossings asks for.
+        done: set[int] = set()
+        for k in np.argsort(-np.linalg.norm(step, axis=1)):
+            vid = int(poker[k])
+            if vid not in done:
+                done.add(vid)
+                v[vid] += step[k]
+                moved.add(vid)
+    raise RuntimeError(f"{len(tris)} edge-triangle crossings remain after {max_rounds} untangling rounds")
+
+
+def _closest_on_segments(p0, p1, q0, q1) -> tuple[np.ndarray, np.ndarray]:
+    """Closest points between segments ``p0p1`` and ``q0q1`` (Ericson 5.1.9)."""
+    d1, d2, r = p1 - p0, q1 - q0, p0 - q0
+    a, e, f = float(d1 @ d1), float(d2 @ d2), float(d2 @ r)
+    c, b = float(d1 @ r), float(d1 @ d2)
+    denom = a * e - b * b
+    s = float(np.clip((b * f - c * e) / denom, 0.0, 1.0)) if denom > 1.0e-30 else 0.0
+    t = (b * s + f) / e if e > 1.0e-30 else 0.0
+    if t < 0.0:
+        t, s = 0.0, float(np.clip(-c / a, 0.0, 1.0)) if a > 1.0e-30 else 0.0
+    elif t > 1.0:
+        t, s = 1.0, float(np.clip((b - c) / a, 0.0, 1.0)) if a > 1.0e-30 else 0.0
+    return p0 + s * d1, q0 + t * d2
+
+
+def _closest_on_triangle(p, a, b, c) -> np.ndarray:
+    """Closest point to ``p`` on triangle ``abc``: its plane projection if inside, else an edge."""
+    n = np.cross(b - a, c - a)
+    candidates = []
+    if float(n @ n) > 1.0e-30:
+        q = p - float((p - a) @ n) / float(n @ n) * n
+        if all(float(np.cross(v1 - v0, q - v0) @ n) >= 0.0 for v0, v1 in ((a, b), (b, c), (c, a))):
+            candidates.append(q)
+    for v0, v1 in ((a, b), (b, c), (c, a)):
+        seg = v1 - v0
+        t = float(np.clip((p - v0) @ seg / max(float(seg @ seg), 1.0e-30), 0.0, 1.0))
+        candidates.append(v0 + t * seg)
+    return min(candidates, key=lambda x: float(np.linalg.norm(p - x)))
+
+
+def separate_close_primitives(
+    vertices: np.ndarray, points: np.ndarray, edges: np.ndarray, triangles: np.ndarray, gap: float
+) -> np.ndarray | None:
+    """Push each pair of primitives the distance check reported apart to ``gap``.
+
+    The checker reports the offending primitives as ``points`` (copies of the rest
+    positions) with ``edges`` and ``triangles`` indexing them; each pair of reported edges (and each reported point against each
+    reported triangle) that sits closer than ``gap`` is opened along its closest-point
+    direction, half the shortfall on each side. This keeps the collision radius the
+    episode will use: shrinking the radius instead, the previous repair, let
+    tshirt_392 bake at 5 um, where the pair's slack froze the fabric and the "drape"
+    was the rest pose carried 0.15 m along the pull. Returns ``None`` when nothing in
+    the report can be paired.
+    """
+    verts = np.asarray(vertices, dtype=np.float64).copy()
+    lookup = {tuple(np.round(p, 6)): i for i, p in enumerate(verts)}
+    source = np.array([lookup.get(tuple(np.round(p, 6)), -1) for p in np.asarray(points).reshape(-1, 3)], dtype=np.int64)
+    edges = [tuple(int(i) for i in source[e]) for e in np.asarray(edges, dtype=np.int64).reshape(-1, 2) if (source[e] >= 0).all()]
+    tris = [tuple(int(i) for i in source[t]) for t in np.asarray(triangles, dtype=np.int64).reshape(-1, 3) if (source[t] >= 0).all()]
+    in_primitive = {i for prim in edges + tris for i in prim}
+    lone = [int(i) for i in source if i >= 0 and int(i) not in in_primitive]
+    moves: list[tuple[tuple[int, ...], np.ndarray]] = []
+
+    def push(side_a, side_b, pa, pb, fallback):
+        d = float(np.linalg.norm(pa - pb))
+        if d < gap:
+            direction = _unit(pa - pb, fallback) if d > 1.0e-12 else _unit(fallback, np.array([0.0, 0.0, 1.0]))
+            moves.append((side_a, direction * (gap - d) / 2.0))
+            moves.append((side_b, -direction * (gap - d) / 2.0))
+
+    for k, e in enumerate(edges):
+        for g in edges[k + 1 :]:
+            if not set(e) & set(g):
+                pa, pb = _closest_on_segments(verts[e[0]], verts[e[1]], verts[g[0]], verts[g[1]])
+                push(e, g, pa, pb, np.cross(verts[e[1]] - verts[e[0]], verts[g[1]] - verts[g[0]]))
+    for p in lone:
+        for t in tris:
+            if p not in t:
+                q = _closest_on_triangle(verts[p], *verts[list(t)])
+                push((p,), t, verts[p], q, np.cross(verts[t[1]] - verts[t[0]], verts[t[2]] - verts[t[0]]))
+    if not moves:
+        return None
+    for index, delta in moves:
+        verts[list(index)] += delta
+    return verts
+
+
+_BAKE_REVISION = 2
+"""Bumped whenever the rest-mesh repair changes what a bake produces, so stale drapes re-bake.
+Revision 2 separates crossing and close primitives instead of shrinking the collision radius."""
+
+
 def bake_key(garment: str, scale: float, cfg: BakeConfig) -> str:
     """Content hash over everything that changes the drape, for the on-disk cache."""
     payload = {"garment": garment, "scale": float(scale), "schedule": PULL_SCHEDULES[garment].__dict__, "cfg": cfg.to_dict()}
+    payload["revision"] = _BAKE_REVISION
     payload["cfg"].pop("workspace", None)
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 
@@ -352,6 +547,7 @@ def bake_drape(garment: str, *, scale: float | None = None, cfg: BakeConfig | No
     Logger.set_level(Logger.Level.Error)
     faces = np.asarray(faces, dtype=np.int32)
     dropped = 0
+    repaired: set[int] = set()
     thickness = float(cfg.cloth_thickness)
     for attempt in range(int(cfg.max_clean_rounds) + 1):
         world_dir = workspace / f"world_{garment}_{attempt}"
@@ -364,16 +560,29 @@ def bake_drape(garment: str, *, scale: float | None = None, cfg: BakeConfig | No
                 raise RuntimeError(
                     f"{garment}: the canonical rest mesh is still illegal after {attempt} repair rounds ({exc})"
                 ) from exc
+            dropped += 1
             if exc.kind == "self-intersecting":
                 # Separate the crossing layers instead of cutting them out; the
                 # cut leaves orphan vertices the volume check then rejects.
-                separation = cfg.separation_step_m * (2.0**attempt)
-                rest = separate_reported_vertices(rest, faces, exc.points, separation)
-                dropped += 1
+                untangled, moved = untangle_crossings(rest, faces, margin=cfg.separation_step_m)
+                if moved.size:
+                    rest = untangled
+                    repaired.update(moved.tolist())
+                else:
+                    # The CPU test sees no crossing where the checker does: fall back
+                    # to pushing the reported vertices along their own normals.
+                    rest = separate_reported_vertices(rest, faces, exc.points, cfg.separation_step_m * (2.0**attempt))
             else:
-                # Two parts of the garment merely pass close by. The collision
-                # radius is a modelling choice, so shrink it rather than cut the
-                # mesh; IPC stays penetration-free at any radius.
+                # Two parts of the garment merely pass close by. Open the reported
+                # pairs at the episode's collision radius; shrink the radius only if
+                # the report cannot be paired, since a sliver of slack freezes the bake.
+                separated = separate_close_primitives(
+                    rest, exc.points, exc.edges, exc.triangles, 2.0 * thickness + cfg.separation_step_m
+                )
+                if separated is not None:
+                    repaired.update(np.flatnonzero(np.any(separated != rest, axis=1)).tolist())
+                    rest = separated
+                    continue
                 if thickness <= cfg.min_bake_thickness:
                     raise RuntimeError(
                         f"{garment}: still too close at the minimum bake collision radius {thickness:g} m"
@@ -402,7 +611,12 @@ def bake_drape(garment: str, *, scale: float | None = None, cfg: BakeConfig | No
         opening_idx=opening_idx,
         picker_idx=picker_idx,
         alignment_idx=alignment_idx,
-        config=json.dumps({"garment": garment, "scale": scale, "seconds": seconds, "repair_rounds": dropped, **cfg.to_dict()}),
+        config=json.dumps(
+            {
+                "garment": garment, "scale": scale, "seconds": seconds, "repair_rounds": dropped,
+                "repaired_vertices": sorted(repaired), "bake_thickness": thickness, **cfg.to_dict(),
+            }
+        ),
     )
     return _drape_payload(garment, scale, drape, faces, grasp_idx, opening_idx, picker_idx, alignment_idx, cached, seconds)
 
@@ -415,10 +629,13 @@ class _RestIllegal(RuntimeError):
     within the summed collision radius only need a thinner radius.
     """
 
-    def __init__(self, points: np.ndarray, kind: str, summary: str) -> None:
+    def __init__(self, points: np.ndarray, kind: str, summary: str, edges=None, triangles=None) -> None:
         super().__init__(f"rest mesh is {kind}: {summary}")
         self.points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
         self.kind = kind
+        # Report-local indices into ``points``; empty when the report carried none.
+        self.edges = np.asarray(edges if edges is not None else [], dtype=np.int64).reshape(-1, 2)
+        self.triangles = np.asarray(triangles if triangles is not None else [], dtype=np.int64).reshape(-1, 3)
 
 
 def _build_bake_world(world_dir: Path, rest, faces, pin_idx, cfg: "BakeConfig", garment: str, *, thickness: float):
@@ -487,13 +704,16 @@ def _build_bake_world(world_dir: Path, rest, faces, pin_idx, cfg: "BakeConfig", 
             geometries = message.geometries()
             for key, kind in _REPORT_KINDS:
                 if key in geometries:
-                    points = np.asarray(uipc.view(geometries[key].positions()), dtype=np.float64).reshape(-1, 3)
-                    raise _RestIllegal(points, kind, str(message.message()).splitlines()[0])
+                    report = geometries[key]
+                    points = np.asarray(uipc.view(report.positions()), dtype=np.float64).reshape(-1, 3)
+                    edges = np.asarray(uipc.view(report.edges().topo()), dtype=np.int64).reshape(-1, 2)
+                    tris = np.asarray(uipc.view(report.triangles().topo()), dtype=np.int64).reshape(-1, 3)
+                    raise _RestIllegal(points, kind, str(message.message()).splitlines()[0], edges, tris)
         for _ in range(50):
             for key, kind in _REPORT_KINDS:
                 hits = sorted(Path(world_dir).glob(f"**/{key}.obj"))
                 if hits:
-                    raise _RestIllegal(_obj_vertices(hits[-1]), kind, f"see {hits[-1]}")
+                    raise _RestIllegal(_obj_vertices(hits[-1]), kind, f"see {hits[-1]}", *_obj_primitives(hits[-1]))
             time.sleep(0.1)
         raise RuntimeError(f"{garment}: the canonical rest mesh is not a valid libuipc scene")
     # Engine, world, scene and object must outlive this call or the backend expires.

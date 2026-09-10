@@ -69,7 +69,11 @@ class DressingConfig:
     clip_rotation_to_yz: bool = True
     no_move_collision_threshold: float = 0.012
     point_budget: int = 768
-    anchor_count: int = 12
+    anchor_count: int = 48
+    """Cuff vertices held by the picker: its own vertices plus the grasp-patch vertices
+    nearest it. On live cells with 48 the scripted expert gets the sleeve over the hand on
+    all eight tshirt_26 bodies, against one of eight with Newton's twelve, and a tenfold
+    stiffer hold does not substitute for the count; see the dressing-correctness record."""
     constraint_strength: float = 1.0e4
     """Soft position constraint strength of the anchored cuff vertices. Newton's FMVP preset pins
     its 12 picker-patch particles kinematically; a weak hold (3) let the 0.5 kg/m^2 garment fall.

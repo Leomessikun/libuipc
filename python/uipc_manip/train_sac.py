@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     heldout_axis.add_argument("--heldout-body-seeds", type=_int_list, default=None, help="dressing: comma-separated held-out bodies, instead of --heldout-bodies.")
     p.add_argument("--allow-partial-cell-coverage", action="store_true", help="dressing: run although a cell has no slot, a requested garment or body has no cell, or a round has fewer evaluation episodes than cells; smoke tests only.")
     p.add_argument("--garments", type=str, nargs="+", default=list(DEFAULT_GARMENTS), help="dressing: garments of the cell grid, each crossed with every body.")
-    p.add_argument("--anchor-count", type=int, default=12, help="dressing: cuff vertices held by the picker.")
+    p.add_argument("--anchor-count", type=int, default=48, help="dressing: cuff vertices held by the picker; 12 is Newton's patch, which lets the cuff slip off the hand on live cells.")
     p.add_argument("--cuff-strength", type=float, default=1.0e4, help="dressing: soft position constraint strength_rate of the held cuff; 100 lets the garment detach from the tool.")
     p.add_argument("--no-obs-augment", action="store_true", help="dressing: disable camera jitter and dropout.")
     p.add_argument("--cloth-shear-ratio", type=float, default=None, help="dressing: shear modulus as a fraction of the stretch modulus. libuipc's shear term carries no thickness factor, so the default shared modulus is about 3,300 times stiffer than stretch; 0.01 is what reproduces the reference drape.")

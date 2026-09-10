@@ -1466,6 +1466,17 @@ with a 3.0 mm grasp error. tshirt_68 and tshirt_392 do not yet build live, and
 the settle is a free fall because the episode pins twelve anchors where the
 bake pinned the grasp patch and the opening.
 
+Eleventh pass: live cells are dressable. A sixteen-cell expert check showed the
+tenth pass's placement was not: the opening sat 20 cm out on the fingertip-to-
+shoulder chord, one opening radius off the forearm, and the expert got the sleeve
+over the hand on one cell of sixteen. The live factory now puts the socket on the
+forearm axis at a per-cell clearance from an exact whole-arm check, all four
+garments build on bodies 0-7, and the anchor default is 48. Over 300 decisions
+the expert reaches the upper-arm threshold on five of eight tshirt_26 bodies and
+tshirt_4 reaches nothing; the other garments' ceilings follow in the correctness
+record, which also records why a stiffer grip and differentiable simulation were
+rejected.
+
 Seventh pass: the Wang RSS 2023 / FMVP simulation pipeline is ported around
 this encoder and solver: the garment curriculum gating replay writes, the
 decision-rate flag, FMVP's early-turn detector (bend-plane form), the
