@@ -21,6 +21,7 @@ an explicit tool point, and no termination before the time limit.
 from __future__ import annotations
 
 import math
+import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -208,7 +209,23 @@ class GenesisIPCDressingEnv:
         self.spec = ObsSpec(cfg.point_budget)
         self.obs_dim = self.spec.dim
         self.rngs = [np.random.default_rng(cfg.seed * 1000 + i) for i in range(self.num_envs)]
-        self._gs = _ensure_genesis(cfg.logging_level)
+        # Genesis must come up before this process does any CUDA matrix work: once cuBLAS is
+        # initialised, Quadrants cannot materialise its runtime and ``gs.init`` dies on a
+        # device-side assert reading "Out of CUDA pre-allocated memory", which a larger
+        # Quadrants pool does not cure. Generating a body runs SMPL-X on the GPU, so live cells
+        # are built only after this line and pre-flight numbers come from :meth:`clearances`.
+        torch_cuda_first = "torch" in sys.modules and sys.modules["torch"].cuda.is_initialized()
+        try:
+            self._gs = _ensure_genesis(cfg.logging_level)
+        except RuntimeError as exc:
+            if not torch_cuda_first:
+                raise
+            raise RuntimeError(
+                "Genesis failed to initialise after torch had already used CUDA in this process. If that "
+                "included matrix work, such as generating a body with LiveCellFactory or generate_body, "
+                "cuBLAS came up before Quadrants and its runtime cannot start: construct "
+                "GenesisIPCDressingEnv first and read spawn clearances from env.clearances()."
+            ) from exc
         self._torch = __import__("torch")
         self._uipc = __import__("uipc")
         self._device = self._gs.device
@@ -225,11 +242,12 @@ class GenesisIPCDressingEnv:
             plan = [(garments[i % len(garments)], int(cfg.human)) for i in range(self.num_envs)]
         if len(plan) != self.num_envs:
             raise ValueError(f"{len(plan)} cells for {self.num_envs} slots; every slot needs its own cell")
+        self.cell_factory = None
         if cfg.cell_source == "live":
             from .dressing_live import LiveCellFactory
 
-            factory = LiveCellFactory(cfg.live)
-            self.cells: list[DressingCell] = [factory.build(g, b) for g, b in plan]
+            self.cell_factory = LiveCellFactory(cfg.live)
+            self.cells: list[DressingCell] = [self.cell_factory.build(g, b) for g, b in plan]
         elif cfg.cell_source == "cache":
             self.cells = [self.cache.load(g, b) for g, b in plan]
         else:
@@ -621,6 +639,17 @@ class GenesisIPCDressingEnv:
             "snapshot_tracking_error_m": float(self.snapshot_tracking_error),
             "grasp_tracking_tolerance_m": float(self.grasp_tracking_tolerance_m),
         }
+
+    def clearances(self) -> list[dict[str, float]]:
+        """Each slot's smallest spawn distances, garment to arm and opening to fingertip [m].
+
+        These are the pre-flight's numbers, measured after Genesis is up. Asking a
+        ``LiveCellFactory`` for them before the environment exists generates the bodies on
+        the GPU first, and ``gs.init`` then fails (see ``__init__``).
+        """
+        if self.cell_factory is None:
+            raise ValueError("Spawn clearances are measured for live cells; this world reads the Newton cache")
+        return [self.cell_factory.clearances(cell.garment, cell.human) for cell in self.cells]
 
     def close(self) -> None:
         self.scene = None

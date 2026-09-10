@@ -669,4 +669,39 @@ current settings rather than inherited, and a garment the expert cannot dress
 does not belong in the training world until it can. The one-policy record's
 pre-flight sweep is where that measurement belongs.
 
+## A device assert that was an initialisation order, not physics
+
+The sixteen-cell live world of tshirt_26 and tshirt_4 on bodies 0 to 7 died at
+construction with a CUDA device-side assert, which read like libuipc's
+thickness assert and was first blamed on the settle. A delegated pass showed
+it is neither. It is Genesis's Quadrants runtime asserting "Out of CUDA
+pre-allocated memory" inside `gs.init`, before any libuipc world exists, and it
+fires whenever cuBLAS has already started in the process. Generating a body
+with SMPL-X on the GPU starts cuBLAS, and the pre-flight script asked the cell
+factory for spawn clearances before constructing the environment, so it
+generated bodies first:
+
+| Done before `gs.init` in a fresh process | Result |
+|---|---|
+| nothing, a CUDA tensor, SMPL-X construction, a CPU body | initialises |
+| one CUDA matrix product, or a GPU body | asserts |
+| Genesis first, then a GPU body | initialises |
+
+A larger Quadrants pool does not cure it. The environment now detects the
+order and says so, keeps its cell factory, and exposes `clearances()` so a
+pre-flight reads spawn distances after Genesis is up. The settle count was
+irrelevant: the crash reproduces identically at five steps.
+
+Constructed in the right order, the world meets the target: 7.4 s to build,
+1.32 s per decision over 30 expert decisions at six simulation steps each, a
+largest held-vertex error of 3.0 mm, no simulation errors. Subscene isolation
+holds: copies overlap in about a 36 cm cube and come within 0.42 mm of each
+other without interacting.
+
+The same pass found a separate problem worth fixing: the settle is a free fall.
+The drape bake holds the grasp patch and the six opening vertices, while the
+episode holds only twelve anchors, so after placement the garment drops 0.17 m
+in ten settle steps and 0.47 to 0.88 m in thirty. It never triggers an assert,
+but it means the episode does not start from the drape that was baked.
+
 GPU grasp and reachability measurements are recorded below after completion.
