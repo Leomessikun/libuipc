@@ -1,6 +1,6 @@
 # 2026-09-10 — Dressing time step: dt 1/30 x 3 against dt 1/60 x 6
 
-- Status: Proposed. The default stays dt 1/60 until the checks under Decision are done.
+- Status: Accepted for pretraining (`pretrain_wang --dt 1/30`) once the merged garment placements pass at dt 1/30. The trainer default stays 1/60.
 - Code under test: `0b9ccfc9`, from a detached worktree. The `--dt` flag landed later in `fb38b326`.
 - Benchmark manifest: none. These are expert-ceiling probes on the dressing environment.
 
@@ -100,6 +100,34 @@ Mechanism probes on tshirt_68 bodies 1, 4 and 7, the cells A fails:
 | B, `contact/eps_velocity` 0.005 (A's friction transition displacement) | 3/3 | 1/3 |
 | B, 2 s settle (60 steps) | 3/3 | 1/3; one cell lost the grip late, 315 mm |
 
+### Production wall clock, 16 cells
+
+The production-mode pair used graph mode 2 and no timers. Each variant ran one world of
+tshirt_26 and tshirt_68 on bodies 0-7, 16 cells. Both built first, then started their
+first decision at the same second, so they shared one contention window until
+dt 1/30 finished.
+
+| Window | A s per decision | B s per decision | A / B |
+|---|---:|---:|---:|
+| Decisions 0-137, both running | 5.20 | 2.45 | 2.13 |
+| Whole episode; A ran its last 162 decisions alone | 3.82 | 2.44 | 1.56, a lower bound |
+
+The ceilings in that shared world:
+
+| Variant | Forearm reached | Upper arm >= 0.7 | Hold error median |
+|---|---|---|---|
+| A | 14/16 | 9/16 | 31 mm |
+| B | 16/16 | 8/16 | 35 mm |
+
+### The swing hypothesis, tested
+
+The garment agent re-rolled tshirt_68 to its baked hang (commit `30441b28`). That cuts its
+settle displacement to 0.258 m. It also brings bodies 1, 4 and 7 onto the forearm at
+dt 1/60, giving forearm 8/8 and upper arm >= 0.7 on 5/8 over bodies 0-7.
+
+So the start-state swing accounts for most of B's ceiling advantage on tshirt_68. The
+speed gain does not depend on it.
+
 ## Interpretation
 
 Measured directly:
@@ -125,14 +153,17 @@ contention.
 
 ## Decision
 
-Proposed and not yet adopted. `--dt` exists in the trainer (`fb38b326`), and
+B is adopted for pretraining, and A remains the trainer default for existing runs.
 `pretrain_wang --dt 1/30` fills in 3 steps, cuff strength 4e4 and settle 15.
 
-The default stays 1/60 until three checks are done:
+Two of the three checks this record set are done:
+- The production wall-clock pair gives 2.13 times over the shared window. The
+  non-solver share of a decision keeps this below the 2.3 times PCG ratio.
+- The swing hypothesis holds, as the section above shows.
 
-1. A concurrent production-mode (graph mode 2) wall-clock pair at 16-32 cells on a quiet GPU. The expected gain is below the 2.3 times PCG ratio, because the environment's non-solver share does not shrink.
-2. The garment fixes are re-validated under B.
-3. The swing hypothesis is tested. If re-rolling tshirt_68 to its baked hang fixes it under A, B's ceiling advantage shrinks to the speed gain alone.
+The third check is running: re-validating the merged garment placements at dt 1/30
+(`06b49176`: gown and tshirt_68 in their baked hang, tshirt_4 and tshirt_392 sleeve
+outward) on bodies 0-7 of all five garments.
 
 ## Reproduction and artifacts
 
@@ -148,4 +179,8 @@ python expert_dt.py tshirt_68 --bodies 0,1,2,3,4,5,6,7 --dt 0.03333333333333333 
     --settle-steps 15 --strength 4e4 --graph 2 --tag dt30s4_t68
 python expert_dt.py tshirt_68 --bodies 1,4,7 --graph 2 --eps-velocity 0.02 --tag dt60e2_t68
 python expert_dt.py tshirt_68 --bodies 1,4,7 --graph 2 --settle-steps 120 --tag dt60s120_t68
+T0=$(( $(date +%s) + 420 ))   # production pair: both start their first decision together
+python expert_dt.py tshirt_26,tshirt_68 --bodies 0,1,2,3,4,5,6,7 --graph 2 --start-at $T0 --tag wall_dt60_n16 &
+python expert_dt.py tshirt_26,tshirt_68 --bodies 0,1,2,3,4,5,6,7 --dt 0.03333333333333333 --repeat 3 \
+    --settle-steps 15 --strength 4e4 --graph 2 --start-at $T0 --tag wall_dt30_n16 &
 ```
