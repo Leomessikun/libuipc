@@ -805,9 +805,14 @@ Three bodies succeed, against none at 150 decisions. The expert reaches the
 fingertip at decision 40 to 51 and starts its last pull at 133 to 225, so a
 150-decision episode ends it mid-pull; the 20 cm approach alone costs about 45
 decisions. Body 3 read 1.000 at decision 200 and 0 from decision 225, after the
-expert had finished at 212 with the cuff still held; that reading is not yet
-explained. The four bodies that fail are the four whose grip slips by 29 to 49
-mm. The episode length for training is to be set from the expert ceiling on the
+expert had finished at 212 with the cuff still held. The progress metric casts
+its upper-arm ray from the shoulder toward the elbow and keeps only hits in
+front of the origin (`line_triangles`, `t >= 0`, as Newton's `_line_triangles`),
+and the expert's last target overshoots the shoulder by 10 cm, so an opening
+pushed past the shoulder is invisible and both ratios read 0. The expert's
+ceiling is therefore its highest reading, not its last: four of eight bodies
+reach the upper-arm threshold within 300 decisions (2, 3, 5, 7). The four that
+fail are the four whose grip slips by 29 to 49 mm. The episode length for training is to be set from the expert ceiling on the
 final placement, which shortens the approach.
 
 ## Differentiable simulation: neither library provides a usable gradient here
