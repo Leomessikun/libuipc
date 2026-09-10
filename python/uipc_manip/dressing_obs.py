@@ -456,8 +456,11 @@ class RigInputs:
             marks = cell.landmarks
             if "left_shoulder" in marks and "right_shoulder" in marks:
                 lateral.append(np.asarray(marks["right_shoulder"], dtype=np.float64) - np.asarray(marks["left_shoulder"], dtype=np.float64))
+            elif "right_hip" in marks and "pelvis" in marks:
+                # Live bodies carry only the right-side joints; the hip stays put whatever the arm does.
+                lateral.append(np.asarray(marks["right_hip"], dtype=np.float64) - np.asarray(marks["pelvis"], dtype=np.float64))
             else:
-                # A cache cell without both shoulders: from the body's centre toward the right shoulder.
+                # From the body's centre toward the right shoulder.
                 lateral.append(np.asarray(cell.shoulder, dtype=np.float64) - np.asarray(cell.human_points, dtype=np.float64).mean(axis=0))
         return cls(
             elbows=np.stack([np.asarray(cell.elbow, dtype=np.float64) for cell in cells]),

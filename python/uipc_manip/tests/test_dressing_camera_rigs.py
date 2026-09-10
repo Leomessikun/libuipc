@@ -208,3 +208,12 @@ def test_rig_inputs_from_cells_read_shoulders_floor_and_grip():
     assert rig.floors[0] == pytest.approx(0.05)
     np.testing.assert_allclose(rig.tool_rotations[0], quarter, atol=1e-9)
     np.testing.assert_allclose(rig.elbows[0], elbow)
+
+
+def test_rig_inputs_fall_back_to_the_hips_without_a_left_shoulder():
+    finger, elbow, shoulder, lateral = _arm_scene(0.7)
+    pelvis = np.array([0.0, 0.0, 0.9])
+    cell = SimpleNamespace(elbow=elbow, shoulder=shoulder, human_points=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 1.7]]),
+                           landmarks={"right_shoulder": shoulder, "pelvis": pelvis, "right_hip": pelvis + 0.2 * lateral})
+    rig = RigInputs.from_cells([cell], [finger], [np.eye(3)], [np.eye(3)])
+    np.testing.assert_allclose(rig.lateral[0], 0.2 * lateral)
