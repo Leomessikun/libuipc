@@ -44,8 +44,10 @@ carry residual self-intersections from the bake and libuipc refuses them; ``tshi
 one such cell at bodies 0 and 2 although the cache advertises it, so a default that named
 it crashed at construction. The live cell path has no such failure: it spawns the garment
 outside the arm, so :class:`~uipc_manip.dressing_live.LiveCellFactory` offers all five."""
-"""Garments trained by default. The hospital gown has 10,437 vertices and the Newton notes record it
-as unusable at the reference solver budget, so it is opt-in."""
+"""Garments trained by default. The hospital gown (10,437 vertices) stays opt-in: the Newton notes
+record it as unusable at the reference solver budget, and on live cells it is dressable only
+because it starts in its baked hang (``LiveCellConfig.hang_as_baked_garments``); see the
+dressing-correctness record."""
 
 
 @dataclass

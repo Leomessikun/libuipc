@@ -1,0 +1,151 @@
+# 2026-09-10 — Dressing time step: dt 1/30 x 3 against dt 1/60 x 6
+
+- Status: Proposed. The default stays dt 1/60 until the checks under Decision are done.
+- Code under test: `0b9ccfc9`, from a detached worktree. The `--dt` flag landed later in `fb38b326`.
+- Benchmark manifest: none. These are expert-ceiling probes on the dressing environment.
+
+## Question
+
+A policy decision lasts 0.1 s. The environment spends it as six libuipc steps of 1/60 s.
+The IPC solve is 98 % of an environment step, and fused PCG is 78 % of a frame.
+
+Would three steps of 1/30 s do the same task for less solver work? The task must stay
+the same: same expert ceilings and the same grip.
+
+The held cuff is a soft position constraint whose physical stiffness is
+strength x mass / dt^2. So the dt 1/30 variant runs strength 4e4 against 1e4, the same
+spring, and half the settle steps, the same 0.5 s.
+
+## Environment
+
+| Field | Value |
+|---|---|
+| GPU / driver | RTX PRO 6000 Blackwell Workstation Edition, 595.84 |
+| Software | torch 2.12.0+cu130, Genesis 1.1.2, Linux 7.0.0-30 |
+| Build | libuipc wheel of this branch, Release |
+| Worktree state | clean detached worktree at `0b9ccfc9` |
+| GPU sharing | four agents and 11-18 other processes at 100 % utilisation, so wall time is not a primary signal |
+
+## Workload and method
+
+`expert_dt.py` (session scratchpad `perf/`) runs the scripted seven-stage expert on live
+cells. The settings are 48 anchors and 300 decisions of 0.1 s. Each run reports, per
+cell, the highest forearm ratio, the highest upper-arm ratio and the largest held-cuff
+error over the episode.
+
+Solver work is counted exactly. With linear-system graph mode 0, libuipc's host stage
+timers see every scope. That gives Newton iterations (`Newton Iteration`) and PCG
+iterations (`Apply Preconditioner`) per decision. Graph mode 0 launches the same kernels
+as training's mode 2, so the ceilings are those of training. Ceiling-only runs use
+mode 2.
+
+The variants:
+
+| Variant | dt | Steps per decision | Cuff strength | Settle steps |
+|---|---|---|---|---|
+| A (default) | 1/60 | 6 | 1e4 | 30 |
+| B | 1/30 | 3 | 4e4 | 15 |
+
+## Correctness and safety
+
+- No simulation error in any run.
+- Every snapshot hold error after the settle was 0.8-1.2 mm.
+- The comparison is per cell: identical bodies, drapes and expert.
+
+## Results
+
+Solver work on tshirt_26, bodies 0-3, exact counts over 300 decisions:
+
+| Metric | A | B | B / A |
+|---|---:|---:|---:|
+| Newton iterations per decision | 18.2 | 9.3 | 0.51 |
+| PCG iterations per decision | 1051 | 457 | 0.43 |
+| PCG iterations per Newton iteration | 57.7 | 49.1 | 0.85 |
+
+The same counts per 50-decision window:
+
+| Decisions | A Newton | A PCG | B Newton | B PCG |
+|---|---:|---:|---:|---:|
+| 0-49 | 15.0 | 614 | 8.0 | 213 |
+| 50-99 | 19.3 | 1050 | 11.3 | 592 |
+| 100-149 | 22.9 | 1199 | 14.5 | 603 |
+| 150-199 | 20.4 | 1163 | 13.3 | 801 |
+| 200-249 | 22.3 | 1708 | 5.0 | 313 |
+| 250-299 | 9.3 | 572 | 3.6 | 221 |
+
+Expert ceilings, same cells:
+
+| Cells | A forearm | A upper >= 0.7 | B forearm | B upper >= 0.7 | Hold error median, A / B |
+|---|---|---|---|---|---|
+| tshirt_26 bodies 0-3 | 4/4 | 3/4 | 4/4 | 3/4 | 14 / 18 mm |
+| tshirt_26 bodies 4-7 | 4/4 | 2/4 | 4/4 | 3/4 | 24 / 30 mm |
+| tshirt_68 bodies 0-7 | 5/8 | 3/8 | 8/8 | 6/8 | 37 / 42 mm |
+| All 16 cells | 13/16 | 8/16 | 16/16 | 12/16 | |
+
+In detail:
+- A's failures reproduce the dressing-correctness record exactly: tshirt_68 bodies 1, 4 and 7 never reach the forearm.
+- B reaches the forearm on all three, and the upper arm on all three.
+- On tshirt_26 body 6, A hooks at the elbow and B dresses.
+- No cell dresses under A and fails under B.
+- On cells that dress, B's hold error is larger: 6.7-11 mm against 3.2-9.5 mm on tshirt_26 bodies 0, 2 and 3.
+
+Mechanism probes on tshirt_68 bodies 1, 4 and 7, the cells A fails:
+
+| Variant | Forearm | Upper >= 0.7 |
+|---|---|---|
+| A | 0/3 | 0/3 |
+| A, `contact/eps_velocity` 0.02 (B's friction transition displacement) | 0/3 at decision 100, then stopped | 0/3 |
+| A, 2 s settle (120 steps) | 1/3 | 1/3 |
+| B | 3/3 | 3/3 |
+| B, `contact/eps_velocity` 0.005 (A's friction transition displacement) | 3/3 | 1/3 |
+| B, 2 s settle (60 steps) | 3/3 | 1/3; one cell lost the grip late, 315 mm |
+
+## Interpretation
+
+Measured directly:
+- B halves the Newton iterations per decision and cuts PCG iterations 2.3 times, over a whole episode.
+- The two differ in Newton and PCG counts, so this is an algorithmic-path change, not a throughput gain on the same path.
+- Reaching the forearm is robustly better under B. Over three variants each on the cells A fails, B reaches it 9/9 and A 1/9.
+
+Ruled out:
+- IPC's friction smoothing does not explain it. Swapping `eps_velocity` so that each variant gets the other's transition displacement leaves the forearm result unchanged in both directions.
+- A longer settle rescues one of the three cells under A.
+
+Inferred, not tested:
+- A's failing cells lose the grip early: 40-49 mm by decision 100, against 12-21 mm under B.
+- The gown record in the dressing-correctness record found that the live placement's socket roll can start a garment far from its hang, still swinging when the expert starts.
+- Implicit Euler at the larger step damps that swing sooner, which would explain both the forearm gain and the partial effect of a longer settle.
+
+The elbow stage is sensitive to initial conditions under both time steps. Across B's
+variants, upper >= 0.7 on these cells ranges from 1/3 to 3/3.
+
+Wall time is indicative only. The paired ceiling runs gave 1.98 against 5.01 s per
+decision for B and A on four cells, but they overlapped only partly, under different
+contention.
+
+## Decision
+
+Proposed and not yet adopted. `--dt` exists in the trainer (`fb38b326`), and
+`pretrain_wang --dt 1/30` fills in 3 steps, cuff strength 4e4 and settle 15.
+
+The default stays 1/60 until three checks are done:
+
+1. A concurrent production-mode (graph mode 2) wall-clock pair at 16-32 cells on a quiet GPU. The expected gain is below the 2.3 times PCG ratio, because the environment's non-solver share does not shrink.
+2. The garment fixes are re-validated under B.
+3. The swing hypothesis is tested. If re-rolling tshirt_68 to its baked hang fixes it under A, B's ceiling advantage shrinks to the speed gain alone.
+
+## Reproduction and artifacts
+
+From the session scratchpad `perf/`, with `PYTHONPATH=<worktree>/python`. Results are
+written to `expert_dt_<tag>.json` and summarised by `compare_dt.py <tags>`.
+
+```bash
+python expert_dt.py tshirt_26 --bodies 0,1,2,3 --tag dt60                      # A, graph 0, counts
+python expert_dt.py tshirt_26 --bodies 0,1,2,3 --dt 0.03333333333333333 --repeat 3 \
+    --settle-steps 15 --strength 4e4 --tag dt30s4                              # B, graph 0, counts
+python expert_dt.py tshirt_68 --bodies 0,1,2,3,4,5,6,7 --graph 2 --tag dt60_t68
+python expert_dt.py tshirt_68 --bodies 0,1,2,3,4,5,6,7 --dt 0.03333333333333333 --repeat 3 \
+    --settle-steps 15 --strength 4e4 --graph 2 --tag dt30s4_t68
+python expert_dt.py tshirt_68 --bodies 1,4,7 --graph 2 --eps-velocity 0.02 --tag dt60e2_t68
+python expert_dt.py tshirt_68 --bodies 1,4,7 --graph 2 --settle-steps 120 --tag dt60s120_t68
+```
