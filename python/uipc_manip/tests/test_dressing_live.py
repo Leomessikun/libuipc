@@ -184,3 +184,25 @@ def test_body_pose_seats_the_body_and_randomises_only_the_right_arm():
     other = sample_body_pose(np.random.default_rng(1), "dressing")
     differing = set(np.flatnonzero(~np.isclose(seated, other)).tolist())
     assert differing <= {48, 50, 54, 55, 56}
+
+
+def test_region_bodies_sample_inside_their_wang_region_and_plain_ids_keep_their_pose():
+    from uipc_manip.dressing_body import _POSE, body_parameters, pose_region, region_intervals
+
+    def arm_angles(seed):
+        pose = body_parameters(seed)[3]
+        return np.rad2deg([pose[_POSE["right_shoulder"] + 2], pose[_POSE["right_elbow"] + 1], pose[_POSE["right_elbow"] + 2]])
+
+    # Body 0 of the runs made before regions existed keeps its arm.
+    assert pose_region(0) is None and pose_region(999) is None
+    np.testing.assert_allclose(arm_angles(0), [20.8, 70.1, 22.9], atol=0.05)
+    for region in (0, 13, 26):
+        bounds = region_intervals(region)
+        for k in range(25):
+            seed = 1000 * (region + 1) + k
+            assert pose_region(seed) == region
+            assert all(lo <= a <= hi for a, (lo, hi) in zip(arm_angles(seed), bounds, strict=True))
+    assert region_intervals(13) == ((-8.0, 18.0), (82.0, 98.0), (-3.0, 14.0))
+    with pytest.raises(ValueError):
+        pose_region(28_000)
+

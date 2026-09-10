@@ -52,6 +52,40 @@ REWARD_LINE_UPPER = (7462, 7039, 5995)
 REWARD_LINE_LOWER = (7497, 7260, 7176)
 _RIGHT_HAND_JOINTS = (40, 55)
 
+POSE_REGION_EDGES = {
+    "shoulder_z": (-20.0, -8.0, 18.0, 30.0),
+    "elbow_y": (70.0, 82.0, 98.0, 110.0),
+    "elbow_z": (-20.0, -3.0, 14.0, 30.0),
+}
+"""Wang RSS 2023's split of the right-arm pose range into 27 regions (Appendix B.3), in
+degrees: each of the three randomised angles is cut into three intervals. ``elbow_y`` is
+Wang's inwards-outwards elbow angle, offset by the 90 degrees this seated pose holds the
+forearm at. Region ``9 i + 3 j + k`` takes interval ``i`` of the shoulder, ``j`` of
+``elbow_y`` and ``k`` of ``elbow_z``; Wang's own region numbering is not recorded."""
+
+REGION_BODY_BASE = 1000
+"""Body ids from ``1000 (r + 1)`` to ``1000 (r + 1) + 999`` sample their arm pose inside region
+``r``; smaller ids sample the whole range, so the ids used before regions existed keep their bodies."""
+
+
+def pose_region(seed: int) -> int | None:
+    """The Wang arm-pose region a body id asks for, or None for the whole range."""
+    seed = int(seed)
+    if seed < REGION_BODY_BASE:
+        return None
+    region = seed // REGION_BODY_BASE - 1
+    if not 0 <= region < 27:
+        raise ValueError(f"Body id {seed} names region {region}; region ids run from 0 to 26")
+    return region
+
+
+def region_intervals(region: int) -> tuple[tuple[float, float], ...]:
+    """``(shoulder_z, elbow_y, elbow_z)`` intervals of one region, in degrees."""
+    if not 0 <= int(region) < 27:
+        raise ValueError(f"Region {region} is outside 0-26")
+    picks = (int(region) // 9, int(region) // 3 % 3, int(region) % 3)
+    return tuple((edges[i], edges[i + 1]) for edges, i in zip(POSE_REGION_EDGES.values(), picks, strict=True))
+
 
 @dataclass(frozen=True)
 class BodyConfig:
@@ -109,8 +143,8 @@ class Body:
         return self.landmarks["right_shoulder"]
 
 
-def sample_body_pose(rng: np.random.Generator, mode: str) -> np.ndarray:
-    """The seated, right-arm-forward dressing pose of ``gen_human_mesh.py``."""
+def sample_body_pose(rng: np.random.Generator, mode: str, region: int | None = None) -> np.ndarray:
+    """The seated, right-arm-forward dressing pose of ``gen_human_mesh.py``, optionally inside one region."""
     pose = np.zeros(SMPLX_BODY_JOINTS * 3, dtype=np.float32)
     mode = str(mode).lower()
     if mode in {"", "none", "rest", "zero"}:
@@ -129,6 +163,9 @@ def sample_body_pose(rng: np.random.Generator, mode: str) -> np.ndarray:
         shoulder_z, elbow_y, elbow_z = (-10.0, 10.0), (80.0, 100.0), (-10.0, 10.0)
     else:
         shoulder_z, elbow_y, elbow_z = (-20.0, 30.0), (70.0, 110.0), (-20.0, 30.0)
+    if region is not None:
+        # Same three draws in the same order, so only the intervals change.
+        shoulder_z, elbow_y, elbow_z = region_intervals(region)
     set_deg("right_shoulder", 2, rng.uniform(*shoulder_z))
     set_deg("right_elbow", 1, rng.uniform(*elbow_y))
     set_deg("right_elbow", 2, rng.uniform(*elbow_z))
@@ -229,20 +266,31 @@ def _reward_line_landmarks(vertices: np.ndarray, joints: np.ndarray) -> dict[str
     }
 
 
-def generate_body(seed: int, cfg: BodyConfig | None = None) -> Body:
-    """Sample one SMPL-X dressing body, upright in the +Z-up simulation frame."""
-    import torch
+def body_parameters(seed: int, cfg: BodyConfig | None = None):
+    """``(rng, gender, betas, pose)`` for a body id, drawn in :func:`generate_body`'s order.
 
+    The generator is returned part way through, because the body's height is drawn from
+    it later.
+    """
     cfg = cfg or BodyConfig()
     rng = np.random.default_rng(int(seed))
     gender = cfg.gender
     if gender == "random":
         gender = str(rng.choice(["male", "female"]))
+    betas = rng.uniform(*cfg.beta_range, size=cfg.num_betas).astype(np.float32)
+    pose = sample_body_pose(rng, cfg.pose_mode, pose_region(seed))
+    return rng, gender, betas, pose
+
+
+def generate_body(seed: int, cfg: BodyConfig | None = None) -> Body:
+    """Sample one SMPL-X dressing body, upright in the +Z-up simulation frame."""
+    import torch
+
+    cfg = cfg or BodyConfig()
+    rng, gender, betas, pose = body_parameters(seed, cfg)
     model = _model(str(cfg.model_dir), gender, cfg.num_betas)
     device = cfg.device if (cfg.device.startswith("cuda") and torch.cuda.is_available()) else "cpu"
     model = model.to(device)
-    betas = rng.uniform(*cfg.beta_range, size=cfg.num_betas).astype(np.float32)
-    pose = sample_body_pose(rng, cfg.pose_mode)
     hand = np.full(6, float(cfg.hand_pca), dtype=np.float32)
 
     # SMPL-X is +Y up; a +90 degree turn about X sends +Y to +Z, as the reference does.

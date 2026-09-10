@@ -29,6 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from .dressing_assets import DressingCache, DressingCacheConfig, DressingCell, erode_arm_mesh, write_obj
+from .dressing_body import pose_region
 from .dressing_obs import BatchedDressingObservationBuilder, DressingObsConfig, DressingObservationBuilder, sample_segmented_cloud
 from .dressing_privileged import PRIVILEGED_DIM, privileged_state
 from .dressing_reward import early_turn, WangRewardConfig, opening_threaded, wang_progress
@@ -665,6 +666,7 @@ class GenesisIPCDressingEnv:
             "cell": cell.name,
             "garment": cell.garment,
             "human": cell.human,
+            "pose_region": pose_region(cell.human),
             "vertex_count": int(cell.cloth.shape[0]),
             "anchor_vertices": self._pickers[slot]["anchor_idx"].tolist(),
             "obs_dim": self.spec.dim,

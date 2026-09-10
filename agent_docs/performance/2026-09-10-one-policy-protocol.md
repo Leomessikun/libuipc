@@ -480,3 +480,58 @@ Secondary, and the strongest available generalization evidence, from a separate
   evaluations (PIPELINE.md:210-218). If this run reproduces that split, the
   correct next step is regional teachers plus distillation, not a longer joint
   run; `--regional-body` exists for exactly that.
+
+## 5. Switch to Wang's regional teachers and distillation (2026-09-10, evening)
+
+The joint run of section 4 is stopped before its budget. It is the design Wang
+reports as the weak baseline: a single policy trained directly across the pose
+range reaches an upper-arm ratio of 0.34 against 0.68 for regional teachers
+distilled with the Earth Mover's loss (Wang RSS 2023, Table II), and Newton's
+joint teacher over eight bodies split into four that learned and four at zero.
+Mapped onto Wang's 27 arm-pose regions (`dressing_body.POSE_REGION_EDGES`), the
+six training bodies are single poses in five regions (10, 12, 13, 20, 22, with
+region 10 twice), and held-out bodies 6 and 7 sit in regions 6 and 9, which have
+no training pose, so the run could not test generalisation even if it learned.
+The privileged-critic variant was stopped at step 580 without a checkpoint. The
+point-critic baseline is kept to its step-1000 checkpoint, evaluation and replay
+snapshot, a resumable no-distillation control for a later Table-II comparison.
+
+Body ids now carry a region. An id of `1000 (r + 1) + k` samples its arm pose
+uniformly inside region `r`, whose three angle intervals are Wang's Appendix B.3
+table. Ids below 1000 sample the whole range with the same draws as before, so
+bodies 0 to 7 are unchanged. `env.json` records each slot's `pose_region`, which a
+student uses to pick the teacher for a slot.
+
+The plan, scaled to one GPU:
+
+1. Pilot region 13, the middle interval of all three angles. Screen 24 candidate
+   bodies with the scripted expert on both usable garments and keep bodies where
+   both reach the forearm: 12 training and 2 held-out, 28 cells, one slot each.
+   This screen is the one deliberate deviation from Wang. It removes placement
+   defects such as tshirt_68 on bodies 1, 4 and 7, not hard poses, and the
+   per-cell expert ceilings are recorded so the teacher's scores can be read
+   against them.
+2. Teacher 1 on those cells with Wang's point critic, horizon 300 with six steps
+   per decision, 600,000 transitions, evaluation every 1000 steps. Read the
+   per-cell curve at 300,000 and stop early if it is flat. No RL policy has yet
+   dressed a live cell in this port, so a narrow-region teacher is the cleanest
+   test that the task is learnable here.
+3. Further regions one after another, since two runs on the GPU do no more work
+   than one after the other. At about 8 to 9 transitions per second a 600,000
+   teacher takes about 20 h, so 27 regions are out of reach. Three to five regions
+   is the realistic scope, and choosing them is the user's call.
+4. The student: Wang's SAC with the teacher loss of `SAC_AWAC.py:1025-1036`. That
+   loss is the sum over the batch and the action dimensions of the squared mean
+   difference plus the squared difference of the square-rooted standard
+   deviations, at the tool point, with the teacher fed the student's own
+   observation. The paper states a weight of 0.01 and the launcher in the
+   reference checkout 0.002; the student launcher is not in the checkout, so
+   the weight stays a flag. Wang keeps one entropy temperature per region and
+   draws each update's batch from one region's replay. FMVP's
+   behaviour-cloning route (`collect_rollouts.py`, `distill.py`) is the fallback.
+
+A known gap remains: Wang draws a new pose every episode, while a slot here keeps
+its cell for the life of the world. A student therefore sees 28 divided by the
+number of regions poses per region, and rebuilding the world on a rotation is
+left for later.
+
