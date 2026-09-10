@@ -60,16 +60,20 @@ def test_placement_puts_the_opening_outside_the_fingertip_on_the_arm_axis():
     finger = np.array([0.0, 0.0, 1.0])
     shoulder = np.array([0.5, 0.1, 1.0])
     clearance = 0.1
-    target = build_target_socket_frame(finger, shoulder, clearance=clearance)
     arm_axis = (shoulder - finger) / np.linalg.norm(shoulder - finger)
-    assert np.allclose(target[:3, 2], arm_axis)
+    # Pre-worn placement lays the sleeve along the arm; pre-insertion turns it outward.
+    worn = build_target_socket_frame(finger, shoulder, clearance=clearance, pre_insertion=False)
+    assert np.allclose(worn[:3, 2], arm_axis)
+    target = build_target_socket_frame(finger, shoulder, clearance=clearance)
+    assert np.allclose(target[:3, 2], -arm_axis)
     assert np.allclose(target[:3, 3], finger - arm_axis * clearance)
+    assert np.allclose(worn[:3, 3], target[:3, 3])
     # A canonical opening maps onto that frame, so its centre lands there.
     centre = np.array([0.116, -0.492, 0.896])
     axis = np.array([0.997, 0.042, 0.061])
     axis = axis / np.linalg.norm(axis)
     source = socket_frame(centre, axis, _ring(centre, axis, 0.099))
-    transform = canonical_to_world_transform(source, finger, shoulder, clearance=clearance)
+    transform = canonical_to_world_transform(source, finger, shoulder, clearance=clearance, pre_insertion=False)
     assert np.allclose(apply_transform(centre[None, :], transform)[0], target[:3, 3])
     # The rigid map preserves the opening radius.
     ring_world = apply_transform(_ring(centre, axis, 0.099), transform)
