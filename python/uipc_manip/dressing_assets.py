@@ -24,7 +24,9 @@ DEFAULT_CACHE = Path("/home/ge47gax/kun/ppf-contact-solver/tools/dressing_bake/o
 DEFAULT_SEMANTICS_DIR = Path(
     "/home/ge47gax/kun/newton-fmvp/exts/newton_isaaclab_tasks/newton_isaaclab_tasks/dressing/data/canonical_drape"
 )
-DEFAULT_GARMENTS = ("tshirt_26", "tshirt_392", "tshirt_68", "hospital_gown")
+CACHED_GARMENTS = ("tshirt_26", "tshirt_392", "tshirt_68", "hospital_gown")
+"""Every garment the bake cache carries. Not all of them build for every body; the
+environment's ``DEFAULT_GARMENTS`` is the subset that does."""
 
 
 @dataclass

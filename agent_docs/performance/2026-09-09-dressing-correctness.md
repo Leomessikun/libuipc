@@ -581,4 +581,56 @@ reference's own 33 evaluated runs peak at one success in 40 episodes after
 2.98M transitions. Speed per transition and value per transition are separate
 axes and this port is now close on the first and ahead on the second.
 
+## The remaining speed levers, measured
+
+A third pass swept what the earlier ones had left. Its headline is not a solver
+knob: on the strict 100-decision expert protocol the corrected cloth wins on
+every axis at once against the historical stiffness, 116 to 118 ms per
+simulation step against 168 to 188, a forearm ratio of 0.955 to 0.966 against
+0.861 to 0.869, and a held-cuff error of **3.3 to 5.4 mm against 41 to 43**. A
+ten-times tighter grasp for two thirds of the solve time. It is now the
+environment default, together with the CUDA-graph and tolerance settings.
+
+Copy count, from one clean window of device work (wall clock was unusable this
+pass: four identical 32-copy runs spanned 1374 to 3734 ms):
+
+| Copies | Total vertices | ms per PCG iteration | Copy-PCG-iterations per second | GPU memory |
+|---:|---:|---:|---:|---:|
+| 16 | 85,808 | 1.019 | 15,694 | 6.3 GB |
+| 24 | 128,712 | 1.197 | 20,069 | 7.3 GB |
+| 32 | 171,616 | 1.532 | 20,925 | 8.3 GB |
+| 48 | 257,424 | 2.282 | 21,042 | 10.2 GB |
+| 64 | 343,232 | 3.091 | 20,707 | 12.2 GB |
+
+The device saturates by 24 copies and is flat to 64 within five per cent; only
+16 is measurably below at 75 per cent. Memory is 122 MB per copy on a 4.3 GB
+base and never the constraint. Cost per iteration follows total world vertices
+regardless of how they are partitioned: sixteen gowns at 166,976 vertices cost
+1.788 ms per iteration, thirty-two shirts at 171,616 cost 1.615. Keep 32.
+
+Mesh size buys roughly linearly, 1.94 times the vertices for 1.98 times the
+time and 2.96 for 3.12, and more than that at 32 copies where the per-iteration
+cost is itself linear in the degrees of freedom rather than latency-bound. A
+heterogeneous world costs 1.45 times a homogeneous one at matched vertices with
+1.53 times the Newton iterations, confirming the worst-copy effect, though the
+garments also sat at different task states so the margin is not clean.
+
+Everything else is flat or harmful. `newton.max_iter` at 8 or 16 is inside the
+baseline's own spread and barely lowers the mean iteration count, because
+unconverged frames push their work into the next step; at 4 it breaks the task
+worse than the velocity tolerance did, a 0.747 forearm ratio and 65 mm of grasp
+error. `newton.use_adaptive_tol` is not a lever at all: the wheel refuses it as
+a reserved key that must stay zero. `linear_system.check_interval` is never
+read on the graph-mode-2 path, and `line_search.max_iter` cannot bind because
+the energy test accepts on the first trial in every recorded step. A halved
+`contact.d_hat` and both alternate broad phases are within one to six per cent
+of the default `info_stackless_bvh`, which is the fastest available.
+
+The pass also found a crash: the environment's default garment list named
+`tshirt_68`, whose pre-worn cell self-intersects at bodies 0 and 2 although the
+cache advertises it, so a run that accepted the defaults died at construction.
+The default is now the subset that builds for every cached body, the failure
+names the cells in the world, and the assets module's full inventory is renamed
+so it is not mistaken for a default.
+
 GPU grasp and reachability measurements are recorded below after completion.

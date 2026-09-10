@@ -33,7 +33,12 @@ from .dressing_reward import early_turn, WangRewardConfig, opening_threaded, wan
 from .genesis_env import ViewerClosed, _ensure_genesis
 from .obs import FEATURE_DIM, FLAG_DEFORMABLE, FLAG_MARKER, ObsSpec
 
-DEFAULT_GARMENTS = ("tshirt_26", "tshirt_392", "tshirt_68")
+DEFAULT_GARMENTS = ("tshirt_26", "tshirt_392")
+"""Cached garments that build for every cached body. Six of the twenty-three baked cells
+carry residual self-intersections from the bake and libuipc refuses them; ``tshirt_68`` is
+one such cell at bodies 0 and 2 although the cache advertises it, so a default that named
+it crashed at construction. The live cell path has no such failure: it spawns the garment
+outside the arm, so :class:`~uipc_manip.dressing_live.LiveCellFactory` offers all five."""
 """Garments trained by default. The hospital gown has 10,437 vertices and the Newton notes record it
 as unusable at the reference solver budget, so it is opt-in."""
 
@@ -79,7 +84,7 @@ class DressingConfig:
     """``slbw`` is the strain-limiting Baraff-Witkin shell the Genesis sim2sim path validated;
     ``neohookean`` scales membrane stiffness with the thin radius and stretched the garment by
     tens of centimetres under its own weight."""
-    cloth_youngs: float = 6e4
+    cloth_youngs: float = 6e3
     cloth_poisson: float = 0.49
     cloth_density: float = 3333.0
     """Volumetric density giving the Newton teacher's 0.5 kg/m^2 areal density at the thin radius.
@@ -93,14 +98,19 @@ class DressingConfig:
     """One-sided collision radius. The pre-worn garments hang with layers pressed together, and
     libuipc's build-time distance check rejects non-adjacent surfaces closer than the summed
     radii plus ``d_hat``; the thin radius the Genesis sim2sim path validated keeps them legal."""
-    cloth_bending_stiffness: float = 10.0
+    cloth_bending_stiffness: float = 0.1
     cloth_strain_rate: float = 100.0
-    cloth_shear_ratio: float | None = None
+    cloth_shear_ratio: float | None = 0.01
     """Shear Young's modulus as a fraction of the stretch modulus. libuipc measures stretch as
     ``E*2r/(1-nu^2)`` but shear as ``E/(2(1+nu))``, with no thickness factor, so sharing one
     modulus (``None``, the historical setting) makes shear about ``1/(2r)``, here 3,300, times
     stiffer than stretch and the fabric effectively unshearable. The drape bake measured 1/100
-    as the ratio that reproduces the reference garment's hang."""
+    as the ratio that reproduces the reference garment's hang.
+
+    These three settings together are the default because on the 100-decision expert
+    protocol they win on every axis at once against the historical 6e4 / shared / 10:
+    116 to 118 ms per simulation step against 168 to 188, a forearm ratio of 0.955 to
+    0.966 against 0.861 to 0.869, and a held-cuff error of 3.3 to 5.4 mm against 41 to 43."""
     """Baraff-Witkin over-stretch amplification of the strain-limiting shell; lower lets the opening
     stretch further over the hand."""
     sanity_check: bool = True
@@ -332,7 +342,9 @@ class GenesisIPCDressingEnv:
         if not coupler._ipc_world.is_valid():
             raise RuntimeError(
                 "IPC world is invalid after build: a pre-worn garment intersects the arm collider or itself. "
-                "Increase arm_erosion_m or drop the offending cell."
+                f"Cells in this world: {[cell.name for cell in self.cells]}. Six of the baked cells carry "
+                "residual self-intersections; raise arm_erosion_m, drop the offending cell, or build the "
+                "cells live, which spawns each garment clear of the arm."
             )
         self._world = coupler._ipc_world
 
