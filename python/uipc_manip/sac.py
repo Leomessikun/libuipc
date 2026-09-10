@@ -75,6 +75,10 @@ class SACConfig:
     critic_beta: float = 0.9
     alpha_beta: float = 0.5
     init_temperature: float = 0.1
+    temperature_count: int = 1
+    """Entropy temperatures, one per replay buffer as ``SAC_AWAC.py:633`` sizes ``log_alpha``; each update
+    uses the temperature of the buffer its batch was drawn from, Wang's ``alpha[alpha_idx]``. One is the
+    single temperature every checkpoint saved before this field carries."""
     alpha_fixed: bool = False
     min_alpha: float = 0.0
     target_entropy_scale: float = 1.0
@@ -197,7 +201,13 @@ class SACAgent:
                     module.encoder.forward = bf16_forward(module.encoder.forward, self.device.type)
         elif cfg.encoder_precision != "fp32":
             raise ValueError(f"Unknown encoder_precision {cfg.encoder_precision!r}")
-        self.log_alpha = torch.tensor(np.log(cfg.init_temperature), dtype=torch.float32, device=self.device)
+        count = int(cfg.temperature_count)
+        if count < 1:
+            raise ValueError(f"temperature_count must be at least 1, got {count}")
+        # One temperature stays the 0-d tensor every earlier checkpoint stores.
+        self.log_alpha = torch.full(
+            (count,) if count > 1 else (), float(np.log(cfg.init_temperature)), dtype=torch.float32, device=self.device
+        )
         self.log_alpha.requires_grad_(True)
         self.target_entropy = -float(cfg.target_entropy_scale) * float(action_dim)
         # The fused kernel keeps Adam on the device; the default path reads two scalars per
@@ -238,6 +248,10 @@ class SACAgent:
     def alpha(self) -> torch.Tensor:
         return self.log_alpha.exp()
 
+    def _alpha_at(self, index: int) -> torch.Tensor:
+        """The temperature of an update whose batch came from replay buffer ``index``; the one temperature when shared."""
+        return self.alpha if self.log_alpha.dim() == 0 else self.alpha[int(index)]
+
     # ------------------------------------------------------------------
     def _unpack(self, flat: torch.Tensor, augment: bool = False):
         pos, feat, valid, extra = self.spec.unpack_torch(flat)
@@ -273,12 +287,13 @@ class SACAgent:
             return pi.cpu().numpy()
 
     # ------------------------------------------------------------------
-    def _update_critic(self, obs, action, reward, next_obs, not_done, state=None, next_state=None) -> dict:
-        """``state`` and ``next_state``, when given, are what the critic reads; the actor always reads observations."""
+    def _update_critic(self, obs, action, reward, next_obs, not_done, state=None, next_state=None, index: int = 0) -> dict:
+        """``state`` and ``next_state``, when given, are what the critic reads; the actor always reads observations.
+        ``index`` is the replay buffer the batch came from, whose temperature the soft target uses."""
         with torch.no_grad():
             _, next_pi, next_log_pi, _ = self.actor(next_obs)
             target_q1, target_q2 = self.critic_target(next_obs if next_state is None else next_state, next_pi)
-            target_v = torch.min(target_q1, target_q2) - self.alpha.detach() * next_log_pi
+            target_v = torch.min(target_q1, target_q2) - self._alpha_at(index).detach() * next_log_pi
             target_q = reward + not_done * self.cfg.discount * target_v
             bound = float(self.cfg.reward_abs_bound) / max(1.0 - float(self.cfg.discount), 1e-6)
             target_q = target_q.clamp(-bound, bound)
@@ -295,13 +310,13 @@ class SACAgent:
         out = self.critic(obs, action, detach_encoder=detach_encoder)
         return out[0], out[1]
 
-    def _update_critic_categorical(self, obs, action, reward, next_obs, not_done) -> dict:
+    def _update_critic_categorical(self, obs, action, reward, next_obs, not_done, index: int = 0) -> dict:
         """FlashSAC-style update: project the soft Bellman target onto the atom grid, cross-entropy loss."""
         with torch.no_grad():
             _, next_pi, next_log_pi, _ = self.actor(next_obs)
             tq1, tq2, tlp1, tlp2 = self.critic_target(next_obs, next_pi)
             target_min = torch.minimum(tq1, tq2)
-            target_scalar = reward + not_done * self.cfg.discount * (target_min - self.alpha.detach() * next_log_pi)
+            target_scalar = reward + not_done * self.cfg.discount * (target_min - self._alpha_at(index).detach() * next_log_pi)
             target_probs = self._project_categorical_target(target_scalar, tlp1.shape[-1])
         q1, _, log_p1, log_p2 = self.critic(obs, action)
         critic_loss = -(target_probs * log_p1).sum(-1).mean() - (target_probs * log_p2).sum(-1).mean()
@@ -324,11 +339,13 @@ class SACAgent:
         probs.scatter_add_(1, upper, frac)
         return probs
 
-    def _update_actor_and_alpha(self, obs, state=None, label=None) -> dict:
+    def _update_actor_and_alpha(self, obs, state=None, label=None, index: int = 0) -> dict:
         mu, pi, log_pi, log_std = self.actor(obs)
         with frozen_parameters(self.critic):
             q1, q2 = self._critic_scalar(obs if state is None else state, pi, detach_encoder=True)
-        actor_loss = (self.alpha.detach() * log_pi - torch.min(q1, q2)).mean()
+        # Wang's alpha[alpha_idx]: the actor loss and the temperature loss use the batch's buffer's temperature.
+        alpha = self._alpha_at(index)
+        actor_loss = (alpha.detach() * log_pi - torch.min(q1, q2)).mean()
         distill = None
         if self.teachers and label is not None and self.cfg.distill_weight > 0.0:
             # Each row is pulled toward its own region's teacher on the same observation; rows
@@ -350,7 +367,7 @@ class SACAgent:
         if distill is not None:
             stats["distill_loss"] = float(distill.item())
         if not self.cfg.alpha_fixed:
-            alpha_loss = (self.alpha * (-log_pi - self.target_entropy).detach()).mean()
+            alpha_loss = (alpha * (-log_pi - self.target_entropy).detach()).mean()
             self.log_alpha_optimizer.zero_grad()
             alpha_loss.backward()
             self.log_alpha_optimizer.step()
@@ -358,7 +375,9 @@ class SACAgent:
                 with torch.no_grad():
                     self.log_alpha.clamp_(min=float(np.log(self.cfg.min_alpha)))
             stats["alpha_loss"] = float(alpha_loss.item())
-        stats["alpha"] = float(self.alpha.item())
+        stats["alpha"] = float(self._alpha_at(index).item())
+        if self.log_alpha.dim():
+            stats[f"alpha_{int(index)}"] = stats["alpha"]
         return stats
 
     def _clip(self, module: torch.nn.Module) -> float:
@@ -374,6 +393,11 @@ class SACAgent:
         batch = replay.sample(self.cfg.batch_size)
         obs_flat, action, reward, next_obs_flat, not_done = batch[:5]
         rest = list(batch[5:])
+        # A replay set appends the index of the buffer its batch came from: Wang's alpha_idx.
+        indexed = bool(getattr(replay, "indexed", False))
+        index = int(rest.pop()) if indexed else 0
+        if self.log_alpha.dim() and not indexed:
+            raise ValueError("One temperature per replay buffer needs a replay set that reports which buffer each batch came from")
         state = next_state = None
         if self.cfg.critic_input == "privileged":
             if not getattr(replay, "priv_dim", 0):
@@ -385,13 +409,13 @@ class SACAgent:
         obs = self._unpack(obs_flat, augment=True)
         next_obs = self._unpack(next_obs_flat, augment=True)
         if self.cfg.algo == "flashsac":
-            stats = self._update_critic_categorical(obs, action, reward, next_obs, not_done)
+            stats = self._update_critic_categorical(obs, action, reward, next_obs, not_done, index)
         else:
-            stats = self._update_critic(obs, action, reward, next_obs, not_done, state, next_state)
+            stats = self._update_critic(obs, action, reward, next_obs, not_done, state, next_state, index)
         stats["batch_reward"] = float(reward.mean().item())
         self.updates += 1
         if self.updates % self.cfg.actor_update_freq == 0:
-            stats.update(self._update_actor_and_alpha(obs, state, label))
+            stats.update(self._update_actor_and_alpha(obs, state, label, index))
         if self.updates % self.cfg.critic_target_update_freq == 0:
             soft_update(self.critic.Q1, self.critic_target.Q1, self.cfg.critic_tau)
             soft_update(self.critic.Q2, self.critic_target.Q2, self.cfg.critic_tau)

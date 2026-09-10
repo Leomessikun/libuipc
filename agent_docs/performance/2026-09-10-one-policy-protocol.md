@@ -541,3 +541,151 @@ its cell for the life of the world. A student therefore sees 28 divided by the
 number of regions poses per region, and rebuilding the world on a rotation is
 left for later.
 
+## 6. Wang's protocol in the codebase: rotation, replay split, evaluation worlds (2026-09-10, night)
+
+Section 5 left the protocol in scratch launchers around `train_sac`, with each
+slot's cell fixed for the life of the world, two garments and an expert screen.
+`pretrain_wang.py` now implements it: `teacher`, `student` and `resume` stages over
+a rotating training world, held-out evaluation worlds, and no screen.
+`train_sac.main` is unchanged.
+
+### 6.1 The runnable reference, re-read
+
+`launch_train_curl.py` drives `curl/train.py`. `train_multi_garments.py`, which
+section 1.1 cited for per-garment replay and the garment curriculum, hands
+`SAC_AWAC.update` a bare `PointCloudReplayBuffer`; `update` begins with
+`len(replay_buffers)` (`SAC_AWAC.py:1202`) and the buffer class defines no
+`__len__`, so that script cannot run against the checked-in agent. What the
+launcher runs:
+
+- Teacher: one region (`train_regions [[13]]`), all five garments (`:270`), poses
+  0-44 trained and 45-49 held out (`:429-436`), one 400,000-transition buffer
+  (`replay_buffer_num 1`, `:302`, `:492`), no garment curriculum, no random warm-up
+  (`init_steps 0`, `:498`), horizon 150 (`:241`), 5,000,000 steps (`:220`).
+- Every episode draws its region, garment and pose uniformly (`train.py:544-563`);
+  a student visits each region once first, so no buffer starts empty (`:544-545`).
+- Student: one buffer per region of `capacity // regions` (`:435`). Every update
+  takes one buffer uniformly (`:595`) and hands it over as a one-element list
+  (`:600`), so `SAC_AWAC.update` sees `sample_buffer_indices = [0]` (`:1205`) and
+  `alpha_idx` is 0 in the critic target, the actor loss and the temperature loss
+  (`:941`, `:1006`, `:1055`). `log_alpha` has one entry per buffer (`:633`), but only
+  the PCGrad baseline, which passes every buffer (`:605`), indexes past the first:
+  Wang's student trains one shared temperature.
+- Evaluation: every region x garment x held-out pose once, deterministically
+  (`:195-206`), before training and at the first episode end after every 10,000
+  steps (`:490-493`, `launch_train_curl.py:440`); the best checkpoint is the highest
+  mean unseen upper-arm ratio (`:499-500`).
+
+### 6.2 Rebuilding a world in one process
+
+A slot cannot change its cell, because `reset` restores one settled libuipc
+snapshot, so Wang's per-episode draw needs the world rebuilt. The gate before
+building on that (`fork/gate_rebuild.py` in the session scratch) built six worlds
+through the trainer's `make_env`, with torch cuBLAS work after the first as the
+agent does:
+
+| Event | Build [s] | Process GPU memory |
+|---|---|---|
+| 4-cell world, bodies 14000-1, first build | 9.0 | 4,656 MB |
+| torn down | | 4,458 MB |
+| 4-cell world, bodies 14002-3 | 6.3 | 4,808 MB |
+| torn down | | 4,458 MB |
+| 4-cell world, bodies 14004-5 | 6.6 | 4,806 MB |
+| torn down | | 4,458 MB |
+| a 4-cell and a 6-cell world alive together, both stepped | 7.2, 9.9 | 5,308 MB |
+| both torn down | | 4,458 MB |
+| 4-cell world, bodies 14011-2 | 7.4 | 4,808 MB |
+| torn down | | 4,458 MB |
+
+Memory returns to the same 4,458 MB after every teardown, Genesis needs no
+re-initialisation, and two worlds coexist and step in turn (0.30-0.33 and
+0.51-0.56 s per decision). `GenesisIPCDressingEnv.close()` now destroys the scene,
+drops the coupler, world and slot references, and deletes the scene's libuipc
+workspace under the temporary directory, about 1 MB per cell; `/tmp` already held
+442 of them, 3 GB, from earlier runs, and rotating every episode would add one per
+episode. A `LiveCellFactory` passed to every world keeps drapes, bodies and
+clearances across rebuilds.
+
+### 6.3 What `pretrain_wang` does
+
+- Distribution: body `1000 (r + 1) + k` is pose `k` of region `r`; poses 0-44 train
+  and 45-49 are held out; Wang's five garments by default.
+- Rotation: every `--rotate-every` episodes (1, Wang's per-episode draw) the world
+  is rebuilt on a fresh draw. The draw deals the admitted (region, garment) groups
+  over the slots in a random order and takes poses without replacement inside a
+  group, so every configuration recurs at Wang's uniform rate and every replay
+  buffer gets slots in every world. A world libuipc refuses to build or reset is
+  drawn again, up to three times; a simulator error drops that step and rotates.
+- Replay and temperatures: `--replay-split none` for a teacher and `region` for the
+  student, as the launcher runs, or `garment` as the older script intended.
+  `--temperatures shared` by default; `per-buffer` gives `log_alpha` one entry per
+  buffer, indexed by the buffer a batch came from, which is the reference's
+  mechanism. Each update draws one buffer uniformly among those holding more than
+  a batch.
+- Evaluation: the held-out configurations are built once, in worlds of at most
+  `--eval-slots`, and kept for the run, so a round costs no rebuild and does not
+  interrupt the training world. A round plays one deterministic episode per
+  configuration, before training and at the first episode end after every
+  `--eval-every` transitions (10,000). `best.pt` is ranked by
+  `cellplan.checkpoint_score`, whose leading key is then the mean unseen final
+  upper-arm ratio; per-cell, per-garment and per-region means are logged.
+- No expert screen. A (garment, body) that cannot be placed clear of the arm
+  (`NoClearPlacement`) is dropped the first time it is drawn and listed in the
+  checkpoint metadata; that is a limit of this port's placement, not a filter on
+  dressability. A teacher's checkpoints list its training pool as `cells` with no
+  held-out slot, so `load_teachers` reads its region as before.
+- Resume: a checkpoint writes the agent, the replay snapshot (only the latest is
+  kept) and then `state.json`, which holds the rotation generator, NumPy's global
+  state, the counters, the evaluation schedule, the best score and the dropped
+  configurations. `pretrain_wang resume RUN_DIR` rebuilds from the saved command
+  line and refuses a protocol that differs from the saved one. A run stopped at an
+  episode end, where checkpoints are taken, continues with the worlds it would have
+  built; one stopped elsewhere continues on a fresh draw.
+- Time step: `--dt` sets the simulation step and writes the matched action repeat
+  (0.1 s decisions), cuff strength (strength / dt^2 held constant) and settle into
+  the trainer settings, unless those are passed explicitly.
+
+The deviations are 300 decisions of six 1/60 s steps with the horizon-equivalent
+discount, temperature learning rate and reward scale; the stratified draw; one
+update per transition after each vector step; the placement drops; and, with a
+curriculum on, evaluation of every garment at every stage.
+
+### 6.4 Cost
+
+- Replay snapshot: 400,000 transitions take 17.2 GB in memory. `np.savez_compressed`
+  wrote the one-policy run's 24,000-transition snapshot (1.03 GB) in 5.3 s to
+  0.17 GB, so a full snapshot is about 90 s and 2.9 GB, once per `--checkpoint-every`
+  (50,000 transitions).
+- Rebuild: a 4-cell world rebuilt in 6.3 to 7.4 s in the gate (6.2), on a GPU
+  shared with two other jobs. With a dozen other processes holding the GPU at
+  full utilisation, the smoke test's 2-cell worlds took 40 to 50 s and a 24-cell
+  world of four garments 315 s, 371 s with its placement checks, teardown and
+  reset. One decision of that world took 32.8 s on the same GPU, so a build costs
+  about ten decisions, 3% of a 300-decision episode when every episode rotates;
+  the ratio, not the seconds, is what carries to an unshared GPU. Each build runs
+  the 30-step settle and 2 hold steps against the episode's 1,800 simulation steps.
+- Evaluation: the 20-configuration evaluation world built in 159 s and its first
+  round, 5 decisions, took 139 s. A 300-decision round steps about as many cells
+  as one training episode, and Wang's cadence of 10,000 transitions is 1.4
+  episodes of 24 slots, so evaluation takes about 40% of the simulation time
+  (Wang's own launcher spends 27% of its environment steps on it: 25 evaluation
+  episodes per 66 training episodes of 150 steps). `--eval-every` trades that
+  against the checkpoint-selection resolution.
+
+### 6.5 Launch lines
+
+```bash
+# Regional teachers, one after another; two runs on the GPU do no more work than one after the other.
+for R in 4 13 22; do
+  PYTHONPATH=python $GENESIS_PY -m uipc_manip.pretrain_wang teacher --region $R
+done
+# The student over their regions.
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.pretrain_wang student --regions 4 13 22 \
+    --teacher-checkpoints output/uipc_manip/wang_teacher_r{4,13,22}_s1/checkpoints/best.pt
+```
+
+`--garments tshirt_26 tshirt_68` restricts a run to the two garments the scripted
+expert dresses today; `--replay-split garment --temperatures per-buffer` (teacher)
+or `--temperatures per-buffer` (student) gives the per-buffer reading of
+`SAC_AWAC.py`.
+

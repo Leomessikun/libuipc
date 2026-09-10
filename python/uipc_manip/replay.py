@@ -142,3 +142,73 @@ class FlatReplayBuffer:
         self._full = n == self.capacity
         self.total_added = int(payload.get("total_added", n))
         return payload.get("metadata", {})
+
+
+class ReplaySet:
+    """Wang RSS 2023's separate replay buffers, one per garment or per arm-pose region.
+
+    The reference keeps ``replay_buffer_num`` buffers of ``capacity // replay_buffer_num``
+    transitions each (``train.py:435``), writes every transition to the buffer of its
+    episode's key, and draws each update's whole batch from one buffer chosen uniformly
+    (``train.py:595``, ``sample_replay_buffer_num = 1``). :meth:`sample` returns that
+    buffer's batch with the buffer index appended; the index selects the batch's entropy
+    temperature when the agent keeps one per buffer, and a student's region teacher reads
+    the rows' labels as before. Only buffers holding more than a batch are drawn. Wang's
+    student waits until every buffer does (``check_rb_min_size``), which a rotation that
+    spreads its slots over the keys reaches on its first vector step.
+    """
+
+    indexed = True
+
+    def __init__(
+        self, keys, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False
+    ) -> None:
+        self.keys = list(keys)
+        if not self.keys or len(set(self.keys)) != len(self.keys):
+            raise ValueError(f"A replay set needs distinct keys, got {self.keys}")
+        self._index = {key: i for i, key in enumerate(self.keys)}
+        self.obs_dim, self.action_dim, self.batch_size = int(obs_dim), int(action_dim), int(batch_size)
+        self.priv_dim, self.labelled = int(priv_dim), bool(labelled)
+        per_buffer = int(capacity) // len(self.keys)
+        self.buffers = [
+            FlatReplayBuffer(obs_dim, action_dim, per_buffer, batch_size, device, priv_dim=priv_dim, labelled=labelled) for _ in self.keys
+        ]
+        self.capacity = per_buffer * len(self.keys)
+
+    def add(self, key, obs, action, reward, next_obs, done, priv=None, next_priv=None, label: int | None = None) -> None:
+        self.buffers[self._index[key]].add(obs, action, reward, next_obs, done, priv=priv, next_priv=next_priv, label=label)
+
+    @property
+    def size(self) -> int:
+        return sum(b.size for b in self.buffers)
+
+    @property
+    def total_added(self) -> int:
+        return sum(b.total_added for b in self.buffers)
+
+    def sizes(self) -> list[int]:
+        return [b.size for b in self.buffers]
+
+    def sample(self, batch_size: int | None = None):
+        """One buffer's batch, as :meth:`FlatReplayBuffer.sample` returns it, then that buffer's index."""
+        n = self.batch_size if batch_size is None else int(batch_size)
+        ready = [i for i, b in enumerate(self.buffers) if b.size > n]
+        if not ready:
+            raise RuntimeError(f"No buffer of the replay set holds more than {n} transitions")
+        index = ready[np.random.randint(len(ready))]
+        return self.buffers[index].sample(n) + (index,)
+
+    def save(self, directory: str | Path, metadata: dict | None = None) -> None:
+        directory = Path(directory)
+        for i, buffer in enumerate(self.buffers):
+            buffer.save(directory / f"buffer_{i:02d}", metadata=metadata)
+        (directory / "replay_set.json").write_text(json.dumps({"keys": self.keys, "metadata": metadata or {}}, indent=2) + "\n")
+
+    def load(self, directory: str | Path) -> dict:
+        directory = Path(directory)
+        payload = json.loads((directory / "replay_set.json").read_text())
+        if list(payload["keys"]) != self.keys:
+            raise ValueError(f"Replay snapshot holds buffers {payload['keys']}; this run keeps {self.keys}")
+        for i, buffer in enumerate(self.buffers):
+            buffer.load(directory / f"buffer_{i:02d}")
+        return payload.get("metadata", {})

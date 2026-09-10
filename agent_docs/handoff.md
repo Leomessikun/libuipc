@@ -1466,6 +1466,19 @@ with a 3.0 mm grasp error. tshirt_68 and tshirt_392 do not yet build live, and
 the settle is a free fall because the episode pins twelve anchors where the
 bake pinned the grasp patch and the opening.
 
+Thirteenth pass: Wang's pretraining protocol is in the codebase as
+`python -m uipc_manip.pretrain_wang teacher | student | resume`. A slot's cell is
+fixed by its reset snapshot, so Wang's per-episode draw is a world rebuild; a gate
+showed the process returns to the same GPU footprint after every teardown, and
+`close()` now destroys the scene and deletes its libuipc workspace. Held-out poses
+are scored in evaluation worlds kept for the run. Re-reading the reference: the
+launcher runs `curl/train.py`, whose teacher keeps one 400,000-transition buffer
+without a curriculum and whose student trains one shared temperature, since
+`train_multi_garments.py` cannot run against the checked-in agent. Those are the
+defaults; per-garment buffers, per-buffer temperatures and the curriculum are
+flags. `--dt` and `--settle-steps` reach the dressing config. Section 6 of the
+protocol record has the mapping, the gate and the costs.
+
 Twelfth pass: the SAC update's ball query no longer goes through `cdist`,
 which cut an update from 310 to 86 ms in the running job and a vector step from
 9.5 to 4.15 s. `--critic-input privileged` adds an asymmetric critic on a

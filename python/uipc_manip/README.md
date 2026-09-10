@@ -188,6 +188,56 @@ PYTHONPATH=python $GENESIS_PY -m uipc_manip.train_sac --task cloth_drag --policy
 PYTHONPATH=python $GENESIS_PY -m uipc_manip.preview output/uipc_manip/<run>/trajectories/episode_000.npz
 ```
 
+### Wang's pretraining protocol
+
+`pretrain_wang` runs Wang RSS 2023's pipeline the way its runnable reference,
+`curl/train.py` under `launch_train_curl.py`, does: one SAC teacher per arm-pose
+region, trained on that region's 45 training poses crossed with the five garments
+and scored on its five held-out poses, then one student that learns every chosen
+region with Wang's teacher loss. A slot's cell is fixed for the life of a world, so
+the world is torn down and rebuilt on a fresh draw of training configurations every
+`--rotate-every` episodes (one by default, Wang's per-episode draw). Replay,
+optimizers and the held-out evaluation worlds persist across rebuilds.
+
+```bash
+# A regional teacher (region 13 is the middle interval of all three arm angles).
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.pretrain_wang teacher --region 13
+
+# The student over those teachers' regions.
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.pretrain_wang student --regions 4 13 22 \
+    --teacher-checkpoints output/uipc_manip/wang_teacher_r4_s1/checkpoints/best.pt \
+    output/uipc_manip/wang_teacher_r13_s1/checkpoints/best.pt output/uipc_manip/wang_teacher_r22_s1/checkpoints/best.pt
+
+# Continue a run from its latest checkpoint, optionally to a larger total budget.
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.pretrain_wang resume output/uipc_manip/wang_teacher_r13_s1 --transitions 900000
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--region` / `--regions` | - | teacher: its one region (0-26); student: its regions, each with a checkpoint in `--teacher-checkpoints` |
+| `--garments` | Wang's five | garments of the distribution |
+| `--train-poses`, `--eval-poses` | 0-44, 45-49 | poses per region; body `1000 (r + 1) + k` is pose `k` of region `r` |
+| `--num-envs` | 24 | episodes a training world holds at once |
+| `--transitions` | 600,000 | total replay transitions of the run, counted across resumes; the reference launcher runs 5,000,000 |
+| `--replay-capacity`, `--batch-size` | 400,000, 64 | Wang's values; the capacity is split evenly over the buffers |
+| `--replay-split` | teacher `none`, student `region` | one buffer, one per garment, or one per region; each update draws its whole batch from one buffer, chosen uniformly among those holding more than a batch |
+| `--temperatures` | `shared` | one entropy temperature, which is what the reference trains (its student update is handed a one-buffer list, so `alpha_idx` stays 0), or `per-buffer`, one per replay buffer as `SAC_AWAC.py` allocates them and its PCGrad baseline uses them |
+| `--rotate-every` | 1 | episodes each world plays before it is rebuilt on a fresh draw |
+| `--eval-every` | 10,000 | transitions between evaluations, taken at the next episode boundary; each round plays one deterministic episode per held-out configuration, and `best.pt` ranks their mean final upper-arm ratio first |
+| `--eval-slots` | 32 | largest evaluation world; more held-out configurations use several worlds, all kept for the run |
+| `--checkpoint-every` | 50,000 | transitions between checkpoints. Each writes the agent, the replay snapshot (only the latest is kept; 400,000 transitions are 17 GB in memory, about 2.9 GB compressed and 90 s to write) and `state.json`, which carries the rotation RNG and the counters a resume needs |
+| `--garment-curriculum-interval` | 0 | transitions between admitting one more garment to the draw, easiest first; the reference launcher has none |
+| `--dt` | 1/60 | simulation step; the action repeat (0.1 s decisions), cuff strength (the same physical hold) and settle follow it unless passed explicitly |
+
+Every other `train_sac` flag (`--critic-input`, `--encoder-precision`, `--hidden-dim`,
+`--updates-per-step`, `--anchor-count`, ...) passes through, and the flags the protocol
+sets itself (`--num-eval-episodes`, `--body-seeds`, `--total-transitions`, ...) are
+refused. A (garment, body) whose placement cannot clear the arm is dropped from its
+pool the first time it is drawn and listed in the checkpoint metadata; nothing is
+filtered on whether the scripted expert dresses it. Section 6 of
+`agent_docs/performance/2026-09-10-one-policy-protocol.md` maps each choice to the
+reference and states the deviations.
+
 ### The FMVP simulation pipeline
 
 Wang RSS 2023 trains one SAC teacher per arm-pose region; FMVP rolls those

@@ -21,7 +21,9 @@ an explicit tool point, and no termination before the time limit.
 from __future__ import annotations
 
 import math
+import shutil
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -212,7 +214,7 @@ class GenesisIPCDressingEnv:
     grasp_tracking_tolerance_m = 0.02
     privileged_dim = PRIVILEGED_DIM
 
-    def __init__(self, cfg: DressingConfig, num_envs: int = 1) -> None:
+    def __init__(self, cfg: DressingConfig, num_envs: int = 1, cell_factory=None) -> None:
         if int(num_envs) < 1:
             raise ValueError("num_envs must be at least 1")
         self.cfg = cfg
@@ -257,7 +259,11 @@ class GenesisIPCDressingEnv:
         if cfg.cell_source == "live":
             from .dressing_live import LiveCellFactory
 
-            self.cell_factory = LiveCellFactory(cfg.live)
+            # A factory shared across worlds keeps its drapes, bodies and clearances, so a rebuilt
+            # world bakes, generates and places only cells no earlier world held.
+            if cell_factory is not None and cell_factory.cfg != cfg.live:
+                raise ValueError("The shared cell factory was made for other live-cell settings than this world's")
+            self.cell_factory = cell_factory or LiveCellFactory(cfg.live)
             self.cells: list[DressingCell] = [self.cell_factory.build(g, b) for g, b in plan]
         elif cfg.cell_source == "cache":
             self.cells = [self.cache.load(g, b) for g, b in plan]
@@ -693,7 +699,21 @@ class GenesisIPCDressingEnv:
         return [self.cell_factory.clearances(cell.garment, cell.human) for cell in self.cells]
 
     def close(self) -> None:
-        self.scene = None
+        """Destroy the scene and release the libuipc world, so this process can build another.
+
+        Dropping the scene alone leaves the IPC world referenced by the coupler, its objects
+        and the geometry slots this environment holds. Each scene also leaves its libuipc
+        workspace, holding the settled snapshot dump, under the temporary directory; only
+        this scene's is removed.
+        """
+        scene, self.scene = self.scene, None
+        if scene is None:
+            return
+        workspace = Path(tempfile.gettempdir()) / f"genesis_ipc_{scene.uid.full()}"
+        scene.destroy()
+        self.coupler = self._world = None
+        self.slots, self._pickers = [], []
+        shutil.rmtree(workspace, ignore_errors=True)
 
     def _draw(self) -> None:
         for obj in self._debug_objects:
