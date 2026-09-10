@@ -272,6 +272,53 @@ def test_unpack_cuts_padding_without_changing_actor_or_critic(actor_type):
     if actor_type == "flat":
         assert SACAgent(spec, 3, sparse, "cpu")._unpack(flat)[0].shape[1] == spec.point_budget
 
+
+def test_wang_distillation_pulls_the_actor_toward_its_regions_teacher(tmp_path):
+    from uipc_manip.sac import wang_distill_loss
+
+    # The loss is the reference's sum, not a mean.
+    s_mu, s_ls, t_mu, t_ls = (torch.randn(4, 3) for _ in range(4))
+    expected = ((t_mu - s_mu) ** 2).sum() + ((t_ls.exp().sqrt() - s_ls.exp().sqrt()) ** 2).sum()
+    assert torch.allclose(wang_distill_loss(s_mu, s_ls, t_mu, t_ls), expected)
+    torch.manual_seed(0)
+    spec = ObsSpec(10)
+    env = ToyEnv(spec)
+    cfg = _small_cfg("wang-flow")
+    cfg.distill_weight, cfg.actor_lr = 1.0, 1.0e-3
+    student = SACAgent(spec, 3, cfg, "cpu")
+    teacher = SACAgent(spec, 3, _small_cfg("wang-flow"), "cpu").actor
+    student.set_teachers({13: teacher})
+    assert not any(p.requires_grad for p in teacher.parameters())
+    replay = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu", labelled=True)
+    obs = env.reset()
+    for i in range(64):
+        action = np.random.uniform(-1, 1, size=3)
+        next_obs, reward, _ = env.step(action)
+        # Rows without a teacher (-1) are left out of the loss.
+        replay.add(obs, action, reward, next_obs, False, label=13 if i % 2 == 0 else -1)
+        obs = next_obs
+    batch = student._unpack(torch.as_tensor(replay._obs[:32]))
+
+    def gap():
+        with torch.no_grad():
+            s = student.actor(batch, compute_pi=False, compute_log_pi=False)
+            t = teacher(batch, compute_pi=False, compute_log_pi=False)
+        return float(wang_distill_loss(s[0], s[3], t[0], t[3]))
+
+    before = gap()
+    for _ in range(60):
+        stats = student.update(replay)
+    assert "distill_loss" in stats and np.isfinite(stats["distill_loss"])
+    assert gap() < 0.7 * before
+    replay.save(tmp_path / "replay", metadata={"step": 1})
+    again = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu", labelled=True)
+    again.load(tmp_path / "replay")
+    np.testing.assert_array_equal(again._labels[: again.size], replay._labels[: replay.size])
+    with pytest.raises(ValueError, match="labels"):
+        FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu").load(tmp_path / "replay")
+    with pytest.raises(ValueError, match="label"):
+        replay.add(obs, np.zeros(3), 0.0, obs, False)
+
 def test_garment_curriculum_follows_wang_schedule():
     from uipc_manip.curriculum import WANG_GARMENT_ORDER, curriculum_order, garment_curriculum_stage
 

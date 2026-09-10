@@ -14,10 +14,14 @@ class FlatReplayBuffer:
 
     With ``priv_dim > 0`` every transition also carries the simulator's
     privileged state before and after it, for an asymmetric critic; the
-    observation the actor reads is unchanged.
+    observation the actor reads is unchanged. With ``labelled`` every
+    transition carries an integer label, the arm-pose region whose teacher
+    Wang's distillation loss applies to it.
     """
 
-    def __init__(self, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0) -> None:
+    def __init__(
+        self, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False
+    ) -> None:
         self.obs_dim = int(obs_dim)
         self.action_dim = int(action_dim)
         self.capacity = int(capacity)
@@ -31,13 +35,20 @@ class FlatReplayBuffer:
         self.priv_dim = int(priv_dim)
         self._priv = np.empty((self.capacity, self.priv_dim), dtype=np.float32)
         self._next_priv = np.empty((self.capacity, self.priv_dim), dtype=np.float32)
+        self.labelled = bool(labelled)
+        self._labels = np.zeros(self.capacity if self.labelled else 0, dtype=np.int64)
         self._idx = 0
         self._full = False
         self.total_added = 0
 
     def add(
-        self, obs: np.ndarray, action: np.ndarray, reward: float, next_obs: np.ndarray, done: bool, priv=None, next_priv=None
+        self, obs: np.ndarray, action: np.ndarray, reward: float, next_obs: np.ndarray, done: bool, priv=None, next_priv=None,
+        label: int | None = None,
     ) -> None:
+        if self.labelled:
+            if label is None:
+                raise ValueError("This buffer labels every transition; pass label")
+            self._labels[self._idx] = int(label)
         if self.priv_dim:
             if priv is None or next_priv is None:
                 raise ValueError("This buffer stores the privileged state; pass priv and next_priv")
@@ -57,7 +68,8 @@ class FlatReplayBuffer:
         return self.capacity if self._full else self._idx
 
     def sample(self, batch_size: int | None = None):
-        """``(obs, action, reward, next_obs, not_done)``, then ``(priv, next_priv)`` when the buffer stores them."""
+        """``(obs, action, reward, next_obs, not_done)``, then ``(priv, next_priv)`` when the buffer stores them,
+        then the labels when it is labelled."""
         upper = self.size
         if upper == 0:
             raise RuntimeError("Cannot sample from an empty replay buffer")
@@ -67,6 +79,8 @@ class FlatReplayBuffer:
         batch = (to(self._obs), to(self._actions), to(self._rewards), to(self._next_obs), to(self._not_dones))
         if self.priv_dim:
             batch += (to(self._priv), to(self._next_priv))
+        if self.labelled:
+            batch += (to(self._labels),)
         return batch
 
     def save(self, directory: str | Path, metadata: dict | None = None) -> None:
@@ -83,11 +97,14 @@ class FlatReplayBuffer:
         }
         if self.priv_dim:
             arrays.update(priv=self._priv[order], next_priv=self._next_priv[order])
+        if self.labelled:
+            arrays.update(labels=self._labels[order])
         np.savez_compressed(directory / "replay.npz", **arrays)
         payload = {
             "obs_dim": self.obs_dim,
             "action_dim": self.action_dim,
             "priv_dim": self.priv_dim,
+            "labelled": self.labelled,
             "capacity": self.capacity,
             "batch_size": self.batch_size,
             "size": int(n),
@@ -107,6 +124,8 @@ class FlatReplayBuffer:
                 f"Replay snapshot stores a {saved_priv}-float privileged state and this buffer {self.priv_dim}; "
                 "a run with the other critic input cannot resume from it"
             )
+        if bool(payload.get("labelled", False)) != self.labelled:
+            raise ValueError("Replay snapshot and buffer disagree on region labels; a distillation run and a plain one do not resume each other")
         data = np.load(directory / "replay.npz")
         n = min(int(payload["size"]), self.capacity)
         self._obs[:n] = data["obs"][-n:]
@@ -117,6 +136,8 @@ class FlatReplayBuffer:
         if self.priv_dim:
             self._priv[:n] = data["priv"][-n:]
             self._next_priv[:n] = data["next_priv"][-n:]
+        if self.labelled:
+            self._labels[:n] = data["labels"][-n:]
         self._idx = n % self.capacity
         self._full = n == self.capacity
         self.total_added = int(payload.get("total_added", n))

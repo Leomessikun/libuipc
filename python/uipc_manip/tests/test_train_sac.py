@@ -74,6 +74,25 @@ def test_resume_keeps_the_critic_input():
     cfg = restore_resume_args(args, ["--eval-only"], payload)
     assert args.critic_input == "privileged" and cfg.privileged_dim == 35
 
+
+def test_teachers_are_keyed_by_the_one_region_their_training_cells_share(tmp_path):
+    from uipc_manip.models import EncoderConfig
+    from uipc_manip.sac import SACAgent
+    from uipc_manip.train_sac import load_teachers
+
+    spec = ObsSpec(10)
+    cfg = SACConfig(hidden_dim=16, actor_type="wang-flow", encoder=EncoderConfig(kind="pointnet2", sa_neighbors=[4, 4]))
+    agent = SACAgent(spec, 3, cfg, "cpu")
+    # Region 13 bodies train; the held-out slot may sit anywhere.
+    agent.save(tmp_path / "r13.pt", 1, {"cells": [["tshirt_26", 14000], ["tshirt_68", 14001], ["tshirt_26", 3]], "heldout_slots": [2]})
+    teachers = load_teachers([tmp_path / "r13.pt"], spec, 3, "cpu")
+    assert list(teachers) == [13]
+    agent.save(tmp_path / "mixed.pt", 1, {"cells": [["tshirt_26", 14000], ["tshirt_26", 11000]], "heldout_slots": []})
+    with pytest.raises(ValueError, match="exactly one"):
+        load_teachers([tmp_path / "mixed.pt"], spec, 3, "cpu")
+    with pytest.raises(ValueError, match="Two teachers"):
+        load_teachers([tmp_path / "r13.pt", tmp_path / "r13.pt"], spec, 3, "cpu")
+
 def test_resume_checks_replay_step_and_reward_scale():
     validate_resume_replay(_checkpoint(), {"step": 20})  # legacy snapshots
     with pytest.raises(ValueError, match="step"):

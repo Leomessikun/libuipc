@@ -99,6 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--algo", choices=("sac", "flashsac"), default="sac", help="Scalar reference critic or bounded categorical critic.")
     p.add_argument("--critic-input", choices=("points", "privileged"), default="points", help="dressing: the critic encodes the point cloud (reference) or reads the simulator's privileged state.")
     p.add_argument("--encoder-precision", choices=("fp32", "bf16"), default="fp32", help="Run the point encoders under bfloat16 autocast; heads, targets and losses stay fp32.")
+    p.add_argument("--teacher-checkpoints", nargs="+", default=None, help="dressing: Wang's distillation from regional teachers, one checkpoint per arm-pose region; each replay row is pulled toward its slot's region teacher.")
+    p.add_argument("--distill-weight", type=float, default=0.01, help="Weight of Wang's teacher loss (paper 0.01, reference launcher 0.002); used only with --teacher-checkpoints.")
     p.add_argument("--encoder", choices=("pointnet2", "transformer"), default="pointnet2")
     p.add_argument("--num-bins", type=int, default=51, help="flashsac: value atoms per critic head.")
     p.add_argument("--min-v", type=float, default=-50.0, help="flashsac: lowest value atom.")
@@ -172,7 +174,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     saved.update({key: metadata[key] for key in ("task", "seed", "num_envs") if key in metadata})
     cfg = SACConfig.from_dict(payload["sac_config"])
     cfg_names = {"actor": "actor_type", "point_jitter": "point_jitter_scale", "grad_clip_max_norm": "grad_clip_max_norm"}
-    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v", "critic_input", "encoder_precision"):
+    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v", "critic_input", "encoder_precision", "distill_weight"):
         cfg_names[key] = key
     saved.update({key: getattr(cfg, name) for key, name in cfg_names.items()})
     saved.update(encoder=cfg.encoder.kind, sa_neighbors=cfg.encoder.sa_neighbors)
@@ -248,12 +250,35 @@ def build_sac_config(args) -> SACConfig:
         max_v=args.max_v,
         critic_input=args.critic_input,
         encoder_precision=args.encoder_precision,
+        distill_weight=float(args.distill_weight) if args.teacher_checkpoints else 0.0,
     )
     neighbors = [int(n) for n in args.sa_neighbors]
     if len(neighbors) == 1:
         neighbors = neighbors * 2
     sac_cfg.encoder = replace(sac_cfg.encoder, kind=args.encoder, sa_neighbors=neighbors)
     return sac_cfg
+
+
+def load_teachers(paths, spec: ObsSpec, action_dim: int, device) -> dict:
+    """Regional teacher actors, keyed by the one arm-pose region each teacher's training cells share."""
+    from .dressing_body import pose_region
+    from .sac import SACAgent, SACConfig
+
+    teachers = {}
+    for path in paths:
+        payload = SACAgent.read_checkpoint(path)
+        meta = payload.get("metadata", {})
+        heldout = {int(s) for s in meta.get("heldout_slots", [])}
+        regions = {pose_region(b) for slot, (_, b) in enumerate(meta.get("cells", [])) if slot not in heldout}
+        if len(regions) != 1 or None in regions:
+            raise ValueError(f"Teacher {path} trained on arm-pose regions {sorted(regions, key=str)}; a regional teacher has exactly one")
+        region = regions.pop()
+        if region in teachers:
+            raise ValueError(f"Two teachers for arm-pose region {region}")
+        teacher = SACAgent(spec, action_dim, SACConfig.from_dict(payload["sac_config"]), device)
+        teacher.load(path, load_optimizers=False)
+        teachers[region] = teacher.actor
+    return teachers
 
 
 def cell_bodies(args) -> list[int]:
@@ -696,7 +721,8 @@ def main(argv: list[str] | None = None) -> None:
 
     privileged = agent.cfg.critic_input == "privileged"
     replay = FlatReplayBuffer(
-        env.obs_dim, env.action_dim, args.replay_capacity, args.batch_size, args.device, priv_dim=agent.cfg.privileged_dim if privileged else 0
+        env.obs_dim, env.action_dim, args.replay_capacity, args.batch_size, args.device, priv_dim=agent.cfg.privileged_dim if privileged else 0,
+        labelled=bool(args.teacher_checkpoints),
     )
     reward_scale = float(payload.get("metadata", {}).get("reward_scale", wang_equivalent_reward_scale(agent.cfg.discount))) if payload is not None else wang_equivalent_reward_scale(agent.cfg.discount)
     start_step = 0
@@ -712,6 +738,17 @@ def main(argv: list[str] | None = None) -> None:
     # Held-out slots step with the policy and are evaluated, but never feed replay.
     training_slot_mask = np.ones(env.num_envs, dtype=bool)
     training_slot_mask[heldout_slots] = False
+    # Wang's distillation: a replay row carries its slot's arm-pose region, whose teacher pulls on the actor.
+    slot_region = [d.get("pose_region") for d in env.descriptions]
+    teacher_regions: list[int] = []
+    if args.teacher_checkpoints:
+        teachers = load_teachers(args.teacher_checkpoints, spec, env.action_dim, args.device)
+        uncovered = sorted({slot_region[i] for i in range(env.num_envs) if training_slot_mask[i]} - set(teachers), key=str)
+        if uncovered:
+            raise ValueError(f"Training slots in arm-pose regions {uncovered} have no teacher among {sorted(teachers)}")
+        agent.set_teachers(teachers)
+        teacher_regions = sorted(teachers)
+        print(f"[uipc-manip] distilling from teachers for arm-pose regions {teacher_regions}, weight {agent.cfg.distill_weight}", flush=True)
     metadata = {
         "task": args.task,
         "env": description["config"],
@@ -721,9 +758,10 @@ def main(argv: list[str] | None = None) -> None:
         "num_envs": env.num_envs,
         "training_args": {key: getattr(args, key) for key in (
             "garment_curriculum_interval", "garment_curriculum_order", "updates_per_step", "replay_capacity", "init_steps",
-            "cell_source", "body_seeds", "heldout_bodies", "heldout_body_seeds", "allow_partial_cell_coverage",
+            "cell_source", "body_seeds", "heldout_bodies", "heldout_body_seeds", "allow_partial_cell_coverage", "teacher_checkpoints",
         )},
         "curriculum_order": order,
+        "teacher_regions": teacher_regions,
     }
     plan = getattr(args, "_cell_plan", None)
     if plan is not None:
@@ -796,6 +834,8 @@ def main(argv: list[str] | None = None) -> None:
                 # The terminal state pairs with the terminal observation, not with the reset one.
                 terminal_priv = info.get("terminal_privileged", None)
                 state_pair = {"priv": priv[i], "next_priv": next_priv[i] if terminal_priv is None else terminal_priv}
+            if replay.labelled:
+                state_pair["label"] = slot_region[i]
             replay.add(obs[i], actions[i], float(rewards[i]) * reward_scale, next_obs[i] if terminal_obs is None else terminal_obs, False, **state_pair)
             added += 1
             episode_return[i] += float(rewards[i])

@@ -526,9 +526,15 @@ The plan, scaled to one GPU:
    deviations, at the tool point, with the teacher fed the student's own
    observation. The paper states a weight of 0.01 and the launcher in the
    reference checkout 0.002; the student launcher is not in the checkout, so
-   the weight stays a flag. Wang keeps one entropy temperature per region and
-   draws each update's batch from one region's replay. FMVP's
-   behaviour-cloning route (`collect_rollouts.py`, `distill.py`) is the fallback.
+   the weight stays a flag. Implemented as `--teacher-checkpoints` and
+   `--distill-weight` (default 0.01): each teacher's region is read from its
+   training cells, every replay row carries its slot's region, and each row is
+   pulled toward its own region's teacher inside a mixed batch. Wang instead
+   draws each update's batch from one region's replay and may keep one entropy
+   temperature per region; a mixed batch over equal slots per region is the
+   same in expectation, and the single temperature is a stated simplification.
+   FMVP's behaviour-cloning route (`collect_rollouts.py`, `distill.py`) is the
+   fallback.
 
 A known gap remains: Wang draws a new pose every episode, while a slot here keeps
 its cell for the life of the world. A student therefore sees 28 divided by the
