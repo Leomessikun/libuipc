@@ -731,14 +731,14 @@ the segment the hand travels through first:
 
 | State | Along forearm from fingertip | Off the forearm axis | Opening radius |
 |---|---:|---:|---:|
-| Wang's cached states, all 23 cells | -8.8 to -9.4 cm | 0.0 cm | 8.1 to 9.9 cm |
+| Newton cache file, all 23 cells | -8.8 to -9.4 cm | 0.0 cm | 8.1 to 9.9 cm |
 | Live cell as placed | -15.7 to -17.2 cm | 10.3 to 12.4 cm | 9.5 to 9.9 cm |
 | Live cell after the settle | -13.2 to -30.5 cm | 18.4 to 18.8 cm | 9.8 to 10.3 cm |
 
 The placement puts the opening centre exactly one clearance, 20.0 cm, out along
 the fingertip-to-shoulder chord. That chord is 31 to 38 degrees off the forearm
 on these bent arms, so the opening starts about one radius off the axis the hand
-travels along. Wang's reference states are coaxial with the forearm at 9 cm,
+travels along. The cache file's states are coaxial with the forearm at 9 cm,
 with the opening plane facing along it (normal cosine 0.94 to 1.00). The free
 fall then drops the opening a further 6 to 13 cm. The expert dresses only where
 its approach happens to re-centre the opening. On tshirt_26 body 3 the opening
@@ -752,6 +752,63 @@ the socket on the forearm axis at about Wang's clearance, then moves it out only
 as far as the garment needs to start clear of the arm. It also keeps 48 anchors
 and settles the drape under the episode's own pin set; the expert must be
 re-verified before training.
+
+### Forearm-axis placement and the episode length
+
+The cache file's cells are not physically settled states. The loader reads
+their positions unchanged, yet every body shows the same opening-to-grip offset
+for a given garment and the opening sits on the forearm axis to within 0.1 cm,
+so upstream each garment's one drape was placed rigidly on each arm. They are
+also pre-worn: the garment body lies 11 to 15 cm toward the elbow from the
+opening, the arm inside the sleeve tube, and they build only because the cache
+path erodes the arm collider by 6 mm. Measured on the CPU for tshirt_26 and
+tshirt_4 on bodies 0 and 3, relative to the opening centre along the forearm:
+
+| Placement | Garment body | Grip along forearm | Grip above opening | Nearest cloth vertex to arm |
+|---|---:|---:|---:|---:|
+| Cache file cells | +11 to +15 cm | +9 to +21 cm | +10 to +18 cm | arm eroded 6 mm |
+| Chord, 20 cm, turned outward (committed) | -4 to -25 cm | -5 to -11 cm | -2 to +7 cm | 25 to 77 mm |
+| Forearm axis, 9 cm, turned outward | -4 to -17 cm | -12 cm | +1 to +8 cm | 1.3 to 8.9 mm |
+| Forearm axis, 9 cm, pre-worn | +4 to +17 cm | +12 cm | +10 to +14 cm | 1.7 to 5.9 mm |
+
+The pre-worn forearm placement reproduces the cache geometry the expert was
+tuned on, but libuipc refuses it at 9 and 11 cm even with the arm eroded 6 mm,
+on tshirt_26 body 3 and tshirt_4 body 0; vertex distances overstate the margin
+against its edge-triangle check. Turned outward on the forearm axis, a world of
+tshirt_26 bodies 0 and 3 and tshirt_4 body 0 is refused at 9 cm on tshirt_4
+alone and builds at 12 cm. There, with 48 anchors and 150 decisions, the
+expert reaches the upper arm at 0.71 on tshirt_26 body 0, the first live cell
+past the threshold, and 0.51 on body 3; after the settle the opening sits 3.1
+to 4.3 cm off the axis instead of 18.4 to 18.8. tshirt_4 still fails: its
+opening reaches the fingertip on the axis, then turns almost parallel to the
+forearm (normal cosine from 0.71 down to 0.08) and closes from 9.4 to 5.0 cm,
+and the hand never enters.
+
+No single clearance builds the sixteen-cell world on the forearm axis. At 12 cm
+libuipc refuses tshirt_26 on bodies 2, 4, 5, 6 and 7, at 14 cm on bodies 1, 2,
+4, 5 and 7; every tshirt_4 cell builds at both. Moving out does not help
+monotonically, so the contact is not the sleeve reaching the hand along the
+axis. Each cell needs its own clearance, chosen by an exact check against the
+whole arm mesh.
+
+The episode length also caps the expert. On the committed placement with 48
+anchors, run for 300 decisions instead of 150:
+
+| tshirt_26 body | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Final upper arm | 0 | 0.118 | 0.989 | 0 | 0 | 0.936 | 0 | 0.952 |
+| Highest upper arm | 0.218 | 0.156 | 0.989 | 1.000 | 0 | 0.936 | 0.141 | 0.952 |
+| Expert finished at decision | | | 217 | 212 | | 249 | 274 | 222 |
+| Largest held-cuff error, mm | 29.3 | 48.7 | 7.8 | 8.1 | 35.0 | 16.3 | 35.1 | 13.5 |
+
+Three bodies succeed, against none at 150 decisions. The expert reaches the
+fingertip at decision 40 to 51 and starts its last pull at 133 to 225, so a
+150-decision episode ends it mid-pull; the 20 cm approach alone costs about 45
+decisions. Body 3 read 1.000 at decision 200 and 0 from decision 225, after the
+expert had finished at 212 with the cuff still held; that reading is not yet
+explained. The four bodies that fail are the four whose grip slips by 29 to 49
+mm. The episode length for training is to be set from the expert ceiling on the
+final placement, which shortens the approach.
 
 ## Differentiable simulation: neither library provides a usable gradient here
 
