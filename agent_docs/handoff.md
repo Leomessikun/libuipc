@@ -1646,3 +1646,15 @@ per vector step late in episode 2, and then its log went silent. The run is kept
 - **`anchor_tether_m`.** It exists but stays off.
 
 The record is `2026-09-11-dressing-solver-stall.md`.
+
+Relaunch 1 started at 06:44 from `953b0cff`.
+- **Trips.** It tripped the watchdog in both episodes where the policy acted, at steps 215 and 124.
+- **No evaluation or checkpoint.** The loop ran its schedule only when an episode reached its horizon,
+  so the run never evaluated or saved. `300d743c` runs the schedule on the trip path too.
+- **PCG tolerance.** In an expert replay, 5e-2 was 14 per cent slower than 1e-2.
+
+Relaunch 2 started at 08:43 from `.claude/worktrees/pretrain-300d743c`, with `--checkpoint-every 10000`.
+The stall record has the tables.
+
+Once the policy acts, the teacher runs at about 2 transitions per second. On this GPU, with an
+evaluation every 10k, a 600k teacher takes about five days.

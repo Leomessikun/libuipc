@@ -1,6 +1,7 @@
 # The region-13 teacher stall: the linear solve, not the hold
 
-Status: bounded by a Newton cap and a decision watchdog. The relaunched teacher is the remaining check.
+Status: bounded by a Newton cap and a decision watchdog. The slow tail under a learning policy is not yet
+diagnosed. Relaunch 2 is running.
 
 ## What happened
 
@@ -155,3 +156,50 @@ The probes are in the session scratchpad, under `perf/`:
   `--contact-resistance` and `--max-translation-scale`. It appends one JSON line per decision.
 - **`ab_compare.py` and `cap_compare.py`.** They summarise those records.
 - **`expert_dt.py --no-watchdog`.** It runs the five-garment expert check.
+
+## Relaunch 1: the watchdog trips in every policy episode
+
+The chain restarted at 06:44 from `953b0cff`, with the cap and the watchdog. The first world built in
+62 s from the seeded bake cache.
+
+| Transitions | Episode | Environment s per vector step |
+|---|---:|---:|
+| 0 to 7,200 | 1 (random actions) | 4.1 to 5.3 |
+| 7,200 to 9,600 | 2 | 5.0 |
+| 9,600 to 12,384 | 2 | 7.2 to 12.1, then a trip at episode step 215 (budget 74 s) |
+| 14,400 to 15,336 | 3 | 5.2 to 13.9, then a trip at episode step 124 (budget 51 s) |
+
+- **The second trip is partly confounded.** It came as two probe processes started on the same GPU.
+  Its episode was already climbing along the same curve as the second episode's.
+- **A known limit of the watchdog.** The budget follows the median of the last 64 decisions, so it
+  cannot adapt to contention that starts in the middle of an episode. Probes running beside a teacher
+  therefore cause spurious trips.
+- **The loop skipped its schedule on a trip.** Evaluation and checkpoints ran only when an episode
+  reached its horizon, and none did once the policy acted. The run would never have evaluated or saved.
+  `300d743c` runs the schedule on the trip path too.
+- **The run was stopped at 08:30,** at 16,272 transitions, and kept as
+  `wang_teacher_r13_s1_relaunch1_tripped_20260911`.
+
+Once the policy acts, the cost of a step is the price of contact at 24 cells, about 2 transitions per
+second. Every episode then climbs until one decision passes eight times the median. The watchdog
+bounds each stall, but it also cuts off the end of the episode, the phase that pulls the sleeve up the
+upper arm.
+
+## The PCG tolerance is not the lever either
+
+The expert replay ran on the eight tshirt_68 cells in graph mode 2, with both arms at once on an
+otherwise free GPU:
+
+| PCG tolerance | Minutes | Mean s per decision, decisions 50 to 200 | Upper arm >= 0.7 |
+|---|---:|---:|---:|
+| 1e-2 (default) | 10.7 | 2.65 | 5 of 8 |
+| 5e-2 | 12.1 | 3.01 | 5 of 8 |
+
+The looser tolerance is 14 per cent slower, so the default stays at 1e-2.
+
+## Relaunch 2
+
+The chain restarted at 08:43 from `300d743c`. It carries the cap, the watchdog, the schedule on the
+trip path, and `--checkpoint-every 10000`, so that a learned actor exists about an hour in. That
+checkpoint drives the next diagnostic: `stall_probe.py --policy checkpoint` on mixed region-13 cells.
+At every decision it records each slot's forearm and upper-arm ratios, collision and threading.
