@@ -1629,3 +1629,20 @@ Wang pretraining launch, 2026-09-11 01:45 CEST:
   transitions, four rotations, three evaluations, two checkpoints, exit 0. The first
   world took 528 s because it baked the garments online; later worlds rebuilt in 21 to
   30 s.
+
+The launch was stopped by hand at 05:03. Region 13's teacher had slowed from 3.6 s to 130 s
+per vector step late in episode 2, and then its log went silent. The run is kept as
+`output/uipc_manip/wang_teacher_r13_s1_stalled_20260911`.
+- **The hold is not the cause.** In every probe the held patch stays within millimetres while the
+  cost climbs.
+- **The cost is the linear solve.** PCG iterations per Newton step rise with contact and with large
+  actions, and a 24-cell world pays for its hardest cell.
+- **Contact settings and step size do not change it.** d_hat 3 mm, kappa 1e6 and half the
+  translation per decision each leave the PCG work per decision within 10 per cent.
+- **The fix.** `DressingConfig` now caps Newton at 128 iterations per step. It also has a decision
+  watchdog, at 8 times the recent median and at least 30 s. A trip is an ordinary simulator error, so
+  `pretrain_wang` rebuilds the world.
+- **The expert check holds.** With the cap it passes 22 of 40, against 21 without.
+- **`anchor_tether_m`.** It exists but stays off.
+
+The record is `2026-09-11-dressing-solver-stall.md`.
