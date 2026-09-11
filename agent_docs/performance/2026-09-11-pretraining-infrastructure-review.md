@@ -130,6 +130,7 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 | 83.5k | 0.000 | 0.07 | 0 of 25 | 25 |
 | 90.7k | 0.000 | 0.38 | 0 of 25 | 0 |
 | 105.1k | 0.220 | 0.60 | 0 of 25 | 0 |
+| 112.3k | 0.128 | 0.44 | 0 of 25 | 25 |
 
 - **The 90.7k evaluation is valid and ends on no upper arm.** Forearm ratio by garment: 0.00 hospital
   gown, 0.45 tshirt_26, 0.54 tshirt_68, 0.73 tshirt_4, 0.16 tshirt_392. Three evaluations in a row
@@ -142,6 +143,9 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
   - That evaluation ran from about 20:00 to 20:14. Two re-evaluation probes started on the same GPU at
     20:02, and their contention is the likely trigger.
+  - The 112.3k evaluation tripped the same way with no other job on the GPU, only the teacher and
+    desktop processes, so the teacher's own slow decisions are enough. Two of 12 evaluations
+    so far measured nothing.
   - Wang's evaluation has no watchdog: in `curl/train.py` a simulator error ends only its own episode.
 - **The failure mode grows as the policy improves.** Deeper sleeves mean slower contact decisions,
   and any other GPU job slows every decision. Under a world-level watchdog, an evaluation world of 25
