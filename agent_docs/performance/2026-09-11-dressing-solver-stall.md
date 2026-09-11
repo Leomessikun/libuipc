@@ -1,7 +1,7 @@
 # The region-13 teacher stall and the policy's slow tail
 
-Status: bounded by a Newton cap and a decision watchdog. The slow tail under the learned policy is the
-hold spring; an anchor tether on every held vertex is under test. The chain is stopped.
+Status: bounded by a Newton cap and a decision watchdog. The slow tail under the learned policy was the
+hold spring, now bounded by a 6 cm tether on every held vertex. Relaunch 3 is running.
 
 ## What happened
 
@@ -322,4 +322,23 @@ at 0.06:
   the cap.
 - **The tether binds where the hold ran away.** tshirt_392 body 6 reached 131 mm with the cap only and
   59 mm with the tether.
+
+## Relaunch 3
+
+The chain restarted fresh at 12:53 from `d19489c8`, with the vertex tether on by default and relaunch 2's
+flags. Against relaunch 2 at the same steps:
+
+| Step | Transitions | Relaunch 2 elapsed s | Relaunch 3 elapsed s | Env s per step, last 20: relaunch 2 | Relaunch 3 |
+|---:|---:|---:|---:|---:|---:|
+| 300 | 7,200 | 1,914 | 2,026 | 5.6 | 7.2 |
+| 500 | 12,000 | 3,780 | 3,763 | 13.6 | 9.6 |
+| 540 | 12,960 | 4,878 | 4,112 | 25.1 | 6.2 |
+| 580 | 13,920 | 6,452 | 4,539 | 49.6 | 10.9 |
+
+- **Episode 1 runs at the same speed in both.** From late in episode 2, where relaunch 2 climbed to 50 s
+  per step, relaunch 3 stays under 11 s.
+- **No simulator error through 14,400 transitions.** Relaunch 2's first came at step 704.
+- **The first evaluation under the policy.** At 14,400 transitions the held-out upper-arm ratio is 0.054
+  and the forearm ratio 0.48, with a mean return of 24.1 and no simulator error, in 1,074 s. Relaunch 2's
+  round at the same point lost all 25 episodes to the watchdog and reported NaN.
 

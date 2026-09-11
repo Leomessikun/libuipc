@@ -1677,3 +1677,8 @@ Relaunch 2's checkpoint at 14,400 transitions found the slow tail, and the chain
   unbounded picker.
 - **The reproducer.** The checkpoint and the probe scripts are in `output/uipc_manip/reproducers/`.
 
+Relaunch 3 started at 12:53 from `.claude/worktrees/pretrain-d19489c8`, fresh, with the tether on. At
+13,920 transitions it had used 4,539 s against relaunch 2's 6,452 s. Its first evaluation, at 14,400,
+scored a held-out forearm ratio of 0.48 and upper-arm ratio of 0.054 with no simulator error. The leftover
+agent process that had shared the GPU since the night before was stopped at 14:37 at the user's request.
+
