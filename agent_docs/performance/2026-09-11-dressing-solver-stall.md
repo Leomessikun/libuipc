@@ -398,3 +398,42 @@ actor and cells, both arms together beside the teacher, over decisions 0 to 129:
 The teacher keeps IPC. AL-IPC is worth another look once its moving boundaries are penalty-free and its
 release branch (`wiso-enoji/libuipc` `AL-release`, six commits past upstream `292c98c3`) is merged.
 
+## The authors' `AL-release` branch, built from source
+
+The runs above used the 0.0.28 wheel. To see whether the authors' release branch
+(`wiso-enoji/libuipc` `AL-release`) is the faster version, it was built from source and run on the
+same probe.
+
+**What the release is.** It is upstream `292c98c3` (2026-05-19) plus six commits. Four add examples,
+assets and a README. Two change the solver:
+- `e1264877` (2026-06-03) rewrites the global active-set manager, edits `advance_al.cu`, and adds
+  `diag_norm` penalty scaling as the default `contact/al-ipc/mu_scale_mode`;
+- `f6c3f996` (2026-07-31) reworks the BVH trajectory filters.
+
+Upstream moved on separately. Its main of 2026-09-04 is 205 commits past that base, and they include
+the AL-IPC hardening of late August and early September (`3ee11847`, `778cb6cb`, `1623cb12`). A
+dry-run merge of the release onto this branch conflicts in ten files: the active-set manager, six
+trajectory filters, `advance_al.cu` and the default config. Neither side contains the other.
+
+**The build.** The worktree `.claude/worktrees/al-release` builds `pyuipc 0.1.0.dev1052` for sm_120
+against CUDA 12.8. On top of the release it carries two cherry-picked build fixes (the tinygltf
+overlay port, `6b2a4f10` and `47af0227`) and the instrumentation edit below. The solver is otherwise
+the authors'.
+
+**Four differences stand between the release and a like-for-like run.**
+- **It cannot build the production cloth.** Its `StrainLimitingBaraffWitkinShell.apply_to` has no
+  separate shear moduli or strain rate; they came with `eb8c7ecb` (2026-08-21). The production
+  garment's shear is a hundredth of its stretch. Both release arms use `NeoHookeanShell` with the
+  production E = 6 kPa and nu = 0.49 instead. Its shear modulus is 2,013 Pa against production's
+  20 Pa, so this cloth is 100 times stiffer in shear, with a similar stretch.
+- **Bending is weighted differently.** The release weights discrete-shell bending by area times
+  thickness, where `eb8c7ecb` weights it by area. At 0.15 mm the same stiffness is 6,700 times softer
+  on the release, so its arms use 0.1 / 0.00015 = 666.7.
+- **AL frames dump their timers.** The release's `advance_AL` calls `Timer::enable_all()` before
+  every frame and `Timer::report(std::cout)` after it. With timers on, every timed scope ends in
+  `muda::wait_device()`. Only the AL arm pays this, so the two lines were removed for these runs.
+- **It has no CUDA graphs.** Neither release arm runs in graph mode, whatever the probe asks for.
+
+**`diag_norm`, the release default, aborts in the settle.** The AL arm died before its first
+decision on `Energy [FEMLineSearchReporter] is -nan` (`line_searcher.cu:71`) and dumped core. On the
+wheel the same mode died on a negative time of impact, as described above.
