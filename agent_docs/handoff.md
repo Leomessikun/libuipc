@@ -1697,3 +1697,19 @@ The pretraining infrastructure was reviewed from first principles in
 
 At the user's request, several AL-release artifacts were deleted: its build, its worktree, the CUDA
 12.8 conda env, vcpkg with its cache, and the `wiso-enoji` refs.
+
+Five research tracks (dressing literature, sample-efficient learning, fast cloth simulators, an
+audit of Wang's repository, the expert as a data source) fed
+`performance/2026-09-11-training-infrastructure-proposal.md`.
+- **Keep IPC.** No simulator documents a tenfold speedup on cloth-on-body contact together with
+  transfer evidence.
+- **The teacher changes what it sees and where it starts:** a privileged 35-float MLP actor and
+  critic, replay seeded with expert episodes, a bounded residual on the expert as the first probe.
+- **The student** is Wang's recipe (SAC loss plus the teacher term on its own rollouts) on Stretch 3
+  clouds.
+- **Step 0 first.** Bound the expert's last target at the shoulder: it overshoots by 10 cm, and the
+  reward then falls off a cliff for the rest of every successful episode. Then measure the expert on
+  region 13 under the final-ratio metric, which nobody has done.
+- **Wang's final horizon is 150** (`curl/launch_train_curl.py:241`), against our recorded 300, so the
+  current path costs 7 to 14 GPU-days per region-13 teacher.
+- **The GPU switch** is folded into relaunch 3's 300k decision (around 2026-09-12 15:00).
