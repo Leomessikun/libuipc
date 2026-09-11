@@ -119,3 +119,81 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
   (`get_batch_size` for `pointcloud_3`), an actor update every fourth critic update, learning rates
   1e-4, and evaluation every 10k. Neither side clips gradients. Time limits bootstrap on both sides.
   The one difference is the temperature learning rate, 5e-5 here against 1e-4.
+
+## Relaunch 3's first evaluations
+
+| Transitions | Held-out upper-arm ratio | Forearm ratio | Successes | Simulator errors |
+|---:|---:|---:|---:|---:|
+| 50.4k | 0.083 | 0.56 | 0 of 25 | 0 |
+| 64.2k | 0.253 | 0.64 | 1 of 25 | 0 |
+| 76.8k | 0.085 | 0.36 | 0 of 25 | 0 |
+| 83.5k | 0.000 | 0.07 | 0 of 25 | 25 |
+
+- **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
+  turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
+  therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
+  - That evaluation ran from about 20:00 to 20:14. Two re-evaluation probes started on the same GPU at
+    20:02, and their contention is the likely trigger.
+  - Wang's evaluation has no watchdog: in `curl/train.py` a simulator error ends only its own episode.
+- **The failure mode grows as the policy improves.** Deeper sleeves mean slower contact decisions,
+  and any other GPU job slows every decision. Under a world-level watchdog, an evaluation world of 25
+  configurations is all-or-nothing.
+  - Fix options: exempt evaluation worlds from the watchdog, or re-run an evaluation that tripped.
+    Either takes effect only after the teacher restarts.
+  - Until then, re-evaluate saved checkpoints offline before choosing a teacher for distillation.
+- **The deterministic evaluation of one configuration flips between rounds.** For example, tshirt_68
+  on body 14046 scored 0.50, 0.46, 0 and 0 over the evaluations from 43.2k to 76.8k. One deterministic
+  episode per configuration, on a threshold task with a GPU solve that is not bitwise repeatable, is a
+  noisy estimate.
+- **Training rollouts did not collapse.** The replay stores rewards at half scale; on the upper arm the
+  raw reward is the forearm length plus five times the upper-arm distance. Reconstructed from it:
+  - 83 of 264 training episodes (one per slot) reached the upper arm, 6 went well up it, and none
+    reached the 0.7 success line.
+  - Per 24-slot episode, the upper-arm count rose from 0 in the first episode to 11 to 13 at 21k to
+    36k, and to 14 at 69.6k to 76.8k.
+  - In the episode the third trip cut at 83.5k, 8 slots reached the upper arm and 18 of 24 the forearm.
+- **Evaluation episodes so far.** Of 200:
+  - 75 ended on the upper arm;
+  - 10 ended at 0.5 or more;
+  - 1 reached the 0.7 success line: tshirt_26 on body 14048 at 64.2k. Bodies 14045 to 14049 are Wang's
+    held-out poses 45 to 49, never trained on.
+
+- **Offline re-evaluation.** Each checkpoint ran once more in fresh evaluation worlds, on the same 25
+  configurations with deterministic actions, after the teacher's own evaluation (scratch
+  `perf/stall_probe.py --deterministic`). A second pass was stopped on purpose to keep the GPU free for
+  the teacher's next evaluation.
+
+  | Checkpoint | Teacher's evaluation | Re-evaluation | Configurations within 0.05 |
+  |---:|---:|---:|---:|
+  | 64.2k | 0.253, 1 of 25 | 0.239, 0 of 25 | 22 of 25 |
+  | 76.8k | 0.085, 0 of 25 | 0.085, 0 of 25 | 25 of 25 |
+
+  - The single 64.2k success does not hold: tshirt_26 on body 14048 scored 0.87, then 0.63. Two
+    tshirt_68 configurations moved the other way and back (0.53 to 0, and 0 to 0.37).
+  - The 76.8k drop is the policy, not evaluation noise. Per garment, the forearm ratio moved from
+    0.00, 1.00, 0.40, 0.99 and 0.78 (hospital gown, tshirt_26, tshirt_68, tshirt_4, tshirt_392) at 64.2k
+    to 0.39, 1.00, 0.00, 0.40 and 0.00 at 76.8k. The policy traded three garments for one rather than
+    getting uniformly worse.
+
+## Wang's regional teachers
+
+His launcher (`curl/launch_train_curl.py:319-345`) lists the checkpoints the student distils from. Each
+file name carries the step and the held-out mean upper-arm ratio of that best evaluation.
+- **Training.** There are 27 teachers, one per arm-pose region, each trained by pure online SAC without
+  demonstrations for up to 5M steps.
+- **Best steps.** They range from 0.52M to 1.96M, median 0.75M, and sum to 23.5M.
+- **Scores.** 23 file names carry one: 0.646 to 0.880, median 0.78, with 20 of them between 0.70 and
+  0.85. The other four are plain checkpoints between 0.74M and 1.52M.
+- **The chain's regions:**
+
+  | Region | Best step | Held-out upper-arm ratio |
+  |---:|---:|---:|
+  | 4 | 920k | 0.845 |
+  | 13 | 1.96M | 0.740 |
+  | 22 | 520k | 0.782 |
+
+  Region 13 is the slowest of all 27. At this port's rate its best step is seven days away, and the
+  chain gives it 600k transitions.
+- **The student.** Distilled from the teachers, it reaches a held-out upper-arm ratio of 0.68, against
+  0.34 for one policy trained directly (Table II).
+
