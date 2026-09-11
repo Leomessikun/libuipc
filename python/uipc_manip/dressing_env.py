@@ -25,6 +25,7 @@ import shutil
 import sys
 import tempfile
 import time
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -92,6 +93,22 @@ class DressingConfig:
     newton_tolerance: float = 0.1
     newton_translation_tolerance: float = 1.0
     linesearch_iterations: int = 8
+    newton_max_iterations: int = 128
+    """Newton iterations allowed per simulation step; the library default is 1024. A normal step
+    converges in 3 to 6, but contact and large actions make the linear solve harder, and one hard
+    cell sets the step time of the whole world: the first region-13 teacher reached 130 s per
+    decision. The cap costs the five-garment expert check nothing (22 of 40 against 21)."""
+    anchor_tether_m: float | None = None
+    """Largest distance the commanded tool may lead the held cuff patch [m]. A tool move that would
+    open the gap past it, and does not close it, is dropped like a no-move collision, so the gap
+    bounds the hold spring's force. The solver-cost probes found the hold within millimetres while
+    the cost climbed, so None, the unbounded picker, stays the default."""
+    decision_time_floor_s: float = 30.0
+    decision_time_factor: float = 8.0
+    """Watchdog: a decision that runs past ``decision_time_factor`` times the median of the last 64
+    decisions, and never less than ``decision_time_floor_s``, raises a simulator error, so the world
+    resets and the trainer rebuilds it. Until eight decisions are timed the budget is the floor
+    times the factor."""
     linear_system_tolerance: float = 1e-2
     """Relative tolerance of the preconditioned conjugate-gradient solve. The library
     default is 1e-3; at 1e-2 a 100-decision expert run costs 330 ms per simulation step
@@ -208,6 +225,23 @@ def _rodrigues(offsets: np.ndarray, rotation: np.ndarray) -> np.ndarray:
     return np.where(rnorms > 1e-12, rotated * norms / np.maximum(rnorms, 1e-12), rotated)
 
 
+def decision_time_limit(recent, floor_s: float, factor: float, warmup: int = 8) -> float:
+    """Wall-clock budget of one decision [s]: ``factor`` times the median of the recent decisions,
+    never below ``floor_s``; until ``warmup`` decisions are timed, ``floor_s * factor``."""
+    if len(recent) < warmup:
+        return floor_s * factor
+    return max(floor_s, factor * float(np.median(np.asarray(recent, dtype=np.float64))))
+
+
+def tether_allows(candidate: np.ndarray, held_tcp: np.ndarray, anchor: np.ndarray, tether_m: float | None) -> bool:
+    """Whether a tool move keeps the commanded tool within ``tether_m`` of the held patch, or at least
+    no farther from it than before; ``None`` disables the tether."""
+    if tether_m is None:
+        return True
+    gap = float(np.linalg.norm(candidate - held_tcp))
+    return gap <= tether_m or gap < float(np.linalg.norm(anchor - held_tcp))
+
+
 class GenesisIPCDressingEnv:
     """Batched sleeve-threading task; one libuipc world for every slot."""
 
@@ -275,6 +309,7 @@ class GenesisIPCDressingEnv:
         self._obs_builder = DressingObservationBuilder(cfg.obs, self._device)
         self._batched_obs = BatchedDressingObservationBuilder(cfg.obs, self._device)
         self._episode_step = 0
+        self._decision_times: deque[float] = deque(maxlen=64)
         self._build_scene()
         self._prepare_start()
         self.descriptions = [self.describe(i) for i in range(self.num_envs)]
@@ -313,6 +348,7 @@ class GenesisIPCDressingEnv:
                 contact_friction_enable=True,
                 enable_rigid_rigid_contact=False,
                 n_linesearch_iterations=cfg.linesearch_iterations,
+                newton_max_iterations=cfg.newton_max_iterations,
                 linesearch_report_energy=False,
                 newton_tolerance=cfg.newton_tolerance,
                 newton_translation_tolerance=cfg.newton_translation_tolerance,
@@ -555,17 +591,26 @@ class GenesisIPCDressingEnv:
         if cfg.clip_rotation_to_yz:
             rotation[:, 0] = 0.0
         tracking_max = np.zeros(n, dtype=np.float64)
+        started = time.perf_counter()
+        budget = decision_time_limit(self._decision_times, cfg.decision_time_floor_s, cfg.decision_time_factor)
+        held = self.positions() if cfg.anchor_tether_m is not None else None
         try:
             for _ in range(cfg.action_repeat):
                 for i, cell in enumerate(self.cells):
                     self._offsets[i] = _rodrigues(self._offsets[i], rotation[i] / cfg.action_repeat)
                     candidate = self._anchor[i] + translation[i] / cfg.action_repeat
                     # PyFlex no-move collision: a step that would put the anchor inside the shell is dropped.
-                    if np.min(np.linalg.norm(cell.arm_points - candidate[None, :], axis=1)) >= cfg.no_move_collision_threshold:
+                    if np.min(np.linalg.norm(cell.arm_points - candidate[None, :], axis=1)) >= cfg.no_move_collision_threshold and (
+                        held is None or tether_allows(candidate, self._actual_tcp(i, held), self._anchor[i], cfg.anchor_tether_m)
+                    ):
                         self._anchor[i] = candidate
                 self._update_targets()
                 self._sim_step()
+                if time.perf_counter() - started > budget:
+                    raise RuntimeError(f"Decision ran past its {budget:.0f} s budget at episode step {self._episode_step}")
                 substep_positions = self.positions()
+                if held is not None:
+                    held = substep_positions
                 tracking_max = np.maximum(tracking_max, [self._tracking_error(i, substep_positions) for i in range(n)])
             self._check_world()
         except ViewerClosed:
@@ -574,6 +619,7 @@ class GenesisIPCDressingEnv:
             obs = self.reset()
             infos = [{"sim_error": True, "error": repr(exc), "success": False, "distance": float("nan")} for _ in range(n)]
             return obs, np.zeros(n, dtype=np.float32), np.ones(n, dtype=bool), infos
+        self._decision_times.append(time.perf_counter() - started)
         positions = self.positions()
         progress = self._progress(positions)
         self._episode_step += 1
