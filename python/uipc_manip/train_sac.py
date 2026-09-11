@@ -532,6 +532,7 @@ def evaluate(
     early_turn_seen = np.zeros(env.num_envs, dtype=bool)
     metric_keys = tuple(getattr(env, "metric_keys", ()))
     running_max = {k: np.full(env.num_envs, -np.inf) for k in metric_keys}
+    last_seen = {k: np.full(env.num_envs, np.nan) for k in metric_keys}
     trajectories = [[] for _ in range(env.num_envs)] if trajectory_dir is not None else None
     episode_index = 0
     while len(finished) < episodes:
@@ -547,6 +548,7 @@ def evaluate(
             for k in metric_keys:
                 if k in info:
                     running_max[k][i] = max(running_max[k][i], float(info[k]))
+                    last_seen[k][i] = float(info[k])
             if dones[i]:
                 record = {
                     "success": bool(info.get("success", False)),
@@ -558,10 +560,12 @@ def evaluate(
                 }
                 # FMVP Appendix A.1 keeps a trajectory when it ends dressed and never cut the elbow.
                 record["paper_filter"] = bool(record["success"] and not record["early_turn"])
+                # A simulator error ends the episode without metrics; it is scored as of its last completed decision.
                 for k in metric_keys:
-                    record[f"final_{k}"] = float(info.get(k, np.nan))
+                    record[f"final_{k}"] = float(info[k]) if k in info else float(last_seen[k][i])
                     record[f"max_{k}"] = float(running_max[k][i])
                     running_max[k][i] = -np.inf
+                    last_seen[k][i] = np.nan
                 record["slot"] = i
                 for key in ("garment", "cell"):
                     if key in info:

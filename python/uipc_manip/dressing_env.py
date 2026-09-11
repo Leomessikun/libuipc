@@ -559,6 +559,8 @@ class GenesisIPCDressingEnv:
     # RL interface
     # ------------------------------------------------------------------
     def reset(self, seeds: list[int | None] | None = None) -> np.ndarray:
+        # The watchdog budgets this episode from its own decisions, not an earlier round's in a reused world.
+        self._decision_times.clear()
         if seeds is not None:
             for i, seed in enumerate(seeds):
                 if seed is not None:

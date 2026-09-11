@@ -175,6 +175,35 @@ class UnequalEpisodeEnv:
         return np.zeros((3, 1)), np.zeros(3), dones, infos
 
 
+class TrippingEnv:
+    """Two slots whose third decision ends on a simulator error, as the decision watchdog does."""
+
+    num_envs = 2
+    metric_keys = ("forearm_ratio", "upperarm_ratio")
+
+    def reset(self, seeds):
+        self.step_count = 0
+        return np.zeros((2, 1))
+
+    def step(self, actions):
+        self.step_count += 1
+        if self.step_count == 3:
+            infos = [{"sim_error": True, "error": "RuntimeError('Decision ran past its budget')", "success": False,
+                      "distance": float("nan")} for _ in range(2)]
+            return np.zeros((2, 1)), np.zeros(2), np.ones(2, dtype=bool), infos
+        infos = [{"success": False, "distance": 0.5, "forearm_ratio": 0.4 * self.step_count,
+                  "upperarm_ratio": 0.1 * self.step_count + 0.1 * i} for i in range(2)]
+        return np.zeros((2, 1)), np.zeros(2), np.zeros(2, dtype=bool), infos
+
+
+def test_an_episode_cut_by_a_simulator_error_is_scored_at_its_last_decision():
+    result = evaluate(TrippingEnv(), lambda obs, deterministic: obs, ObsSpec(3), SimpleNamespace(seed=0), 2)
+    assert result["episodes"] == 2 and result["sim_errors"] == 2 and result["success_rate"] == 0.0
+    # The second decision is the last one completed: upper-arm 0.2 and 0.3, forearm 0.8 for both.
+    assert result["mean_final_upperarm_ratio"] == pytest.approx(0.25)
+    assert result["mean_final_forearm_ratio"] == pytest.approx(0.8)
+
+
 @pytest.mark.parametrize("requested, actual", [(1, 3), (4, 6)])
 def test_evaluation_covers_each_slot_equally(requested, actual):
     result = evaluate(UnequalEpisodeEnv(), lambda obs, deterministic: obs, ObsSpec(3), SimpleNamespace(seed=0), requested)
