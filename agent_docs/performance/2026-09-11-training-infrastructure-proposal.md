@@ -179,6 +179,23 @@ No GPU is needed until Step 0; about 1 to 2 days of code [E].
    term.
 5. Exempt evaluation worlds from the watchdog (the review's 83.5k evaluation).
 
+### Built on 2026-09-12
+
+The teacher kept running throughout; none of this reaches it until it restarts.
+
+- The expert's last stage ends on the progress reading rather than on its target past the shoulder
+  (`dressing_heuristic.py`), and the environment exposes that reading (`GenesisIPCDressingEnv.progress`).
+- `DressingConfig.decision_watchdog` switches the watchdog off per world, and
+  `pretrain_wang.build_world(..., watchdog=False)` builds the evaluation worlds that way.
+- `expert_baseline.py` runs the expert over a region's held-out or training configurations, writes
+  one episode file of privileged rows, actions and rewards, and summarises them with the records
+  `train_sac.evaluate` writes, so the bar and an evaluation round are the same numbers.
+- 163 CPU tests pass, including new ones for the finish rule and the episode tape; two GPU smoke
+  tests wait for the stop (`test_pretrain_wang_cuda.py`, `test_expert_baseline_cuda.py`).
+
+Still to build: the privileged MLP actor, the demonstration buffer with half-and-half sampling, and
+the residual wrapper.
+
 ## GPU schedule
 
 Step 0 and the probes need the GPU that relaunch 3 holds. Relaunch 3 reaches 300k transitions

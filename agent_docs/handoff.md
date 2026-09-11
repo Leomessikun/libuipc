@@ -1714,3 +1714,13 @@ audit of Wang's repository, the expert as a data source) fed
 - **Wang's final horizon is 150** (`curl/launch_train_curl.py:241`), against our recorded 300, so the
   current path costs 7 to 14 GPU-days per region-13 teacher.
 - **The GPU switch** is folded into relaunch 3's 300k decision (around 2026-09-12 15:00).
+
+Step 0 of that proposal was built on 2026-09-12 while the region-13 teacher kept running.
+- **The expert stops on the reading.** Its last stage ended on a target 10 cm past the shoulder,
+  where Wang's upper-arm ray no longer hits and the reward falls to minus the fingertip's distance
+  from the opening; `dressing_heuristic` now ends it on `GenesisIPCDressingEnv.progress`.
+- **Evaluation worlds can run without the watchdog** (`DressingConfig.decision_watchdog`); it voided
+  two of the teacher's first twelve rounds, the second with no other job on the GPU.
+- **`expert_baseline.py`** measures the expert on a region under the evaluation metric and records
+  every decision's privileged state, action and reward for a demonstration replay.
+- Nothing reaches the running teacher until it restarts, which is the 300k decision.
