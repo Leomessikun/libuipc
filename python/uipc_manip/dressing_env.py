@@ -98,11 +98,14 @@ class DressingConfig:
     converges in 3 to 6, but contact and large actions make the linear solve harder, and one hard
     cell sets the step time of the whole world: the first region-13 teacher reached 130 s per
     decision. The cap costs the five-garment expert check nothing (22 of 40 against 21)."""
-    anchor_tether_m: float | None = None
-    """Largest distance the commanded tool may lead the held cuff patch [m]. A tool move that would
-    open the gap past it, and does not close it, is dropped like a no-move collision, so the gap
-    bounds the hold spring's force. The solver-cost probes found the hold within millimetres while
-    the cost climbed, so None, the unbounded picker, stays the default."""
+    anchor_tether_m: float | None = 0.06
+    """Largest distance a held cuff vertex may trail its commanded position [m]. A tool move, rotation
+    included, that would leave any held vertex farther behind, and does not bring the farthest one
+    closer, is dropped, so the gap bounds the hold spring's force. Wang's PyFlex picker is kinematic
+    and cannot trail at all; the soft hold here can. A learned policy that leads a caught sleeve took
+    the unbounded hold to 179 mm, and its decisions from 4 s to 25 s, 128 s at worst. At 0.06 the
+    hold stopped at 60 mm and the tail at 6 s. The scripted expert trails by 59 mm at most. None is
+    the unbounded picker."""
     decision_time_floor_s: float = 30.0
     decision_time_factor: float = 8.0
     """Watchdog: a decision that runs past ``decision_time_factor`` times the median of the last 64
@@ -233,13 +236,15 @@ def decision_time_limit(recent, floor_s: float, factor: float, warmup: int = 8) 
     return max(floor_s, factor * float(np.median(np.asarray(recent, dtype=np.float64))))
 
 
-def tether_allows(candidate: np.ndarray, held_tcp: np.ndarray, anchor: np.ndarray, tether_m: float | None) -> bool:
-    """Whether a tool move keeps the commanded tool within ``tether_m`` of the held patch, or at least
-    no farther from it than before; ``None`` disables the tether."""
+def tether_allows(targets: np.ndarray, held: np.ndarray, current: np.ndarray, tether_m: float | None) -> bool:
+    """Whether a tool move keeps every held vertex within ``tether_m`` of its commanded position, or at
+    least brings the farthest one closer than the current targets do; ``None`` disables the tether.
+    ``targets``, ``held`` and ``current`` are the moved targets, the held vertices and the current
+    targets, one row per anchor."""
     if tether_m is None:
         return True
-    gap = float(np.linalg.norm(candidate - held_tcp))
-    return gap <= tether_m or gap < float(np.linalg.norm(anchor - held_tcp))
+    gap = float(np.linalg.norm(targets - held, axis=1).max())
+    return gap <= tether_m or gap < float(np.linalg.norm(current - held, axis=1).max())
 
 
 class GenesisIPCDressingEnv:
@@ -599,13 +604,16 @@ class GenesisIPCDressingEnv:
         try:
             for _ in range(cfg.action_repeat):
                 for i, cell in enumerate(self.cells):
-                    self._offsets[i] = _rodrigues(self._offsets[i], rotation[i] / cfg.action_repeat)
+                    offsets = _rodrigues(self._offsets[i], rotation[i] / cfg.action_repeat)
                     candidate = self._anchor[i] + translation[i] / cfg.action_repeat
                     # PyFlex no-move collision: a step that would put the anchor inside the shell is dropped.
-                    if np.min(np.linalg.norm(cell.arm_points - candidate[None, :], axis=1)) >= cfg.no_move_collision_threshold and (
-                        held is None or tether_allows(candidate, self._actual_tcp(i, held), self._anchor[i], cfg.anchor_tether_m)
+                    if np.min(np.linalg.norm(cell.arm_points - candidate[None, :], axis=1)) < cfg.no_move_collision_threshold:
+                        candidate = self._anchor[i]
+                    # The tether drops the whole move, the rotation too, where the collision rule keeps the rotation.
+                    if held is None or tether_allows(
+                        candidate[None, :] + offsets, held[i][self._pickers[i]["anchor_idx"]], self._anchor[i][None, :] + self._offsets[i], cfg.anchor_tether_m
                     ):
-                        self._anchor[i] = candidate
+                        self._offsets[i], self._anchor[i] = offsets, candidate
                 self._update_targets()
                 self._sim_step()
                 if time.perf_counter() - started > budget:

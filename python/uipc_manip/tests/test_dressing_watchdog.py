@@ -18,19 +18,30 @@ def test_defaults_cap_newton_far_above_a_normal_step():
     cfg = DressingConfig()
     assert cfg.newton_max_iterations == 128
     assert (cfg.decision_time_floor_s, cfg.decision_time_factor) == (30.0, 8.0)
+    assert cfg.anchor_tether_m == 0.06
 
 
 def test_tether_drops_a_move_that_opens_the_gap_past_it():
-    held, anchor = np.zeros(3), np.array([0.015, 0.0, 0.0])
-    assert tether_allows(np.array([0.018, 0.0, 0.0]), held, anchor, 0.02)
-    assert not tether_allows(np.array([0.025, 0.0, 0.0]), held, anchor, 0.02)
+    held = np.zeros((2, 3))
+    current = held + [0.015, 0.0, 0.0]
+    assert tether_allows(held + [0.018, 0.0, 0.0], held, current, 0.02)
+    assert not tether_allows(held + [0.025, 0.0, 0.0], held, current, 0.02)
 
 
 def test_tether_lets_a_move_close_a_gap_already_past_it():
-    held, anchor = np.zeros(3), np.array([0.05, 0.0, 0.0])
-    assert tether_allows(np.array([0.04, 0.0, 0.0]), held, anchor, 0.02)
-    assert not tether_allows(np.array([0.06, 0.0, 0.0]), held, anchor, 0.02)
+    held = np.zeros((2, 3))
+    current = held + [0.05, 0.0, 0.0]
+    assert tether_allows(held + [0.04, 0.0, 0.0], held, current, 0.02)
+    assert not tether_allows(held + [0.06, 0.0, 0.0], held, current, 0.02)
+
+
+def test_tether_bounds_the_farthest_vertex_not_the_patch_centre():
+    held = np.array([[0.03, 0.0, 0.0], [-0.03, 0.0, 0.0]])
+    quarter_turn = np.array([[0.0, 0.03, 0.0], [0.0, -0.03, 0.0]])
+    assert np.allclose(quarter_turn.mean(axis=0), held.mean(axis=0))
+    assert not tether_allows(quarter_turn, held, held, 0.02)
 
 
 def test_no_tether_allows_every_move():
-    assert tether_allows(np.array([1.0, 0.0, 0.0]), np.zeros(3), np.zeros(3), None)
+    held = np.zeros((2, 3))
+    assert tether_allows(held + [1.0, 0.0, 0.0], held, held, None)
