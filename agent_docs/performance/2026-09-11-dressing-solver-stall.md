@@ -203,3 +203,21 @@ The chain restarted at 08:43 from `300d743c`. It carries the cap, the watchdog, 
 trip path, and `--checkpoint-every 10000`, so that a learned actor exists about an hour in. That
 checkpoint drives the next diagnostic: `stall_probe.py --policy checkpoint` on mixed region-13 cells.
 At every decision it records each slot's forearm and upper-arm ratios, collision and threading.
+
+## Evaluation under the watchdog
+
+Relaunch 2's second evaluation, at 14,400 transitions, reported a NaN held-out upper-arm ratio. All 25
+episodes carried a simulator error.
+- **Why the budget was too low.** The evaluation world is built once and reused, so its watchdog set round
+  two's budget from round one's decisions. The untrained actor never touched a garment, so those
+  decisions were cheap and the budget sat at the 30 s floor.
+- **Why the whole round was lost.** The first contact-heavy decision passed that budget. A trip ends every
+  slot's episode at once, and without metrics.
+- **The fix, in `8c3923a8`.** The environment clears its decision history on every reset, so each
+  episode and each evaluation round is budgeted on its own decisions. An episode cut by a simulator
+  error is scored at its last completed decision, and still does not count as a success.
+- **`best.pt` was never at risk.** `checkpoint_score` already scores a non-finite value as the floor.
+
+The same episode shows the watchdog's other side. Its budget follows a rising median, so the last 2,400
+transitions of episode 2 ran at 36 s per vector step, 53 s at worst, without a trip, and the episode
+reached its horizon. The tail is slow, not stalled.
