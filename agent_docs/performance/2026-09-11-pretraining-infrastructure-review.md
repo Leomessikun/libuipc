@@ -150,7 +150,7 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 - **The 131.8k evaluation was voided too, and the rounds are getting slower.** Evaluation seconds ran
   691, 838, 740, 1073 and 2038 over the last five rounds; the watchdog's budget is eight times the
   median of the last 64 decisions, so a world that slows raises its own budget and takes longer to
-  trip. This round tripped early, at a forearm ratio of 0.03. Three of thirteen rounds have now
+  trip. This round tripped early, at a forearm ratio of 0.03. Three of fourteen rounds have now
   measured nothing, two of the last three. Only the teacher held the GPU, and the CPU tests that ran
   in that window pass `--device cpu`.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
