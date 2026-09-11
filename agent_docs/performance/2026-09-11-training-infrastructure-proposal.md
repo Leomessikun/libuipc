@@ -125,14 +125,18 @@ driver JIT, which nobody has reported.
 
 Before any training:
 
-1. **Fix the expert's last target.**
-   - It sits 10 cm past the shoulder (`dressing_heuristic.py:84`). Past the shoulder the progress
-     rays find nothing.
+1. **End the expert's last stage on progress, not on a point past the shoulder.**
+   - Its last target sits 10 cm past the shoulder (`dressing_heuristic.py:84`). An opening pushed
+     past the shoulder is invisible to the progress rays.
    - The reward then falls from the forearm length plus five times the upper-arm distance to minus
-     the finger's distance from the opening centre (`dressing_reward.py:125`, `:153`).
-   - Successful expert episodes end at decisions 212 to 274, so each carries 26 to 88 decisions of
-     that cliff. A critic seeded with them learns that finishing is punished.
-   - Bound the target at the shoulder.
+     the finger's distance from the opening centre (`dressing_reward.py:125`, `:153`), from about
+     +1.8 to about -0.6 per decision [E].
+   - Of the four tshirt_26 successes in `2026-09-09-dressing-correctness.md`, body 3 did this: 1.000
+     at decision 200, then 0 from decision 225 to the end, 75 decisions. Bodies 2, 5 and 7 held
+     their reading.
+   - A demonstration that pays for finishing with negative reward teaches the wrong thing on
+     whichever cells it hits, and the final ratio is what evaluation scores. A target exactly at the
+     shoulder may stop the pull short, hence a progress condition.
 2. **Measure the expert on region 13 under the evaluation metric**, the final upper-arm ratio.
    - Run the 25 held-out configurations (7.5k transitions) and the 225 training ones (67.5k): 2 to 6
      GPU-hours [E].
