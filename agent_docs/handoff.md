@@ -1682,3 +1682,8 @@ Relaunch 3 started at 12:53 from `.claude/worktrees/pretrain-d19489c8`, fresh, w
 scored a held-out forearm ratio of 0.48 and upper-arm ratio of 0.054 with no simulator error. The leftover
 agent process that had shared the GPU since the night before was stopped at 14:37 at the user's request.
 
+The barrier-free AL-IPC pipeline (Zheng et al. 2026) is already in libuipc as
+`contact/constitution = "al-ipc"`. On the dressing scene it is 2.2 times slower than IPC over 137
+decisions of the learned policy, 191 s at worst in contact, and its `diag_norm` mode aborts on a negative
+time of impact. The stall record has the table. The teacher keeps IPC.
+

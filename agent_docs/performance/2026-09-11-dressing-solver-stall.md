@@ -342,3 +342,38 @@ flags. Against relaunch 2 at the same steps:
   and the forearm ratio 0.48, with a mean return of 24.1 and no simulator error, in 1,074 s. Relaunch 2's
   round at the same point lost all 25 episodes to the watchdog and reported NaN.
 
+## The barrier-free AL-IPC pipeline is not faster here
+
+Zheng, Luo and Li (TOG 2026, arXiv 2512.12151) replace IPC's log barrier with an augmented Lagrangian
+and report up to 103 times GIPC's speed on collision-intensive volumetric scenes. Their libuipc
+implementation has been upstream since `4975269e` (March 2026). The Genesis option
+`IPCCouplerOptions.contact_constitution = "al-ipc"` selects it, and the installed build has it.
+
+The A/B used relaunch 3's actor at 36,000 transitions on the eight cells of the tether A/B, with the
+6 cm tether and graph mode 2. Both arms ran together beside the live teacher:
+
+| Decisions | IPC: mean s | worst s | AL-IPC (`per_vertex`): mean s | worst s |
+|---|---:|---:|---:|---:|
+| 0 to 24 | 2.6 | 6 | 2.2 | 17 |
+| 25 to 49 | 3.3 | 9 | 4.7 | 15 |
+| 50 to 74 | 3.2 | 7 | 3.4 | 9 |
+| 75 to 99 | 3.2 | 5 | 7.1 | 47 |
+| 100 to 124 | 2.9 | 5 | 7.2 | 33 |
+| 125 to 136 | 3.3 | 8 | 23.4 | 191 |
+| 0 to 136, minutes | 6.9 | | 14.9 | |
+
+- **Only the contact-free start is faster.** Once the sleeve meets the arm, AL-IPC takes two to seven
+  times as long per decision, and 191 s at worst. Over the first 137 decisions it takes 2.2 times as
+  long.
+- **`diag_norm` penalty scaling, the fork's release default, aborts.** The run died in its first frames on
+  `Assertion toi > 0.0f failed` in `InfoStacklessBVHSimplexTrajectoryFilter`, with a toi of -1.7e-4.
+- **Why the paper's gain does not carry over.** Its gains come from scenes with up to 1.45M contacts,
+  where IPC suffers time-of-impact locking and an ill-conditioned barrier. Its only cloth comparison is
+  against OGC, not IPC. This scene is small cloth on a static arm, held by a soft position constraint.
+  The authors' release notes list penalty-free moving boundaries as unfinished: moving boundaries still
+  rely on soft constraints, which is exactly our grasp. They also say the libuipc port still trails
+  their original implementation in Hessian assembly and BVH/CCD.
+
+The teacher keeps IPC. AL-IPC is worth another look once its moving boundaries are penalty-free and its
+release branch (`wiso-enoji/libuipc` `AL-release`, six commits past upstream `292c98c3`) is merged.
+
