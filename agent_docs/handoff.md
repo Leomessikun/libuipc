@@ -1687,3 +1687,13 @@ The barrier-free AL-IPC pipeline (Zheng et al. 2026) is already in libuipc as
 decisions of the learned policy, 191 s at worst in contact, and its `diag_norm` mode aborts on a negative
 time of impact. The stall record has the table. The teacher keeps IPC.
 
+The pretraining infrastructure was reviewed from first principles in
+`performance/2026-09-11-pretraining-infrastructure-review.md`.
+- **The largest levers** are parallel teachers and evaluation off the critical path.
+- **Newton pretraining is not worth it.** At matched decimation Newton is only 1.1 to 1.7 times
+  faster, and its VBD cloth differs at the elbow.
+- **Contact forces** are available through `ContactSystemFeature`, but not yet calibrated or wired
+  into the reward.
+
+At the user's request, several AL-release artifacts were deleted: its build, its worktree, the CUDA
+12.8 conda env, vcpkg with its cache, and the `wiso-enoji` refs.
