@@ -347,7 +347,9 @@ flags. Against relaunch 2 at the same steps:
 Zheng, Luo and Li (TOG 2026, arXiv 2512.12151) replace IPC's log barrier with an augmented Lagrangian
 and report up to 103 times GIPC's speed on collision-intensive volumetric scenes. Their libuipc
 implementation has been upstream since `4975269e` (March 2026). The Genesis option
-`IPCCouplerOptions.contact_constitution = "al-ipc"` selects it, and the installed build has it.
+`IPCCouplerOptions.contact_constitution = "al-ipc"` selects it. The runs below used the prebuilt PyPI
+wheel `pyuipc 0.0.28` (uploaded 2026-09-05), which Genesis pins, not a build of this tree or of the
+authors' `AL-release` branch.
 
 The A/B used relaunch 3's actor at 36,000 transitions on the eight cells of the tether A/B, with the
 6 cm tether and graph mode 2. Both arms ran together beside the live teacher:
@@ -373,6 +375,25 @@ The A/B used relaunch 3's actor at 36,000 transitions on the eight cells of the 
   The authors' release notes list penalty-free moving boundaries as unfinished: moving boundaries still
   rely on soft constraints, which is exactly our grasp. They also say the libuipc port still trails
   their original implementation in Hessian assembly and BVH/CCD.
+
+**Where the time goes.** A graph-mode-0 pass counts every Newton and PCG iteration. It used the same
+actor and cells, both arms together beside the teacher, over decisions 0 to 129:
+
+| Decisions | IPC: Newton per frame | PCG per Newton | AL-IPC: Newton per frame | PCG per Newton | Largest hold, IPC / AL, mm |
+|---|---:|---:|---:|---:|---:|
+| 0 to 24 | 4.3 | 67 | 2.7 | 37 | 6 / 14 |
+| 25 to 49 | 5.9 | 55 | 7.7 | 83 | 24 / 36 |
+| 50 to 74 | 5.9 | 43 | 7.6 | 36 | 41 / 54 |
+| 75 to 99 | 4.8 | 53 | 12.9 | 31 | 37 / 60 |
+| 100 to 129 | 5.6 | 44 | 13.4 | 36 | 56 / 60 |
+| 0 to 129 | 5.3 | 51 | 9.0 | 43 | |
+
+- **IPC is not time-of-impact locked here.** It needs 4 to 6 Newton iterations per frame throughout.
+- **AL-IPC wins the linear solve and loses the outer loop.** Its PCG work per Newton iteration is lower,
+  as the paper's conditioning argument predicts. But its Newton count climbs to 13 per frame once the
+  sleeve is in contact, which is the quantity the method exists to reduce.
+- **The grasp may be the reason.** AL-IPC's hold sits at the 6 cm tether from decision 75 on. This fits
+  the soft-constraint moving boundary fighting the contact set, but does not prove it.
 
 The teacher keeps IPC. AL-IPC is worth another look once its moving boundaries are penalty-free and its
 release branch (`wiso-enoji/libuipc` `AL-release`, six commits past upstream `292c98c3`) is merged.
