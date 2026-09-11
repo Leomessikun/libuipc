@@ -1,7 +1,7 @@
-# The region-13 teacher stall: the linear solve, not the hold
+# The region-13 teacher stall and the policy's slow tail
 
-Status: bounded by a Newton cap and a decision watchdog. The slow tail under a learning policy is not yet
-diagnosed. Relaunch 2 is running.
+Status: bounded by a Newton cap and a decision watchdog. The slow tail under the learned policy is the
+hold spring; an anchor tether on every held vertex is under test. The chain is stopped.
 
 ## What happened
 
@@ -50,8 +50,9 @@ PCG per Newton. The hold error stays at 17 mm or less.
 **Uniform random actions.** Eight mixed cells, two of them gowns. From the first decision it needs
 21 to 29 Newton iterations per decision and 90 to 120 PCG per Newton.
 
-The hold error stays at millimetres while the cost climbs, so an unbounded hold force is not what
-slows these steps. The cost is the linear solve. PCG iterations per Newton step rise with contact,
+In these probes the hold error stays at millimetres while the cost climbs, so an unbounded hold force
+is not what slows these steps. The cost is the linear solve. The learned policy is another matter:
+see [The learned policy's slow tail is the hold](#the-learned-policys-slow-tail-is-the-hold). PCG iterations per Newton step rise with contact,
 as in the expert's `middle` stage, and with large actions, from the first decision. Against the
 expert's six PCG iterations per Newton iteration at decision 0, large actions make every step about
 fifteen times as expensive from the start. The teacher's first episode, at 3.6 to 6.7 s per vector
@@ -221,3 +222,104 @@ episodes carried a simulator error.
 The same episode shows the watchdog's other side. Its budget follows a rising median, so the last 2,400
 transitions of episode 2 ran at 36 s per vector step, 53 s at worst, without a trip, and the episode
 reached its horizon. The tail is slow, not stalled.
+
+## The learned policy's slow tail is the hold
+
+Relaunch 2's checkpoint at 14,400 transitions drove `stall_probe.py --policy checkpoint`, the actor
+sampling as in training, on eight region-13 cells:
+- hospital_gown 14002 and 14014;
+- tshirt_26 14003 and 14013;
+- tshirt_68 14005 and 14012;
+- tshirt_4 14008;
+- tshirt_392 14010.
+
+Graph mode 2, no watchdog, the GPU shared with the running teacher. The hold error is the largest
+distance between a held cuff vertex and its commanded position.
+
+| Decisions | Mean s per decision | Worst s | Largest hold error, mm |
+|---|---:|---:|---:|
+| 0 to 49 | 3.8 | 12 | 32 |
+| 50 to 99 | 3.5 | 13 | 38 |
+| 100 to 124 | 4.3 | 8 | 89 |
+| 125 to 149 | 5.4 | 23 | 131 |
+| 150 to 182 | 25.1 | 128 | 179 |
+
+- **The slow cells are the dragged ones.** tshirt_4 14008 passed 50 mm at decision 113 and reached
+  179 mm with the forearm at 0.84; tshirt_26 14003 reached 163 mm.
+- **The earlier probes never reached this regime.** The expert's hold peaked at 59 mm (the gown, body 1)
+  and the persistent push stayed at 17 mm or less.
+- **The picker differs from the reference.** Wang's PyFlex picker is kinematic: the picked particles
+  follow it exactly and cannot lag. The soft hold here can, and its spring force grows with the lag.
+
+The run stopped at decision 182.
+
+## A tether on the patch centre is not enough
+
+`anchor_tether_m` as first written (`095e72e2`) dropped a translation that took the commanded tool more
+than the tether from the held patch's centre. The run below used 5 cm on the same cells and checkpoint.
+The actor samples, so the two runs do not share a trajectory: compare bounds, not decisions.
+
+| Decisions | Mean s per decision | Worst s | Largest hold error, mm |
+|---|---:|---:|---:|
+| 0 to 49 | 3.0 | 5 | 4 |
+| 50 to 99 | 5.8 | 58 | 72 |
+| 100 to 124 | 7.7 | 47 | 97 |
+| 125 to 149 | 8.4 | 25 | 113 |
+| 150 to 182 | 12.8 | 46 | 112 |
+
+- **The hold is a lever.** The tail halved, 25.1 to 12.8 s per decision, and the worst decision fell
+  from 128 to 58 s.
+- **The tether did not bound it.** The hold still reached 112 mm. Five cells passed 60 mm, against two
+  without the tether, and 8 decisions took over 30 s, against 7.
+
+## A tether on every held vertex
+
+Two more runs used the same cells and checkpoint on a free GPU:
+- **Centre tether, 5 cm.** The gate above, now logging each slot's centre gap and the distance the
+  grasp rotation has moved the commanded vertices.
+- **Vertex tether, 6 cm.** A move, rotation included, is dropped when it would leave any held vertex
+  farther than the tether from its target, unless it brings the farthest one closer.
+
+| Decisions | Centre 5 cm: mean s | worst s | hold max, mm | Vertex 6 cm: mean s | worst s | hold max, mm |
+|---|---:|---:|---:|---:|---:|---:|
+| 0 to 49 | 2.3 | 6 | 14 | 2.5 | 6 | 14 |
+| 50 to 99 | 3.7 | 17 | 102 | 3.9 | 17 | 46 |
+| 100 to 124 | 4.6 | 13 | 119 | 6.6 | 40 | 60 |
+| 125 to 149 | 12.8 | 46 | 123 | 3.9 | 14 | 60 |
+| 150 to 182 | 16.1 | 103 | 125 | 5.8 | 18 | 60 |
+| Total, minutes | 21.1 | | | 12.9 | | |
+
+- **Why the centre tether leaked.** The hold passed 60 mm at 190 slot-decisions. At those, the centre
+  gap had a median of 45 mm, capped at the tether's 50, and the rotation had moved the commanded
+  vertices by a median of 35 mm. The grasp radius is 56 to 71 mm and the policy may turn 5 degrees per
+  decision. The farthest vertex trails by about the sum of the two, and the centre gate checks only
+  the first.
+- **The vertex tether bounds the hold.** It stopped at 60 mm. The tail stays flat: decisions 150 to 182
+  average 1.5 times decisions 0 to 125, against 4.8 times with the centre tether.
+- **The tether binds often.** At 60 of the 183 decisions some slot sat at the tether.
+- **Two slow decisions remain.** Decisions 100 and 101 took 32 and 40 s with every hold under 47 mm,
+  below the tether. They are contact, not the hold.
+- **The value.** 0.06 m sits just above the scripted expert's 59 mm ceiling, and the blowup runs from
+  90 to 180 mm. `anchor_tether_m` now defaults to 0.06. The rule differs from the no-move collision,
+  which drops only the translation.
+
+## The five-garment expert check with the vertex tether
+
+The same 40 cells as the check with the cap, bodies 0 to 7 of each garment, with `anchor_tether_m`
+at 0.06:
+
+| Garment | Upper arm >= 0.7, cap only | With the tether | Bodies that changed |
+|---|---:|---:|---|
+| hospital_gown | 6 of 8 | 6 of 8 | 2 lost, 6 gained |
+| tshirt_26 | 6 of 8 | 6 of 8 | none |
+| tshirt_392 | 0 of 8 | 0 of 8 | none |
+| tshirt_4 | 5 of 8 | 5 of 8 | none |
+| tshirt_68 | 5 of 8 | 5 of 8 | none |
+| **Total** | **22 of 40** | **22 of 40** | |
+
+- **The gown's two changes are not the tether.** Bodies 2 and 6 held within 14 and 12 mm, far inside
+  it. The GPU solve is not bitwise repeatable, so such flips also separate the runs with and without
+  the cap.
+- **The tether binds where the hold ran away.** tshirt_392 body 6 reached 131 mm with the cap only and
+  59 mm with the tether.
+

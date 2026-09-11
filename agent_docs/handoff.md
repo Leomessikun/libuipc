@@ -1633,8 +1633,9 @@ Wang pretraining launch, 2026-09-11 01:45 CEST:
 The launch was stopped by hand at 05:03. Region 13's teacher had slowed from 3.6 s to 130 s
 per vector step late in episode 2, and then its log went silent. The run is kept as
 `output/uipc_manip/wang_teacher_r13_s1_stalled_20260911`.
-- **The hold is not the cause.** In every probe the held patch stays within millimetres while the
-  cost climbs.
+- **The hold is not the cause in these probes.** With the expert, random or persistent actions the
+  held patch stays within millimetres while the cost climbs. The learned policy later proved
+  otherwise: it drags a caught sleeve and the hold error reaches 179 mm (see the tether entry below).
 - **The cost is the linear solve.** PCG iterations per Newton step rise with contact and with large
   actions, and a 24-cell world pays for its hardest cell.
 - **Contact settings and step size do not change it.** d_hat 3 mm, kappa 1e6 and half the
@@ -1643,7 +1644,7 @@ per vector step late in episode 2, and then its log went silent. The run is kept
   watchdog, at 8 times the recent median and at least 30 s. A trip is an ordinary simulator error, so
   `pretrain_wang` rebuilds the world.
 - **The expert check holds.** With the cap it passes 22 of 40, against 21 without.
-- **`anchor_tether_m`.** It exists but stays off.
+- **`anchor_tether_m`.** It exists but stays off. From relaunch 3 on it is on; see the tether entry below.
 
 The record is `2026-09-11-dressing-solver-stall.md`.
 
@@ -1658,3 +1659,21 @@ The stall record has the tables.
 
 Once the policy acts, the teacher runs at about 2 transitions per second. On this GPU, with an
 evaluation every 10k, a 600k teacher takes about five days.
+
+Relaunch 2's checkpoint at 14,400 transitions found the slow tail, and the chain was stopped at about
+12:00 with 19.6k transitions. The run is kept, resumable, as
+`output/uipc_manip/wang_teacher_r13_s1_relaunch2_notether_20260911`.
+- **The tail is the hold.** Replayed by `stall_probe.py --policy checkpoint`, the actor leads a caught
+  sleeve and the held vertices trail their targets by up to 179 mm. Decisions 150 to 182 average 25 s,
+  128 s at worst, against 4 s before.
+- **A tether on the patch centre leaks.** It checks the translation only, so the centre gap sat at
+  its 5 cm limit while the grasp rotation moved the far vertices another 35 mm (median).
+- **The fix.** `anchor_tether_m` now bounds every held vertex and drops the whole move, rotation
+  included. It defaults to 0.06 m, just above the scripted expert's 59 mm ceiling. On the same
+  replay the hold stops at 60 mm, the tail averages 5.8 s and the run takes 12.9 minutes, against
+  21.1 with the centre tether.
+- **The expert check holds.** With the tether it passes 22 of 40, as without it.
+- **It needs a fresh run.** Resume restores the saved `DressingConfig`, so an older run keeps its
+  unbounded picker.
+- **The reproducer.** The checkpoint and the probe scripts are in `output/uipc_manip/reproducers/`.
+
