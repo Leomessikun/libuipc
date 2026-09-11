@@ -131,13 +131,21 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 | 90.7k | 0.000 | 0.38 | 0 of 25 | 0 |
 | 105.1k | 0.220 | 0.60 | 0 of 25 | 0 |
 | 112.3k | 0.128 | 0.44 | 0 of 25 | 25 |
+| 125.0k | 0.283 | 0.60 | 1 of 25 | 0 |
 
 - **The 90.7k evaluation is valid and ends on no upper arm.** Forearm ratio by garment: 0.00 hospital
   gown, 0.45 tshirt_26, 0.54 tshirt_68, 0.73 tshirt_4, 0.16 tshirt_392. Three evaluations in a row
   sit below 64.2k.
 - **At 105.1k it is back to 0.22** (forearm 0.60, no success). Forearm ratio by garment: 0.00
-  hospital gown, 0.80 tshirt_26, 0.20 tshirt_68, 1.00 tshirt_4, 1.00 tshirt_392. Since 50.4k the
-  held-out score has swung between 0 and 0.25 without a trend.
+  hospital gown, 0.80 tshirt_26, 0.20 tshirt_68, 1.00 tshirt_4, 1.00 tshirt_392. From 50.4k to
+  105.1k the held-out score swung between 0 and 0.25 without a trend.
+- **At 125.0k it is the best so far, 0.283, and `best.pt` moved there.**
+  - 14 of 25 configurations end on the upper arm, as at 64.2k; 7 reach 0.5 or more, against 9.
+  - Its one success, tshirt_26 on body 14046 at 0.71, sits on the threshold, as the 64.2k success
+    did before its re-evaluation. It is not re-evaluated yet: a probe beside the teacher slows it and
+    risks another voided evaluation.
+  - Coverage is wider: all five tshirt_4 configurations and the first hospital gown (body 14047,
+    0.54) end on the upper arm.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
