@@ -528,6 +528,18 @@ class WangRun:
         }
 
     # -------------------------------------------------------------- evaluation and checkpoints
+    def on_schedule(self, transitions: int) -> None:
+        """Evaluate and checkpoint when the transition count has passed the next mark of either."""
+        plan = self.plan
+        if plan["eval_every_transitions"] > 0 and transitions >= self.next_eval:
+            self.evaluate()
+            while self.next_eval <= transitions:
+                self.next_eval += int(plan["eval_every_transitions"])
+        if plan["checkpoint_every_transitions"] > 0 and transitions >= self.next_checkpoint:
+            self.checkpoint()
+            while self.next_checkpoint <= transitions:
+                self.next_checkpoint += int(plan["checkpoint_every_transitions"])
+
     def evaluate(self) -> dict:
         t0 = time.time()
         transitions = int(self.replay.total_added)
@@ -643,11 +655,16 @@ class WangRun:
             self.timing["env_s"] += time.time() - t
             if any(info.get("sim_error") for info in infos):
                 # The reference ends the episode on a simulator error and draws the next one; so does a rotation.
+                # The schedule still runs: the decision watchdog can cut every episode of a run short.
                 self.counters["sim_errors"] += 1
                 print(f"[wang] simulator error at step {step}; the step's transitions are dropped and the world rebuilt: "
                       + str(next(info.get("error", "") for info in infos if info.get("sim_error")))[:300], flush=True)
                 episode_return[:] = 0.0
-                obs = self.rotate(int(self.replay.total_added))
+                transitions = int(self.replay.total_added)
+                if transitions >= target:
+                    break
+                self.on_schedule(transitions)
+                obs = self.rotate(transitions)
                 priv = self.env.privileged() if self.privileged else None
                 continue
             next_priv = env.privileged() if self.privileged else None
@@ -701,14 +718,7 @@ class WangRun:
             self.counters["episodes"] += 1
             if transitions >= target:
                 break
-            if plan["eval_every_transitions"] > 0 and transitions >= self.next_eval:
-                self.evaluate()
-                while self.next_eval <= transitions:
-                    self.next_eval += int(plan["eval_every_transitions"])
-            if plan["checkpoint_every_transitions"] > 0 and transitions >= self.next_checkpoint:
-                self.checkpoint()
-                while self.next_checkpoint <= transitions:
-                    self.next_checkpoint += int(plan["checkpoint_every_transitions"])
+            self.on_schedule(transitions)
             if self.counters["episodes"] % max(1, int(plan["rotate_every_episodes"])) == 0:
                 obs = self.rotate(transitions)
                 priv = self.env.privileged() if self.privileged else None

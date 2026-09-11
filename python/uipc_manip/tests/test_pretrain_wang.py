@@ -168,6 +168,7 @@ def test_per_buffer_temperatures_follow_the_buffer_a_batch_came_from(tmp_path):
 # ------------------------------------------------------------------ the run loop on a stub world
 REFUSED = {("tshirt_68", 14001), ("tshirt_26", 14046)}
 FAIL_BUILDS: list = []  # each entry makes the next stub world refuse to build, as libuipc refuses an invalid one
+TRIPS: list = []  # each entry ends one training episode on a simulator error at its last step, as the watchdog does
 RUN_ARGV = [
     "teacher", "--region", "13", "--garments", *GARMENTS, "--train-poses", "0", "1", "--eval-poses", "45", "46",
     "--num-envs", "4", "--horizon", "2", "--eval-every", "8", "--checkpoint-every", "8", "--replay-capacity", "64",
@@ -178,6 +179,7 @@ RUN_ARGV = [
 @pytest.fixture
 def stub_run(monkeypatch):
     """The real run loop over stub worlds, placement and agent; yields every world built."""
+    TRIPS.clear()
     built: list = []
     agents: list = []
 
@@ -218,6 +220,12 @@ def stub_run(monkeypatch):
         def step(self, actions):
             assert not self.closed
             self.t += 1
+            if TRIPS and self.t >= self.horizon and all(b % 1000 < 45 for _, b in self.cells):
+                TRIPS.pop()
+                self.t = 0
+                tripped = [{"sim_error": True, "error": "RuntimeError('Decision ran past its budget')", "success": False,
+                            "distance": float("nan")} for _ in self.cells]
+                return self._obs(), np.zeros(self.num_envs, dtype=np.float32), np.ones(self.num_envs, dtype=bool), tripped
             infos = []
             for g, b in self.cells:
                 ratio = 0.9 if g == "tshirt_26" else 0.2
@@ -320,6 +328,20 @@ def test_run_rotates_worlds_evaluates_held_out_poses_and_resumes_the_same_draws(
     state_path.write_text(json.dumps(state))
     with pytest.raises(ValueError, match="num_envs"):
         pretrain_wang.main(["resume", str(tmp_path / "part")])
+
+
+def test_episodes_that_all_end_on_a_simulator_error_still_evaluate_and_checkpoint(stub_run, tmp_path):
+    # Every episode trips at its last step, so each world adds one step of 4 transitions and none finishes.
+    TRIPS.extend([1] * 8)
+    pretrain_wang.main(RUN_ARGV + ["--transitions", "16", "--work-dir", str(tmp_path), "--run-name", "tripped"])
+    run = tmp_path / "tripped"
+    rows = (run / "eval_log.csv").read_text().splitlines()
+    header = rows[0].split(",")
+    assert [int(dict(zip(header, r.split(","), strict=False))["transitions"]) for r in rows[1:]] == [0, 8, 16]
+    assert (run / "checkpoints" / "checkpoint_00000008.pt").exists()
+    state = json.loads((run / "checkpoints" / "state.json").read_text())
+    # The fourth world reaches the budget on its first step, before the step that would trip.
+    assert state["counters"]["sim_errors"] == 3 and state["counters"]["episodes"] == 0
 
 
 def test_student_deals_every_region_keeps_one_buffer_each_and_needs_every_teacher(stub_run, tmp_path, monkeypatch):
