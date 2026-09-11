@@ -128,7 +128,11 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 | 64.2k | 0.253 | 0.64 | 1 of 25 | 0 |
 | 76.8k | 0.085 | 0.36 | 0 of 25 | 0 |
 | 83.5k | 0.000 | 0.07 | 0 of 25 | 25 |
+| 90.7k | 0.000 | 0.38 | 0 of 25 | 0 |
 
+- **The 90.7k evaluation is valid and ends on no upper arm.** Forearm ratio by garment: 0.00 hospital
+  gown, 0.45 tshirt_26, 0.54 tshirt_68, 0.73 tshirt_4, 0.16 tshirt_392. Three evaluations in a row
+  sit below 64.2k.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
