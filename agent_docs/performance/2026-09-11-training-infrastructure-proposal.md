@@ -121,6 +121,49 @@ driver JIT, which nobody has reported.
   student loop needs Stretch clouds and privileged rows every step.
 - **Onboard compute.** The Stretch 3's NUC has no GPU [RA]; PointNet++ latency on it is unmeasured.
 
+## A second branch: filtered successes instead of reinforcement learning
+
+A later question, "what would work better that is not Wang's regional teachers and distillation", was
+researched separately. Its case rests on two claims, both checked against the papers themselves.
+
+- **Wang's regions answer an optimization pathology, not a missing observation.** He writes that it is
+  "challenging to learn a single policy that works well for a diverse range of arm poses, possibly due
+  to imbalanced learning speed for different tasks (e.g., some poses are easier to learn compared with
+  others), conflicting gradients from different tasks" [RA]. A single policy scores 0.34 plus or minus
+  0.10 against the distilled student's 0.68 plus or minus 0.012 (Table II), and each teacher trains for
+  1e6 steps over 27 regions of 50 poses, 45 training and 5 held out [RA].
+  - That pathology belongs to a bootstrapped critic trained on many tasks at once. It follows a
+    privileged-state actor as readily as a point-cloud one, so our proposal inherits it the moment one
+    teacher covers several regions. Supervised learning on successful trajectories does not have it;
+    it has a coverage problem instead.
+- **A single point-cloud diffusion policy has dressed real people.** "Dressing in Motion" (2026-09-04)
+  trains one policy over varied arm postures from 180 teleoperated trajectories in Assistive Gym and
+  210 real demonstrations, and reports a dressing ratio of 0.88 plus or minus 0.105 and an 89 per cent
+  success rate over 252 trials with nine participants on a UR10e [RA].
+  - The distances from us: Assistive Gym's cloth, not IPC; teleoperated demonstrations, not a scripted
+    expert; three garments and six motion patterns, not 27 pose regions; and another robot.
+  - FMVP is the same shape without the RL objective at the end: over 8,000 rollouts of Wang's teachers,
+    2,514 kept at an upper-arm ratio of at least 0.7 with no early turn, then behaviour cloning [RA].
+
+**What it would look like here.** One action-chunked point-cloud policy trained on expert episodes that
+clear the evaluation metric, then rolled out, refiltered and retrained. Rollouts cost about 0.21 s per
+transition without gradient updates [MI], so 4,000 expert episodes are about 70 GPU-hours and each
+self-improvement round about 78 [E]; roughly 250 to 300 GPU-hours in total against 2,300 for 27
+teachers at Wang's budget [E].
+
+**Its weak link is the expert's yield**, and Step 0 measures exactly that. Behaviour cloning cannot
+invent what is not in its data, and on the cells measured here the expert clears 0.7 on 2 to 4 of 8
+[MI]. Two patches exist if the yield is low: mint demonstrations in the failing cells with a reverse
+curriculum from stage snapshots, which suits a simulator that can dump and recover a whole world but
+not one slot; or keep the expert-anchored teacher above for those cells only. Rolling out and
+retraining on one's own successes is unproven on deformables; the published loop is on rigid Robomimic
+tasks [RA].
+
+**The decision rule after Step 0.** The expert's mean final upper-arm ratio and the share of
+configurations it clears decide the branch: a high share favours filtered distillation, which is
+cheaper and has no critic to destabilise; a low share favours the expert-anchored teacher, which can
+exceed the expert, with the reverse curriculum minting what neither reaches.
+
 ## Step 0, gates and budget
 
 Before any training:
@@ -221,3 +264,6 @@ around 2026-09-12 15:00, and that decision now includes this switch.
   RGBench: https://arxiv.org/abs/2511.06434 ; MuJoCo Warp flex:
   https://github.com/google-deepmind/mujoco_warp/issues/1362
 - Stretch 3 hardware: https://docs.hello-robot.com/0.3/hardware/hardware_guide_stretch_3/
+- Dressing in Motion: https://arxiv.org/abs/2609.04759 ; DP3: https://arxiv.org/abs/2403.03954 ;
+  action chunking: https://arxiv.org/abs/2304.13705 ; ReGuide: https://arxiv.org/abs/2606.28939
+- Reverse curricula: https://arxiv.org/abs/1812.03381 and https://arxiv.org/abs/1707.05300
