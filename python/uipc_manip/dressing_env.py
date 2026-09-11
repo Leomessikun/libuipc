@@ -112,6 +112,12 @@ class DressingConfig:
     decisions, and never less than ``decision_time_floor_s``, raises a simulator error, so the world
     resets and the trainer rebuilds it. Until eight decisions are timed the budget is the floor
     times the factor."""
+    decision_watchdog: bool = True
+    """Whether that watchdog runs. A trip raises for the whole world, so in an evaluation world one
+    slow configuration ends all of its episodes at once and the round is scored at last-seen ratios:
+    two of the region-13 teacher's first twelve rounds measured nothing that way, the second with no
+    other job on the GPU. Evaluation worlds therefore run without it, where a slow decision costs
+    time and nothing else; a training world keeps it, since there the trip rebuilds a stuck world."""
     linear_system_tolerance: float = 1e-2
     """Relative tolerance of the preconditioned conjugate-gradient solve. The library
     default is 1e-3; at 1e-2 a 100-decision expert run costs 330 ms per simulation step
@@ -315,6 +321,7 @@ class GenesisIPCDressingEnv:
         self._batched_obs = BatchedDressingObservationBuilder(cfg.obs, self._device)
         self._episode_step = 0
         self._decision_times: deque[float] = deque(maxlen=64)
+        self._last_progress: list = []
         self._build_scene()
         self._prepare_start()
         self.descriptions = [self.describe(i) for i in range(self.num_envs)]
@@ -539,6 +546,10 @@ class GenesisIPCDressingEnv:
         """The simulator state behind the current observation, one row per slot, for an asymmetric critic."""
         return self._privileged.copy()
 
+    def progress(self) -> list:
+        """The reward's progress reading behind the current observation, one entry per slot."""
+        return list(self._last_progress)
+
     def _privileged_state(self, positions: list[np.ndarray], progress) -> np.ndarray:
         return np.stack(
             [
@@ -586,7 +597,8 @@ class GenesisIPCDressingEnv:
         if getattr(self, "_heuristic", None) is not None:
             self._heuristic.reset()
         positions = self.positions()
-        self._privileged = self._privileged_state(positions, self._progress(positions))
+        self._last_progress = self._progress(positions)
+        self._privileged = self._privileged_state(positions, self._last_progress)
         return self.observation(positions)
 
     def step(self, actions: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict]]:
@@ -616,7 +628,7 @@ class GenesisIPCDressingEnv:
                         self._offsets[i], self._anchor[i] = offsets, candidate
                 self._update_targets()
                 self._sim_step()
-                if time.perf_counter() - started > budget:
+                if cfg.decision_watchdog and time.perf_counter() - started > budget:
                     raise RuntimeError(f"Decision ran past its {budget:.0f} s budget at episode step {self._episode_step}")
                 substep_positions = self.positions()
                 if held is not None:
@@ -631,7 +643,7 @@ class GenesisIPCDressingEnv:
             return obs, np.zeros(n, dtype=np.float32), np.ones(n, dtype=bool), infos
         self._decision_times.append(time.perf_counter() - started)
         positions = self.positions()
-        progress = self._progress(positions)
+        progress = self._last_progress = self._progress(positions)
         self._episode_step += 1
         done = self._episode_step >= cfg.horizon
         rewards = np.array([pr.reward for pr in progress], dtype=np.float32)

@@ -387,9 +387,13 @@ class WangRun:
                 print(f"[wang] dropped {g} on body {b} from the training pool: {reason}", flush=True)
                 self.pool.drop(g, b, reason)
 
-    def build_world(self, cells) -> tuple[object, float]:
+    def build_world(self, cells, *, watchdog: bool = True) -> tuple[object, float]:
+        """One episode per cell. Without ``watchdog`` a slow decision only costs time; with it, a trip
+        ends every episode of the world, which rebuilds a stuck training world but voids a whole
+        evaluation round."""
         t0 = time.time()
-        env = GenesisIPCDressingEnv(replace(self.base_cfg, cells=tuple(cells)), num_envs=len(cells), cell_factory=self.factory)
+        cfg = replace(self.base_cfg, cells=tuple(cells), decision_watchdog=bool(watchdog))
+        env = GenesisIPCDressingEnv(cfg, num_envs=len(cells), cell_factory=self.factory)
         return env, time.time() - t0
 
     def close_world(self, env) -> None:
@@ -446,9 +450,10 @@ class WangRun:
         size = max(1, int(self.plan["eval_slots"]))
         for start in range(0, len(cells), size):
             chunk = cells[start:start + size]
-            env, build_s = self.build_world(chunk)
+            env, build_s = self.build_world(chunk, watchdog=False)
             self.eval_worlds.append((env, chunk))
-            print(f"[wang] evaluation world {len(self.eval_worlds)}: {len(chunk)} held-out configurations built in {build_s:.1f}s", flush=True)
+            print(f"[wang] evaluation world {len(self.eval_worlds)}: {len(chunk)} held-out configurations built in "
+                  f"{build_s:.1f}s, without the decision watchdog", flush=True)
 
     # -------------------------------------------------------------- learning
     def make_agent(self, env):

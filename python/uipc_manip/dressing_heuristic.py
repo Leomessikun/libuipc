@@ -37,6 +37,8 @@ class HeuristicDressingPolicy:
         elbow_overshoot: float = 0.08,
         elbow_hook_offset: float = 0.06,
         shoulder_overshoot: float = 0.10,
+        finish_upperarm_ratio: float = 0.95,
+        finish_drop: float = 0.05,
         rotation_step: float = 0.05,
         align_tolerance_deg: float = 12.0,
         align_max_steps: int = 30,
@@ -54,6 +56,8 @@ class HeuristicDressingPolicy:
         self.elbow_overshoot = float(elbow_overshoot)
         self.elbow_hook_offset = float(elbow_hook_offset)
         self.shoulder_overshoot = float(shoulder_overshoot)
+        self.finish_upperarm_ratio = float(finish_upperarm_ratio)
+        self.finish_drop = float(finish_drop)
         self.rotation_step = float(rotation_step)
         self.align_tolerance = float(np.deg2rad(align_tolerance_deg))
         self.align_max_steps = int(align_max_steps)
@@ -62,6 +66,7 @@ class HeuristicDressingPolicy:
         self.stage = np.zeros(self.n, dtype=np.int64)
         self._steps = np.zeros(self.n, dtype=np.int64)
         self._align_steps = np.zeros(self.n, dtype=np.int64)
+        self._best_upper = np.zeros(self.n)
         self._targets: list[dict] = [{} for _ in range(self.n)]
         self.reset()
 
@@ -86,6 +91,7 @@ class HeuristicDressingPolicy:
             self.stage[i] = 0
             self._steps[i] = 0
             self._align_steps[i] = 0
+            self._best_upper[i] = 0.0
 
     def stage_names(self) -> list[str]:
         return [self.STAGES[int(s)] for s in self.stage]
@@ -95,6 +101,7 @@ class HeuristicDressingPolicy:
         env = self.env
         positions = env.positions() if positions is None else positions
         out = np.zeros((self.n, env.action_dim), dtype=np.float32)
+        progress = env.progress() if hasattr(env, "progress") else []
         max_t, max_r = float(env.cfg.max_translation), float(env.cfg.max_rotation)
         for i, (cell, p) in enumerate(zip(env.cells, positions, strict=True)):
             stage = int(self.stage[i])
@@ -133,6 +140,18 @@ class HeuristicDressingPolicy:
                 if int(self.stage[i]) == 5 and arm_min < self.proximity_push_distance:
                     a[2] += self.proximity_push_z / max_t
             elif stage == 6:
+                # The last stage ends on the reading, not on its target. Wang's upper-arm ray runs
+                # from the shoulder toward the elbow and keeps only hits in front of its origin, so an
+                # opening pushed past the shoulder reads zero and the reward falls from the forearm
+                # length plus five times the upper-arm distance to minus the fingertip's distance from
+                # the opening. The target sits 10 cm past the shoulder, which zeroed one of four
+                # tshirt_26 successes on bodies 0-7 for its episode's last 75 decisions.
+                if i < len(progress):
+                    ratio = float(progress[i].upperarm_ratio)
+                    self._best_upper[i] = best = max(float(self._best_upper[i]), ratio)
+                    if ratio >= self.finish_upperarm_ratio or (best > 0.0 and ratio <= best - self.finish_drop):
+                        self._advance(i)
+                        continue
                 self._translate(a, i, opening, t["last"], self.translation_max_steps)
                 self._continuous_align(a, line_dir, line_valid, target_dir, max_r)
                 if arm_min < self.proximity_push_distance:

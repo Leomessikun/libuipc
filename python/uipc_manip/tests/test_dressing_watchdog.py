@@ -1,5 +1,7 @@
 """The dressing environment's decision watchdog, Newton cap and anchor tether (CPU)."""
 
+from dataclasses import replace
+
 import numpy as np
 
 from uipc_manip.dressing_env import DressingConfig, decision_time_limit, tether_allows
@@ -19,6 +21,13 @@ def test_defaults_cap_newton_far_above_a_normal_step():
     assert cfg.newton_max_iterations == 128
     assert (cfg.decision_time_floor_s, cfg.decision_time_factor) == (30.0, 8.0)
     assert cfg.anchor_tether_m == 0.06
+
+
+def test_the_watchdog_is_on_by_default_and_can_be_switched_off_per_world():
+    # A trip raises for the whole world, so an evaluation world runs without it: one slow
+    # configuration would otherwise end all of its episodes and void the round.
+    assert DressingConfig().decision_watchdog is True
+    assert replace(DressingConfig(), decision_watchdog=False).decision_watchdog is False
 
 
 def test_tether_drops_a_move_that_opens_the_gap_past_it():

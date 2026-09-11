@@ -241,6 +241,39 @@ filtered on whether the scripted expert dresses it. Section 6 of
 `agent_docs/performance/2026-09-10-one-policy-protocol.md` maps each choice to the
 reference and states the deviations.
 
+### Step 0: the scripted expert's bar and its demonstrations
+
+`expert_baseline` runs the seven-stage expert over a region's configurations under the teacher's own
+physics, horizon and observation, and writes the two things the expert-anchored teacher of
+`agent_docs/performance/2026-09-11-training-infrastructure-proposal.md` needs: the bar, its mean
+final upper-arm ratio on the held-out configurations, and the fuel, every decision's privileged
+state, action and reward. Failed episodes are kept, since their rewards are what a critic learns the
+task's shape from. The 22 of 40 on record is neither number: it is the highest reading of an episode,
+on bodies that are not a region's poses.
+
+```bash
+# The bar: 25 held-out configurations of region 13, five garments over poses 45-49.
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.expert_baseline --region 13 --poses heldout
+
+# The fuel: the 225 training configurations.
+PYTHONPATH=python $GENESIS_PY -m uipc_manip.expert_baseline --region 13 --poses train
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--region` | - | the arm-pose region (0-26) to measure |
+| `--poses` | `heldout` | poses 45-49, the training poses 0-44, or both |
+| `--num-envs` | 24 | configurations a world holds at once |
+| `--max-cells` | every one | stop after this many configurations; for smoke tests |
+| `--save-observations` | off | also store each decision's point cloud, 5,383 floats a step |
+
+Every other flag is a `pretrain_wang teacher` flag, so the run measures the bar of the teacher it is
+compared with. Worlds are built without the decision watchdog, where a slow decision costs time and
+nothing else. Each episode lands in `episodes/episode_*.npz` (`privileged`, `actions`, `rewards`,
+`stages` and its record), `records.json` holds one record per configuration in
+`train_sac.evaluate`'s shape, and `manifest.json` the summary, the dropped configurations and the
+environment.
+
 ### The FMVP simulation pipeline
 
 Wang RSS 2023 trains one SAC teacher per arm-pose region; FMVP rolls those
