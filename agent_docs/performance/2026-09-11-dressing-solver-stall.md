@@ -395,8 +395,8 @@ actor and cells, both arms together beside the teacher, over decisions 0 to 129:
 - **The grasp may be the reason.** AL-IPC's hold sits at the 6 cm tether from decision 75 on. This fits
   the soft-constraint moving boundary fighting the contact set, but does not prove it.
 
-The teacher keeps IPC. AL-IPC is worth another look once its moving boundaries are penalty-free and its
-release branch (`wiso-enoji/libuipc` `AL-release`, six commits past upstream `292c98c3`) is merged.
+The teacher keeps IPC. AL-IPC is worth another look once its moving boundaries are penalty-free. The
+authors' release branch adds nothing that upstream lacks, as the next section shows.
 
 ## The authors' `AL-release` branch, built from source
 
@@ -410,10 +410,20 @@ assets and a README. Two change the solver:
   `diag_norm` penalty scaling as the default `contact/al-ipc/mu_scale_mode`;
 - `f6c3f996` (2026-07-31) reworks the BVH trajectory filters.
 
-Upstream moved on separately. Its main of 2026-09-04 is 205 commits past that base, and they include
-the AL-IPC hardening of late August and early September (`3ee11847`, `778cb6cb`, `1623cb12`). A
-dry-run merge of the release onto this branch conflicts in ten files: the active-set manager, six
-trajectory filters, `advance_al.cu` and the default config. Neither side contains the other.
+Upstream already carries these additions. Its main of 2026-09-04 has the `diag_norm` scaling and the
+active-set functions the release added (`init_mu_from_scalar`, `filter_new_candidates`). It has also
+rewritten the same files far more heavily since the base:
+
+| File | Release, lines added / removed | Upstream, lines added / removed |
+|---|---:|---:|
+| Active-set manager | 190 / 31 | 1,007 / 488 |
+| Stackless-BVH trajectory filter | 129 / 79 | 1,532 / 1,110 |
+
+Those rewrites include the AL-IPC hardening of late August and early September (`3ee11847`,
+`778cb6cb`, `1623cb12`). They are why a dry-run merge of the release onto this branch conflicts in
+ten files: the active-set manager, six trajectory filters, `advance_al.cu` and the default config.
+The 0.0.28 wheel has both `diag_norm` and the August shell API. It is therefore the newer version of
+the method, and the A/B above already tested it.
 
 **The build.** The worktree `.claude/worktrees/al-release` builds `pyuipc 0.1.0.dev1052` for sm_120
 against CUDA 12.8. On top of the release it carries two cherry-picked build fixes (the tinygltf
@@ -437,3 +447,25 @@ the authors'.
 **`diag_norm`, the release default, aborts in the settle.** The AL arm died before its first
 decision on `Energy [FEMLineSearchReporter] is -nan` (`line_searcher.cu:71`) and dumped core. On the
 wheel the same mode died on a negative time of impact, as described above.
+
+**`per_vertex` is slower than IPC on the release from the first decision.** Both release arms ran
+together beside the teacher. A five-decision control ran alongside them: the wheel's IPC on the same
+neohookean cloth.
+
+| Decisions 0 to 4 | Mean, s | Worst, s | Largest hold, mm |
+|---|---:|---:|---:|
+| Release, IPC | 95 | 122 | 2 |
+| Release, AL-IPC `per_vertex` | 121 | 149 | 47 |
+| Wheel, IPC | 65 | 111 | 3 |
+
+- **The neohookean cloth itself is the main cost.** Even the wheel's IPC takes 65 s per decision on
+  it, against 2 to 3 s on the production cloth. The control also recorded a simulator error at its
+  fifth decision. Release timings therefore say nothing about training throughput.
+- **The release build is about 1.5 times slower than the wheel** on the same cloth. This fits its
+  missing CUDA graphs and older base.
+- **AL-IPC's hold reaches 47 mm before any contact,** where IPC's stays under 3 mm. On the wheel too,
+  AL-IPC's hold was the larger of the two.
+- **The pair was stopped after five decisions.** It slowed the teacher from 3.8 s to between 6 and
+  9 s per vector step, and the release has nothing to offer that upstream lacks.
+
+**Test AL-IPC through `contact/constitution = "al-ipc"` on current libuipc, not through the release.**
