@@ -214,6 +214,16 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
     round that hit a simulator error ranks below every clean one whatever its ratios. Voided
     rounds still rank against each other, and a summary without the key counts as clean. Like
     the watchdog exemption, it reaches the teacher only at a restart.
+- **Most recent episodes never finish.** An episode is 300 decisions over 24 slots, 7,200 transitions.
+  The run's 213,744 transitions are 29.7 episodes' worth of stepping, and 21 episodes finished. In the
+  last 39,672 transitions, 5.5 episodes' worth, only 3 finished against 7 trips.
+  - A trip marks every slot of the world a simulator error and drops that decision's transitions, so
+    the episode ends short of the horizon.
+  - The horizon is where the time limit bootstraps as a non-terminal transition, and where the
+    upper-arm phase sits: the scripted expert needs decisions 212 to 274 to finish, and these trips
+    land at episode steps 66 to 284.
+  - So the replay is no longer merely under-sampling the hardest contacts. In the recent window it
+    rarely sees the end of an episode at all, which is where this task's reward is earned.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
