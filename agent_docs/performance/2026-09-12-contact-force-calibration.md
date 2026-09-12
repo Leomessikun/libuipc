@@ -1,0 +1,48 @@
+# The contact force libuipc exports is exact newtons divided by dt squared
+
+Date: 2026-09-12. Status: measured, reproducible.
+
+`uipc.core.ContactSystemFeature` exports the contact energy, gradient and Hessian of a running
+scene. The gradient is what a force term in a reward or an observation would read, but it is stated
+in no units, so it was never used. This measures the conversion against a known force.
+
+## The measurement
+
+Ten particles of radius 1 cm and density 1000 kg/m^3 fall onto a ground half-plane and settle. At
+equilibrium the total normal contact force must equal their weight, so the ratio of the summed
+exported gradient to that weight is the conversion. Running the same scene at two time steps
+separates a force, whose ratio would not depend on dt, from an incremental-potential gradient, whose
+ratio scales with dt squared. The script is `output/uipc_manip/contact_force_calibrate.py`.
+
+| Time step | Total mass | Weight | Summed PH+N gradient, y | Ratio to weight | Ratio / dt^2 |
+|---|---:|---:|---:|---:|---:|
+| 1/60 s | 0.0418879 kg | 0.410501 N | -1.14028e-4 | 2.77778e-4 | **1.000000** |
+| 1/120 s | 0.0418879 kg | 0.410501 N | -2.85070e-5 | 6.94444e-5 | **1.000000** |
+
+2.77778e-4 is (1/60)^2 and 6.94444e-5 is (1/120)^2, so:
+
+> **force in newtons = - contact gradient / dt^2**
+
+exactly, at both time steps. The sign makes the ground push up, as it must.
+
+## What else the measurement establishes
+
+- **Ten primitive types, not five.** `contact_primitive_types()` returns `EE+F, PE+F, PP+F, PT+F,
+  EE+N, PE+N, PP+N, PT+N, PH+F, PH+N`: edge-edge, point-edge, point-point, point-triangle and
+  point-halfplane, each split into a normal (`+N`) and a friction (`+F`) term. Normal and friction
+  forces are therefore separable, which a single contact-impulse figure is not.
+- **The export is a sparse doublet list.** `contact_gradient(prim_type, geometry)` fills the
+  geometry's instances with `i`, the global vertex index, and `grad`, a 3-vector. A vertex can appear
+  more than once and the entries must be summed. `contact_hessian` gives `i`, `j` and the 3x3 block.
+- **Internal contacts cancel, as they must.** The eighteen particle-particle entries sum to zero
+  while the single point-halfplane entry carries the whole weight. So a force on one body can be read
+  by selecting the primitive entries whose vertices belong to it.
+- **Friction is reported separately and was zero here**, which is right for a resting stack.
+
+## Why it matters
+
+The dressing reward has no force term and the policy never observes force. Wang's reward uses a FleX
+contact-lambda proxy at a weight of 0.001 above a threshold; his group's later work had to learn a
+force model from 264 real-robot trials in PyBullet (FCVP, RA-L 2024) because FleX cannot report
+forces. Here the force on the arm can be read exactly, per contact type, and separated into normal
+and friction, at every step of every environment.
