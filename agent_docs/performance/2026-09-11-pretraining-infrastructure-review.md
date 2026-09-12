@@ -177,12 +177,17 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
   0.283, and `checkpoint_score` ranks the mean first, so `best.pt` stays where it was: the two
   measures disagree, one round having eight configurations on the upper arm with seven of them past
   0.5, the other fourteen with seven past 0.5.
-- **The watchdog's trip rate has crossed its watch line.** Four trips fell in the last 30,000
-  transitions, one per 7.5k against the one-per-10k line, and the last three gaps were 9.5k, 1.9k and
-  5.0k where the first eight averaged 16.6k. It is not a rebuild loop: between trips the run still does
-  11k to 16k transitions per hour, no world failed to build, and only the teacher holds the GPU. What it
-  costs is the replay. A trip drops the decisions that ran slowest, which are the contact-hardest ones,
-  so the buffer under-samples the elbow exactly as the policy starts reaching it.
+- **The watchdog's trip rate has crossed its watch line.** Five trips fell in the last 30,000
+  transitions, one per 6k against the one-per-10k line, and the last four gaps were 9.5k, 1.9k, 5.0k and
+  1.8k where the first eight averaged 16.6k. It is not a rebuild loop: between trips the run still does
+  8k to 25k transitions per hour, no world failed to build, and only the teacher holds the GPU.
+  - The trips cost almost no time: 694 s of rebuilds over 32 rotations, 1.1 per cent of the run's 18
+    hours. What they take is states, not clock.
+  - A trip drops the decisions that ran slowest, which are the contact-hardest ones, so the buffer
+    under-samples the elbow exactly as the policy starts reaching it.
+- **Evaluation now takes a quarter of the run.** Over 18 hours: simulation 62 per cent, evaluation 25,
+  rebuilds 1.1. The 68, 18 and 15 above were measured at 5.5 hours; rounds have grown longer and come
+  closer together since, and eight of twenty measured nothing.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
