@@ -135,6 +135,7 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 | 131.8k | 0.000 | 0.03 | 0 of 25 | 25 |
 | 146.2k | 0.114 | 0.26 | 0 of 25 | 25 |
 | 152.7k | 0.000 | 0.05 | 0 of 25 | 25 |
+| 167.1k | 0.223 | 0.64 | 0 of 25 | 25 |
 
 - **The 90.7k evaluation is valid and ends on no upper arm.** Forearm ratio by garment: 0.00 hospital
   gown, 0.45 tshirt_26, 0.54 tshirt_68, 0.73 tshirt_4, 0.16 tshirt_392. Three evaluations in a row
@@ -152,9 +153,9 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 - **The 131.8k evaluation was voided too, and the rounds are getting slower.** Evaluation seconds ran
   691, 838, 740, 1073 and 2038 over the last five rounds; the watchdog's budget is eight times the
   median of the last 64 decisions, so a world that slows raises its own budget and takes longer to
-  trip. This round tripped early, at a forearm ratio of 0.03. The 146.2k and 152.7k rounds went the
-  same way, so 5 of 16 rounds have measured nothing, four of the last five, and
-  1.4 GPU-hours went into rounds that measured nothing. The evaluation signal is
+  trip. This round tripped early, at a forearm ratio of 0.03. The 146.2k, 152.7k and 167.1k rounds
+  went the same way, so 6 of 17 rounds have measured nothing, five of the last six, and
+  1.7 GPU-hours went into rounds that measured nothing. The evaluation signal is
   effectively gone until the teacher restarts on watchdog-free evaluation worlds; its checkpoints
   are all kept, so those rounds can be replayed offline. Only the teacher held the GPU, and the CPU tests that ran
   in that window pass `--device cpu`.
@@ -164,6 +165,10 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
   9.0k. That trip fired on a 59 s budget against 30 to 36 s earlier, the budget being eight times the
   median of the last 64 decisions. The 11.6k per hour these budgets use is the run's average
   including evaluation, and deeper sleeves cost more, not less.
+- **The 167.1k round was cut with the policy further along than ever.** Scored at the trip, it reads
+  0.223 on the upper arm and 0.636 on the forearm, with 12 of 25 configurations on the upper arm and
+  tshirt_26 on body 14045 at 0.71. Those are mid-episode readings, not final ones, so they neither
+  bound the round from above nor below; they do say the policy was not collapsing when it was cut.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
