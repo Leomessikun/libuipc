@@ -151,3 +151,40 @@ gradient at a point in the solve where the slip is resolved; reconstruct the fri
 normal force, the friction coefficient and the slip direction, which are all available; or take the
 creep itself as the measurement, since a steady tangential slip under a held contact is the physical
 signature of shear.
+
+## Which force readings are reproducible
+
+The dressing episode was run twice from the same seed. The GPU solve is not bitwise repeatable, which
+the port already records, so the question is how much that costs a force signal.
+
+| Decision 285, settled | First run | Second run | Difference |
+|---|---:|---:|---:|
+| Net normal force on the arm | 32.415 N | 30.802 N | 5 % |
+| Summed normal magnitudes | 108.169 N | 104.932 N | 3 % |
+| Peak at one vertex | 13.033 N | 12.582 N | 3 % |
+
+Against that, the first contact at decision 45 read 39.1 N in one run and 4.5 N in the other, a factor
+of nine, with three to five arm vertices in contact either time.
+
+- **A settled force is reproducible to a few per cent; a transient one is not reproducible at all.**
+  With only a handful of contacts the total is decided by exactly which vertices touch, and that is
+  what diverges first between runs.
+- **So a force signal for training has to be a settled or aggregated quantity**, not an instantaneous
+  peak: an episode statistic, a per-decision aggregate, or a value read once contact has stopped
+  changing. A reward term on the instantaneous peak would be fitting noise.
+
+## A force signal that is already in the loop, and that the robot could feel
+
+The cuff is held by a soft position constraint whose docstring states the equivalence directly: the
+"equivalent physical spring stiffness is strength * mass / dt**2" (`dressing_env.py:85-88`). Its
+displacement is the tracking error, the largest distance between a held cuff vertex and its commanded
+position, computed every sub-step (`dressing_env.py:497-500`), reported in every info, and already
+carried in the privileged state as a centimetre-scale field (`dressing_privileged.py:124`).
+
+- **So the grasp force is a free readout**: stiffness times tracking error, needing no contact export.
+  Over the episode above the settled tracking error is 3.62 to 3.64 mm and stable to 0.5 %.
+- **And it is the one force a Stretch 3 could actually sense**, through joint effort, where the
+  contact force on the arm is privileged and can only ever be a training-time signal.
+- The physical link is the one that matters for dressing: when the sleeve catches, the gripper has to
+  pull harder against the hold, so the tracking error rises. Whether that correlation is strong enough
+  to serve as a deployable proxy for the arm's load is not yet measured.
