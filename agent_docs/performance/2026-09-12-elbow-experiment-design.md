@@ -1,0 +1,90 @@
+# Does spatial body contact information improve elbow-jam recovery?
+
+> **Status update, 2026-09-13:** This is a historical audit/proposal against `4bfe88c2`, not the current implementation status. Subsequent commit `024c5716` closed the proposed per-decision force-training direction after the reliability gate failed; see the [closure](2026-09-12-research-direction.md) and [measurements](2026-09-12-contact-force-calibration.md). No force-training result is established here. The dense action-per-point critic was subsequently implemented in `ef1b3c81`, with optional residual trunks in `01bf913e`. Any future experiment must use those changes as an explicit baseline and revalidate its labels. Literature findings remain reference material; implementation recommendations below are conditional.
+
+Executable experiment specification, 2026-09-12. Read-only design for current libuipc dressing code; no implementation or GPU job was launched. This is an information-ablation and intervention study, not a new claim for force-aware dressing, learned force prediction, teleoperation, or diffusion policies. Those are established baselines. The potentially useful contribution is narrower: **show that calibrated localization of cloth-body contact changes action selection and improves recovery beyond global load signals, under matched observations, data and control budgets.** A negative result is useful and should stop a larger architecture project.
+
+## 1. Testable claim and exclusions
+
+Hypothesis: two elbow states with similar visible geometry and global load can need different escape actions because the loaded body region differs. A policy/predictor with spatial contact information ranks the same candidate actions more effectively than a predictor with only global load. Mere correlation between force hotspots and failure is insufficient; evaluate outcomes of actual alternative actions from matched initial states.
+
+Do not claim that arbitrary forces are observable without sensors, that a force map uniquely identifies a jam, that short simulated recovery demonstrates safe human dressing, or that IPC exports derivatives through future motion. The proposed labels come from finite simulator rollouts. Spatial oracle input is initially a simulator-only upper bound. Later vision/effort estimates constitute a separate experiment.
+
+## 2. Fixed environment and state selection
+
+Freeze resolved config from `output/uipc_manip/expert_r13_heldout_s0/manifest.json` with explicit actual `decision_watchdog=False`, rather than trusting that manifest's serialized True value. Keep horizon300, dt1/60, repeat6, speed0.15m/s, cuff strength1e4, anchor_count48, tether0.06m, friction0.3, existing cloth model/material and placements. Keep the original rotation clipping and collision rejection; log which candidate components were rejected. Use one environment per world for the first branching study. This sacrifices throughput but removes a hard neighboring cell and asynchronous reset as confounds.
+
+Use six prespecified training-pool cells (region-13 pose indices0–44) for a plumbing pilot, covering at least three garments and both previously successful and elbow-stalled cases. Sample two timepoints per cell from logged trajectory **before knowing whether candidate recovery succeeds**, giving 12 initial states. Select by stage/progress band (forearm >=0.8, upper <0.6, or script in align/elbow_hook) and one fixed early/late time within that band. These are experimental stratification rules, not safety thresholds. If a cell never enters the band, retain it as a documented coverage miss rather than replacing it until success appears.
+
+For a subsequent diagnostic dataset from the training pool: 15 cells x4 selected states =60 states, stratified over successful script prefixes, failed script prefixes, and frozen learner prefixes. Include impending failures and normal-transit elbow states; “successful teacher only” data cannot establish jam recovery. Freeze actor checkpoint, action randomness and state selection before comparing representations. Split train/validation/test by cell (9/3/3), not individual rows; keep every action and repeated branch from one state in the same split. This remains an exploratory small-cell study, not a broad generalization result. Reserve pose indices45–49 for a frozen final evaluation; do not tune representations on those cells and later call them unseen. Previously inspected held-out artifacts are historical diagnostics, not new pristine test data.
+
+Current evidence motivating these strata: expert records show 17 final `done`, 8 `elbow_hook`, and a large mean peak-to-final progress decline; early-turn classifier flags 24/25. Do not exclude all flagged data at collection and thereby erase the failure mechanism. Record that flag and independently inspect candidate paths; evaluation can report both ratio success and the stricter paper-filter outcome.
+
+## 3. Branching requires a validated whole-world checkpoint
+
+Existing `_prepare_start` in `dressing_env.py:485` uses `world.dump()` and reset `:585` uses `world.recover(frame)`. This is disk-backed whole-world recovery. `reset()` additionally changes anchors/offsets, clears watchdog timing, resets the stage machine and takes hold steps; **calling reset is not restoring an arbitrary jam state**. Existing episode NPZ files store positions and actions, not a complete restartable dynamical state. There is no established selective one-slot fork, differentiable state rewind, or cheap in-memory clone in this environment.
+
+A small diagnostic branch helper would need to capture, at the selected decision boundary:
+
+1. Successful engine dump at the current frame, in an immutable per-state copy/namespace; do not overwrite the settled-reset baseline. Preserve engine velocities and solver state through its own supported recovery mechanism rather than setting positions alone.
+2. Python `_anchor`, `_offsets`, picker active flags/targets, `_episode_step`, per-slot RNG bit-generator state, watchdog deque, and any added force/history accumulators. Recompute/store `_last_progress` and `_privileged` consistently. Save heuristic stage/counters/best-upper/targets if the continuation uses it; prefer a frozen feedforward actor continuation to remove this complication.
+3. Genesis/coupler time and any state advanced by `scene.step()` outside IPC. Restoring the IPC frame alone is not evidence that all coupled state is restored. Inspect the actual dump/recover semantics during implementation and reject unsupported continuation rather than assuming.
+4. Torch CPU/CUDA and NumPy RNG states if stochastic actions/point sampling are used; easier first probe uses deterministic actor actions and restores observation RNG so every representation sees the same cloud/history tensor.
+
+`dressing_env.close():772` deletes its temporary engine workspace. Exported branch states must therefore be copied outside that cleanup path if needed beyond world lifetime. Repeated recovery and subsequent dumps must not overwrite an immutable branch origin. When operating on several slots, every branch must recover the whole world and hold all non-target actions identical; do not advertise per-slot snapshots.
+
+Gate before data production: restore one state, execute identical candidate twice in alternating branch order, and compare positions, accepted actions, progress and force summaries through the whole horizon. Quantify restore/noise spread. Require no simulator errors and no systematic order dependence. Numerical tolerance is an engineering criterion measured relative to the separation between candidate outcomes, not bitwise determinism promised by the API. If candidate ranking margins are comparable to restore noise, collect repeat branches or report a tie. If recovery fails this gate, use fresh world+identical prefix replay as the slower fallback; cost includes the prefix each time. Stop if neither can reproduce rankings.
+
+## 4. Candidate actions and matched rollout labels
+
+For every saved state, evaluate the same nine candidates: zero; frozen baseline action; reverse baseline translation; outward lift from the elbow concavity; outward+forward lift; positive/negative Y rotation; positive/negative Z rotation. The existing X-rotation suppression remains in place. Define outward/forward directions from the pre-scanned arm landmarks available to every condition; do not compute them from privileged cloth contact for only one method. If the arm is near straight, mark the outer direction ambiguous and use a fixed documented orthogonal fallback in every condition.
+
+Normalize candidate translations to the same 0.5 action norm; rotations use ±0.5 of the corresponding allowed coordinate. Clip through the ordinary environment path. These are bounded probe amplitudes, not an optimized controller claim. Baseline and zero controls should retain their exact definitions (baseline may use its normal bounds); report their action magnitude so a performance gain cannot be hidden extra movement.
+
+Apply a candidate for two decisions, then the **same frozen baseline policy** for six decisions (8 decisions total, 0.8 simulated seconds). This tests whether a brief intervention escapes a jam rather than rewarding a different long-horizon controller. Extend only if the pilot shows outcomes are indistinguishable on that time scale; preregister the new horizon before representation fitting. Avoid states closer than8 decisions to the episode horizon or explicitly handle truncation without resetting inside a branch.
+
+At each of six simulation substeps log normal/friction channel availability, body-block forces, actual dt, last-assembled-iterate status, solver diagnostics, requested/accepted anchor and rotation, held-vertex lag, opening geometry and progress. Keep substep maximum load and integrated load exposure separately. Invalid or unavailable force labels are not zero. Solver failures are branch failures with a distinct censoring flag; never quietly drop hard candidates and report the survivors as favorable.
+
+## 5. Representations that isolate localization
+
+Keep shared base input identical: observed point-cloud features, gripper/controller state actually available under the selected deployment contract, previous actions/history if any, and candidate action. Fit identical output heads and training schedules; do not give the spatial condition more rollout samples or a longer planning horizon.
+
+| Condition | Additional contact input | Purpose |
+|---|---|---|
+| V | None | Vision/controller baseline |
+| S | Whole-body net-force norm, sum of normal nodal norms, peak nodal norm; valid friction analogues | Strong scalar load baseline |
+| W | S plus net force vector and net moment about the same reference | Strong global directional baseline |
+| L | W plus fixed body-patch load features in anatomically registered positions | Test added spatial information |
+| L-shuffle | Same feature width and values as L, but patch-to-location assignment independently permuted per state | Preserve global statistics/capacity while destroying reliable localization |
+
+Use fixed physical/anatomical patches, not one feature per vertex. For example six longitudinal arm bands x four circumferential sectors, with patch sums of normal/friction force vectors or magnitudes and presence masks. Report patch geometry and how changing mesh resolution affects summaries; dividing by area produces an approximate pressure-like quantity only after area/traction validation. Initially normal-only is acceptable if friction is unvalidated. In that case do not claim shear-aware recovery.
+
+The current exporter yields **body contact forces**, not measured wrist F/T. W must be named whole-body contact wrench, not wrist wrench. To compare an actual simulated wrist signal, separately implement/calibrate grasp reaction wrench including its frame, payload/gravity and any other load contributions. Until that gate passes the experiment can establish benefit over global body load only. A learned/estimated wrist baseline also needs an explicit observation/noise model; no substituting arm net force and calling it a sensor.
+
+L-shuffle should permute patches per state consistently across all candidates for that state; a single fixed permutation is learnable and is not a valid localization-destruction control. Keep W unchanged. Optionally add a capacity-matched noise vector to W. This helps distinguish genuine spatial semantics from more dimensions or access to an oracle quantity.
+
+## 6. Ranking and closed-loop tests
+
+Fit action-conditional predictors for (a) progress gain retained at rollout end, (b) peak load change, (c) integrated contact-load exposure, and (d) branch validity. No one scalar reward is necessary to show an information benefit. Compare held-out pairwise candidate-order accuracy and regret for each target. Treat differences within repeat-branch noise as ties. Calibration and high-load false-negative rates matter more than only average regression error.
+
+For action selection, preregister an engineering operating rule using validation data only: choose greatest predicted progress among candidates whose predicted load exposure does not exceed that state's baseline continuation; if none qualify, report no admissible improvement and use the common fallback. A forecast constraint can be violated in execution; report that rate. Do not label this medical safety. The baseline exposure is available offline as an oracle label for scoring, but **not as runtime input**: selection must use the same model's predicted baseline and candidate exposures. An additional oracle chooser from ground-truth branch outcomes estimates the candidate-set ceiling and must be clearly separated from learned controllers.
+
+Closed-loop gate after ranking: start each representation from the same held-out saved states, allow at most one 2-decision intervention every8 decisions, same9 candidates, same total physical action/decision budget, and no additional simulator branches online. Cap at40 decisions and score final/peak upper ratio, retained progress, crossing time, force exposure, worst patch load, action rejection and simulator errors. Recompute predictions from each method's own next observation but pair outcomes by starting state. Add an unchanged frozen actor condition. Information benefit should persist beyond one offline ranking metric.
+
+Report paired per-state differences and per-cell aggregates; bootstrap at cell level, not all candidate rows as independent samples. Show all cells, including normal-transit states where unnecessary intervention harms progress. Test L versus both W and L-shuffle. If only L versus V wins, the evidence supports contact information generally, not localization specifically.
+
+## 7. Partial observability and teacher bias
+
+L initially has simulator contact labels unavailable to a no-FT real actor. Treat this experiment as a value-of-information ceiling. Only if L beats W and L-shuffle should a second experiment replace map inputs by a predictor from the **same deployable history** given to baselines. Train on disjoint cells, freeze it before policy/ranking testing, and use held-out predictions rather than true maps during evaluation. Evaluate delay, occlusion, unknown friction and garment/body shifts; separate spatial predictor failure from controller failure with the oracle ceiling.
+
+A single current point cloud need not determine tension or hidden contact. Test history explicitly and budget the same history in every condition. Critic-only privileged force can improve value learning without making the actor omniscient; a privileged-actor teacher distilled to limited observations can create mutually incompatible action labels for aliased states. Neither distillation nor teleoperation removes that observability limitation.
+
+## 8. Compute envelope and stop/go gates
+
+Pilot branch count: 12 states x9 candidates x8 decisions = **864 environment decisions**, or **5184 IPC steps** at repeat6. Repeating every branch doubles this to1728 decisions; begin with a smaller restore-repeat subset. Main exploratory dataset:60 x9 x8 =4320 decisions =25920 IPC steps, before prefix collection, restores, builds, repeated branches or closed-loop validation. Model fitting cost is unknown and should be separately logged; a small frozen-encoder predictor should be tried before end-to-end neural training.
+
+Measured historical context: the current 25-slot expert completed300 vector decisions in733 s (including its measured run overhead), equivalent to7500 slot decisions but not an independently measured single-cell throughput. Earlier eight-slot contact-rich learner probes ranged3.5–25.1 s per vector decision, with worst128 s under an untethered shared-GPU protocol. Neither timing predicts this one-cell restore/export experiment. Do not promise “one hour” by dividing batched throughput. Measure first30 valid branch decisions plus ten restores and one build; report median/p95 separately and estimate remaining cost as decisions x observed cost plus restore/build/prefix overhead. No jobs were run for this design.
+
+Stop or redesign when: (1) restoration noise changes rankings; (2) normal labels are unavailable or dynamic exporter validity is unresolved; (3) the candidate oracle cannot improve retained progress on any stalled pilot state; (4) force summaries have no usable variation beyond readout noise; (5) ranking improvement vanishes against W or L-shuffle; (6) improvements disappear with deployable predicted inputs; or (7) contact intervention increases final failures without an agreed objective tradeoff. Stopping is an experimental result, not a reason to silently broaden action budget or filter unfavorable states.
+
+Proceed to larger force-aware RL only after a reproducible localization advantage, with explicit remaining domain limits. The paper contribution would then be the mechanism, controlled benchmark and recovery gain from spatial contact information—not the already-published existence of force-conditioned dressing or diffusion learning.

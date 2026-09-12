@@ -462,3 +462,13 @@ Verdicts:
   in `gl_main.cu` (single bunny, E=1e7, P_type=1), a 100-frame cap writing
   `timeCost.txt` (totalNT/totalCgCount), and a `GIPC_PTYPE` env var to flip
   the preconditioner type.
+
+
+## Dressing force learning and elbow passage (2026-09-12; status updated September 13)
+
+The [historical force-training research](performance/2026-09-12-force-training-research.md)
+archives literature and raw elbow evidence against `4bfe88c2`. Its proposed per-decision force
+experiments are superseded by the failed reliability gate and closure in `024c5716`.
+Retain the readout and diagnostics; do not treat these reports as authorization to enable force
+actor/critic/reward inputs. Force-conditioned and diffusion methods remain established baselines,
+not a demonstrated novel contribution. The newer dense critic needs a fresh training comparison.

@@ -178,7 +178,7 @@ The scripted expert ran once on region 13's 25 held-out configurations, under th
 physics, horizon and observation, in a world built without the decision watchdog. 733 s, no simulator
 error, every episode ran its full 300 decisions.
 
-| | Expert | Teacher at 265.6k, best valid round |
+| | Expert | Teacher best valid mean at 125016 transitions (run reached 265584) |
 |---|---:|---:|
 | Mean final upper-arm ratio | **0.542** | 0.283 |
 | Successes (final ratio at least 0.7) | **11 of 25** | 1 of 25 |
@@ -194,15 +194,16 @@ Per garment, held-out bodies 14045 to 14049:
 | tshirt_26 | 2 of 5 | 0.411 | 0.810 | 5 of 5 | 0.60 |
 | tshirt_392 | **0 of 5** | 0.291 | 0.293 | 4 of 5 | 1.00 |
 
-**The bar is 0.542, and the teacher is at half of it after 265,584 transitions.** Seeding from the
-expert starts a run roughly where 265k transitions of SAC did not reach.
+**The expert mean is 0.542; the teacher best error-free mean is 0.283 at 125016 transitions.**
+The final evaluation at 265584 contains 25 simulator errors, so it is not a valid endpoint
+comparison. Expert seeding is a proposal, not a measured warm-start result.
 
 **Every one of the expert's successes cuts the inside of the elbow.** Its paper-filter rate is 0.000:
 24 of 25 episodes trip `dressing_reward.early_turn`, all 11 successes among them. The detector is not
 simply always firing — the teacher's one success at 125.0k passed the same filter
 (`heldout_paper_filter_rate` 0.040), and its three successes at 174.3k did not. So the expert's
-strategy is one FMVP explicitly rejects, and for a reason that matters on a real arm: the gripper
-threading inside the elbow rather than around it is a collision with the person.
+strategy is one FMVP explicitly rejects, but the detector is a geometric trajectory proxy; it does not independently establish
+physical collision or injury.
 - The stage machine explains it. Stage `elbow_hook` drives the sleeve opening to
   `elbow + upperarm_dir * 0.06` (`dressing_heuristic.py:84`), a point along the upper arm, which in a
   bent pose sits on the concave side.
@@ -213,7 +214,7 @@ past `elbow_hook` — but once the expert stops commanding, the cloth relaxes of
 policy that keeps holding can beat the expert without changing strategy at all.
 
 **tshirt_392 is the expert's hole, and reinforcement learning has already filled it.** The expert puts
-the sleeve on the forearm every time (1.00) and never gets up the upper arm (peak 0.293 on all five).
+the sleeve on the forearm every time (1.00) and does not reach the success threshold (mean peak 0.293 across five; body14045 final is 0.504).
 The teacher dressed tshirt_392 on held-out bodies 14045 and 14048 at 0.75 and 0.78 in its valid round
 at 174.3k.
 

@@ -1761,3 +1761,21 @@ validation and single-instance attribution. CPU suite: 184 passed; new CUDA matr
 See [audit](performance/2026-09-12-force-learning-audit.md) for evidence, corrected paper
 claims, IsaacIPC ideas and unfinished task groups. No training or native solver change
 was made; dressing-force validity and zero-success training remain open.
+
+
+## 2026-09-12 — Deep research: force learning and elbow failure
+
+Compared primary dressing, tactile, asymmetric-learning and constrained-control papers; audited
+code at `4bfe88c2` and raw evaluation artifacts. Archived hashes and all27 teacher evaluation rows:
+only13 have no simulator errors; best valid mean is at125016, final265584 has25 errors. Expert
+final success11/25 differs from ever-success15/25 and paper-filter0/25. Corrected misleading
+September11 endpoint and garment-mean interpretations. Actual gamma is0.995.
+
+The [research report](performance/2026-09-12-force-training-research.md) distinguishes reusable
+force-training baselines from a falsifiable spatial-information contribution. The experiment
+specification uses matched state/action budgets and strong wrench/shuffled-map controls; no
+policy or branching experiment was launched. No code changed or new tests were warranted.
+
+Status on archival, 2026-09-13: `024c5716` subsequently closed per-decision force training after
+failed repeatability measurements. All five companion reports carry that superseding notice.
+The dense critic fix (`ef1b3c81`) and optional residual trunks (`01bf913e`) postdate this audit.
