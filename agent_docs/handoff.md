@@ -1749,3 +1749,15 @@ His teachers also read the same point cloud as the student (`SAC_AWAC.py:1011`,
 no implementation in the training code.
 
 Both GPU smoke tests pass on the fixed tree. Step 0's held-out expert baseline is running.
+
+
+## 2026-09-12 — Contact-force takeover and training audit
+
+Recovered the current Claude session and public subagent outputs. Added a reproducible
+loaded-particle calibration command and eight CUDA regressions: the installed backend
+exports zero friction after one-iteration termination, but tighter convergence recovers
+the known tangential load at dt 1/60 and 1/120. Hardened exporter availability, numeric
+validation and single-instance attribution. CPU suite: 184 passed; new CUDA matrix: 8 passed.
+See [audit](performance/2026-09-12-force-learning-audit.md) for evidence, corrected paper
+claims, IsaacIPC ideas and unfinished task groups. No training or native solver change
+was made; dressing-force validity and zero-success training remain open.

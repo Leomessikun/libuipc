@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from uipc_manip.contact_force import force_summary, geometry_vertex_block, vertex_forces
+from uipc_manip.contact_force import contact_export_status, force_summary, geometry_vertex_block, vertex_forces
 
 DT = 1.0 / 60.0
 
@@ -136,14 +136,18 @@ class _Vertices:
 class _Slot:
     """Stands in for a geometry slot, which carries its global offset on its meta."""
 
-    def __init__(self, offset, count):
+    def __init__(self, offset, count, instances=1):
         self._meta, self._vertices = _Meta(offset), _Vertices(count)
+        self._instances = _Vertices(instances)
 
     def meta(self):
         return self._meta
 
     def vertices(self):
         return self._vertices
+
+    def instances(self):
+        return self._instances
 
 
 def test_a_geometry_reports_its_own_index_block(monkeypatch):
@@ -168,3 +172,33 @@ def test_a_geometry_without_an_offset_is_an_error_not_a_guess(monkeypatch):
     with pytest.raises(ValueError, match="global_vertex_offset"):
         geometry_vertex_block(_Slot(None, 10))
 
+
+@pytest.mark.parametrize("dt", [0.0, -0.01, float("nan"), float("inf")])
+def test_invalid_time_step_cannot_produce_force(dt):
+    with pytest.raises(ValueError, match="dt"):
+        vertex_forces(_Feature({"PH+N": ([], [])}), dt, 1)
+
+
+def test_unavailable_exporter_is_not_no_contact():
+    for feature in (None, _Feature({})):
+        with pytest.raises(RuntimeError, match="not a zero-force"):
+            vertex_forces(feature, DT, 1)
+    feature = _Feature({"PH+N": ([], []), "PH+F": ([], [])})
+    assert contact_export_status(feature)["friction_available"]
+    assert np.all(vertex_forces(feature, DT, 1)[1] == 0)
+    assert not contact_export_status(_Feature({"PH+N": ([], [])}))["friction_available"]
+
+
+def test_multiple_rigid_instances_cannot_silently_select_first(monkeypatch):
+    import sys
+    import types
+
+    sys.modules["uipc"].builtin = types.SimpleNamespace(global_vertex_offset="global_vertex_offset")
+    with pytest.raises(ValueError, match="single-instance"):
+        geometry_vertex_block(_Slot(0, 8, instances=2))
+
+
+def test_invalid_export_does_not_propagate_nan_or_negative_indices():
+    for index, grad in (([0], [[np.nan, 0, 0]]), ([-1], [[0, 0, 0]])):
+        with pytest.raises(ValueError, match="Invalid contact"):
+            vertex_forces(_Feature({"PH+N": (index, grad)}), DT, 1)

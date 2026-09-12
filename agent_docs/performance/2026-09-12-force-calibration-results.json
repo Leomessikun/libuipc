@@ -1,0 +1,1674 @@
+[
+  {
+    "summary": {
+      "dt": 0.016666666666666666,
+      "gx": 0.0,
+      "velocity_tol": 0.05,
+      "min_iter": 0,
+      "semi": 0,
+      "simulated_seconds": 2.0,
+      "tail_frames": 30,
+      "mass_kg": 0.004188790204786391,
+      "expected_normal_n": 0.04105014400690664,
+      "expected_friction_n": -0.0,
+      "normal_mean_n": [
+        0.0,
+        0.04105014400690658,
+        0.0
+      ],
+      "friction_mean_n": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "friction_zero_frames": 30,
+      "balance_residual_max_n": 5.551115123125783e-17,
+      "newton_iterations_tail": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "final_velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "provenance": {
+      "python": "3.13.12 (main, Feb  3 2026, 22:52:12) [Clang 21.1.4 ]",
+      "executable": "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+      "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+      "uipc_version": "0.0.28",
+      "uipc_module": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/__init__.py",
+      "binaries": [
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/pyuipc.cpython-313-x86_64-linux-gnu.so",
+          "sha256": "7af446231721da337c1d107b6e45cc922589ee9ce10d8db1f45903a3c4b2e319"
+        },
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/libuipc_backend_cuda.so",
+          "sha256": "62b9cd479a30fa8a685918a09818d009b77c22a1e582829b01eb021ee153034f"
+        }
+      ],
+      "gradient_state": "last assembled Newton iterate, before its accepted position correction"
+    },
+    "config": {
+      "cfl": {
+        "enable": 0
+      },
+      "collision_detection": {
+        "method": "info_stackless_bvh"
+      },
+      "contact": {
+        "adaptive": {
+          "init_kappa": 1000000000.0,
+          "kappa_eval_scale": 1e-16,
+          "max_kappa": 100000000000.0,
+          "min_kappa": 100000000.0
+        },
+        "al-ipc": {
+          "alpha_lower_bound": 1e-06,
+          "decay_factor": 0.3,
+          "mu_scale_abd": 100000.0,
+          "mu_scale_diag_norm": 0.1,
+          "mu_scale_fem": 50000000.0,
+          "mu_scale_mode": "per_vertex",
+          "toi_threshold": 0.1
+        },
+        "constitution": "ipc",
+        "d_hat": 0.01,
+        "d_hat_relative": 0.0,
+        "enable": 1,
+        "eps_velocity": 0.01,
+        "eps_velocity_relative": 0.0,
+        "friction": {
+          "enable": 1
+        }
+      },
+      "diff_sim": {
+        "enable": 0
+      },
+      "dt": 0.016666666666666666,
+      "extras": {
+        "debug": {
+          "dump_linear_pcg": 0,
+          "dump_linear_system": 0,
+          "dump_mas_matrices": 0,
+          "dump_surface": 0
+        },
+        "strict_mode": {
+          "enable": 0
+        }
+      },
+      "gravity": [
+        [
+          0.0
+        ],
+        [
+          -9.8
+        ],
+        [
+          0.0
+        ]
+      ],
+      "integrator": {
+        "type": "bdf1"
+      },
+      "line_search": {
+        "max_iter": 8,
+        "report_energy": 0
+      },
+      "linear_system": {
+        "check_interval": 5,
+        "fem_preconditioner": "diag",
+        "solver": "fused_pcg",
+        "tol_rate": 0.001,
+        "use_cuda_graph": 1
+      },
+      "newton": {
+        "ccd_tol": 1.0,
+        "max_iter": 1024,
+        "min_iter": 0,
+        "semi_implicit": {
+          "K_min": 6,
+          "beta_tol": 0.001,
+          "enable": 0
+        },
+        "transrate_tol": 0.1,
+        "use_adaptive_tol": 0,
+        "velocity_tol": 0.05,
+        "velocity_tol_relative": 0.0
+      },
+      "sanity_check": {
+        "enable": 1,
+        "mode": "normal"
+      }
+    },
+    "particle": {
+      "density_kg_m3": 1000.0,
+      "radius_m": 0.01,
+      "friction_coefficient": 0.5
+    },
+    "global_vertex_block": [
+      0,
+      1
+    ],
+    "contact_primitive_types": [
+      "EE+F",
+      "PE+F",
+      "PP+F",
+      "PT+F",
+      "EE+N",
+      "PE+N",
+      "PP+N",
+      "PT+N",
+      "PH+F",
+      "PH+N"
+    ]
+  },
+  {
+    "summary": {
+      "dt": 0.008333333333333333,
+      "gx": 0.0,
+      "velocity_tol": 0.05,
+      "min_iter": 0,
+      "semi": 0,
+      "simulated_seconds": 2.0,
+      "tail_frames": 60,
+      "mass_kg": 0.004188790204786391,
+      "expected_normal_n": 0.04105014400690664,
+      "expected_friction_n": -0.0,
+      "normal_mean_n": [
+        0.0,
+        0.04105014400690662,
+        0.0
+      ],
+      "friction_mean_n": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "friction_zero_frames": 60,
+      "balance_residual_max_n": 1.3183898417423734e-16,
+      "newton_iterations_tail": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "final_velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "provenance": {
+      "python": "3.13.12 (main, Feb  3 2026, 22:52:12) [Clang 21.1.4 ]",
+      "executable": "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+      "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+      "uipc_version": "0.0.28",
+      "uipc_module": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/__init__.py",
+      "binaries": [
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/pyuipc.cpython-313-x86_64-linux-gnu.so",
+          "sha256": "7af446231721da337c1d107b6e45cc922589ee9ce10d8db1f45903a3c4b2e319"
+        },
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/libuipc_backend_cuda.so",
+          "sha256": "62b9cd479a30fa8a685918a09818d009b77c22a1e582829b01eb021ee153034f"
+        }
+      ],
+      "gradient_state": "last assembled Newton iterate, before its accepted position correction"
+    },
+    "config": {
+      "cfl": {
+        "enable": 0
+      },
+      "collision_detection": {
+        "method": "info_stackless_bvh"
+      },
+      "contact": {
+        "adaptive": {
+          "init_kappa": 1000000000.0,
+          "kappa_eval_scale": 1e-16,
+          "max_kappa": 100000000000.0,
+          "min_kappa": 100000000.0
+        },
+        "al-ipc": {
+          "alpha_lower_bound": 1e-06,
+          "decay_factor": 0.3,
+          "mu_scale_abd": 100000.0,
+          "mu_scale_diag_norm": 0.1,
+          "mu_scale_fem": 50000000.0,
+          "mu_scale_mode": "per_vertex",
+          "toi_threshold": 0.1
+        },
+        "constitution": "ipc",
+        "d_hat": 0.01,
+        "d_hat_relative": 0.0,
+        "enable": 1,
+        "eps_velocity": 0.01,
+        "eps_velocity_relative": 0.0,
+        "friction": {
+          "enable": 1
+        }
+      },
+      "diff_sim": {
+        "enable": 0
+      },
+      "dt": 0.008333333333333333,
+      "extras": {
+        "debug": {
+          "dump_linear_pcg": 0,
+          "dump_linear_system": 0,
+          "dump_mas_matrices": 0,
+          "dump_surface": 0
+        },
+        "strict_mode": {
+          "enable": 0
+        }
+      },
+      "gravity": [
+        [
+          0.0
+        ],
+        [
+          -9.8
+        ],
+        [
+          0.0
+        ]
+      ],
+      "integrator": {
+        "type": "bdf1"
+      },
+      "line_search": {
+        "max_iter": 8,
+        "report_energy": 0
+      },
+      "linear_system": {
+        "check_interval": 5,
+        "fem_preconditioner": "diag",
+        "solver": "fused_pcg",
+        "tol_rate": 0.001,
+        "use_cuda_graph": 1
+      },
+      "newton": {
+        "ccd_tol": 1.0,
+        "max_iter": 1024,
+        "min_iter": 0,
+        "semi_implicit": {
+          "K_min": 6,
+          "beta_tol": 0.001,
+          "enable": 0
+        },
+        "transrate_tol": 0.1,
+        "use_adaptive_tol": 0,
+        "velocity_tol": 0.05,
+        "velocity_tol_relative": 0.0
+      },
+      "sanity_check": {
+        "enable": 1,
+        "mode": "normal"
+      }
+    },
+    "particle": {
+      "density_kg_m3": 1000.0,
+      "radius_m": 0.01,
+      "friction_coefficient": 0.5
+    },
+    "global_vertex_block": [
+      0,
+      1
+    ],
+    "contact_primitive_types": [
+      "EE+F",
+      "PE+F",
+      "PP+F",
+      "PT+F",
+      "EE+N",
+      "PE+N",
+      "PP+N",
+      "PT+N",
+      "PH+F",
+      "PH+N"
+    ]
+  },
+  {
+    "summary": {
+      "dt": 0.016666666666666666,
+      "gx": 2.0,
+      "velocity_tol": 0.05,
+      "min_iter": 0,
+      "semi": 0,
+      "simulated_seconds": 2.0,
+      "tail_frames": 30,
+      "mass_kg": 0.004188790204786391,
+      "expected_normal_n": 0.04105014400690664,
+      "expected_friction_n": -0.008377580409572783,
+      "normal_mean_n": [
+        0.0,
+        0.04105014400690658,
+        0.0
+      ],
+      "friction_mean_n": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "friction_zero_frames": 30,
+      "balance_residual_max_n": 0.008377580409572783,
+      "newton_iterations_tail": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "final_velocity_m_s": [
+        0.002040816326530602,
+        0.0,
+        0.0
+      ]
+    },
+    "provenance": {
+      "python": "3.13.12 (main, Feb  3 2026, 22:52:12) [Clang 21.1.4 ]",
+      "executable": "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+      "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+      "uipc_version": "0.0.28",
+      "uipc_module": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/__init__.py",
+      "binaries": [
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/pyuipc.cpython-313-x86_64-linux-gnu.so",
+          "sha256": "7af446231721da337c1d107b6e45cc922589ee9ce10d8db1f45903a3c4b2e319"
+        },
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/libuipc_backend_cuda.so",
+          "sha256": "62b9cd479a30fa8a685918a09818d009b77c22a1e582829b01eb021ee153034f"
+        }
+      ],
+      "gradient_state": "last assembled Newton iterate, before its accepted position correction"
+    },
+    "config": {
+      "cfl": {
+        "enable": 0
+      },
+      "collision_detection": {
+        "method": "info_stackless_bvh"
+      },
+      "contact": {
+        "adaptive": {
+          "init_kappa": 1000000000.0,
+          "kappa_eval_scale": 1e-16,
+          "max_kappa": 100000000000.0,
+          "min_kappa": 100000000.0
+        },
+        "al-ipc": {
+          "alpha_lower_bound": 1e-06,
+          "decay_factor": 0.3,
+          "mu_scale_abd": 100000.0,
+          "mu_scale_diag_norm": 0.1,
+          "mu_scale_fem": 50000000.0,
+          "mu_scale_mode": "per_vertex",
+          "toi_threshold": 0.1
+        },
+        "constitution": "ipc",
+        "d_hat": 0.01,
+        "d_hat_relative": 0.0,
+        "enable": 1,
+        "eps_velocity": 0.01,
+        "eps_velocity_relative": 0.0,
+        "friction": {
+          "enable": 1
+        }
+      },
+      "diff_sim": {
+        "enable": 0
+      },
+      "dt": 0.016666666666666666,
+      "extras": {
+        "debug": {
+          "dump_linear_pcg": 0,
+          "dump_linear_system": 0,
+          "dump_mas_matrices": 0,
+          "dump_surface": 0
+        },
+        "strict_mode": {
+          "enable": 0
+        }
+      },
+      "gravity": [
+        [
+          2.0
+        ],
+        [
+          -9.8
+        ],
+        [
+          0.0
+        ]
+      ],
+      "integrator": {
+        "type": "bdf1"
+      },
+      "line_search": {
+        "max_iter": 8,
+        "report_energy": 0
+      },
+      "linear_system": {
+        "check_interval": 5,
+        "fem_preconditioner": "diag",
+        "solver": "fused_pcg",
+        "tol_rate": 0.001,
+        "use_cuda_graph": 1
+      },
+      "newton": {
+        "ccd_tol": 1.0,
+        "max_iter": 1024,
+        "min_iter": 0,
+        "semi_implicit": {
+          "K_min": 6,
+          "beta_tol": 0.001,
+          "enable": 0
+        },
+        "transrate_tol": 0.1,
+        "use_adaptive_tol": 0,
+        "velocity_tol": 0.05,
+        "velocity_tol_relative": 0.0
+      },
+      "sanity_check": {
+        "enable": 1,
+        "mode": "normal"
+      }
+    },
+    "particle": {
+      "density_kg_m3": 1000.0,
+      "radius_m": 0.01,
+      "friction_coefficient": 0.5
+    },
+    "global_vertex_block": [
+      0,
+      1
+    ],
+    "contact_primitive_types": [
+      "EE+F",
+      "PE+F",
+      "PP+F",
+      "PT+F",
+      "EE+N",
+      "PE+N",
+      "PP+N",
+      "PT+N",
+      "PH+F",
+      "PH+N"
+    ]
+  },
+  {
+    "summary": {
+      "dt": 0.008333333333333333,
+      "gx": 2.0,
+      "velocity_tol": 0.05,
+      "min_iter": 0,
+      "semi": 0,
+      "simulated_seconds": 2.0,
+      "tail_frames": 60,
+      "mass_kg": 0.004188790204786391,
+      "expected_normal_n": 0.04105014400690664,
+      "expected_friction_n": -0.008377580409572783,
+      "normal_mean_n": [
+        0.0,
+        0.04105014400690662,
+        0.0
+      ],
+      "friction_mean_n": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "friction_zero_frames": 60,
+      "balance_residual_max_n": 0.008377580413278782,
+      "newton_iterations_tail": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "final_velocity_m_s": [
+        0.0020408163348072106,
+        0.0,
+        0.0
+      ]
+    },
+    "provenance": {
+      "python": "3.13.12 (main, Feb  3 2026, 22:52:12) [Clang 21.1.4 ]",
+      "executable": "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+      "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+      "uipc_version": "0.0.28",
+      "uipc_module": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/__init__.py",
+      "binaries": [
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/pyuipc.cpython-313-x86_64-linux-gnu.so",
+          "sha256": "7af446231721da337c1d107b6e45cc922589ee9ce10d8db1f45903a3c4b2e319"
+        },
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/libuipc_backend_cuda.so",
+          "sha256": "62b9cd479a30fa8a685918a09818d009b77c22a1e582829b01eb021ee153034f"
+        }
+      ],
+      "gradient_state": "last assembled Newton iterate, before its accepted position correction"
+    },
+    "config": {
+      "cfl": {
+        "enable": 0
+      },
+      "collision_detection": {
+        "method": "info_stackless_bvh"
+      },
+      "contact": {
+        "adaptive": {
+          "init_kappa": 1000000000.0,
+          "kappa_eval_scale": 1e-16,
+          "max_kappa": 100000000000.0,
+          "min_kappa": 100000000.0
+        },
+        "al-ipc": {
+          "alpha_lower_bound": 1e-06,
+          "decay_factor": 0.3,
+          "mu_scale_abd": 100000.0,
+          "mu_scale_diag_norm": 0.1,
+          "mu_scale_fem": 50000000.0,
+          "mu_scale_mode": "per_vertex",
+          "toi_threshold": 0.1
+        },
+        "constitution": "ipc",
+        "d_hat": 0.01,
+        "d_hat_relative": 0.0,
+        "enable": 1,
+        "eps_velocity": 0.01,
+        "eps_velocity_relative": 0.0,
+        "friction": {
+          "enable": 1
+        }
+      },
+      "diff_sim": {
+        "enable": 0
+      },
+      "dt": 0.008333333333333333,
+      "extras": {
+        "debug": {
+          "dump_linear_pcg": 0,
+          "dump_linear_system": 0,
+          "dump_mas_matrices": 0,
+          "dump_surface": 0
+        },
+        "strict_mode": {
+          "enable": 0
+        }
+      },
+      "gravity": [
+        [
+          2.0
+        ],
+        [
+          -9.8
+        ],
+        [
+          0.0
+        ]
+      ],
+      "integrator": {
+        "type": "bdf1"
+      },
+      "line_search": {
+        "max_iter": 8,
+        "report_energy": 0
+      },
+      "linear_system": {
+        "check_interval": 5,
+        "fem_preconditioner": "diag",
+        "solver": "fused_pcg",
+        "tol_rate": 0.001,
+        "use_cuda_graph": 1
+      },
+      "newton": {
+        "ccd_tol": 1.0,
+        "max_iter": 1024,
+        "min_iter": 0,
+        "semi_implicit": {
+          "K_min": 6,
+          "beta_tol": 0.001,
+          "enable": 0
+        },
+        "transrate_tol": 0.1,
+        "use_adaptive_tol": 0,
+        "velocity_tol": 0.05,
+        "velocity_tol_relative": 0.0
+      },
+      "sanity_check": {
+        "enable": 1,
+        "mode": "normal"
+      }
+    },
+    "particle": {
+      "density_kg_m3": 1000.0,
+      "radius_m": 0.01,
+      "friction_coefficient": 0.5
+    },
+    "global_vertex_block": [
+      0,
+      1
+    ],
+    "contact_primitive_types": [
+      "EE+F",
+      "PE+F",
+      "PP+F",
+      "PT+F",
+      "EE+N",
+      "PE+N",
+      "PP+N",
+      "PT+N",
+      "PH+F",
+      "PH+N"
+    ]
+  },
+  {
+    "summary": {
+      "dt": 0.016666666666666666,
+      "gx": 0.0,
+      "velocity_tol": 1e-07,
+      "min_iter": 0,
+      "semi": 0,
+      "simulated_seconds": 2.0,
+      "tail_frames": 30,
+      "mass_kg": 0.004188790204786391,
+      "expected_normal_n": 0.04105014400690664,
+      "expected_friction_n": -0.0,
+      "normal_mean_n": [
+        0.0,
+        0.04105014400690658,
+        0.0
+      ],
+      "friction_mean_n": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "friction_zero_frames": 30,
+      "balance_residual_max_n": 5.551115123125783e-17,
+      "newton_iterations_tail": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "final_velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "provenance": {
+      "python": "3.13.12 (main, Feb  3 2026, 22:52:12) [Clang 21.1.4 ]",
+      "executable": "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+      "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+      "uipc_version": "0.0.28",
+      "uipc_module": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/__init__.py",
+      "binaries": [
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/pyuipc.cpython-313-x86_64-linux-gnu.so",
+          "sha256": "7af446231721da337c1d107b6e45cc922589ee9ce10d8db1f45903a3c4b2e319"
+        },
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/libuipc_backend_cuda.so",
+          "sha256": "62b9cd479a30fa8a685918a09818d009b77c22a1e582829b01eb021ee153034f"
+        }
+      ],
+      "gradient_state": "last assembled Newton iterate, before its accepted position correction"
+    },
+    "config": {
+      "cfl": {
+        "enable": 0
+      },
+      "collision_detection": {
+        "method": "info_stackless_bvh"
+      },
+      "contact": {
+        "adaptive": {
+          "init_kappa": 1000000000.0,
+          "kappa_eval_scale": 1e-16,
+          "max_kappa": 100000000000.0,
+          "min_kappa": 100000000.0
+        },
+        "al-ipc": {
+          "alpha_lower_bound": 1e-06,
+          "decay_factor": 0.3,
+          "mu_scale_abd": 100000.0,
+          "mu_scale_diag_norm": 0.1,
+          "mu_scale_fem": 50000000.0,
+          "mu_scale_mode": "per_vertex",
+          "toi_threshold": 0.1
+        },
+        "constitution": "ipc",
+        "d_hat": 0.01,
+        "d_hat_relative": 0.0,
+        "enable": 1,
+        "eps_velocity": 0.01,
+        "eps_velocity_relative": 0.0,
+        "friction": {
+          "enable": 1
+        }
+      },
+      "diff_sim": {
+        "enable": 0
+      },
+      "dt": 0.016666666666666666,
+      "extras": {
+        "debug": {
+          "dump_linear_pcg": 0,
+          "dump_linear_system": 0,
+          "dump_mas_matrices": 0,
+          "dump_surface": 0
+        },
+        "strict_mode": {
+          "enable": 0
+        }
+      },
+      "gravity": [
+        [
+          0.0
+        ],
+        [
+          -9.8
+        ],
+        [
+          0.0
+        ]
+      ],
+      "integrator": {
+        "type": "bdf1"
+      },
+      "line_search": {
+        "max_iter": 8,
+        "report_energy": 0
+      },
+      "linear_system": {
+        "check_interval": 5,
+        "fem_preconditioner": "diag",
+        "solver": "fused_pcg",
+        "tol_rate": 0.001,
+        "use_cuda_graph": 1
+      },
+      "newton": {
+        "ccd_tol": 1.0,
+        "max_iter": 1024,
+        "min_iter": 0,
+        "semi_implicit": {
+          "K_min": 6,
+          "beta_tol": 0.001,
+          "enable": 0
+        },
+        "transrate_tol": 0.1,
+        "use_adaptive_tol": 0,
+        "velocity_tol": 1e-07,
+        "velocity_tol_relative": 0.0
+      },
+      "sanity_check": {
+        "enable": 1,
+        "mode": "normal"
+      }
+    },
+    "particle": {
+      "density_kg_m3": 1000.0,
+      "radius_m": 0.01,
+      "friction_coefficient": 0.5
+    },
+    "global_vertex_block": [
+      0,
+      1
+    ],
+    "contact_primitive_types": [
+      "EE+F",
+      "PE+F",
+      "PP+F",
+      "PT+F",
+      "EE+N",
+      "PE+N",
+      "PP+N",
+      "PT+N",
+      "PH+F",
+      "PH+N"
+    ]
+  },
+  {
+    "summary": {
+      "dt": 0.008333333333333333,
+      "gx": 0.0,
+      "velocity_tol": 1e-07,
+      "min_iter": 0,
+      "semi": 0,
+      "simulated_seconds": 2.0,
+      "tail_frames": 60,
+      "mass_kg": 0.004188790204786391,
+      "expected_normal_n": 0.04105014400690664,
+      "expected_friction_n": -0.0,
+      "normal_mean_n": [
+        0.0,
+        0.04105014400690665,
+        0.0
+      ],
+      "friction_mean_n": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "friction_zero_frames": 60,
+      "balance_residual_max_n": 7.632783294297951e-17,
+      "newton_iterations_tail": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "final_velocity_m_s": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "provenance": {
+      "python": "3.13.12 (main, Feb  3 2026, 22:52:12) [Clang 21.1.4 ]",
+      "executable": "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+      "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+      "uipc_version": "0.0.28",
+      "uipc_module": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/__init__.py",
+      "binaries": [
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/pyuipc.cpython-313-x86_64-linux-gnu.so",
+          "sha256": "7af446231721da337c1d107b6e45cc922589ee9ce10d8db1f45903a3c4b2e319"
+        },
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/libuipc_backend_cuda.so",
+          "sha256": "62b9cd479a30fa8a685918a09818d009b77c22a1e582829b01eb021ee153034f"
+        }
+      ],
+      "gradient_state": "last assembled Newton iterate, before its accepted position correction"
+    },
+    "config": {
+      "cfl": {
+        "enable": 0
+      },
+      "collision_detection": {
+        "method": "info_stackless_bvh"
+      },
+      "contact": {
+        "adaptive": {
+          "init_kappa": 1000000000.0,
+          "kappa_eval_scale": 1e-16,
+          "max_kappa": 100000000000.0,
+          "min_kappa": 100000000.0
+        },
+        "al-ipc": {
+          "alpha_lower_bound": 1e-06,
+          "decay_factor": 0.3,
+          "mu_scale_abd": 100000.0,
+          "mu_scale_diag_norm": 0.1,
+          "mu_scale_fem": 50000000.0,
+          "mu_scale_mode": "per_vertex",
+          "toi_threshold": 0.1
+        },
+        "constitution": "ipc",
+        "d_hat": 0.01,
+        "d_hat_relative": 0.0,
+        "enable": 1,
+        "eps_velocity": 0.01,
+        "eps_velocity_relative": 0.0,
+        "friction": {
+          "enable": 1
+        }
+      },
+      "diff_sim": {
+        "enable": 0
+      },
+      "dt": 0.008333333333333333,
+      "extras": {
+        "debug": {
+          "dump_linear_pcg": 0,
+          "dump_linear_system": 0,
+          "dump_mas_matrices": 0,
+          "dump_surface": 0
+        },
+        "strict_mode": {
+          "enable": 0
+        }
+      },
+      "gravity": [
+        [
+          0.0
+        ],
+        [
+          -9.8
+        ],
+        [
+          0.0
+        ]
+      ],
+      "integrator": {
+        "type": "bdf1"
+      },
+      "line_search": {
+        "max_iter": 8,
+        "report_energy": 0
+      },
+      "linear_system": {
+        "check_interval": 5,
+        "fem_preconditioner": "diag",
+        "solver": "fused_pcg",
+        "tol_rate": 0.001,
+        "use_cuda_graph": 1
+      },
+      "newton": {
+        "ccd_tol": 1.0,
+        "max_iter": 1024,
+        "min_iter": 0,
+        "semi_implicit": {
+          "K_min": 6,
+          "beta_tol": 0.001,
+          "enable": 0
+        },
+        "transrate_tol": 0.1,
+        "use_adaptive_tol": 0,
+        "velocity_tol": 1e-07,
+        "velocity_tol_relative": 0.0
+      },
+      "sanity_check": {
+        "enable": 1,
+        "mode": "normal"
+      }
+    },
+    "particle": {
+      "density_kg_m3": 1000.0,
+      "radius_m": 0.01,
+      "friction_coefficient": 0.5
+    },
+    "global_vertex_block": [
+      0,
+      1
+    ],
+    "contact_primitive_types": [
+      "EE+F",
+      "PE+F",
+      "PP+F",
+      "PT+F",
+      "EE+N",
+      "PE+N",
+      "PP+N",
+      "PT+N",
+      "PH+F",
+      "PH+N"
+    ]
+  },
+  {
+    "summary": {
+      "dt": 0.016666666666666666,
+      "gx": 2.0,
+      "velocity_tol": 1e-07,
+      "min_iter": 0,
+      "semi": 0,
+      "simulated_seconds": 2.0,
+      "tail_frames": 30,
+      "mass_kg": 0.004188790204786391,
+      "expected_normal_n": 0.04105014400690664,
+      "expected_friction_n": -0.008377580409572783,
+      "normal_mean_n": [
+        0.0,
+        0.04105014400690663,
+        0.0
+      ],
+      "friction_mean_n": [
+        -0.008377577844384835,
+        0.0,
+        0.0
+      ],
+      "friction_zero_frames": 0,
+      "balance_residual_max_n": 2.5651879492077927e-09,
+      "newton_iterations_tail": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4
+      ],
+      "final_velocity_m_s": [
+        0.002306907418379231,
+        0.0,
+        0.0
+      ]
+    },
+    "provenance": {
+      "python": "3.13.12 (main, Feb  3 2026, 22:52:12) [Clang 21.1.4 ]",
+      "executable": "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+      "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+      "uipc_version": "0.0.28",
+      "uipc_module": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/__init__.py",
+      "binaries": [
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/pyuipc.cpython-313-x86_64-linux-gnu.so",
+          "sha256": "7af446231721da337c1d107b6e45cc922589ee9ce10d8db1f45903a3c4b2e319"
+        },
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/libuipc_backend_cuda.so",
+          "sha256": "62b9cd479a30fa8a685918a09818d009b77c22a1e582829b01eb021ee153034f"
+        }
+      ],
+      "gradient_state": "last assembled Newton iterate, before its accepted position correction"
+    },
+    "config": {
+      "cfl": {
+        "enable": 0
+      },
+      "collision_detection": {
+        "method": "info_stackless_bvh"
+      },
+      "contact": {
+        "adaptive": {
+          "init_kappa": 1000000000.0,
+          "kappa_eval_scale": 1e-16,
+          "max_kappa": 100000000000.0,
+          "min_kappa": 100000000.0
+        },
+        "al-ipc": {
+          "alpha_lower_bound": 1e-06,
+          "decay_factor": 0.3,
+          "mu_scale_abd": 100000.0,
+          "mu_scale_diag_norm": 0.1,
+          "mu_scale_fem": 50000000.0,
+          "mu_scale_mode": "per_vertex",
+          "toi_threshold": 0.1
+        },
+        "constitution": "ipc",
+        "d_hat": 0.01,
+        "d_hat_relative": 0.0,
+        "enable": 1,
+        "eps_velocity": 0.01,
+        "eps_velocity_relative": 0.0,
+        "friction": {
+          "enable": 1
+        }
+      },
+      "diff_sim": {
+        "enable": 0
+      },
+      "dt": 0.016666666666666666,
+      "extras": {
+        "debug": {
+          "dump_linear_pcg": 0,
+          "dump_linear_system": 0,
+          "dump_mas_matrices": 0,
+          "dump_surface": 0
+        },
+        "strict_mode": {
+          "enable": 0
+        }
+      },
+      "gravity": [
+        [
+          2.0
+        ],
+        [
+          -9.8
+        ],
+        [
+          0.0
+        ]
+      ],
+      "integrator": {
+        "type": "bdf1"
+      },
+      "line_search": {
+        "max_iter": 8,
+        "report_energy": 0
+      },
+      "linear_system": {
+        "check_interval": 5,
+        "fem_preconditioner": "diag",
+        "solver": "fused_pcg",
+        "tol_rate": 0.001,
+        "use_cuda_graph": 1
+      },
+      "newton": {
+        "ccd_tol": 1.0,
+        "max_iter": 1024,
+        "min_iter": 0,
+        "semi_implicit": {
+          "K_min": 6,
+          "beta_tol": 0.001,
+          "enable": 0
+        },
+        "transrate_tol": 0.1,
+        "use_adaptive_tol": 0,
+        "velocity_tol": 1e-07,
+        "velocity_tol_relative": 0.0
+      },
+      "sanity_check": {
+        "enable": 1,
+        "mode": "normal"
+      }
+    },
+    "particle": {
+      "density_kg_m3": 1000.0,
+      "radius_m": 0.01,
+      "friction_coefficient": 0.5
+    },
+    "global_vertex_block": [
+      0,
+      1
+    ],
+    "contact_primitive_types": [
+      "EE+F",
+      "PE+F",
+      "PP+F",
+      "PT+F",
+      "EE+N",
+      "PE+N",
+      "PP+N",
+      "PT+N",
+      "PH+F",
+      "PH+N"
+    ]
+  },
+  {
+    "summary": {
+      "dt": 0.008333333333333333,
+      "gx": 2.0,
+      "velocity_tol": 1e-07,
+      "min_iter": 0,
+      "semi": 0,
+      "simulated_seconds": 2.0,
+      "tail_frames": 60,
+      "mass_kg": 0.004188790204786391,
+      "expected_normal_n": 0.04105014400690664,
+      "expected_friction_n": -0.008377580409572783,
+      "normal_mean_n": [
+        0.0,
+        0.04105014400690666,
+        0.0
+      ],
+      "friction_mean_n": [
+        -0.00837757874193807,
+        0.0,
+        0.0
+      ],
+      "friction_zero_frames": 0,
+      "balance_residual_max_n": 1.6676349988420393e-09,
+      "newton_iterations_tail": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4,
+        4
+      ],
+      "final_velocity_m_s": [
+        0.002306907418379231,
+        0.0,
+        0.0
+      ]
+    },
+    "provenance": {
+      "python": "3.13.12 (main, Feb  3 2026, 22:52:12) [Clang 21.1.4 ]",
+      "executable": "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+      "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+      "uipc_version": "0.0.28",
+      "uipc_module": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/__init__.py",
+      "binaries": [
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/pyuipc.cpython-313-x86_64-linux-gnu.so",
+          "sha256": "7af446231721da337c1d107b6e45cc922589ee9ce10d8db1f45903a3c4b2e319"
+        },
+        {
+          "path": "/home/ge47gax/kun/genesis-world/.venv/lib/python3.13/site-packages/uipc/_native/libuipc_backend_cuda.so",
+          "sha256": "62b9cd479a30fa8a685918a09818d009b77c22a1e582829b01eb021ee153034f"
+        }
+      ],
+      "gradient_state": "last assembled Newton iterate, before its accepted position correction"
+    },
+    "config": {
+      "cfl": {
+        "enable": 0
+      },
+      "collision_detection": {
+        "method": "info_stackless_bvh"
+      },
+      "contact": {
+        "adaptive": {
+          "init_kappa": 1000000000.0,
+          "kappa_eval_scale": 1e-16,
+          "max_kappa": 100000000000.0,
+          "min_kappa": 100000000.0
+        },
+        "al-ipc": {
+          "alpha_lower_bound": 1e-06,
+          "decay_factor": 0.3,
+          "mu_scale_abd": 100000.0,
+          "mu_scale_diag_norm": 0.1,
+          "mu_scale_fem": 50000000.0,
+          "mu_scale_mode": "per_vertex",
+          "toi_threshold": 0.1
+        },
+        "constitution": "ipc",
+        "d_hat": 0.01,
+        "d_hat_relative": 0.0,
+        "enable": 1,
+        "eps_velocity": 0.01,
+        "eps_velocity_relative": 0.0,
+        "friction": {
+          "enable": 1
+        }
+      },
+      "diff_sim": {
+        "enable": 0
+      },
+      "dt": 0.008333333333333333,
+      "extras": {
+        "debug": {
+          "dump_linear_pcg": 0,
+          "dump_linear_system": 0,
+          "dump_mas_matrices": 0,
+          "dump_surface": 0
+        },
+        "strict_mode": {
+          "enable": 0
+        }
+      },
+      "gravity": [
+        [
+          2.0
+        ],
+        [
+          -9.8
+        ],
+        [
+          0.0
+        ]
+      ],
+      "integrator": {
+        "type": "bdf1"
+      },
+      "line_search": {
+        "max_iter": 8,
+        "report_energy": 0
+      },
+      "linear_system": {
+        "check_interval": 5,
+        "fem_preconditioner": "diag",
+        "solver": "fused_pcg",
+        "tol_rate": 0.001,
+        "use_cuda_graph": 1
+      },
+      "newton": {
+        "ccd_tol": 1.0,
+        "max_iter": 1024,
+        "min_iter": 0,
+        "semi_implicit": {
+          "K_min": 6,
+          "beta_tol": 0.001,
+          "enable": 0
+        },
+        "transrate_tol": 0.1,
+        "use_adaptive_tol": 0,
+        "velocity_tol": 1e-07,
+        "velocity_tol_relative": 0.0
+      },
+      "sanity_check": {
+        "enable": 1,
+        "mode": "normal"
+      }
+    },
+    "particle": {
+      "density_kg_m3": 1000.0,
+      "radius_m": 0.01,
+      "friction_coefficient": 0.5
+    },
+    "global_vertex_block": [
+      0,
+      1
+    ],
+    "contact_primitive_types": [
+      "EE+F",
+      "PE+F",
+      "PP+F",
+      "PT+F",
+      "EE+N",
+      "PE+N",
+      "PP+N",
+      "PT+N",
+      "PH+F",
+      "PH+N"
+    ]
+  }
+]

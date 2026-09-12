@@ -1,6 +1,8 @@
-# The contact force libuipc exports is exact newtons divided by dt squared
+# Contact-gradient unit calibration and its limits
 
-Date: 2026-09-12. Status: measured, reproducible.
+Date: 2026-09-12. Status: unit conversion measured; physical force accuracy not established.
+
+Updated after the [force-learning audit](2026-09-12-force-learning-audit.md): normal equilibrium alone does not validate friction or final-state force readout. The tracked reproducer is `python -m uipc_manip.calibrate_contact_force`.
 
 `uipc.core.ContactSystemFeature` exports the contact energy, gradient and Hessian of a running
 scene. The gradient is what a force term in a reward or an observation would read, but it is stated
@@ -41,11 +43,9 @@ exactly, at both time steps. The sign makes the ground push up, as it must.
 
 ## Why it matters
 
-The dressing reward has no force term and the policy never observes force. Wang's reward uses a FleX
-contact-lambda proxy at a weight of 0.001 above a threshold; his group's later work had to learn a
-force model from 264 real-robot trials in PyBullet (FCVP, RA-L 2024) because FleX cannot report
-forces. Here the force on the arm can be read exactly, per contact type, and separated into normal
-and friction, at every step of every environment.
+This supplies model-force units for diagnostics and prospective learning signals. It does not
+establish independently measured cloth–skin forces. Successful equilibrium calibration does not
+validate cached gradients during motion, friction discretization, or material parameters.
 
 ## First measurement in the dressing scene
 
@@ -63,29 +63,26 @@ arm at about decision 40, every contact entry lies in the cloth block. The reado
 | 165 | last | 0.96 | 65 | 107.4 N | 219.6 N | 98.8 N |
 | 285 | done | 0.00 | 62 | 32.4 N | 108.2 N | 13.0 N |
 
-- **The forces are far above anything the dressing literature reports as safe.** The CMU line cites
-  an 18 N limit estimated from Sawyer joint torques. This expert run peaks at 321 N net on the arm
-  and 155 N at a single vertex, and even the settled state at the end holds 108 N summed over 62
-  vertices. A t-shirt sleeve resting on an arm should be of order one newton.
-- **So either the scene's contact is unphysical, or the expert dresses violently, and nobody has been
-  in a position to notice.** FleX cannot report forces at all, which is why the same group learned a
-  force model from 264 real trials instead (FCVP, RA-L 2024). This measurement is not a result yet;
-  it is the first look at a quantity this project has been producing blindly for months, and the
-  candidates to separate are the cloth's stiffness, the 48-anchor soft grip pulling the sleeve into
-  the arm, and the barrier stiffness `contact_resistance`.
-- **Friction is reported only intermittently**: 13 of 60 samples carry a non-zero friction term, with
-  the rest exactly zero, including every sample once the sleeve settles. In the particle calibration
-  friction was also zero for a resting stack, which is correct there. Before any shear-based signal
-  can be used, this has to be explained: a sticking contact should still carry static friction.
+- **These are historical exported model-force measurements, not validated human loads.**
+  Net arm force, nodal peak and summed nodal magnitudes are different observables. Comparing all
+  three to a wrist-force trial stopping threshold is invalid. The previous inference that an
+  ordinary sleeve must exert approximately 1 N was unsupported and is withdrawn.
+- **Candidate causes remain unresolved:** material and grasp parameters, contact discretization,
+  solver tolerance and cached gradient timing. The 321 N sample has not yet been reproduced with
+  controlled solver settings and independent force balance.
+- **Friction was nonzero in only 13 of 60 historical samples.** A new loaded-particle test
+  reproduces zero exported friction under one-iteration termination even while the particle
+  moves. Tightening Newton tolerance restores the expected force in that test. This establishes
+  a mechanism, not its quantitative contribution to the dressing trajectory.
+
 - **Every number here is one cell, one policy, one run.**
 
 ## Limits of the export, from the source
 
-- **The barrier-free AL-IPC pipeline exports nothing.** The exporters require
-  `SimplexNormalContact`, whose only concrete subclass belongs to the IPC pipeline, so under
-  `contact/constitution = "al-ipc"` every call returns no entries rather than failing. A caller
-  cannot tell that from a scene with no contact. AL-IPC was already rejected for being 2.2 times
-  slower; this closes it for force work as well.
+- **Exporter availability must be inspected.** The simplex exporters depend on IPC-specific
+  contact systems; an absent channel must not be interpreted as an empty contact set. Inspect
+  `contact_export_status`, including normal and friction channel availability independently,
+  instead of assuming that every constitution supports every channel.
 - **The gradient and the energy describe different configurations.** The gradient is assembled at
   the top of a Newton iteration while the energies are rewritten during line search, so a force read
   after `advance` belongs to the last iterate, not to the frame's final state. At equilibrium the
@@ -99,21 +96,11 @@ arm at about decision 40, every contact entry lies in the cloth block. The reado
   measurement above assumed the arm was the first block, which the contact indices happened to
   confirm.
 
-## Who else reads forces out of this solver
+## Corrected literature interpretation
 
-- **TaCauchy** (IROS 2026, arXiv 2606.20426) is built on UIPC, this codebase. It computes Cauchy
-  stress from a hyperelastic law and projects it onto the contact surface to get traction and
-  pressure distributions, for vision-based tactile sensors inside Isaac Sim. It reports agreement
-  with real tactile responses at SSIM above 0.93 over 1.2556 N to 4.7332 N, and 33.40 FPS for one
-  environment against 555 FPS aggregate over 60 [RA].
-  - **It does not touch cloth, garments or dressing, and trains no policy.** So it does not take the
-    dressing question, and it is the best evidence available that forces from this solver agree with
-    a real measurement. The caveat is the regime: a small sensor pad at one to five newtons, not a
-    garment over a limb.
-- **IsaacIPC** (arXiv 2605.24339) puts GPU IPC into Isaac Sim with a mortar contact potential aimed
-  at tactile sensing and contact-pressure resolution [RA]. IPC for robotics is being industrialised,
-  which sets a clock on anything that depends on it being unusual.
-- **Nobody reads these forces for dressing.** A red-team sweep of 2023 to 2026 found robot-assisted
-  dressing to be seventeen arXiv papers in total, every published force figure a scalar at the wrist,
-  and an arXiv abstract search for dressing together with shear returning no robot-dressing papers at
-  all. Clinical guidance names shear, not pressure alone, as the mechanism of pressure injury.
+TaCauchy matches simulated total normal load to measured load before comparing tactile images;
+its SSIM does not independently validate force prediction. IsaacIPC evaluates contact-pressure
+transfer and provides a rendering bridge, but leaves tangential-traction validation open.
+Distributed dressing-force reasoning already exists in Deep Haptic MPC and Visual Haptic
+Reasoning. Earlier universal novelty and safety-threshold claims are withdrawn. Primary sources
+and training implications are in the [audit](2026-09-12-force-learning-audit.md).

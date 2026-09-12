@@ -1,0 +1,237 @@
+[
+  {
+    "id": "agent-a1700f022e3a87981",
+    "task": "Investigate IPC batching and GPU parallelism",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a35ab67ff7c8dc44a",
+    "task": "Make all four garments usable as live cells",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a2ee2ebe5829d7680",
+    "task": "Audit Wang's dressing repo",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-ac3980fc17ee03000",
+    "task": "Profile libuipc solver internals",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-aa8cf6a379cc332a2",
+    "task": "Where exact contact is decisive",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-aab8ff662a4af285e",
+    "task": "Failure recovery and personalization",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a8b341a4768481418",
+    "task": "Skin contact pressure biomechanics",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-a5eca373766529cd5",
+    "task": "Fast cloth simulator evidence",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-aaf1250c41d509aa6",
+    "task": "Sample-efficient paradigms survey",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-acef2d42b74682fdf",
+    "task": "Map HKTex ideas to training issues",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a2e2703d4b5de5ff7",
+    "task": "Deformable assembly and cable routing",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a19f01580da7dd715",
+    "task": "Georgia Tech force-aware dressing line",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-a55aced1b4b5f5320",
+    "task": "Fix the settle thickness-violation assert",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-ade0f30627023ba84",
+    "task": "Assess ECCV 2026 paper ideas",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a9f9c99780664f596",
+    "task": "Differentiable IPC and contact Hessians",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-a0daca668550dd7e0",
+    "task": "Bed wheelchair uncooperative dressing",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a831e96940d5cfe40",
+    "task": "Saturation map red team",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-ad727cf83e5844c19",
+    "task": "Fix hospital_gown grip",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a898f90b162f8ba5a",
+    "task": "Build Wang pretraining infra",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a09fc4d2dca00fe1f",
+    "task": "Profile the non-physics training cost and Taichi options",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a063e6dc7ae1e9a9e",
+    "task": "Expert as data engine analysis",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-acd02a97cae3fc7a5",
+    "task": "Cloth sim contact force fidelity",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-ada2b6dde0bc8d05c",
+    "task": "IPC sim and force sensing survey",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-a7ca3abb95c2c6c95",
+    "task": "Port Newton's one-policy training and evaluation protocol",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-ae29c79b3d7fadbc6",
+    "task": "Assess differentiable simulation for training",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a72e2d3df020491db",
+    "task": "Performance evidence summary",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a6fd6b5b638e05c63",
+    "task": "Diagnose the SAC learning collapse from first principles",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-ab22e041dc3da3869",
+    "task": "Push the remaining simulation speed levers",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a8e96a58ecb9a0548",
+    "task": "Animator and constraints inventory",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-aa25573b87b584703",
+    "task": "IPC simulators in robotics contact",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-a1d18f98d9a533e65",
+    "task": "Fix tshirt_4 and tshirt_392",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a25e50cbda98d14b7",
+    "task": "Wire multi-cell training into the trainer",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-abe838a69a3e33cef",
+    "task": "Inventory libuipc's unique capabilities",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a03d7c2795088b684",
+    "task": "Safety standards for assistive robots",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-ad9008b472b5397fd",
+    "task": "Evaluate Stretch 3 camera rigs",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a25af1df14a7f7a46",
+    "task": "State save/restore inventory",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a68c8841e28c3d203",
+    "task": "Alternatives to teacher-student SAC",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a1f044dd0d781b64b",
+    "task": "Dressing learning literature survey",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a6d9b72ffa5b5aeea",
+    "task": "Profile and speed up the SAC update",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-a3f043b846b691466",
+    "task": "What is left after dressing-in-motion",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-abd631732d188b238",
+    "task": "Contact pressure human robot sim",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-a3fa873885e94363c",
+    "task": "Force and safety frontier in dressing",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-a3ab85167968e1bcd",
+    "task": "Beyond-one-sleeve dressing survey",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-ab6365ad8179430a3",
+    "task": "2025-26 dressing policies and comfort RLHF",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-a7fc247cdb36d3b67",
+    "task": "Dressing injury clinical literature",
+    "last_response_quota_error": true
+  },
+  {
+    "id": "agent-abc2014df7149e8b5",
+    "task": "Dressing metrics and clinical needs",
+    "last_response_quota_error": false
+  },
+  {
+    "id": "agent-ad140ba86487d64e3",
+    "task": "Learning that consumes contact Hessians",
+    "last_response_quota_error": false
+  }
+]
