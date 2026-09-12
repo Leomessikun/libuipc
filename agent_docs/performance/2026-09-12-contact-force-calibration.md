@@ -104,3 +104,50 @@ transfer and provides a rendering bridge, but leaves tangential-traction validat
 Distributed dressing-force reasoning already exists in Deep Haptic MPC and Visual Haptic
 Reasoning. Earlier universal novelty and safety-threshold claims are withdrawn. Primary sources
 and training implications are in the [audit](2026-09-12-force-learning-audit.md).
+
+## The normal channel is trustworthy at equilibrium; the friction channel is not usable
+
+Two further scenes, both with an analytic answer.
+
+**Sliding scene.** Particles on a level ground half-plane. The normal force settles at 0.3284 N
+against a weight of 0.328401 N, a fourth confirmation. But the first frames read **228.6, 108.0 and
+50.0 N** before falling to the weight by frame 5. A transient of nearly three orders of magnitude is
+the barrier resolving the initial configuration, and it is read because the gradient is assembled at
+the top of a Newton iteration. **That is the most likely explanation of the 321 N peak in the dressing
+scene above**, and it means a force read during a violent contact cannot be taken at face value.
+
+**Tilted scene, the decisive one.** Gravity tilted 15 degrees with a friction coefficient of 0.5, so
+tan 15 degrees = 0.268 is below the friction angle and the particles must be held at rest by static
+friction alone. Equilibrium demands a normal force of 0.317535 N and a friction force of 0.0850832 N.
+
+| Frame | Normal | Friction | Normal / expected | Friction / expected | Tangential drift |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 154.1 N | 0.0000 N | 485 | 0.00 | 0.0 mm |
+| 2 | 1.135 N | **0.0851 N** | 3.57 | **0.9999** | 0.001 mm |
+| 3 | 0.2234 N | 0.0791 N | 0.70 | 0.93 | 0.018 mm |
+| 4 | 0.0633 N | 0.0000 N | 0.20 | 0.00 | 0.19 mm |
+| 25 | 0.3175 N | 0.0000 N | **1.0000** | **0.00** | 1.74 mm |
+| 149 | 0.3175 N | 0.0000 N | **1.0000** | **0.00** | 7.27 mm |
+
+- **The normal channel is exact once settled**, ratio 1.0000 from frame 25 on. Three independent
+  scenes now agree.
+- **The friction channel reported the right answer once, at frame 2, to four digits.** So the
+  quantity exists and the units are the same.
+- **From frame 4 on it reads exactly zero while friction is demonstrably acting.** The particles
+  should be held; instead they creep at a steady 0.045 mm per frame, 7.3 mm over 150 frames, and the
+  export says the friction force is zero throughout.
+- **So the friction channel cannot be used as a measurement as it stands.** IPC friction is lagged:
+  the basis and the normal force it multiplies are fixed at the start of a step, and the friction
+  gradient is a function of the tangential slip accumulated *within* the step. Read at the top of a
+  Newton iteration, that slip is near zero, so the gradient is near zero — even when the physical
+  friction force is not. This matches what the solver's own authors say, that there is no guarantee
+  of accurate satisfaction of implicit friction relations, and what an external critique of spurious
+  tangential forces in IPC reports.
+
+**Consequence for any shear-based direction.** A distributed skin-traction signal is exactly the
+quantity nobody else can produce, and exactly the one this export does not yet deliver. Before it can
+be a reward, an observation or a constraint, one of these has to be settled: read the friction
+gradient at a point in the solve where the slip is resolved; reconstruct the friction force from the
+normal force, the friction coefficient and the slip direction, which are all available; or take the
+creep itself as the measurement, since a steady tangential slip under a held contact is the physical
+signature of shear.
