@@ -472,3 +472,11 @@ experiments are superseded by the failed reliability gate and closure in `024c57
 Retain the readout and diagnostics; do not treat these reports as authorization to enable force
 actor/critic/reward inputs. Force-conditioned and diffusion methods remain established baselines,
 not a demonstrated novel contribution. The newer dense critic needs a fresh training comparison.
+
+## Sequence pretraining proposal (2026-09-13)
+
+See the [implementation specification](performance/2026-09-13-recurrent-pretraining-proposal.md).
+First remeasure the corrected dense critic baseline. Then add optional episode identities and
+sequence sampling without changing legacy flat replay. Separate episode resets from bootstrap,
+keep independent train/eval states, and preserve dense action gradients and target-memory updates.
+H4/H8 and GRU are controls before RLT-inspired attention; no architecture gain is established.

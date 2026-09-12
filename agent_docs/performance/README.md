@@ -22,6 +22,7 @@ when iteration counts change. Report both and state which is the primary signal.
 
 | Record | Status | Scope |
 |---|---|---|
+| [Recurrent pretraining proposal](2026-09-13-recurrent-pretraining-proposal.md) | Proposed; no runtime change | RLT source audit, episode replay, temporal policy/critic contracts and staged comparisons |
 | [Force learning and elbow evidence](2026-09-12-force-training-research.md) | Historical; force proposal superseded | Primary-source survey, raw evaluation audit, and conditional experiment design |
 | [2026-09-01 cross-domain main baseline](2026-09-01-cross-domain-baseline.md) | Current reference | Three-run ABD, FEM/MAS, cloth/contact envelope and synchronized stage diagnostics |
 | [2026-09-08 IPC manipulation pretraining](2026-09-08-uipc-manip-pretraining.md) | Accepted | Robot cloth/cable RL environment throughput, coupler phase split, vector scaling, scripted task gate |

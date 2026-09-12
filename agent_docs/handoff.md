@@ -1779,3 +1779,14 @@ policy or branching experiment was launched. No code changed or new tests were w
 Status on archival, 2026-09-13: `024c5716` subsequently closed per-decision force training after
 failed repeatability measurements. All five companion reports carry that superseding notice.
 The dense critic fix (`ef1b3c81`) and optional residual trunks (`01bf913e`) postdate this audit.
+
+## 2026-09-13 — Recurrent pretraining branch and design
+
+Created `pretrain/recurrent-force-memory` from `01bf913e`. Two parallel audits reviewed the
+RLT primary report at upstream `1bee93a9` and the current teacher/student training integration.
+The upstream repository supplies a technical specification, no implementation or measured gain.
+The [proposal](performance/2026-09-13-recurrent-pretraining-proposal.md) specifies episode-linked
+replay, external rollout states, causal sequence distillation, and a history-aware dense Q function.
+Compare the corrected feedforward baseline, H4/H8, GRU, then a small RLT-inspired alternative.
+Per-decision force labels remain excluded after the failed gate. No runtime changes or GPU jobs;
+validation is document/link/JSON consistency, not a new training result.
