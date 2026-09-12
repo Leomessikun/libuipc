@@ -78,3 +78,23 @@ arm at about decision 40, every contact entry lies in the cloth block. The reado
   friction was also zero for a resting stack, which is correct there. Before any shear-based signal
   can be used, this has to be explained: a sticking contact should still carry static friction.
 - **Every number here is one cell, one policy, one run.**
+
+## Limits of the export, from the source
+
+- **The barrier-free AL-IPC pipeline exports nothing.** The exporters require
+  `SimplexNormalContact`, whose only concrete subclass belongs to the IPC pipeline, so under
+  `contact/constitution = "al-ipc"` every call returns no entries rather than failing. A caller
+  cannot tell that from a scene with no contact. AL-IPC was already rejected for being 2.2 times
+  slower; this closes it for force work as well.
+- **The gradient and the energy describe different configurations.** The gradient is assembled at
+  the top of a Newton iteration while the energies are rewritten during line search, so a force read
+  after `advance` belongs to the last iterate, not to the frame's final state. At equilibrium the
+  difference vanishes, which is why the resting-stack calibration is exact; during a violent contact
+  it need not, and that is one candidate for the 321 N peak above.
+- **The overloads taking a constitution are dead**: they look an exporter up by a `"#<uid>"` name
+  that is never registered, and warn and return nothing.
+- **Attribution does not need a guess.** The backend stamps `builtin.global_vertex_offset` on each
+  geometry's meta, so a body's own rows can be selected by its own offset and vertex count
+  (`contact_force.geometry_vertex_block`) rather than by the order the scene was built in. The arm
+  measurement above assumed the arm was the first block, which the contact indices happened to
+  confirm.

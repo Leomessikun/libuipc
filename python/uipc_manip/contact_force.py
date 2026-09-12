@@ -20,6 +20,20 @@ Each call fills a geometry with one entry per contact doublet: ``i``, a global v
 index, and ``grad``, a 3-vector. A vertex appears once per contact it takes part in, so
 the entries of a vertex must be summed. Normal and friction are therefore separable per
 vertex, which a single wrist force reading is not.
+
+Three limits of the export, each verified in the source rather than assumed:
+
+* **The barrier-free AL-IPC pipeline has no exporter.** The exporters require
+  ``SimplexNormalContact``, whose only concrete subclass belongs to the IPC pipeline, so
+  under ``contact/constitution = "al-ipc"`` every call returns nothing at all rather than
+  failing. :func:`vertex_forces` cannot tell that case from a scene with no contact.
+* **The gradient and the energy describe different configurations.** The gradient is
+  assembled at the top of a Newton iteration and the energies are rewritten during line
+  search, so a force read after ``advance`` belongs to the last iterate rather than to the
+  frame's final state. At equilibrium the difference vanishes, which is why the calibration
+  on a resting stack is exact; during a violent contact it need not.
+* **The overloads taking a constitution are dead.** They look an exporter up by a
+  ``"#<uid>"`` name that is never registered, and warn and return nothing.
 """
 
 from __future__ import annotations
@@ -28,6 +42,20 @@ import numpy as np
 
 NORMAL_SUFFIX = "+N"
 FRICTION_SUFFIX = "+F"
+
+
+def geometry_vertex_block(geometry) -> tuple[int, int]:
+    """The ``(first_vertex, vertex_count)`` of a geometry in the solver's global index space.
+
+    The backend stamps ``builtin.global_vertex_offset`` on each geometry's meta, so a body's
+    own rows can be selected without assuming the order in which the scene was built.
+    """
+    from uipc import builtin, view
+
+    offset = geometry.meta().find(builtin.global_vertex_offset)
+    if offset is None:
+        raise ValueError("geometry carries no global_vertex_offset; read it after world.init")
+    return int(np.asarray(view(offset)).reshape(-1)[0]), int(geometry.vertices().size())
 
 
 def find_contact_feature(world):

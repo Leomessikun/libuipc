@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from uipc_manip.contact_force import force_summary, vertex_forces
+from uipc_manip.contact_force import force_summary, geometry_vertex_block, vertex_forces
 
 DT = 1.0 / 60.0
 
@@ -115,3 +115,56 @@ def test_the_summary_separates_the_net_from_what_the_skin_feels():
 def test_an_empty_export_is_zero_not_an_error():
     summary = force_summary(*vertex_forces(_Feature({"PT+N": ([], np.zeros((0, 3)))}), DT, 4))
     assert summary["summed_normal_n"] == 0.0 and summary["peak_vertex_normal_n"] == 0.0
+
+
+class _Meta:
+    def __init__(self, offset):
+        self._offset = offset
+
+    def find(self, name):
+        return None if self._offset is None else np.array([self._offset], dtype=np.int64)
+
+
+class _Vertices:
+    def __init__(self, count):
+        self._count = count
+
+    def size(self):
+        return self._count
+
+
+class _Slot:
+    """Stands in for a geometry slot, which carries its global offset on its meta."""
+
+    def __init__(self, offset, count):
+        self._meta, self._vertices = _Meta(offset), _Vertices(count)
+
+    def meta(self):
+        return self._meta
+
+    def vertices(self):
+        return self._vertices
+
+
+def test_a_geometry_reports_its_own_index_block(monkeypatch):
+    import sys
+    import types
+
+    uipc = types.ModuleType("uipc")
+    uipc.view = lambda attr: attr
+    uipc.builtin = types.SimpleNamespace(global_vertex_offset="global_vertex_offset")
+    monkeypatch.setitem(sys.modules, "uipc", uipc)
+    assert geometry_vertex_block(_Slot(1409, 3889)) == (1409, 3889)
+
+
+def test_a_geometry_without_an_offset_is_an_error_not_a_guess(monkeypatch):
+    import sys
+    import types
+
+    uipc = types.ModuleType("uipc")
+    uipc.view = lambda attr: attr
+    uipc.builtin = types.SimpleNamespace(global_vertex_offset="global_vertex_offset")
+    monkeypatch.setitem(sys.modules, "uipc", uipc)
+    with pytest.raises(ValueError, match="global_vertex_offset"):
+        geometry_vertex_block(_Slot(None, 10))
+
