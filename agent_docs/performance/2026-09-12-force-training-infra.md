@@ -98,6 +98,40 @@ whether contact-force accuracy matters to policy learning.
 
 The proxy costs nothing to produce, so the ablation is nearly free. Nobody has run it.
 
+## The mechanism is settled by two independent results: condition on force, do not predict it
+
+**FMVP re-tested FCVP's predict-and-filter and it lost.** From the paper, on the same task: "FCVP
+predicts next-step forces and filters high-force actions, but this is less effective under arm motion,
+where future arm positions are uncertain and the garment may be pulled in ways that induce
+unanticipated force. By conditioning on force feedback and directly optimizing for dressing success,
+FMVP achieves more robust performance." [RA] That is a controlled comparison by a third party, and it
+says the filter is the weaker mechanism.
+
+**RoboPack found the same shape on tactile.** Tactile as an input scored 16 of 20; no tactile 8 of 20;
+and the variant that *predicted* future tactile scored **6 of 20, below the no-tactile ablation** [RA].
+
+So the design decision is made for us: **force is a conditioning input to the policy and a signal the
+critic reads, not a quantity the model is trained to predict.** Component 3 above is demoted from the
+centre of the design to a training-time convenience, and the auxiliary force-prediction head is now
+evidence-against rather than evidence-for.
+
+## And the gap is named by the authors we would be competing with
+
+FMVP, explaining why its simulation stage has no force: "this simulation training does not use any
+force information, **as current simulators lack realistic force modeling for deformable garments**"
+[RA]. It therefore conditions on force only in real-world fine-tuning, from real sensors, on 192
+trials.
+
+| Work | Where force enters | Where the force comes from |
+|---|---|---|
+| Wang RSS 2023 | a penalty term in the reward | a FleX proxy in arbitrary units |
+| FCVP RA-L 2024 | an execution-time action filter | 264 real trajectories |
+| FMVP CoRL 2025 | conditioning the policy, in real-world fine-tuning | real robot sensors, 192 trials |
+| **online training in simulation** | **nobody** | **no simulator reports it** |
+
+That last row is the opportunity, and it is narrow: not better physics, but the one arrangement the
+field's own stated limitation rules out for everyone else.
+
 ## Three corrections from the sim-to-real evidence
 
 **1. The deployable quantity is the gripper-side wrench, not the force on the arm.** FCVP thresholds
