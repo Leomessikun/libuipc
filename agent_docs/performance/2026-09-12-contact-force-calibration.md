@@ -46,3 +46,35 @@ contact-lambda proxy at a weight of 0.001 above a threshold; his group's later w
 force model from 264 real-robot trials in PyBullet (FCVP, RA-L 2024) because FleX cannot report
 forces. Here the force on the arm can be read exactly, per contact type, and separated into normal
 and friction, at every step of every environment.
+
+## First measurement in the dressing scene
+
+The scripted expert dressed tshirt_26 on held-out body 14045 for 300 decisions while the contact
+gradient was read every fifth decision and split by vertex. The arm occupies the first block of the
+global index space and the cloth the second, which the indices confirm: until the sleeve reaches the
+arm at about decision 40, every contact entry lies in the cloth block. The readout is `uipc_manip.contact_force.vertex_forces`, selecting the arm's index block.
+
+| Decision | Stage | Upper-arm ratio | Arm vertices in contact | Net normal force | Sum of normal magnitudes | Peak at one vertex |
+|---:|---|---:|---:|---:|---:|---:|
+| 30 | middle | 0.00 | 0 | 0 N | 0 N | 0 N |
+| 45 | middle | 0.00 | 5 | 39.1 N | 39.3 N | 29.9 N |
+| 90 | middle | 0.00 | 40 | 45.4 N | 68.2 N | 33.4 N |
+| 130 | last | 0.18 | 50 | **321.1 N** | **358.8 N** | **154.6 N** |
+| 165 | last | 0.96 | 65 | 107.4 N | 219.6 N | 98.8 N |
+| 285 | done | 0.00 | 62 | 32.4 N | 108.2 N | 13.0 N |
+
+- **The forces are far above anything the dressing literature reports as safe.** The CMU line cites
+  an 18 N limit estimated from Sawyer joint torques. This expert run peaks at 321 N net on the arm
+  and 155 N at a single vertex, and even the settled state at the end holds 108 N summed over 62
+  vertices. A t-shirt sleeve resting on an arm should be of order one newton.
+- **So either the scene's contact is unphysical, or the expert dresses violently, and nobody has been
+  in a position to notice.** FleX cannot report forces at all, which is why the same group learned a
+  force model from 264 real trials instead (FCVP, RA-L 2024). This measurement is not a result yet;
+  it is the first look at a quantity this project has been producing blindly for months, and the
+  candidates to separate are the cloth's stiffness, the 48-anchor soft grip pulling the sleeve into
+  the arm, and the barrier stiffness `contact_resistance`.
+- **Friction is reported only intermittently**: 13 of 60 samples carry a non-zero friction term, with
+  the rest exactly zero, including every sample once the sleeve settles. In the particle calibration
+  friction was also zero for a resting stack, which is correct there. Before any shear-based signal
+  can be used, this has to be explained: a sticking contact should still carry static friction.
+- **Every number here is one cell, one policy, one run.**
