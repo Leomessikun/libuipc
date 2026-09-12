@@ -38,6 +38,7 @@ from . import pretrain_wang
 from .curriculum import WANG_GARMENT_ORDER
 from .dressing_env import GenesisIPCDressingEnv
 from .dressing_live import LiveCellFactory
+from .genesis_env import _ensure_genesis
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--work-dir", type=str, default="output/uipc_manip")
     p.add_argument("--save-observations", action="store_true",
                    help="Also store the point-cloud observation of every decision; 5,383 floats a step.")
+    p.add_argument("--checkpoint", type=str, default=None,
+                   help="Play this SAC checkpoint deterministically instead of the expert, on the checkpoint's own "
+                        "physics and observation. This is how a voided evaluation round is replayed offline.")
     return p
 
 
@@ -125,14 +129,20 @@ class EpisodeTape:
         np.savez_compressed(path, **arrays)
 
 
-def run_world(env, cells, horizon: int, seed_base: int, out_dir: Path, index: int, *, save_observations: bool) -> list[dict]:
-    """Play the expert once on every slot of a built world; return one record per slot."""
+def run_world(env, cells, horizon: int, seed_base: int, out_dir: Path, index: int, *,
+              save_observations: bool = False, policy=None) -> list[dict]:
+    """Play one episode on every slot of a built world; return one record per slot.
+
+    ``policy`` maps observations to actions; without one the environment's scripted expert plays.
+    """
+    (out_dir / "episodes").mkdir(parents=True, exist_ok=True)
     tapes = [EpisodeTape(env.metric_keys, save_observations) for _ in range(env.num_envs)]
     obs = env.reset([seed_base + i for i in range(env.num_envs)])
     records: list[dict] = []
     for _ in range(int(horizon)):
-        privileged, stages = env.privileged(), env.scripted_stage_names()
-        actions = np.asarray(env.scripted_actions(), dtype=np.float32)
+        privileged = env.privileged()
+        stages = env.scripted_stage_names() if policy is None else ["policy"] * env.num_envs
+        actions = np.asarray(env.scripted_actions() if policy is None else policy(obs), dtype=np.float32)
         next_obs, rewards, dones, infos = env.step(actions)
         for i, info in enumerate(infos):
             tapes[i].step(privileged[i], actions[i], obs[i], stages[i], float(rewards[i]), info)
@@ -164,12 +174,43 @@ def main(argv: list[str] | None = None) -> None:
     # only replaces its policy, so the bar it measures is the bar the teacher is scored against.
     teacher_argv = ["teacher", "--region", str(args.region), "--garments", *garments,
                     "--num-envs", str(args.num_envs), "--seed", str(args.seed), "--work-dir", str(args.work_dir), *extra]
-    _, targs, _ = pretrain_wang.prepare(teacher_argv)
+    protocol_args, targs, _ = pretrain_wang.prepare(teacher_argv)
     from . import train_sac
 
+    payload, step = None, None
+    if args.checkpoint is not None:
+        from .sac import SACAgent
+
+        payload = SACAgent.read_checkpoint(args.checkpoint)
+        saved_task = payload.get("metadata", {}).get("task")
+        if saved_task not in (None, "dressing"):
+            raise ValueError(f"Checkpoint task {saved_task!r} is not dressing")
+        # Playback inherits the checkpoint's physics and observation, as ``collect_rollouts`` does.
+        targs.eval_only = True
+        train_sac.restore_resume_args(targs, pretrain_wang.trainer_argv(protocol_args, extra), payload)
+        step = int(payload.get("step", 0))
     base_cfg = train_sac.dressing_config(targs)
-    out_dir = Path(args.out_dir) if args.out_dir else Path(args.work_dir) / f"expert_r{args.region}_{args.poses}_s{args.seed}"
+    default_name = (f"expert_r{args.region}_{args.poses}_s{args.seed}" if payload is None
+                    else f"replay_r{args.region}_{args.poses}_{step:08d}")
+    out_dir = Path(args.out_dir) if args.out_dir else Path(args.work_dir) / default_name
     (out_dir / "episodes").mkdir(parents=True, exist_ok=True)
+
+    # Genesis must come up before anything runs matrix work on the GPU: generating a body does, and so
+    # does building the agent, and cuBLAS first leaves Quadrants unable to start (``dressing_env``).
+    _ensure_genesis(base_cfg.logging_level)
+    policy = None
+    if payload is not None:
+        import torch
+
+        from .obs import ObsSpec
+        from .sac import SACConfig
+
+        torch.manual_seed(int(args.seed))
+        agent = SACAgent(ObsSpec(targs.point_budget), GenesisIPCDressingEnv.action_dim,
+                         SACConfig.from_dict(payload["sac_config"]), targs.device)
+        agent.load(args.checkpoint, load_optimizers=False)
+        agent.train(False)
+        policy = lambda obs: agent.act(obs, deterministic=True)  # noqa: E731
 
     factory = LiveCellFactory(base_cfg.live)
     wanted = pretrain_wang.region_configs([int(args.region)], garments, poses)
@@ -187,16 +228,17 @@ def main(argv: list[str] | None = None) -> None:
         raise RuntimeError("No configuration of this region can be placed")
 
     t0, records, size = time.time(), [], max(1, int(args.num_envs))
+    played = "the expert" if payload is None else f"checkpoint {Path(args.checkpoint).name} (step {step})"
     print(f"[expert] region {args.region} {args.poses} poses: {len(cells)} configurations in worlds of {size}, "
-          f"horizon {targs.horizon}, no decision watchdog", flush=True)
+          f"horizon {targs.horizon}, no decision watchdog, playing {played}", flush=True)
     for start in range(0, len(cells), size):
         chunk = cells[start:start + size]
         # Without the watchdog a slow decision costs time only; a trip would void the whole world.
         cfg = replace(base_cfg, cells=tuple(chunk), decision_watchdog=False)
         env = GenesisIPCDressingEnv(cfg, num_envs=len(chunk), cell_factory=factory)
         try:
-            records += run_world(env, chunk, targs.horizon, int(args.seed) * 1000 + start,
-                                 out_dir, start, save_observations=bool(args.save_observations))
+            records += run_world(env, chunk, targs.horizon, int(args.seed) * 1000 + start, out_dir, start,
+                                 save_observations=bool(args.save_observations), policy=policy)
         finally:
             env.close()
             gc.collect()
@@ -205,7 +247,10 @@ def main(argv: list[str] | None = None) -> None:
 
     summary = pretrain_wang.eval_summary(records, cells)
     summary["mean_length"] = float(np.mean([r["length"] for r in records]))
-    payload = {
+    manifest = {
+        "policy": "expert" if payload is None else "checkpoint",
+        "checkpoint": None if payload is None else str(args.checkpoint),
+        "checkpoint_step": step,
         "region": int(args.region),
         "poses": args.poses,
         "garments": garments,
@@ -219,11 +264,11 @@ def main(argv: list[str] | None = None) -> None:
         "summary": summary,
     }
     (out_dir / "records.json").write_text(json.dumps(records, indent=1, default=float) + "\n")
-    (out_dir / "manifest.json").write_text(json.dumps(payload, indent=2, default=float) + "\n")
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, default=float) + "\n")
     print(f"[expert] mean final upper-arm ratio {summary['mean_final_upperarm_ratio']:.3f}, "
           f"success {summary['success_rate']:.3f} over {summary['cell_count']} configurations, "
           f"mean max upper-arm {summary['mean_max_upperarm_ratio']:.3f}, "
-          f"paper filter {summary['paper_filter_rate']:.3f}, {payload['elapsed_s']:.0f}s", flush=True)
+          f"paper filter {summary['paper_filter_rate']:.3f}, {manifest['elapsed_s']:.0f}s", flush=True)
 
 
 if __name__ == "__main__":
