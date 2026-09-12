@@ -139,6 +139,7 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 | 174.3k | 0.211 | 0.39 | 3 of 25 | 0 |
 | 186.9k | 0.100 | 0.37 | 0 of 25 | 25 |
 | 191.0k | 0.047 | 0.17 | 0 of 25 | 25 |
+| 205.0k | 0.302 | 0.66 | 0 of 25 | 25 |
 
 - **The 90.7k evaluation is valid and ends on no upper arm.** Forearm ratio by garment: 0.00 hospital
   gown, 0.45 tshirt_26, 0.54 tshirt_68, 0.73 tshirt_4, 0.16 tshirt_392. Three evaluations in a row
@@ -188,6 +189,17 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 - **Evaluation now takes a quarter of the run.** Over 18 hours: simulation 62 per cent, evaluation 25,
   rebuilds 1.1. The 68, 18 and 15 above were measured at 5.5 hours; rounds have grown longer and come
   closer together since, and eight of twenty measured nothing.
+- **A voided round has taken `best.pt`, which is worse than measuring nothing.** The 205.0k round
+  tripped, so its 25 episodes were scored at their last-seen ratios, and those mid-pull readings
+  averaged 0.302 on the upper arm, above the 0.283 of the best honest round. `checkpoint_score` ranks
+  that mean first and never reads `sim_errors`, so the round won: `best.json` now records step 8552
+  with `sim_errors` 25, `heldout_success_rate` 0 and `heldout_zero_cell_count` 25 beside its 0.302.
+  - The same row says no cell succeeded while five read 0.71 to 0.92, because a trip's info carries
+    `success: False`. A row that contradicts itself is not a measurement.
+  - A mid-pull reading is not a final one: a sleeve on the upper arm at the trip may still slip back
+    by the horizon, which is exactly what the final-ratio metric is for.
+  - The running teacher keeps its tainted in-memory best, so `best.pt` cannot be trusted for this run.
+    Choose the teacher for distillation by replaying checkpoints with `expert_baseline --checkpoint`.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
