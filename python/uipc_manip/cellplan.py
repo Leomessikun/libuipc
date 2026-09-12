@@ -169,6 +169,15 @@ def checkpoint_score(metrics: dict) -> tuple:
     ``paper_filter_rate`` stays out: the reference applies the early-turn test only
     in the Stage I-B rollout filter, never in checkpoint selection. A missing or
     non-finite value scores as the floor, so one NaN round cannot freeze ``best.pt``.
+
+    A round that hit a simulator error ranks below every clean round, whatever its
+    ratios. Such a round is scored at each episode's last-seen reading, and in this
+    port a decision watchdog trip raises for the whole world, so those readings are
+    mid-pull: a sleeve on the upper arm when the round was cut may still slip back by
+    the horizon. Relaunched teacher r13 showed why the veto is needed rather than a
+    tie-break: its voided round at 205,000 transitions averaged 0.302 that way, above
+    the 0.283 of the best honest round, and took ``best.pt`` with `success_rate` 0 and
+    every cell scored zero.
     """
 
     def value(key: str, floor: float = 0.0) -> float:
@@ -180,6 +189,7 @@ def checkpoint_score(metrics: dict) -> tuple:
 
     p = "heldout_" if value("heldout_episode_count") > 0.0 else ""
     return (
+        0.0 if value("sim_errors") > 0.0 else 1.0,
         value(f"{p}mean_final_upperarm_ratio"),
         value(f"{p}success_rate"),
         value(f"{p}worst_cell_success_rate"),

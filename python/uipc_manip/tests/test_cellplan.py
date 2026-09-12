@@ -110,7 +110,7 @@ def test_score_ranks_heldout_generalization_ahead_of_memorisation():
     generaliser = summarize(_records(slots, lambda s: s < 4 or s % 2 == 0), slots, heldout)  # unseen cells, half the rest
     assert memoriser["training_success_rate"] > generaliser["training_success_rate"]
     assert checkpoint_score(generaliser) > checkpoint_score(memoriser)
-    assert len(checkpoint_score(generaliser)) == 7
+    assert len(checkpoint_score(generaliser)) == 8
 
 
 def test_score_leads_with_the_continuous_ratio_then_success_then_worst_cell():
@@ -128,8 +128,8 @@ def test_score_leads_with_the_continuous_ratio_then_success_then_worst_cell():
 
 def test_score_without_heldout_uses_all_cell_keys_and_floors_nan():
     single_body = {"success_rate": 0.5, "mean_final_upperarm_ratio": 0.6, "mean_max_upperarm_ratio": 0.8, "mean_return": 3.0}
-    assert checkpoint_score(single_body)[:2] == (0.6, 0.5)
-    assert checkpoint_score({"success_rate": 0, "mean_final_distance": 1, "mean_return": 0})[1] == 0.0
+    assert checkpoint_score(single_body)[1:3] == (0.6, 0.5)
+    assert checkpoint_score({"success_rate": 0, "mean_final_distance": 1, "mean_return": 0})[2] == 0.0
     broken = checkpoint_score({"mean_final_upperarm_ratio": math.nan, "success_rate": 0.0, "mean_return": math.nan})
     assert not any(math.isnan(v) for v in broken)
     assert checkpoint_score(single_body) > broken  # one NaN round cannot freeze the best checkpoint
@@ -147,3 +147,23 @@ def test_training_rows_exclude_heldout_slots_and_ungated_garments():
     errors = np.zeros(32, dtype=bool)
     errors[4] = True
     assert not training_rows(mask, rank, 4, errors)[4]
+
+
+def test_a_round_that_hit_a_simulator_error_cannot_take_the_best_checkpoint():
+    # The teacher's voided round at 205,000 transitions: scored at last-seen mid-pull readings, its
+    # mean beat every honest round's and it took best.pt.
+    voided = {"heldout_episode_count": 25, "heldout_mean_final_upperarm_ratio": 0.302,
+              "heldout_success_rate": 0.0, "heldout_worst_cell_success_rate": 0.0, "sim_errors": 25}
+    clean = {"heldout_episode_count": 25, "heldout_mean_final_upperarm_ratio": 0.283,
+             "heldout_success_rate": 0.04, "heldout_worst_cell_success_rate": 0.0, "sim_errors": 0}
+    assert checkpoint_score(clean) > checkpoint_score(voided)
+    # One error is enough, and a round without the key counts as clean.
+    assert checkpoint_score(clean) > checkpoint_score({**clean, "sim_errors": 1})
+    assert checkpoint_score({k: v for k, v in clean.items() if k != "sim_errors"}) == checkpoint_score(clean)
+
+
+def test_voided_rounds_still_rank_against_each_other():
+    worse = {"heldout_episode_count": 25, "heldout_mean_final_upperarm_ratio": 0.1, "sim_errors": 25}
+    better = {**worse, "heldout_mean_final_upperarm_ratio": 0.3}
+    assert checkpoint_score(better) > checkpoint_score(worse)
+
