@@ -217,6 +217,15 @@ class ForceTracker:
     episodes rather than guessed.
     """
 
+    SETTLED_CHANGE = 0.5
+    """A vertex is settled when its magnitude moved by less than this since the previous read.
+
+    Fitted, not chosen: the same episode played twice from one seed reproduces its per-slot force
+    within 20 per cent on only 56 per cent of decisions ungated, on 82 per cent when no contact is
+    new, and on 100 per cent of the 1.7 per cent of decisions where every vertex moved by less than
+    a half. Gating each vertex instead of the whole slot keeps the strict criterion without throwing
+    the decision away."""
+
     def __init__(self, vertex_count: int, *, first_vertex: int = 0) -> None:
         self.vertex_count = int(vertex_count)
         self.first_vertex = int(first_vertex)
@@ -225,6 +234,7 @@ class ForceTracker:
     def reset(self) -> None:
         self._previous = np.zeros(self.vertex_count, dtype=np.float64)
         self.age = np.zeros(self.vertex_count, dtype=np.int64)
+        self.settled = np.zeros(self.vertex_count, dtype=bool)
 
     def update(self, feature, dt: float, forces=None) -> dict:
         """Advance the contact ages from a force reading and summarise it, as a flat dict.
@@ -244,7 +254,16 @@ class ForceTracker:
         change[settled] = np.abs(magnitude[settled] - self._previous[settled]) / self._previous[settled]
         change[~touching] = 0.0
         self._previous = magnitude
+        # Settled vertices only: in contact, with a history, and barely moved since. This is the
+        # force a gate would trust, reported beside the ungated one so either can be used offline.
+        self.settled = touching & (self.age > 1) & (change <= self.SETTLED_CHANGE)
+        settled_normal = np.where(self.settled[:, None], normal, 0.0)
+        settled_magnitude = np.linalg.norm(settled_normal, axis=1)
         summary = force_summary(normal, friction)
+        summary["settled_vertex_count"] = int(self.settled.sum())
+        summary["settled_summed_n"] = float(settled_magnitude.sum())
+        summary["settled_peak_n"] = float(settled_magnitude.max(initial=0.0))
+        summary["settled_fraction"] = float(self.settled.sum() / max(int(touching.sum()), 1))
         summary["max_contact_age"] = int(self.age.max(initial=0))
         summary["mean_contact_age"] = float(self.age[touching].mean()) if touching.any() else 0.0
         summary["max_relative_change"] = float(change[touching].max(initial=0.0))

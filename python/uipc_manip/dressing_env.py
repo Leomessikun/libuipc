@@ -590,6 +590,8 @@ class GenesisIPCDressingEnv:
         for tracker, field, pair in zip(self._force_trackers, self._pressure_maps, pairs, strict=True):
             summary = tracker.update(self._force_feature, self.cfg.dt, forces=pair)
             summary.update(field.summarise(pair[0]))
+            # The same bands over the settled vertices alone, which is what a gate would read.
+            summary.update(field.summarise(np.where(tracker.settled[:, None], pair[0], 0.0), prefix="settled_"))
             out.append(summary)
         return out
 

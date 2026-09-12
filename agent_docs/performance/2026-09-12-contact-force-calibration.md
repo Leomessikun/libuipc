@@ -273,3 +273,63 @@ For scale, ISO/TS 15066's quasi-static limit for the upper arm is 190 to 220 N/c
 **Correction to the cost.** An earlier measurement put the readout at 5 per cent. Repeated with
 pressure included, the run without it took 0.344 s per decision and the run with it 0.329 s, so the
 readout is faster than the run-to-run spread and its cost is below what this measurement can resolve.
+
+## How reliable the force is, per decision and per episode
+
+The same episode was played twice from one seed on eight region-13 cells, 300 decisions each. The
+solve is not bitwise repeatable, so a reading that survives is one the physics decided and a reading
+that does not is one the solver's opening iterates decided. "Reproduced" below means the two runs
+agree within 20 per cent.
+
+**Per decision, the reading is roughly a coin flip.**
+
+| Quantity | Median error | 90th percentile | Reproduced |
+|---|---:|---:|---:|
+| Summed normal force on the arm | 0.162 | 1.31 | **54.4 %** |
+| Peak pressure per square centimetre | 0.331 | 1.68 | **38.5 %** |
+| Elbow band, summed | 0.162 | 1.34 | 56.1 % |
+| Upper-arm band, summed | 0.231 | 1.00 | 46.3 % |
+
+**Two gates were fitted and both fail.** Contact age does nothing: requiring eight consecutive reads
+moves reproduction from 56.4 to 58.0 per cent. A strict whole-slot criterion works and keeps almost
+nothing: every vertex moving by less than half reproduces 100 per cent of the time on 1.7 per cent of
+decisions. "No new contact this decision" is the only usable middle, 82.3 per cent reproduced on 9.2
+per cent of decisions.
+
+**Per-vertex gating made it worse, not better.** Summing only the vertices that had settled scored
+44.4 per cent against 54.4 ungated, because which vertices count as settled itself differs between
+runs, so the mask adds a second source of disagreement rather than removing one.
+
+**Smoothing helps, monotonically and slowly.** Over a window of decisions:
+
+| Window | Summed force | Peak pressure | Elbow band |
+|---:|---:|---:|---:|
+| 1 | 54.4 % | 38.5 % | 56.1 % |
+| 15 | 61.4 % | 47.2 % | 62.1 % |
+| 60 | 71.1 % | 60.5 % | 75.9 % |
+
+**An episode statistic is solid.** One number per slot for the whole episode, median relative
+disagreement between the two runs:
+
+| Episode statistic | Median error |
+|---|---:|
+| Mean elbow-band force | **0.022** |
+| Mean summed force | 0.066 |
+| Mean upper-arm force | 0.106 |
+| Mean peak pressure | 0.129 |
+| **Maximum peak pressure over the episode** | **0.164**, 90th percentile 1.19 |
+
+### What this settles about the design
+
+- **A per-decision force observation or reward is not supportable here.** Half the readings disagree
+  with themselves, so a critic or a reward consuming them would fit the solver, not the physics.
+- **An episode-level force quantity is supportable**, to two to thirteen per cent. That covers a
+  terminal reward, a safety score, a curriculum weight, an episode filter.
+- **The safety-relevant quantity is the least reliable.** A maximum over an episode picks whichever
+  decision was noisiest: 16 per cent median but 119 per cent at the 90th percentile. Bounding a peak
+  pressure needs either a much longer smoothing window or a different estimator.
+- **The elbow band is the most reliable of the bands**, 2.2 per cent as an episode mean, which is
+  convenient because it is where a sleeve catches.
+
+This is measured on the scripted expert's distribution over eight cells at production solver
+tolerances, not on a learned policy's.
