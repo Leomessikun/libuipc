@@ -136,6 +136,7 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 | 146.2k | 0.114 | 0.26 | 0 of 25 | 25 |
 | 152.7k | 0.000 | 0.05 | 0 of 25 | 25 |
 | 167.1k | 0.223 | 0.64 | 0 of 25 | 25 |
+| 174.3k | 0.211 | 0.39 | 3 of 25 | 0 |
 
 - **The 90.7k evaluation is valid and ends on no upper arm.** Forearm ratio by garment: 0.00 hospital
   gown, 0.45 tshirt_26, 0.54 tshirt_68, 0.73 tshirt_4, 0.16 tshirt_392. Three evaluations in a row
@@ -169,6 +170,11 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
   0.223 on the upper arm and 0.636 on the forearm, with 12 of 25 configurations on the upper arm and
   tshirt_26 on body 14045 at 0.71. Those are mid-episode readings, not final ones, so they neither
   bound the round from above nor below; they do say the policy was not collapsing when it was cut.
+- **At 174.3k a valid round returned three successes, the most so far.** tshirt_392 on bodies 14045
+  and 14048, and tshirt_4 on body 14048, at 0.75, 0.78 and 0.73. Its mean is 0.211, below 125.0k's
+  0.283, and `checkpoint_score` ranks the mean first, so `best.pt` stays where it was: the two
+  measures disagree, one round having eight configurations on the upper arm with seven of them past
+  0.5, the other fourteen with seven past 0.5.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
