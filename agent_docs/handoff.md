@@ -1724,3 +1724,28 @@ Step 0 of that proposal was built on 2026-09-12 while the region-13 teacher kept
 - **`expert_baseline.py`** measures the expert on a region under the evaluation metric and records
   every decision's privileged state, action and reward for a demonstration replay.
 - Nothing reaches the running teacher until it restarts, which is the 300k decision.
+
+Relaunch 3 was stopped on 2026-09-12 at 15:13 at 265,584 transitions, 26.4 hours in, with the user's
+agreement. Why, in the order that decided it:
+- **The evaluation stopped measuring.** 14 of 27 rounds hit the decision watchdog, which raises for a
+  whole world, so one slow configuration ended all 25 episodes and they were scored at their
+  last-seen mid-pull readings.
+- **Those readings then took `best.pt` twice.** `checkpoint_score` never read `sim_errors`, so a
+  voided round at 0.302 displaced the best honest round at 0.283, and a later one at 0.367 displaced
+  that. Both carry `sim_errors` 25 and zero successes.
+- **Most episodes no longer finished.** In the last 39,672 transitions, worth 5.5 episodes, 3
+  finished against 7 trips. The horizon is where the reward is earned and where the time limit
+  bootstraps.
+- **It was self-reinforcing.** A deeper sleeve is a harder contact, so the better the policy got, the
+  more often the watchdog fired.
+- Over 13 valid rounds the teacher scored 5 successes in 325 episodes, 1.5 per cent, with no trend.
+  That is 265,584 transitions, about 880 episodes, against Wang's roughly 13,000 for this region: 7
+  per cent of his budget, and a dirty 7 per cent.
+
+Wang has none of these: FleX costs the same per step, so no watchdog is needed; his `simulator_error`
+means an explosion, not a timeout; and one environment per process means an error ends one episode.
+His teachers also read the same point cloud as the student (`SAC_AWAC.py:1011`,
+`teacher_obs = non_randomized_obs`), only without the randomisation, and his `asymmetric_ac` flag has
+no implementation in the training code.
+
+Both GPU smoke tests pass on the fixed tree. Step 0's held-out expert baseline is running.
