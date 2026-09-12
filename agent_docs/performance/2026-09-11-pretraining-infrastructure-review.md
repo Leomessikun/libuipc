@@ -213,6 +213,10 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
     displace the 0.302: `best.json` still records step 8552 with `sim_errors` 25. Until the teacher
     restarts, only a still higher mid-pull reading can take `best.pt`, and an honest round would
     have to finish above 0.302 to win it back.
+  - **And it repeated.** The voided round at 241.1k read 0.367, above that 0.302, and took `best.pt`:
+    `best.json` now records step 10062, again with `sim_errors` 25. Two of this run's best-checkpoint
+    updates are mid-pull snapshots, and the bar an honest round must clear has climbed 0.283, 0.302,
+    0.367 without any of it being measured at a horizon.
   - **Fixed for the next run.** `cellplan.checkpoint_score` now leads with a clean-round flag, so a
     round that hit a simulator error ranks below every clean one whatever its ratios. Voided
     rounds still rank against each other, and a summary without the key counts as clean. Like
