@@ -134,6 +134,7 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 | 125.0k | 0.283 | 0.60 | 1 of 25 | 0 |
 | 131.8k | 0.000 | 0.03 | 0 of 25 | 25 |
 | 146.2k | 0.114 | 0.26 | 0 of 25 | 25 |
+| 152.7k | 0.000 | 0.05 | 0 of 25 | 25 |
 
 - **The 90.7k evaluation is valid and ends on no upper arm.** Forearm ratio by garment: 0.00 hospital
   gown, 0.45 tshirt_26, 0.54 tshirt_68, 0.73 tshirt_4, 0.16 tshirt_392. Three evaluations in a row
@@ -151,8 +152,11 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 - **The 131.8k evaluation was voided too, and the rounds are getting slower.** Evaluation seconds ran
   691, 838, 740, 1073 and 2038 over the last five rounds; the watchdog's budget is eight times the
   median of the last 64 decisions, so a world that slows raises its own budget and takes longer to
-  trip. This round tripped early, at a forearm ratio of 0.03. The 146.2k round was voided as well,
-  so 4 of 15 rounds have measured nothing, three of the last four. Only the teacher held the GPU, and the CPU tests that ran
+  trip. This round tripped early, at a forearm ratio of 0.03. The 146.2k and 152.7k rounds went the
+  same way, so 5 of 16 rounds have measured nothing, four of the last five, and
+  1.4 GPU-hours went into rounds that measured nothing. The evaluation signal is
+  effectively gone until the teacher restarts on watchdog-free evaluation worlds; its checkpoints
+  are all kept, so those rounds can be replayed offline. Only the teacher held the GPU, and the CPU tests that ran
   in that window pass `--device cpu`.
 - **The run slows as the policy pushes deeper.** Environment seconds per vector step, by 1,000-step
   window: 4.22, 4.30, 3.91, 3.46, 4.94, 5.99. Measured between log rows, that is 16.0k, 16.0k, 18.3k,
