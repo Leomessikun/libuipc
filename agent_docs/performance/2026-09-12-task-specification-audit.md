@@ -50,12 +50,29 @@ not have in the same form:
 
 The hypothesis was that an exploring policy trips the tether where the smooth scripted controller
 does not, so the learner acts in an environment that silently voids some of its actions and cannot
-see that it did. **A first probe found no tether rejections at all** — 0.0 per cent for the scripted
-controller, for uniform random actions and for the controller plus Gaussian noise, over 800
-slot-decisions each — with the only rejections coming from the 12 mm rule, at 10.2 per cent for the
-noisy controller and zero for the other two [MI]. That probe tested only the first of a decision's six
-sub-steps, and the cuff trails progressively, so it is a lower bound; the instrumented count over
-every sub-step is running.
+see that it did. **It is wrong.** Counting every call inside the sub-step loop, 4,800 per policy over
+200 decisions on four cells [MI]:
+
+| Policy | Tether rejections | Held-vertex gap, median | 90th percentile | Maximum |
+|---|---:|---:|---:|---:|
+| Scripted controller | **0.00 %** | 4.40 mm | 19.17 mm | 26.35 mm |
+| Uniform random actions | **0.00 %** | 2.10 mm | 2.82 mm | 8.13 mm |
+| Controller plus Gaussian noise | **0.00 %** | 4.30 mm | 30.06 mm | **47.72 mm** |
+
+Against a 60 mm tether, the worst case over 4,800 sub-steps of the noisiest policy reaches 48 mm and
+never trips. Random actions load the cloth *least*, because they wander away from the arm rather than
+pulling against it. The only rejections anywhere come from the 12 mm no-move rule, 10.2 per cent for
+the noisy controller and zero for the other two — and the reference has that rule too.
+
+**So the grasp does not explain the gap either.**
+
+## What this leaves
+
+No difference in the task's specification accounts for a hand-written controller beating a learned
+policy here. The travel budget is three times the reference's, the reward is the same function with
+the same weights, and the two grasp rules that are ours alone do not fire. What remains is the
+simulator's own dynamics, which are a penetration-free implicit solve rather than position-based
+particles, and the method itself.
 
 ## Not yet compared
 
