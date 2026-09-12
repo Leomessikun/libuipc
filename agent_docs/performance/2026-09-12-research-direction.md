@@ -4,9 +4,33 @@ Date: 2026-09-12. Derived from eight research tracks and our own measurements.
 
 ## In one sentence
 
-**Contact force inside the online simulation training loop for robot-assisted dressing — the one
-arrangement every published system in this field names as impossible — together with the first
-measurement of whether the accuracy of that force matters to policy learning.**
+**Exact simulator contact force as a privileged, training-only signal for a dressing policy that is
+deployed without any force sensor — together with the first measurement of whether the accuracy of
+that force matters to policy learning.**
+
+### A correction to an earlier version of this claim
+
+An earlier draft said force inside the reinforcement-learning loop is unclaimed. **That is wrong, and
+the correction narrows the direction.**
+
+- **FMVP already puts force in the loop.** Its fine-tuning reward carries a force term,
+  `r_force = -min(1, ||f||/8)^2` with 8 N the 95th percentile of observed force, and it FiLM-conditions
+  the PointNet++ on the force vector. 12 participants, 264 trials, 0.79 upper-arm and 0.86 whole-arm
+  [RA]. Its force is real-sensor force and its stage is offline fine-tuning, but it is in the loop.
+- **Constrained reinforcement learning with a force cost is claimed and beaten.** FCVP's own baseline
+  "Multimodal Safe RL" is SAC-Lagrangian with force as the cost: 0.52 plus or minus 0.40 dressed
+  ratio and 4.83 violation after **8,278 training trajectories**, against plain Vision Only at 0.77
+  plus or minus 0.33 with no force data at all [RA]. The CMDP route has been tried here and lost.
+- **A simulation-trained force predictor has already been deployed on a real robot for dressing.**
+  Erickson et al., ICRA 2018: a 37-taxel body force map trained purely in PhysX from 10,800 simulated
+  trials, used as the MPC cost on a real PR2 with 10 participants, 97.5 per cent full-arm dressing
+  [RA]. So "train the force model in simulation" is eight years old.
+
+**What survives, and it is narrower:** nobody has used exact settled contact force as a
+**training-only privileged signal** — a critic input, an auxiliary reconstruction target, a risk
+label, a reset weight — in a deformable or assistive task whose deployed policy carries **no force
+sensor**. Visual Haptic Reasoning comes closest: it learns a body force map from point clouds in
+FleX, reporting 33.1 per cent error on dressing, but never puts it inside a policy [RA].
 
 ## Why it is open, in the authors' own words
 
@@ -42,7 +66,20 @@ pressure [RA].
 A wrist force reading cannot produce this. Per-vertex contact force can. This is a contribution
 whether or not any policy improves.
 
-### 2. The training claim — the actual research
+### 2. The training claim — the actual research, narrowed
+
+**Exact settled force as a privileged training-only signal: in the critic, and as a
+current-step reconstruction target on the actor's encoder. The deployed policy senses nothing.**
+
+The literature fixes three details for us:
+- **Condition, do not predict the future.** FMVP's controlled re-test found FCVP's predict-and-filter
+  weaker under arm motion [RA], and RoboPack found predicting future tactile scored 6 of 20 against 8
+  of 20 without it and 16 of 20 with it as an input [RA].
+- **But reconstructing the *current* step is consistently positive**, where predicting the future is
+  not: concurrent state estimators that regress contact probability or end-effector force alongside
+  the policy work and deploy sensorless [RA].
+- **Use the unbiased asymmetric formulation.** A critic given what the actor cannot see is the
+  textbook biased case unless the critic also reads the actor's own history.
 
 **Force as a conditioning input to the policy and a signal the critic reads, inside online
 reinforcement learning in simulation.** Two independent controlled comparisons fix the mechanism:
@@ -103,10 +140,21 @@ sim-to-real doubts below touch it.
 - **No world model has ever controlled cloth beyond a horizon of one to five actions** [RA], so the
   sample-efficiency half of any plan is unproven on this material.
 
+## What the survey ruled out on cost, not on principle
+
+- **Rolling the simulator forward to vet each candidate action.** `World.dump` and `recover` exist and
+  the environment's own reset already uses them, so it is buildable — but 16 candidates over 3 steps
+  is about 48 times the step cost, taking 11.6k transitions per hour to roughly 240 [E]. Dead on
+  arithmetic.
+- **A Lagrangian force cost**: tried in this exact task and beaten by a vision-only policy [RA].
+  Worth re-running only as a diagnostic, to ask whether the failure was the algorithm or FleX's force.
+
 ## The first three things to do
 
-1. **Gate the transients on the engine's Newton telemetry, and ship both force channels into `infos`.**
-   Half a day. Nothing below means anything without it.
+1. **Wire the settle-gated force map into the environment.** The environment exports no force today
+   and the privileged critic state is 35 force-free floats, so this is step zero whichever build wins.
+   Gate the transients on the engine's Newton telemetry and ship both channels, the arm's contact
+   force and the gripper wrench, into `infos`. Half a day.
 2. **The pressure aggregator**: per-segment resultants and peak pressure per square centimetre, on the
    arm's contact force and on the gripper wrench. One day. This is claim 1, delivered.
 3. **The three-way fidelity ablation.** About three days of compute. This is claim 3, and it decides
