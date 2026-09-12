@@ -154,6 +154,12 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
   trip. This round tripped early, at a forearm ratio of 0.03. The 146.2k round was voided as well,
   so 4 of 15 rounds have measured nothing, three of the last four. Only the teacher held the GPU, and the CPU tests that ran
   in that window pass `--device cpu`.
+- **The run slows as the policy pushes deeper.** Environment seconds per vector step, by 1,000-step
+  window: 4.22, 4.30, 3.91, 3.46, 4.94, 5.99. Measured between log rows, that is 16.0k, 16.0k, 18.3k,
+  19.5k, 15.1k and 12.8k transitions per hour, and the rows before the seventh watchdog trip read
+  9.0k. That trip fired on a 59 s budget against 30 to 36 s earlier, the budget being eight times the
+  median of the last 64 decisions. The 11.6k per hour these budgets use is the run's average
+  including evaluation, and deeper sleeves cost more, not less.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
