@@ -101,6 +101,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", choices=("wang-flow", "flat"), default="wang-flow", help="wang-flow is the reference tool-point actor.")
     p.add_argument("--algo", choices=("sac", "flashsac"), default="sac", help="Scalar reference critic or bounded categorical critic.")
     p.add_argument("--critic-input", choices=("points", "privileged"), default="points", help="dressing: the critic encodes the point cloud (reference) or reads the simulator's privileged state.")
+    p.add_argument("--trunk-style", choices=("plain", "residual"), default="plain", help="Shape of every head's body: 'plain' is Linear-ReLU-Linear-ReLU-Linear, what this port has always used; 'residual' is the pre-normalised residual arrangement value networks are reported to need before they benefit from scale.")
+    p.add_argument("--trunk-blocks", type=int, default=2, help="Residual blocks per head under --trunk-style residual.")
     p.add_argument("--critic-action-mode", choices=("dense", "latent"), default="dense", help="dressing: where the action enters the point-cloud critic. 'dense' is the reference's Q function, the action as a feature of every point before the encoder; 'latent' concatenates it to the encoded vector, which the reference measures about 0.11 lower and which this port used until 2026-09-13.")
     p.add_argument("--encoder-precision", choices=("fp32", "bf16"), default="fp32", help="Run the point encoders under bfloat16 autocast; heads, targets and losses stay fp32.")
     p.add_argument("--teacher-checkpoints", nargs="+", default=None, help="dressing: Wang's distillation from regional teachers, one checkpoint per arm-pose region; each replay row is pulled toward its slot's region teacher.")
@@ -259,6 +261,8 @@ def build_sac_config(args) -> SACConfig:
         max_v=args.max_v,
         critic_input=args.critic_input,
         critic_action_mode=args.critic_action_mode,
+        trunk_style=args.trunk_style,
+        trunk_blocks=args.trunk_blocks,
         encoder_precision=args.encoder_precision,
         distill_weight=float(args.distill_weight) if args.teacher_checkpoints else 0.0,
     )

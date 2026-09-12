@@ -99,6 +99,13 @@ class SACConfig:
     min_v: float = -50.0
     max_v: float = 50.0
     critic_input: str = "points"
+    trunk_style: str = "plain"
+    """Shape of every head's body. ``plain`` is Linear-ReLU-Linear-ReLU-Linear, what this port has
+    always used; ``residual`` is the pre-normalised residual arrangement value networks are reported
+    to need before they benefit from scale at all — without normalisation a larger multi-layer
+    perceptron critic gets worse, not better."""
+    trunk_blocks: int = 2
+    """Residual blocks per head under ``trunk_style = residual``; ignored otherwise."""
     critic_action_mode: str = "dense"
     """Where the action enters the point-cloud critic.
 
@@ -184,22 +191,26 @@ class SACAgent:
         else:
             raise ValueError(f"Unknown actor_type {cfg.actor_type!r}")
         self.actor = actor_cls(
-            spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.actor_log_std_min, cfg.actor_log_std_max
+            spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.actor_log_std_min,
+            cfg.actor_log_std_max, cfg.trunk_style, cfg.trunk_blocks,
         ).to(self.device)
         if cfg.critic_input == "privileged":
             if cfg.algo != "sac" or int(cfg.privileged_dim) <= 0:
                 raise ValueError("The privileged critic is the scalar 'sac' critic and needs privileged_dim > 0")
-            make_critic = lambda: PrivilegedCritic(cfg.privileged_dim, action_dim, cfg.hidden_dim)  # noqa: E731
+            make_critic = lambda: PrivilegedCritic(  # noqa: E731
+                cfg.privileged_dim, action_dim, cfg.hidden_dim, cfg.trunk_style, cfg.trunk_blocks
+            )
         elif cfg.critic_input != "points":
             raise ValueError(f"Unknown critic_input {cfg.critic_input!r}")
         elif cfg.algo == "sac":
             make_critic = lambda: Critic(  # noqa: E731
-                spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.critic_action_mode
+                spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.critic_action_mode,
+                cfg.trunk_style, cfg.trunk_blocks,
             )
         elif cfg.algo == "flashsac":
             make_critic = lambda: CategoricalCritic(  # noqa: E731
                 spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.num_bins, cfg.min_v, cfg.max_v,
-                cfg.use_extra, cfg.critic_action_mode,
+                cfg.use_extra, cfg.critic_action_mode, cfg.trunk_style, cfg.trunk_blocks,
             )
         else:
             raise ValueError(f"Unknown algo {cfg.algo!r}")
@@ -459,7 +470,10 @@ class SACAgent:
         if self.cfg.critic_input != "points":
             # Only a privileged critic adds these keys, so point-critic checkpoints saved before them still load.
             protocol.update(critic_input=str(self.cfg.critic_input), privileged_dim=int(self.cfg.privileged_dim))
-        elif self.cfg.critic_action_mode != "latent":
+        if self.cfg.trunk_style != "plain":
+            # Absent, the key means the plain trunk, so earlier checkpoints still load.
+            protocol.update(trunk_style=str(self.cfg.trunk_style), trunk_blocks=int(self.cfg.trunk_blocks))
+        if self.cfg.critic_input == "points" and self.cfg.critic_action_mode != "latent":
             # Absent, the key means the old latent critic, so checkpoints from before the fix still load.
             protocol.update(critic_action_mode=str(self.cfg.critic_action_mode))
         return protocol

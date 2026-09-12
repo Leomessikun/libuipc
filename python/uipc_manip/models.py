@@ -264,6 +264,8 @@ class Actor(nn.Module):
         use_extra: bool = True,
         log_std_min: float = -10.0,
         log_std_max: float = 2.0,
+        trunk_style: str = "plain",
+        trunk_blocks: int = 2,
     ) -> None:
         super().__init__()
         self.spec = spec
@@ -272,13 +274,7 @@ class Actor(nn.Module):
         self.log_std_min = float(log_std_min)
         self.log_std_max = float(log_std_max)
         in_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
-        self.trunk = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 2 * action_dim),
-        )
+        self.trunk = trunk_layers(in_dim, hidden_dim, 2 * action_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
 
     def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
@@ -301,16 +297,51 @@ class Actor(nn.Module):
         return squashed_action_log_prob(mu, log_std, action)
 
 
-class QHead(nn.Module):
-    def __init__(self, in_dim: int, hidden_dim: int) -> None:
+class ResidualBlock(nn.Module):
+    """Pre-normalised residual block: ``x + W2 ReLU(W1 LayerNorm(x))``.
+
+    The shape BroNet and SimBa converge on for value networks. Without normalisation a plain
+    multi-layer perceptron critic is reported to get *worse* as it is made larger, while a
+    normalised residual one improves, which is why width is not worth buying on its own.
+    """
+
+    def __init__(self, width: int) -> None:
         super().__init__()
-        self.trunk = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
+        self.norm = nn.LayerNorm(width)
+        self.fc1 = nn.Linear(width, width)
+        self.fc2 = nn.Linear(width, width)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.fc2(F.relu(self.fc1(self.norm(x))))
+
+
+def trunk_layers(in_dim: int, hidden_dim: int, out_dim: int, style: str, blocks: int = 2) -> nn.Sequential:
+    """The body of a head, in one of two shapes.
+
+    ``plain`` is this port's original ``Linear-ReLU-Linear-ReLU-Linear``. ``residual`` embeds into
+    ``hidden_dim``, applies ``blocks`` pre-normalised residual blocks, normalises once more and
+    projects out — the arrangement reported to be what lets a value network benefit from scale.
+    """
+    if style == "plain":
+        return nn.Sequential(
+            nn.Linear(in_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, out_dim),
         )
+    if style != "residual":
+        raise ValueError(f"Unknown trunk style {style!r}")
+    return nn.Sequential(
+        nn.Linear(in_dim, hidden_dim),
+        *[ResidualBlock(hidden_dim) for _ in range(int(blocks))],
+        nn.LayerNorm(hidden_dim),
+        nn.Linear(hidden_dim, out_dim),
+    )
+
+
+class QHead(nn.Module):
+    def __init__(self, in_dim: int, hidden_dim: int, trunk_style: str = "plain", blocks: int = 2) -> None:
+        super().__init__()
+        self.trunk = trunk_layers(in_dim, hidden_dim, 1, trunk_style, blocks)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         return self.trunk(z)
@@ -340,7 +371,7 @@ class Critic(nn.Module):
 
     def __init__(
         self, spec: ObsSpec, action_dim: int, hidden_dim: int, encoder_cfg: EncoderConfig, use_extra: bool = True,
-        action_mode: str = "dense",
+        action_mode: str = "dense", trunk_style: str = "plain", trunk_blocks: int = 2,
     ) -> None:
         super().__init__()
         if action_mode not in ("dense", "latent"):
@@ -354,8 +385,8 @@ class Critic(nn.Module):
         # Under ``dense`` the action is already inside the encoding, so the head does not take it again.
         in_dim = self.encoder.feature_dim + (0 if self.action_mode == "dense" else self.action_dim)
         in_dim += EXTRA_DIM if self.use_extra else 0
-        self.Q1 = QHead(in_dim, hidden_dim)
-        self.Q2 = QHead(in_dim, hidden_dim)
+        self.Q1 = QHead(in_dim, hidden_dim, trunk_style, trunk_blocks)
+        self.Q2 = QHead(in_dim, hidden_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
 
     def encode(self, obs, action: torch.Tensor) -> torch.Tensor:
@@ -393,11 +424,12 @@ class PrivilegedCritic(nn.Module):
 
     encoder = None
 
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int) -> None:
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int,
+                 trunk_style: str = "plain", trunk_blocks: int = 2) -> None:
         super().__init__()
         in_dim = int(state_dim) + int(action_dim)
-        self.Q1 = QHead(in_dim, hidden_dim)
-        self.Q2 = QHead(in_dim, hidden_dim)
+        self.Q1 = QHead(in_dim, hidden_dim, trunk_style, trunk_blocks)
+        self.Q2 = QHead(in_dim, hidden_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
 
     def forward(self, state: torch.Tensor, action: torch.Tensor, detach_encoder: bool = False):
@@ -545,6 +577,8 @@ class WangFlowActor(nn.Module):
         use_extra: bool = True,
         log_std_min: float = -10.0,
         log_std_max: float = 2.0,
+        trunk_style: str = "plain",
+        trunk_blocks: int = 2,
     ) -> None:
         super().__init__()
         self.spec = spec
@@ -553,13 +587,7 @@ class WangFlowActor(nn.Module):
         self.log_std_min = float(log_std_min)
         self.log_std_max = float(log_std_max)
         in_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
-        self.trunk = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 2 * action_dim),
-        )
+        self.trunk = trunk_layers(in_dim, hidden_dim, 2 * action_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
 
     def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
@@ -597,15 +625,10 @@ class CategoricalQHead(nn.Module):
     steady state on dense negative rewards.
     """
 
-    def __init__(self, in_dim: int, hidden_dim: int, num_bins: int, min_v: float, max_v: float) -> None:
+    def __init__(self, in_dim: int, hidden_dim: int, num_bins: int, min_v: float, max_v: float,
+                 trunk_style: str = "plain", blocks: int = 2) -> None:
         super().__init__()
-        self.trunk = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, int(num_bins)),
-        )
+        self.trunk = trunk_layers(in_dim, hidden_dim, int(num_bins), trunk_style, blocks)
         self.register_buffer("bin_values", torch.linspace(float(min_v), float(max_v), int(num_bins)))
 
     def forward(self, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -628,6 +651,8 @@ class CategoricalCritic(nn.Module):
         max_v: float,
         use_extra: bool = True,
         action_mode: str = "dense",
+        trunk_style: str = "plain",
+        trunk_blocks: int = 2,
     ) -> None:
         super().__init__()
         if action_mode not in ("dense", "latent"):
@@ -641,8 +666,8 @@ class CategoricalCritic(nn.Module):
         self.num_bins, self.min_v, self.max_v = int(num_bins), float(min_v), float(max_v)
         in_dim = self.encoder.feature_dim + (0 if self.action_mode == "dense" else self.action_dim)
         in_dim += EXTRA_DIM if self.use_extra else 0
-        self.Q1 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v)
-        self.Q2 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v)
+        self.Q1 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v, trunk_style, trunk_blocks)
+        self.Q2 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v, trunk_style, trunk_blocks)
         self.apply(_weight_init)
 
     def encode(self, obs, action: torch.Tensor) -> torch.Tensor:
