@@ -228,3 +228,48 @@ for friction, the contact count, the contact ages and the relative changes, and 
 `grasp_tracking_m`, the hold's displacement, which is the gripper-side quantity a real robot could
 feel. A first run over four cells shows the change measure doing its job: 1.2 and 2.0 on settled
 contacts against 83 and 232 where a contact had just formed.
+
+## Pressure per square centimetre, and why the arm mesh's vertex density is not a problem
+
+`uipc_manip.contact_pressure` turns the per-vertex force into the quantity the dressing field has no
+shared definition for: **peak local pressure over about one square centimetre, per anatomical band**.
+
+**Patches, not vertices.** The arm carries 1,409 vertices over 2,036.7 cm^2, a median of 1.06 cm^2
+each but spanning a factor of 150 from 0.042 to 6.38 [MI]. A per-vertex quotient would read a small
+vertex as a hot spot and would move with mesh resolution, which is the mesh-dependence an external
+critique of IPC contact potentials raises. So each vertex anchors a patch of the vertices within
+5.642 mm, whose disc area is one square centimetre, and the patch's summed force is divided by its own
+summed area. Refining the mesh adds vertices to both sums; a test holds the reading within 10 per cent
+between a 15 by 15 and a 29 by 29 sheet under an identical load.
+
+**Bands, not equal fractions.** Vertex density follows geometric detail, not importance:
+
+| Band | Vertices | Area | Area per vertex |
+|---|---:|---:|---:|
+| hand | 721 | 330.1 cm^2 | 0.458 cm^2 |
+| forearm | 191 | 393.9 cm^2 | 2.06 cm^2 |
+| elbow | 173 | 465.4 cm^2 | 2.69 cm^2 |
+| upper arm | 324 | 847.3 cm^2 | 2.62 cm^2 |
+
+Half the vertices are in the hand because a hand has fingers; the area itself is spread evenly, 275,
+225, 250, 306, 474, 293 and 141 cm^2 over eighths of the fingertip-to-shoulder axis. The mesh is
+SMPL-X, so no garment asset changes it, and the patch quotient makes the density irrelevant to the
+pressure. **The one place it might matter is the elbow**, which has the coarsest resolution of the
+three arm bands at 2.69 cm^2 per vertex and is exactly where a sleeve catches; whether that needs
+local subdivision is a question for the first measurements, not an assumption.
+
+**First reading, four cells, the scripted expert at decision 60:**
+
+| Cell | Summed normal | Peak | Band | hand / forearm / elbow / upper arm |
+|---|---:|---:|---|---|
+| tshirt_26 on 14045 | 14.7 N | 11.2 kPa | upper arm | 0.00 / 0.30 / 0.41 / 13.97 N |
+| tshirt_4 on 14046 | 20.0 N | 32.0 kPa | upper arm | 1.52 / 0.00 / 1.77 / 16.72 N |
+| tshirt_68 on 14047 | 2.0 N | 2.8 kPa | elbow | 0.00 / 0.00 / 1.97 / 0.00 N |
+| hospital gown on 14048 | 71.9 N | 287.2 kPa | hand | 43.42 / 28.14 / 0.30 / 0.00 N |
+
+For scale, ISO/TS 15066's quasi-static limit for the upper arm is 190 to 220 N/cm^2, which is 1,900 to
+2,200 kPa [RA], measured on 100 healthy 18-to-66 year olds.
+
+**Correction to the cost.** An earlier measurement put the readout at 5 per cent. Repeated with
+pressure included, the run without it took 0.344 s per decision and the run with it 0.329 s, so the
+readout is faster than the run-to-run spread and its cost is below what this measurement can resolve.

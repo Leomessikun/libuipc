@@ -332,6 +332,7 @@ class GenesisIPCDressingEnv:
         self._decision_times: deque[float] = deque(maxlen=64)
         self._last_progress: list = []
         self._force_trackers: list | None = None
+        self._pressure_maps: list = []
         self._build_scene()
         self._prepare_start()
         self.descriptions = [self.describe(i) for i in range(self.num_envs)]
@@ -564,6 +565,7 @@ class GenesisIPCDressingEnv:
         arm's total. One export serves every slot.
         """
         from .contact_force import ForceTracker, find_contact_feature, geometry_vertex_block, vertex_forces_multi
+        from .contact_pressure import PressureMap
 
         if self._force_trackers is None:
             feature = find_contact_feature(self._world)
@@ -571,15 +573,25 @@ class GenesisIPCDressingEnv:
                 self._force_trackers = []
                 self._force_feature = None
                 self._force_blocks = []
+                self._pressure_maps = []
             else:
                 self._force_feature = feature
                 self._force_blocks = [geometry_vertex_block(slot.geometry()) for slot in self.arm_slots]
                 self._force_trackers = [ForceTracker(n, first_vertex=first) for first, n in self._force_blocks]
+                # The arm is fixed, so its areas, bands and patches are built once.
+                self._pressure_maps = [
+                    PressureMap(self.arm_meshes[i][0], self.arm_meshes[i][1], cell.finger, cell.elbow, cell.shoulder)
+                    for i, cell in enumerate(self.cells)
+                ]
         if not self._force_trackers:
             return [{} for _ in range(self.num_envs)]
         pairs = vertex_forces_multi(self._force_feature, self.cfg.dt, self._force_blocks)
-        return [t.update(self._force_feature, self.cfg.dt, forces=pair)
-                for t, pair in zip(self._force_trackers, pairs, strict=True)]
+        out = []
+        for tracker, field, pair in zip(self._force_trackers, self._pressure_maps, pairs, strict=True):
+            summary = tracker.update(self._force_feature, self.cfg.dt, forces=pair)
+            summary.update(field.summarise(pair[0]))
+            out.append(summary)
+        return out
 
     def privileged(self) -> np.ndarray:
         """The simulator state behind the current observation, one row per slot, for an asymmetric critic."""
