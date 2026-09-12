@@ -188,3 +188,43 @@ carried in the privileged state as a centimetre-scale field (`dressing_privilege
 - The physical link is the one that matters for dressing: when the sleeve catches, the gripper has to
   pull harder against the hold, so the tracking error rises. Whether that correlation is strong enough
   to serve as a deployable proxy for the arm's load is not yet measured.
+
+## Solver telemetry cannot gate the transients
+
+The gate was to be a flag: read `Engine.frame_stats()` beside the force and discard the frames the
+engine says did not converge. **It does not work.** Ten particles placed touching a ground half-plane,
+where the settled answer is 0.410 N:
+
+| Frame | Force | Times the weight | `converged` | Newton iterations |
+|---:|---:|---:|---|---:|
+| 0 | 1009.4 N | **2459** | **True** | **1** |
+| 1 | 482.5 N | 1175 | True | 1 |
+| 2 | 228.0 N | 555 | True | 1 |
+| 4 | 2.9 N | 7 | True | 4 |
+| 5 and after | 0.41 N | 1.00 | True | 1 |
+
+`converged` is true on every frame including the 2,459-fold one, and `hit_newton_limit` and
+`hit_line_search_limit` are false throughout. Worse, the **largest spike took the fewest Newton
+iterations**, so iteration count ranks the wrong way for the worst case.
+
+**So the gate has to come from the force's own history**, and the readout now records what that needs
+rather than guessing a rule: per-vertex contact age, and the magnitude's relative change since the
+previous read. In the particle stack that change decays 52, 53, 54, 97 and 86 per cent over the five
+transient frames and then steadies below a few per cent.
+
+## The readout, wired in
+
+`DressingConfig.contact_force_readout` turns it on. One export serves every slot —
+`contact_force.vertex_forces_multi` splits the ten channels across the arms' index blocks, so a
+24-environment world costs ten exports a decision rather than 240. Measured on a four-cell world:
+
+| | Seconds per decision |
+|---|---:|
+| Without the readout | 0.229 |
+| With it | 0.240 |
+
+**Five per cent.** Every decision's info now carries the arm's summed and peak normal force, the same
+for friction, the contact count, the contact ages and the relative changes, and separately
+`grasp_tracking_m`, the hold's displacement, which is the gripper-side quantity a real robot could
+feel. A first run over four cells shows the change measure doing its job: 1.2 and 2.0 on settled
+contacts against 83 and 232 where a contact had just formed.

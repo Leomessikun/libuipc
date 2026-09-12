@@ -3,7 +3,14 @@
 import numpy as np
 import pytest
 
-from uipc_manip.contact_force import contact_export_status, force_summary, geometry_vertex_block, vertex_forces
+from uipc_manip.contact_force import (
+    ForceTracker,
+    contact_export_status,
+    force_summary,
+    geometry_vertex_block,
+    vertex_forces,
+    vertex_forces_multi,
+)
 
 DT = 1.0 / 60.0
 
@@ -202,3 +209,56 @@ def test_invalid_export_does_not_propagate_nan_or_negative_indices():
     for index, grad in (([0], [[np.nan, 0, 0]]), ([-1], [[0, 0, 0]])):
         with pytest.raises(ValueError, match="Invalid contact"):
             vertex_forces(_Feature({"PH+N": (index, grad)}), DT, 1)
+
+
+def test_one_export_serves_several_blocks():
+    # Ten exports a decision rather than ten per arm: the arms are separate index blocks and each
+    # entry belongs to exactly one of them.
+    feature = _Feature({"PT+N": ([0, 3, 7], [[0.0, -DT * DT, 0.0]] * 3)})
+    blocks = vertex_forces_multi(feature, DT, [(0, 3), (3, 3), (6, 3)])
+    assert len(blocks) == 3
+    assert blocks[0][0][0] == pytest.approx([0.0, 1.0, 0.0])   # global 0 -> first block
+    assert blocks[1][0][0] == pytest.approx([0.0, 1.0, 0.0])   # global 3 -> second block
+    assert blocks[2][0][1] == pytest.approx([0.0, 1.0, 0.0])   # global 7 -> third block
+    assert blocks[0][0][1:].sum() == 0.0
+
+
+def test_multi_block_matches_reading_one_block_at_a_time():
+    feature = _Feature({"PE+N": ([1, 4], [[0.0, -DT * DT, 0.0]] * 2), "PE+F": ([1], [[-DT * DT, 0.0, 0.0]])})
+    together = vertex_forces_multi(feature, DT, [(0, 3), (3, 3)])
+    for i, (first, n) in enumerate([(0, 3), (3, 3)]):
+        alone = vertex_forces(feature, DT, n, first_vertex=first)
+        assert np.allclose(together[i][0], alone[0]) and np.allclose(together[i][1], alone[1])
+
+
+def test_the_tracker_ages_a_contact_and_measures_how_much_it_moved():
+    tracker = ForceTracker(2)
+    steady = (np.array([[0.0, 1.0, 0.0], [0.0, 0.0, 0.0]]), np.zeros((2, 3)))
+    first = tracker.update(None, DT, forces=steady)
+    # A first touch has no history, so it counts as fully changed.
+    assert first["max_contact_age"] == 1 and first["new_contact_count"] == 1
+    assert first["max_relative_change"] == pytest.approx(1.0)
+    second = tracker.update(None, DT, forces=steady)
+    assert second["max_contact_age"] == 2 and second["new_contact_count"] == 0
+    assert second["max_relative_change"] == pytest.approx(0.0)
+    # The 2,459-fold opening transient: a large relative change is what marks it.
+    spike = (np.array([[0.0, 100.0, 0.0], [0.0, 0.0, 0.0]]), np.zeros((2, 3)))
+    third = tracker.update(None, DT, forces=spike)
+    assert third["max_contact_age"] == 3 and third["max_relative_change"] == pytest.approx(99.0)
+
+
+def test_losing_contact_resets_the_age():
+    tracker = ForceTracker(1)
+    tracker.update(None, DT, forces=(np.array([[0.0, 1.0, 0.0]]), np.zeros((1, 3))))
+    gone = tracker.update(None, DT, forces=(np.zeros((1, 3)), np.zeros((1, 3))))
+    assert gone["max_contact_age"] == 0 and gone["vertices_in_contact"] == 0
+    back = tracker.update(None, DT, forces=(np.array([[0.0, 1.0, 0.0]]), np.zeros((1, 3))))
+    assert back["max_contact_age"] == 1 and back["new_contact_count"] == 1
+
+
+def test_a_reset_forgets_the_history():
+    tracker = ForceTracker(1)
+    tracker.update(None, DT, forces=(np.array([[0.0, 1.0, 0.0]]), np.zeros((1, 3))))
+    tracker.reset()
+    assert tracker.update(None, DT, forces=(np.array([[0.0, 1.0, 0.0]]), np.zeros((1, 3))))["max_contact_age"] == 1
+

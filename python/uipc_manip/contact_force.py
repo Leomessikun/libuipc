@@ -95,6 +95,36 @@ def contact_export_status(feature, *, frame_stats: dict | None = None) -> dict:
     }
 
 
+def vertex_forces_multi(feature, dt: float, blocks) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Normal and friction force for several index blocks, reading the export once.
+
+    Each export call returns every contact in the world, so reading one body at a time costs ten
+    calls per body. ``blocks`` is a sequence of ``(first_vertex, vertex_count)`` pairs and the ten
+    calls are shared between them: with 24 environments that is ten calls a decision rather than
+    240. Returns one ``(normal, friction)`` pair per block, in the order given.
+    """
+    from uipc import view
+    from uipc.geometry import Geometry
+
+    blocks = [(int(a), int(b)) for a, b in blocks]
+    scale = 1.0 / (float(dt) ** 2)
+    out = [(np.zeros((n, 3)), np.zeros((n, 3))) for _, n in blocks]
+    for prim in feature.contact_primitive_types():
+        geometry = Geometry()
+        feature.contact_gradient(prim, geometry)
+        count = geometry.instances().size()
+        if count == 0:
+            continue
+        index = np.asarray(view(geometry.instances().find("i")), dtype=np.int64).reshape(count)
+        gradient = np.asarray(view(geometry.instances().find("grad")), dtype=np.float64).reshape(count, 3)
+        friction = prim.endswith(FRICTION_SUFFIX)
+        for (first, n), pair in zip(blocks, out):
+            keep = (index >= first) & (index < first + n)
+            if keep.any():
+                np.add.at(pair[1] if friction else pair[0], index[keep] - first, -gradient[keep] * scale)
+    return out
+
+
 def vertex_forces(feature, dt: float, vertex_count: int, *, first_vertex: int = 0) -> tuple[np.ndarray, np.ndarray]:
     """Normal and friction force in newtons on each vertex of one contiguous index block.
 
@@ -167,3 +197,58 @@ def force_summary(normal: np.ndarray, friction: np.ndarray) -> dict:
         "peak_vertex_normal_n": float(normal_magnitude.max(initial=0.0)),
         "peak_vertex_friction_n": float(friction_magnitude.max(initial=0.0)),
     }
+
+
+class ForceTracker:
+    """Per-vertex contact force across decisions, with the two quantities a gate needs.
+
+    The solver's own telemetry cannot separate a physical force from an opening transient: a
+    particle stack read 2,459 times its weight on the frame it first touched, and the engine
+    reported that frame as converged in a single Newton iteration, fewer than the settled frames
+    took (``2026-09-12-contact-force-calibration.md``). So a gate has to be built from the force's
+    own history, and this records what that needs:
+
+    * ``age``: how many consecutive reads a vertex has been in contact. A first touch is age 1.
+    * ``change``: the magnitude's relative change since the previous read, which decays as a new
+      contact settles — 52, 53, 54, 97 and 86 per cent over the five frames of that stack before
+      steadying below a few per cent.
+
+    The tracker does not decide what to trust. It reports, so the rule can be fitted to logged
+    episodes rather than guessed.
+    """
+
+    def __init__(self, vertex_count: int, *, first_vertex: int = 0) -> None:
+        self.vertex_count = int(vertex_count)
+        self.first_vertex = int(first_vertex)
+        self.reset()
+
+    def reset(self) -> None:
+        self._previous = np.zeros(self.vertex_count, dtype=np.float64)
+        self.age = np.zeros(self.vertex_count, dtype=np.int64)
+
+    def update(self, feature, dt: float, forces=None) -> dict:
+        """Advance the contact ages from a force reading and summarise it, as a flat dict.
+
+        ``forces`` is an already-read ``(normal, friction)`` pair, which is how a caller shares one
+        export across several bodies; without it this reads its own block.
+        """
+        normal, friction = forces if forces is not None else vertex_forces(
+            feature, dt, self.vertex_count, first_vertex=self.first_vertex)
+        magnitude = np.linalg.norm(normal, axis=1)
+        touching = magnitude > 0.0
+        self.age = np.where(touching, self.age + 1, 0)
+        # Relative change of a vertex that was already in contact; a new contact has no history
+        # and is reported as fully changed.
+        change = np.ones(self.vertex_count, dtype=np.float64)
+        settled = touching & (self._previous > 0.0)
+        change[settled] = np.abs(magnitude[settled] - self._previous[settled]) / self._previous[settled]
+        change[~touching] = 0.0
+        self._previous = magnitude
+        summary = force_summary(normal, friction)
+        summary["max_contact_age"] = int(self.age.max(initial=0))
+        summary["mean_contact_age"] = float(self.age[touching].mean()) if touching.any() else 0.0
+        summary["max_relative_change"] = float(change[touching].max(initial=0.0))
+        summary["mean_relative_change"] = float(change[touching].mean()) if touching.any() else 0.0
+        summary["new_contact_count"] = int((self.age == 1).sum())
+        return summary
+

@@ -112,6 +112,15 @@ class DressingConfig:
     decisions, and never less than ``decision_time_floor_s``, raises a simulator error, so the world
     resets and the trainer rebuilds it. Until eight decisions are timed the budget is the floor
     times the factor."""
+    contact_force_readout: bool = False
+    """Read the contact force on each arm every decision and report it in ``infos``.
+
+    Ten contact exports a decision, shared across every slot. It is off by default because the
+    reading is only trustworthy once a contact has settled: a stack read 2,459 times its weight on
+    the frame it first touched, and the engine reported that frame converged in one Newton
+    iteration, so solver telemetry cannot gate it
+    (``agent_docs/performance/2026-09-12-contact-force-calibration.md``). What is reported therefore
+    carries the contact ages and relative changes a gate has to be fitted from, not a verdict."""
     decision_watchdog: bool = True
     """Whether that watchdog runs. A trip raises for the whole world, so in an evaluation world one
     slow configuration ends all of its episodes at once and the round is scored at last-seen ratios:
@@ -322,6 +331,7 @@ class GenesisIPCDressingEnv:
         self._episode_step = 0
         self._decision_times: deque[float] = deque(maxlen=64)
         self._last_progress: list = []
+        self._force_trackers: list | None = None
         self._build_scene()
         self._prepare_start()
         self.descriptions = [self.describe(i) for i in range(self.num_envs)]
@@ -389,6 +399,7 @@ class GenesisIPCDressingEnv:
         self.coupler = coupler
         coupler._ipc_contact_tabular.default_model(cfg.friction, cfg.contact_resistance)
         self.slots: list = []
+        self.arm_slots: list = []
         self._pickers: list[dict] = []
         uipc = self._uipc
         from uipc.constitution import (
@@ -415,7 +426,10 @@ class GenesisIPCDressingEnv:
                 uipc.view(arm.instances().find(builtin.is_fixed))[:] = 1
                 coupler._ipc_contact_tabular.default_element().apply_to(arm)
                 coupler._ipc_subscenes[env_idx].apply_to(arm)
-                coupler._ipc_objects.create(f"arm_human_{cell.human}_{env_idx}").geometries().create(arm)
+                # The slot is kept so the arm's own global vertex offset can select its contact rows.
+                self.arm_slots.append(
+                    coupler._ipc_objects.create(f"arm_human_{cell.human}_{env_idx}").geometries().create(arm)[0]
+                )
                 mesh = ipc_trimesh(cell.cloth, cell.faces)
                 label_surface(mesh)
                 moduli = ElasticModuli2D.youngs_poisson(cfg.cloth_youngs, cfg.cloth_poisson)
@@ -542,6 +556,31 @@ class GenesisIPCDressingEnv:
             )
         return out
 
+    def _arm_force_summaries(self) -> list[dict]:
+        """Contact force on each slot's arm this decision, in newtons, one summary per slot.
+
+        The arm is an affine body whose vertices occupy one contiguous block of the solver's global
+        index space, which its own geometry reports, so a cloth's self-contact never reaches an
+        arm's total. One export serves every slot.
+        """
+        from .contact_force import ForceTracker, find_contact_feature, geometry_vertex_block, vertex_forces_multi
+
+        if self._force_trackers is None:
+            feature = find_contact_feature(self._world)
+            if feature is None or not self.arm_slots:
+                self._force_trackers = []
+                self._force_feature = None
+                self._force_blocks = []
+            else:
+                self._force_feature = feature
+                self._force_blocks = [geometry_vertex_block(slot.geometry()) for slot in self.arm_slots]
+                self._force_trackers = [ForceTracker(n, first_vertex=first) for first, n in self._force_blocks]
+        if not self._force_trackers:
+            return [{} for _ in range(self.num_envs)]
+        pairs = vertex_forces_multi(self._force_feature, self.cfg.dt, self._force_blocks)
+        return [t.update(self._force_feature, self.cfg.dt, forces=pair)
+                for t, pair in zip(self._force_trackers, pairs, strict=True)]
+
     def privileged(self) -> np.ndarray:
         """The simulator state behind the current observation, one row per slot, for an asymmetric critic."""
         return self._privileged.copy()
@@ -596,6 +635,8 @@ class GenesisIPCDressingEnv:
         self._episode_step = 0
         if getattr(self, "_heuristic", None) is not None:
             self._heuristic.reset()
+        for tracker in self._force_trackers or ():
+            tracker.reset()
         positions = self.positions()
         self._last_progress = self._progress(positions)
         self._privileged = self._privileged_state(positions, self._last_progress)
@@ -649,6 +690,7 @@ class GenesisIPCDressingEnv:
         rewards = np.array([pr.reward for pr in progress], dtype=np.float32)
         obs = self.observation(positions)
         self._privileged = self._privileged_state(positions, progress)
+        force_summaries = self._arm_force_summaries() if cfg.contact_force_readout else None
         infos = []
         for i, (cell, pr, p) in enumerate(zip(self.cells, progress, positions, strict=True)):
             threaded, _ = opening_threaded(p, cell.opening_idx, cell.finger, cell.shoulder)
@@ -675,8 +717,14 @@ class GenesisIPCDressingEnv:
                     "cell": cell.name,
                     "episode_step": int(self._episode_step),
                     "time_limit": bool(done),
+                    # The gripper's own load: the hold is a spring of stiffness
+                    # constraint_strength * mass / dt^2, so its displacement is a force, and it is
+                    # the one a real robot could feel through joint effort.
+                    "grasp_tracking_m": float(tracking_max[i]),
                 }
             )
+            if force_summaries is not None:
+                infos[-1].update({f"arm_force_{k}": v for k, v in force_summaries[i].items()})
         dones = np.full(n, done, dtype=bool)
         if done:
             for i in range(n):
@@ -783,7 +831,7 @@ class GenesisIPCDressingEnv:
         workspace = Path(tempfile.gettempdir()) / f"genesis_ipc_{scene.uid.full()}"
         scene.destroy()
         self.coupler = self._world = None
-        self.slots, self._pickers = [], []
+        self.slots, self.arm_slots, self._pickers = [], [], []
         shutil.rmtree(workspace, ignore_errors=True)
 
     def _draw(self) -> None:
