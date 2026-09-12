@@ -98,14 +98,64 @@ whether contact-force accuracy matters to policy learning.
 
 The proxy costs nothing to produce, so the ablation is nearly free. Nobody has run it.
 
+## Three corrections from the sim-to-real evidence
+
+**1. The deployable quantity is the gripper-side wrench, not the force on the arm.** FCVP thresholds
+the Sawyer's own force/torque reading and Erickson's watchdog is a wrist sensor: both are the wrench
+at the robot, which carries the garment's weight, its inertia and the robot's own friction. Training a
+predictor on the arm's contact force and thresholding it against a wrist sensor would be wrong even
+with a perfect contact model. **We already have the gripper-side quantity for free**: the cuff's hold
+is a spring of known stiffness and its displacement, the tracking error, is in every info and in the
+privileged state [MI]. So the design needs both channels, and they play different roles — the arm's
+force is the privileged safety quantity, the gripper wrench is the deployable one.
+
+**2. Fixing the units does not fix the values.** libuipc does fix a real problem: FCVP's simulated
+threshold is stated in "units" with the note that they "do not correspond to Newtons in the real
+world" [RA], and the same is said of PhysX cloth parameters. Our newtons are newtons. But the
+dominant error is the unidentified cloth-skin friction coefficient, and six-digit verification only
+means the solver solves *its own* contact model exactly. Measured on exactly our contact pair — inner
+forearm against hospital fabric — the friction coefficient rises 26 to 43 per cent between dry and
+normally moist skin and more than doubles against wet fabric [RA]. Every precedent that made a
+sim-trained force model work did system identification first: Erickson fitted garment stretch,
+stiffness, shear and friction by CMA-ES against real robot data before the transfer worked [RA].
+
+**3. Simulation is wrong exactly where it is unique, and this is the strongest argument against the
+whole direction.** Its only irreplaceable advantage is the dangerous high-force regime nobody may
+ethically collect from people. But that is the regime it gets wrong: Yu et al. had to *exclude*
+caught sequences from their parameter fit because "the rapid increase of force in caught sequences
+lead to sub-optimal simulators with an unrealistically large friction coefficient" [RA], and FCVP
+states that the garment catches which dominate real force "usually do not occur in simulation" [RA].
+That is a shift in the labels, not noise: the snag begins at a different action, so a predictor learns
+a systematically wrong decision boundary. Against that, FCVP needed only 264 real trajectories, about
+a day of robot time, so simulation buys little on volume.
+
+**What survives all three.** The three-way ablation in component 5 is a pure simulation experiment:
+the policy is trained and scored in simulation, so whether our newtons match a real forearm does not
+enter. It answers whether force fidelity matters to *learning*, which is answerable here and is
+unanswered anywhere. What the corrections do bite is the claim that a sim-trained force model is
+deployable, and that claim now needs the measurements below before it can be made.
+
+**The validation nobody has done**, and the one that would settle it: replay recorded real
+end-effector trajectories open-loop in the simulator and report the wrench error and correlation
+against a real force/torque trace, per pose and garment. We cannot run it today — a Stretch 3 has no
+force/torque sensor — so it needs either a borrowed sensor or a different robot.
+
 ## Order of work
 
-1. **Phase 0, half a day**: gate the transients on Newton telemetry, ship the force summary into
-   `infos`. Without this every number below fits the solver's opening iterates.
-2. **The aggregator and the sim-trained force model, two to three days**: this alone reproduces what
-   FCVP bought with 264 real trials, and is a deliverable on its own.
-3. **The three-way ablation, about three days of compute** [E]: the contribution.
-4. Only then the larger architecture — a privileged world model, a curriculum over the continuous
+1. **Phase 0, half a day**: gate the transients on Newton telemetry, and ship **both** force
+   channels into `infos` — the arm's contact force and the gripper-side wrench from the hold's
+   stiffness times its tracking error. Without the gate every number below fits the solver's opening
+   iterates.
+2. **The aggregator, one day**: per-segment resultants and peak pressure per square centimetre, on
+   both channels.
+3. **The three-way ablation, about three days of compute** [E]: the contribution, and pure simulation,
+   so the sim-to-real corrections above do not touch it.
+4. **The sim-trained force model, two days**, but only as a training-time shield until the material
+   measurements below are done. Claiming it is deployable needs the garment's mass, thickness, stretch
+   and bending stiffness measured, the cloth-skin friction coefficient measured on a forearm with the
+   26 to 43 per cent hydration spread as the randomisation range, and the open-loop wrench validation.
+   libuipc takes physical parameters directly, which is a real advantage over PhysX and FleX here.
+5. Only then the larger architecture — a privileged world model, a curriculum over the continuous
    pose space — which is where the sample-efficiency gain would have to come from, and which has no
    published precedent on cloth.
 
