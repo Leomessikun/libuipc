@@ -61,6 +61,47 @@ the observation predicts the signal.
 Either answer eliminates a family, which is why it runs first. It costs one collection run and an
 offline fit, no training.
 
+## The gating experiment was run, and it is confounded
+
+1,200 paired samples were collected: the scripted expert on four held-out region-13 cells, one
+environment each, 300 decisions, saving the deployable observation beside the contact force on the
+arm binned into eight bands along the fingertip-to-shoulder axis plus its total and peak. A network
+was then fitted from observation to log1p force.
+
+| Split | Test R^2, total force | Test R^2, peak | Test R^2, bands |
+|---|---:|---:|---:|
+| Random 75/25, cells mixed | +0.935 | +0.889 | +0.951 |
+| Held out hospital_gown on 14047 | -0.752 | -0.214 | -0.795 |
+| Held out tshirt_26 on 14045 | +0.264 | +0.220 | +0.745 |
+| Held out tshirt_4 on 14046 | -1.055 | -0.830 | -0.087 |
+| Held out tshirt_68 on 14048 | -0.024 | -0.040 | +0.507 |
+| **Control: the tool's 7 numbers alone, random split** | **+0.958** | **+0.916** | **+0.943** |
+
+**The control invalidates the random split.** Predicting the force from the gripper's own position and
+goal offset, seven numbers with no point cloud at all, scores *higher* than the full 5,383-dimensional
+observation. The expert follows a nearly deterministic path, so the tool's position stands in for the
+phase of the episode, and the force is a function of phase. A random split over timesteps of the same
+trajectory therefore leaks: neighbouring rows are almost the same state. The +0.935 measures
+autocorrelation, not perception.
+
+**And the leave-one-cell-out split is under-powered.** Three training cells cannot teach a model to
+generalise to a fourth arm geometry and garment, so R^2 near zero there is what any signal would give.
+
+**So the experiment as both surveys specified it does not decide the question.** A valid version needs:
+- many cells, tens rather than three, so leave-one-cell-out has a population to generalise over;
+- a split by cell and by episode, never by timestep;
+- the tool-only control reported beside every number, since it is the thing to beat;
+- policies other than the one scripted expert, whose determinism is what creates the confound;
+- and the transient gate below, because the target is currently junk-dominated.
+
+**The target is transient-dominated.** Over these 1,200 samples the total force on the arm has a
+median of 87.6 N but a mean of 352 N, a 95th percentile of 2,070 N and a maximum of 2,938 N. Fitting
+that is fitting the solver's opening iterates. Gating on the engine's per-frame Newton telemetry has
+to come first, and it is untested.
+
+This is the cheap experiment doing its job: it cost one collection run and it stopped a design from
+being built on a number that measures the wrong thing.
+
 ## What survives either answer
 
 **Force in the critic, not in the actor.** The actor reads the point cloud; the critic reads the
