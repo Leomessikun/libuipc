@@ -200,6 +200,10 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
     by the horizon, which is exactly what the final-ratio metric is for.
   - The running teacher keeps its tainted in-memory best, so `best.pt` cannot be trusted for this run.
     Choose the teacher for distillation by replaying checkpoints with `expert_baseline --checkpoint`.
+  - **Fixed for the next run.** `cellplan.checkpoint_score` now leads with a clean-round flag, so a
+    round that hit a simulator error ranks below every clean one whatever its ratios. Voided
+    rounds still rank against each other, and a summary without the key counts as clean. Like
+    the watchdog exemption, it reaches the teacher only at a restart.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
   therefore ends all 25 episodes at once, and they are scored at their last-seen ratios.
