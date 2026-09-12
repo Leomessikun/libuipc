@@ -107,10 +107,10 @@ def test_sac_update_and_checkpoint(tmp_path):
 def test_actor_update_uses_the_critic_action_gradient():
     """The actor must learn from ``dQ/da``, not from the entropy term alone.
 
-    The critic concatenates the action after its encoder, so detaching that
-    encoder during the actor update saves work without cutting the path to the
-    action. Detaching the action itself instead would leave ``Q(s, pi(s))``
-    constant in ``pi`` and silently reduce the actor to entropy maximisation.
+    Under the reference's dense critic the action is a feature of every point, so the path from the
+    action to Q runs through the encoder and the actor update must not detach it; under the latent
+    critic the action joins afterwards and detaching saves a backward pass for free. Either way,
+    ``Q(s, pi(s))`` constant in ``pi`` would silently reduce the actor to entropy maximisation.
     """
     torch.manual_seed(0)
     spec = ObsSpec(10)
@@ -123,9 +123,14 @@ def test_actor_update_uses_the_critic_action_gradient():
     )
     obs = agent._unpack(obs_flat)
     _, pi, _, _ = agent.actor(obs)
-    q1, _ = agent.critic(obs, pi, detach_encoder=True)
+    detach = agent.critic.action_mode != "dense"
+    q1, _ = agent.critic(obs, pi, detach_encoder=detach)
     grad = torch.autograd.grad(q1.sum(), pi, retain_graph=True)[0]
     assert grad.abs().sum() > 0.0, "critic gives the actor no action gradient"
+    # And the dense critic must refuse the saving, because detaching it here would sever that path.
+    if agent.critic.action_mode == "dense":
+        q_detached, _ = agent.critic(obs, pi, detach_encoder=True)
+        assert torch.autograd.grad(q_detached.sum(), pi, retain_graph=True, allow_unused=True)[0] is None
 
     before = [p.detach().clone() for p in agent.actor.trunk.parameters()]
     agent.updates = agent.cfg.actor_update_freq - 1
@@ -233,7 +238,7 @@ def test_bf16_encoders_hand_fp32_features_to_fp32_heads():
         getattr(agent, name).load_state_dict(getattr(ref, name).state_dict())
     obs = agent._unpack(torch.as_tensor(np.stack([env.reset() for _ in range(4)])))
     action = torch.zeros(4, 3)
-    assert agent.critic.encoder(*obs[:3]).dtype == torch.float32
+    assert agent.critic.encode(obs, action).dtype == torch.float32
     q, q_ref = agent.critic(obs, action)[0], ref.critic(obs, action)[0]
     assert q.dtype == torch.float32 and torch.allclose(q, q_ref, rtol=0.05, atol=0.05) and not torch.equal(q, q_ref)
     replay = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu")
@@ -286,8 +291,13 @@ def test_wang_distillation_pulls_the_actor_toward_its_regions_teacher(tmp_path):
     cfg = _small_cfg("wang-flow")
     cfg.distill_weight, cfg.actor_lr = 1.0, 1.0e-3
     student = SACAgent(spec, 3, cfg, "cpu")
+    # Seed the teacher explicitly. Built on whatever stream position the student left, its weights
+    # move with the student's parameter count, so a critic of a different size silently redraws the
+    # teacher and this threshold then measures the draw rather than the distillation.
+    torch.manual_seed(1234)
     teacher = SACAgent(spec, 3, _small_cfg("wang-flow"), "cpu").actor
     student.set_teachers({13: teacher})
+    torch.manual_seed(0)
     assert not any(p.requires_grad for p in teacher.parameters())
     replay = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu", labelled=True)
     obs = env.reset()

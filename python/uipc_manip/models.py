@@ -316,29 +316,67 @@ class QHead(nn.Module):
         return self.trunk(z)
 
 
+def _broadcast_action(feat: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+    """Append the action to every point's features, as the reference's Q function does.
+
+    Wang RSS 2023: "we concatenate a* as an additional feature to every point p_i in the input point
+    cloud, so the feature of each point includes its 3D position, the one-hot vector of the class
+    type, and the action a*. We then use a classification-type neural network architecture to output
+    a scalar Q value." Their own Table I measures the alternative, encoding the cloud first and
+    concatenating the action to the latent vector, at about 0.11 lower upper-arm dressed ratio.
+    """
+    return torch.cat([feat, action.unsqueeze(1).expand(-1, feat.shape[1], -1)], dim=-1)
+
+
 class Critic(nn.Module):
-    """Twin Q critic in the reference form ``Q(encode(s), a)``: the action joins after encoding."""
+    """Twin Q critic. ``action_mode`` selects where the action enters the network.
+
+    ``dense`` is the reference's: the action becomes a per-point feature and the encoder sees it, so
+    the encoding itself is a function of the action. ``latent`` encodes the cloud alone and
+    concatenates the action afterwards, which is the baseline the reference reports as much worse
+    (``agent_docs/performance/2026-09-12-critic-architecture-defect.md``); it is kept so checkpoints
+    written before the fix still load and so the two can be compared directly.
+    """
 
     def __init__(
-        self, spec: ObsSpec, action_dim: int, hidden_dim: int, encoder_cfg: EncoderConfig, use_extra: bool = True
+        self, spec: ObsSpec, action_dim: int, hidden_dim: int, encoder_cfg: EncoderConfig, use_extra: bool = True,
+        action_mode: str = "dense",
     ) -> None:
         super().__init__()
+        if action_mode not in ("dense", "latent"):
+            raise ValueError(f"Unknown critic action_mode {action_mode!r}")
         self.spec = spec
-        self.encoder = make_global_encoder(FEATURE_DIM, encoder_cfg)
+        self.action_mode = str(action_mode)
+        self.action_dim = int(action_dim)
+        extra_point_features = self.action_dim if self.action_mode == "dense" else 0
+        self.encoder = make_global_encoder(FEATURE_DIM + extra_point_features, encoder_cfg)
         self.use_extra = bool(use_extra)
-        in_dim = self.encoder.feature_dim + int(action_dim) + (EXTRA_DIM if self.use_extra else 0)
+        # Under ``dense`` the action is already inside the encoding, so the head does not take it again.
+        in_dim = self.encoder.feature_dim + (0 if self.action_mode == "dense" else self.action_dim)
+        in_dim += EXTRA_DIM if self.use_extra else 0
         self.Q1 = QHead(in_dim, hidden_dim)
         self.Q2 = QHead(in_dim, hidden_dim)
         self.apply(_weight_init)
 
+    def encode(self, obs, action: torch.Tensor) -> torch.Tensor:
+        """Encode the observation as this critic's Q heads see it.
+
+        Under ``dense`` the encoder's input carries the action on every point, so its width is
+        ``FEATURE_DIM + action_dim`` and the encoding is a function of the action; callers must go
+        through here rather than call ``self.encoder`` with the raw features.
+        """
+        pos, feat, valid, _ = obs
+        if self.action_mode == "dense":
+            feat = _broadcast_action(feat, action)
+        return self.encoder(pos, feat, valid)
+
     def forward(self, obs, action: torch.Tensor, detach_encoder: bool = False):
-        pos, feat, valid, extra = obs
-        z = self.encoder(pos, feat, valid)
+        z = self.encode(obs, action)
         if detach_encoder:
             z = z.detach()
-        parts = [z, action]
+        parts = [z] if self.action_mode == "dense" else [z, action]
         if self.use_extra:
-            parts.append(extra)
+            parts.append(obs[3])
         z = torch.cat(parts, dim=-1)
         return self.Q1(z), self.Q2(z)
 
@@ -577,7 +615,7 @@ class CategoricalQHead(nn.Module):
 
 
 class CategoricalCritic(nn.Module):
-    """Twin distributional critic in the reference form ``Q(encode(s), a)``."""
+    """Twin distributional critic; ``action_mode`` is :class:`Critic`'s, with the same meaning."""
 
     def __init__(
         self,
@@ -589,25 +627,38 @@ class CategoricalCritic(nn.Module):
         min_v: float,
         max_v: float,
         use_extra: bool = True,
+        action_mode: str = "dense",
     ) -> None:
         super().__init__()
+        if action_mode not in ("dense", "latent"):
+            raise ValueError(f"Unknown critic action_mode {action_mode!r}")
         self.spec = spec
-        self.encoder = make_global_encoder(FEATURE_DIM, encoder_cfg)
+        self.action_mode = str(action_mode)
+        self.action_dim = int(action_dim)
+        extra_point_features = self.action_dim if self.action_mode == "dense" else 0
+        self.encoder = make_global_encoder(FEATURE_DIM + extra_point_features, encoder_cfg)
         self.use_extra = bool(use_extra)
         self.num_bins, self.min_v, self.max_v = int(num_bins), float(min_v), float(max_v)
-        in_dim = self.encoder.feature_dim + int(action_dim) + (EXTRA_DIM if self.use_extra else 0)
+        in_dim = self.encoder.feature_dim + (0 if self.action_mode == "dense" else self.action_dim)
+        in_dim += EXTRA_DIM if self.use_extra else 0
         self.Q1 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v)
         self.Q2 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v)
         self.apply(_weight_init)
 
+    def encode(self, obs, action: torch.Tensor) -> torch.Tensor:
+        """Encode as the Q heads see it; see :meth:`Critic.encode`."""
+        pos, feat, valid, _ = obs
+        if self.action_mode == "dense":
+            feat = _broadcast_action(feat, action)
+        return self.encoder(pos, feat, valid)
+
     def forward(self, obs, action: torch.Tensor, detach_encoder: bool = False):
-        pos, feat, valid, extra = obs
-        z = self.encoder(pos, feat, valid)
+        z = self.encode(obs, action)
         if detach_encoder:
             z = z.detach()
-        parts = [z, action]
+        parts = [z] if self.action_mode == "dense" else [z, action]
         if self.use_extra:
-            parts.append(extra)
+            parts.append(obs[3])
         z = torch.cat(parts, dim=-1)
         q1, log_p1 = self.Q1(z)
         q2, log_p2 = self.Q2(z)

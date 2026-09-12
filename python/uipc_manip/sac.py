@@ -99,6 +99,15 @@ class SACConfig:
     min_v: float = -50.0
     max_v: float = 50.0
     critic_input: str = "points"
+    critic_action_mode: str = "dense"
+    """Where the action enters the point-cloud critic.
+
+    ``dense`` is the reference's Q function: the action becomes a feature of every point and the
+    encoder sees it. ``latent`` encodes the cloud alone and concatenates the action to the latent
+    vector, which the reference measures at about 0.11 lower upper-arm dressed ratio over its three
+    pose sub-ranges, and which this port used until 2026-09-13
+    (``agent_docs/performance/2026-09-12-critic-architecture-defect.md``). Checkpoints written before
+    then carry no such key and load as ``latent``."""
     """``points`` encodes the point cloud as the actor does (the reference); ``privileged`` is an asymmetric
     critic on the simulator's low-dimensional state, which only training reads."""
     privileged_dim: int = 0
@@ -184,10 +193,13 @@ class SACAgent:
         elif cfg.critic_input != "points":
             raise ValueError(f"Unknown critic_input {cfg.critic_input!r}")
         elif cfg.algo == "sac":
-            make_critic = lambda: Critic(spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra)  # noqa: E731
+            make_critic = lambda: Critic(  # noqa: E731
+                spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.critic_action_mode
+            )
         elif cfg.algo == "flashsac":
             make_critic = lambda: CategoricalCritic(  # noqa: E731
-                spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.num_bins, cfg.min_v, cfg.max_v, cfg.use_extra
+                spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.num_bins, cfg.min_v, cfg.max_v,
+                cfg.use_extra, cfg.critic_action_mode,
             )
         else:
             raise ValueError(f"Unknown algo {cfg.algo!r}")
@@ -342,7 +354,12 @@ class SACAgent:
     def _update_actor_and_alpha(self, obs, state=None, label=None, index: int = 0) -> dict:
         mu, pi, log_pi, log_std = self.actor(obs)
         with frozen_parameters(self.critic):
-            q1, q2 = self._critic_scalar(obs if state is None else state, pi, detach_encoder=True)
+            # Detaching the critic's encoder saves a backward pass through it, but only the latent
+            # critic can afford it: under the reference's dense critic the action is a feature of
+            # every point, so the path from the action to Q runs *through* the encoder and detaching
+            # would leave Q constant in pi, reducing the actor to entropy maximisation.
+            detach = getattr(self.critic, "action_mode", "latent") != "dense"
+            q1, q2 = self._critic_scalar(obs if state is None else state, pi, detach_encoder=detach)
         # Wang's alpha[alpha_idx]: the actor loss and the temperature loss use the batch's buffer's temperature.
         alpha = self._alpha_at(index)
         actor_loss = (alpha.detach() * log_pi - torch.min(q1, q2)).mean()
@@ -442,6 +459,9 @@ class SACAgent:
         if self.cfg.critic_input != "points":
             # Only a privileged critic adds these keys, so point-critic checkpoints saved before them still load.
             protocol.update(critic_input=str(self.cfg.critic_input), privileged_dim=int(self.cfg.privileged_dim))
+        elif self.cfg.critic_action_mode != "latent":
+            # Absent, the key means the old latent critic, so checkpoints from before the fix still load.
+            protocol.update(critic_action_mode=str(self.cfg.critic_action_mode))
         return protocol
 
     def save(self, path: str | Path, step: int, metadata: dict | None = None) -> Path:
