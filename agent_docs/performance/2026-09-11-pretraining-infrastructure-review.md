@@ -133,6 +133,7 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 | 112.3k | 0.128 | 0.44 | 0 of 25 | 25 |
 | 125.0k | 0.283 | 0.60 | 1 of 25 | 0 |
 | 131.8k | 0.000 | 0.03 | 0 of 25 | 25 |
+| 146.2k | 0.114 | 0.26 | 0 of 25 | 25 |
 
 - **The 90.7k evaluation is valid and ends on no upper arm.** Forearm ratio by garment: 0.00 hospital
   gown, 0.45 tshirt_26, 0.54 tshirt_68, 0.73 tshirt_4, 0.16 tshirt_392. Three evaluations in a row
@@ -150,8 +151,8 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
 - **The 131.8k evaluation was voided too, and the rounds are getting slower.** Evaluation seconds ran
   691, 838, 740, 1073 and 2038 over the last five rounds; the watchdog's budget is eight times the
   median of the last 64 decisions, so a world that slows raises its own budget and takes longer to
-  trip. This round tripped early, at a forearm ratio of 0.03. Three of fourteen rounds have now
-  measured nothing, two of the last three. Only the teacher held the GPU, and the CPU tests that ran
+  trip. This round tripped early, at a forearm ratio of 0.03. The 146.2k round was voided as well,
+  so 4 of 15 rounds have measured nothing, three of the last four. Only the teacher held the GPU, and the CPU tests that ran
   in that window pass `--device cpu`.
 - **The 83.5k evaluation measured nothing.** In `dressing_env.py`, the `RuntimeError` handler of `step`
   turns a watchdog trip into a simulator error for every slot of the world. One slow configuration
