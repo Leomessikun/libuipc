@@ -98,3 +98,22 @@ arm at about decision 40, every contact entry lies in the cloth block. The reado
   (`contact_force.geometry_vertex_block`) rather than by the order the scene was built in. The arm
   measurement above assumed the arm was the first block, which the contact indices happened to
   confirm.
+
+## Who else reads forces out of this solver
+
+- **TaCauchy** (IROS 2026, arXiv 2606.20426) is built on UIPC, this codebase. It computes Cauchy
+  stress from a hyperelastic law and projects it onto the contact surface to get traction and
+  pressure distributions, for vision-based tactile sensors inside Isaac Sim. It reports agreement
+  with real tactile responses at SSIM above 0.93 over 1.2556 N to 4.7332 N, and 33.40 FPS for one
+  environment against 555 FPS aggregate over 60 [RA].
+  - **It does not touch cloth, garments or dressing, and trains no policy.** So it does not take the
+    dressing question, and it is the best evidence available that forces from this solver agree with
+    a real measurement. The caveat is the regime: a small sensor pad at one to five newtons, not a
+    garment over a limb.
+- **IsaacIPC** (arXiv 2605.24339) puts GPU IPC into Isaac Sim with a mortar contact potential aimed
+  at tactile sensing and contact-pressure resolution [RA]. IPC for robotics is being industrialised,
+  which sets a clock on anything that depends on it being unusual.
+- **Nobody reads these forces for dressing.** A red-team sweep of 2023 to 2026 found robot-assisted
+  dressing to be seventeen arXiv papers in total, every published force figure a scalar at the wrist,
+  and an arXiv abstract search for dressing together with shear returning no robot-dressing papers at
+  all. Clinical guidance names shear, not pressure alone, as the mechanism of pressure injury.
