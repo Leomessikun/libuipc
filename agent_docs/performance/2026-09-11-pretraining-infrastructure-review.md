@@ -163,12 +163,17 @@ constraint and bounds them with the 6 cm vertex tether ([solver stall](2026-09-1
   effectively gone until the teacher restarts on watchdog-free evaluation worlds; its checkpoints
   are all kept, so those rounds can be replayed offline. Only the teacher held the GPU, and the CPU tests that ran
   in that window pass `--device cpu`.
-- **The run slows as the policy pushes deeper.** Environment seconds per vector step, by 1,000-step
-  window: 4.22, 4.30, 3.91, 3.46, 4.94, 5.99. Measured between log rows, that is 16.0k, 16.0k, 18.3k,
-  19.5k, 15.1k and 12.8k transitions per hour, and the rows before the seventh watchdog trip read
-  9.0k. That trip fired on a 59 s budget against 30 to 36 s earlier, the budget being eight times the
-  median of the last 64 decisions. The 11.6k per hour these budgets use is the run's average
-  including evaluation, and deeper sleeves cost more, not less.
+- **The run slowed by half, then plateaued.** Environment seconds per vector step, over complete
+  1,000-step windows: 4.22, 4.30, 3.91, 3.46, 4.94, 4.98, 4.99. Between log rows that is
+  16.0k, 16.0k, 18.3k, 19.5k, 15.1k, 14.7k, 14.8k transitions per hour.
+  - An earlier reading of this bullet gave 5.99 s for the sixth window and called the slide
+    continuing. That window was still incomplete and its first rows carried a watchdog trip; complete,
+    it reads 4.98 s. The cost per step has been flat since.
+  - The watchdog's budgets rose 30 to 36 s, then 59 s, then 82 s. The budget is eight times the median
+    of the last 64 decisions, so late in an episode the local median reaches about 10 s, well above any
+    window median: deep sleeves are what cost, and they sit at the end of an episode.
+  - The 11.6k per hour these budgets use is the run's average including evaluation. Row to row the run
+    still does about 14.8k; the gap is evaluation, now a quarter of wall time, not slower stepping.
 - **The 167.1k round was cut with the policy further along than ever.** Scored at the trip, it reads
   0.223 on the upper arm and 0.636 on the forearm, with 12 of 25 configurations on the upper arm and
   tshirt_26 on body 14045 at 0.71. Those are mid-episode readings, not final ones, so they neither
