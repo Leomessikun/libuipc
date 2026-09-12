@@ -159,6 +159,14 @@ not one slot; or keep the expert-anchored teacher above for those cells only. Ro
 retraining on one's own successes is unproven on deformables; the published loop is on rigid Robomimic
 tasks [RA].
 
+**The teacher already goes where the expert cannot.** The valid round at 174.3k scored tshirt_392 on
+held-out bodies 14045 and 14048 at 0.75 and 0.78 [MI]. The scripted expert reaches the forearm on all
+eight measured tshirt_392 cells and clears 0.7 on none, and that is its highest reading over an episode,
+not its final one (`2026-09-09-dressing-correctness.md`, the `perf/expert_dt.py` table) [MI]. Filtered
+behaviour cloning on the expert's successes would hold no tshirt_392 trajectory at all, while the
+reinforcement-learning branch has now dressed two. How much of the distribution that gap covers is what
+Step 0's per-garment yield says.
+
 **The decision rule after Step 0.** The expert's mean final upper-arm ratio and the share of
 configurations it clears decide the branch: a high share favours filtered distillation, which is
 cheaper and has no critic to destabilise; a low share favours the expert-anchored teacher, which can
