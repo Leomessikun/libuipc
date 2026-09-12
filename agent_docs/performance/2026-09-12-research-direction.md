@@ -2,6 +2,18 @@
 
 Date: 2026-09-12. Derived from eight research tracks and our own measurements.
 
+> **Closed on 2026-09-12, later the same day.** The direction below rests on a per-decision contact
+> force the policy could learn from. That force was then measured for reliability by playing the
+> same episode twice from one seed: the summed force on the arm reproduces within 20 per cent on 54
+> per cent of decisions, the peak pressure on 38, and no fitted gate repairs it — contact age is
+> useless, per-vertex gating makes it worse, and the one strict criterion that works keeps 1.7 per
+> cent of decisions (`2026-09-12-contact-force-calibration.md`, "How reliable the force is").
+> Episode-level statistics do reproduce, but a training signal that only exists per episode is not
+> the design this document describes, and rescuing it that way would be building on a failed
+> foundation. Every claim below is therefore unfunded. What survives as fact: the calibration
+> (newtons are the gradient over dt squared), the readout code, the pressure aggregator, and the
+> reliability measurement itself, which is the reason to stop.
+
 ## In one sentence
 
 **Exact simulator contact force as a privileged, training-only signal for a dressing policy that is
