@@ -164,3 +164,78 @@ Structurally forbidden without a rewrite:
 - **A force the robot could actually feel already exists in the loop**: the cuff's hold is a spring of
   known stiffness and its displacement, the tracking error, is already in every info and in the
   privileged state. It is the only force a Stretch 3 can sense, through joint effort.
+
+## The plan
+
+Four phases. The first three are cheap and each can kill the direction; only the fourth is a build.
+Nothing here reproduces Wang's architecture or clones demonstrations into a diffusion policy.
+
+### Phase 0 — make the force number mean something. Half a day, one GPU hour.
+
+Without this every later number fits the solver's opening iterates: the arm's total force has a
+median of 87.6 N and a maximum of 2,938 N over the same 1,200 samples.
+
+1. Log `Engine.frame_stats()` beside the force: Newton iterations, line-search trials, convergence
+   and limit flags, CCD time of impact.
+2. Test the gate: does a force spike coincide with a frame that did not converge, or that hit the
+   Newton cap? If it does, the gate is a flag and the signal becomes usable. If it does not, gate on
+   persistence instead: report a contact only once it has held across consecutive settled reads.
+3. Ship the force summary into `infos` (insertion point A from the code audit, breaks nothing).
+
+**Kills the direction if:** spikes track nothing the engine reports and do not settle. Then the force
+is not measurable per step at production tolerances, and only episode-level statistics survive.
+
+### Phase 1 — repeat the gating probe properly. One to two days, six GPU hours.
+
+The probe already run is confounded: the gripper's own seven numbers beat the whole point cloud,
+because the expert's path makes tool position a stand-in for episode phase.
+
+1. Collect from tens of cells, not four, across all five garments, with a stochastic policy as well
+   as the expert so the trajectory is not deterministic.
+2. Split by cell and by episode, never by timestep. Report the tool-only control beside every number.
+3. Fit observation history to gated force.
+
+**Decides the architecture:** high R^2 means force is not hidden state and the representation
+mechanisms are redundant; near zero means they are ill-posed and only force in the critic, the
+dynamics and the exploration survive; in between means the auxiliary head is worth building.
+
+### Phase 2 — the cheapest test that force matters at all. Half a day of code, nine GPU hours.
+
+Independent of Phase 1's answer. Train two critics on the same logged episodes, one reading the
+point-cloud history and one reading that plus the gated force summary, and compare value-prediction
+error on held-out episodes. The critic must read both, never the privileged signal alone, or the
+policy gradient is biased.
+
+**Kills the direction if:** the force-conditioned critic is not materially better. Then force carries
+no return-relevant information here and no architecture built on it will help.
+
+### Phase 3 — the build, only if Phases 1 and 2 pass. One to two weeks.
+
+Two independent surveys converged on the same shape:
+
+- **A privileged world model.** Dynamics, reward predictor and critic see the gated force; the policy
+  acts on the deployable observation alone. No imitation objective between them, so this is not
+  distillation. It also decouples gradient steps from the simulator, which is the only real lever at
+  11.6k transitions per hour.
+- **A learning-progress curriculum over the continuous pose space**, replacing the 27 hand-cut
+  regions. Its progress measure comes from force: arm length dressed at the first sustained contact,
+  sustained-contact count, peak settled pressure. These are defined on failing episodes, where return
+  is flat, which is the half of Wang's diagnosis that survives his own ablation.
+- **A two-day control:** one policy on a learned pose embedding with tuned loss scalarisation. If the
+  worst poses sit at Wang's single-policy 0.34, weighting was never the problem, and a whole branch
+  is eliminated cheaply.
+
+### What the contribution would be
+
+Not a force penalty, which is Wang's published baseline and which Clegg measured at zero task success.
+The claim is the quantity: **peak local pressure over roughly one square centimetre of skin, per body
+segment**, which per-vertex contact force can compute and a wrist force reading cannot. The field has
+no shared definition — two groups quote 18 N and 120 N for different things, real dressing work uses
+10 N, 1.02 N and 5.4 N with no standard cited, and ISO/TS 15066's own table is force *and* pressure
+per body region from 100 healthy 18-to-66-year-olds, which is an extrapolation to a frail arm.
+
+### The honest gap
+
+Shear is what tears frail skin, and the friction channel is unusable as exported. Everything above
+bounds normal pressure only. Fixing the friction readout is a separate piece of work and its own
+possible contribution.
