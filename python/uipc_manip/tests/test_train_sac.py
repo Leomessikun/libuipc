@@ -373,14 +373,16 @@ def test_a_history_policy_needs_sequence_replay_and_then_trains_through_its_stat
         def close(self):
             pass
 
+    built: list = []
     monkeypatch.setattr(sac, "SACAgent", Agent)
-    monkeypatch.setattr(train_sac, "make_env", lambda args: Env())
+    monkeypatch.setattr(train_sac, "make_env", lambda args: built.append(Env()) or built[-1])
     monkeypatch.setattr(train_sac, "evaluate", lambda *a, **kw: {"success_rate": 0, "mean_final_distance": 1, "mean_return": 0})
     argv = ["--num-envs", "3", "--total-transitions", "18", "--point-budget", "3", "--replay-capacity", "64", "--device", "cpu",
             "--log-interval", "1", "--eval-freq", "0", "--checkpoint-interval", "0", "--init-steps", "2", "--history-length", "2",
             "--work-dir", str(tmp_path)]
     with pytest.raises(SystemExit):
         train_sac.main(argv)
+    assert not built, "the refusal must come before a world is built"
     train_sac.main(argv + ["--sequence-replay"])
     # Two warm-up commands entered the history: the first policy decision already sees a full prefix,
     # and the episode end after step 3 empties it again.

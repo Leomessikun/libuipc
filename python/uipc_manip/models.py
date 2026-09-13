@@ -368,12 +368,14 @@ class FrameHistory(nn.Module):
         """``latent [B,L,frame_dim]``, ``valid [B,L]``, ``commands [B,L-1,action_dim]`` -> ``[B,out_dim]``."""
         if latent.shape[1] != self.length:
             raise ValueError(f"This history holds {self.length} frames, got {latent.shape[1]}")
-        mask = valid.to(latent.dtype).unsqueeze(-1)
-        frames = torch.cat([latent * mask, mask], dim=-1).flatten(1)
+        keep = valid.bool().unsqueeze(-1)
+        mask = keep.to(latent.dtype)
+        # A padded frame is an empty cloud; an encoder may hand back NaN for it, and NaN * 0 is NaN.
+        frames = torch.cat([torch.where(keep, latent, torch.zeros_like(latent)), mask], dim=-1).flatten(1)
         if not self.action_dim:
             return frames
         # A command is valid exactly where the observation it followed is.
-        return torch.cat([frames, (commands * mask[:, :-1]).flatten(1)], dim=-1)
+        return torch.cat([frames, torch.where(keep[:, :-1], commands, torch.zeros_like(commands)).flatten(1)], dim=-1)
 
 
 def make_history(frame_dim: int, action_dim: int, length: int) -> tuple[FrameHistory | None, int]:

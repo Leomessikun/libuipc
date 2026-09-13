@@ -412,15 +412,16 @@ def test_distillation_smoke_produces_a_loadable_student(tmp_path):
     assert student.act(np.stack([env.reset()]), deterministic=True).shape == (1, 3)
 
 
-@pytest.mark.parametrize("actor_type", ["flat", "wang-flow"])
-def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type):
-    """H4 end to end on the toy problem: rollout state, padded windows, masked encoders."""
+@pytest.mark.parametrize("actor_type, encoder", [("flat", "pointnet2"), ("wang-flow", "pointnet2"), ("wang-flow", "transformer")])
+def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type, encoder):
+    """H4 end to end on the toy problem: rollout state, padded windows, and empty padded clouds
+    through both encoders, where attention over no valid key must not leak NaN into the trunk."""
     from uipc_manip.replay import FlatReplayBuffer
 
     torch.manual_seed(0)
     np.random.seed(0)
     spec, length = ObsSpec(10), 4
-    cfg = _small_cfg(actor_type=actor_type)
+    cfg = _small_cfg(actor_type=actor_type, encoder=encoder)
     cfg.history_length = length
     agent = SACAgent(spec, 3, cfg, "cpu")
     assert agent.actor.history is not None and agent.critic.history is not None
@@ -452,7 +453,9 @@ def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type):
     stats = None
     for _ in range(20):
         stats = agent.update(replay)
-    assert np.isfinite(stats["critic_loss"]) and np.isfinite(stats["actor_loss"])
+        assert np.isfinite(stats["critic_loss"]) and np.isfinite(stats.get("actor_loss", 0.0))
+    for parameter in agent.actor.parameters():
+        assert torch.isfinite(parameter).all()
 
     path = agent.save(tmp_path / "h.pt", step=3)
     restored = SACAgent(spec, 3, cfg, "cpu")

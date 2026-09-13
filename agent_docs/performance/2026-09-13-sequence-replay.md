@@ -136,10 +136,12 @@ PYTHONPATH=python /home/ge47gax/kun/genesis-world/.venv/bin/python -m uipc_manip
 ```
 
 It was not launched: the GPU is held by the critic ablation, and the proposal gates this arm on
-that ablation's valid held-out result. Refused before a world is allocated: flashsac, the privileged
-and latent critics, teacher distillation onto a history-aware student, stochastic augmentation, a
-history checkpoint given to `distill`, and `--history-length` without `--sequence-replay`. Earlier
-checkpoints carry no `history_length` protocol key and keep loading as single-frame policies.
+that ablation's valid held-out result. `--history-length` above 1 without `--sequence-replay` is
+refused right after argument parsing, before any world is built. Refused when the agent is
+constructed, which in `expert_baseline` precedes the world and in the trainers follows the training
+world's build: flashsac, the privileged and latent critics, stochastic augmentation, and teacher
+distillation onto a history-aware student. `distill` refuses a history teacher before loading data.
+Earlier checkpoints carry no `history_length` protocol key and keep loading as single-frame policies.
 
 ## Validation
 

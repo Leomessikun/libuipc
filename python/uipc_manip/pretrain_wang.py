@@ -328,6 +328,9 @@ class WangRun:
         from . import train_sac
 
         self.args, self.argv, self.targs, self.plan, self.resume = args, list(argv), targs, plan, resume
+        if int(targs.history_length) > 1 and not targs.sequence_replay:
+            # Before Genesis and any world: a dressing world costs minutes, a typo should cost none.
+            raise SystemExit("--history-length above 1 learns from padded episode windows; add --sequence-replay")
         self.train_sac = train_sac
         self.run_dir = Path(targs.work_dir) / targs.run_name
         self.run_dir.mkdir(parents=True, exist_ok=True)

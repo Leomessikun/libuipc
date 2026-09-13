@@ -506,8 +506,14 @@ class ReplaySet:
             buffer.close_episode(stream_id, episode_id)
 
     def sample_sequences(self, length: int, batch_size: int | None = None, *, pad: bool = False) -> SequenceBatch:
-        """Draw one complete batch from one uniformly chosen sequence-ready buffer."""
-        ready = [i for i, buffer in enumerate(self.buffers) if buffer.sequence_ready(length, pad=pad)]
+        """Draw one complete batch from one uniformly chosen sequence-ready buffer.
+
+        Padded sampling keeps :meth:`sample`'s buffer rule, uniform over the buffers holding more
+        than a batch, so a history run and a single-frame run draw garments and temperatures alike.
+        """
+        n = self.batch_size if batch_size is None else int(batch_size)
+        ready = [i for i, buffer in enumerate(self.buffers)
+                 if buffer.sequence_ready(length, pad=pad) and (not pad or buffer.size > n)]
         if not ready:
             raise RuntimeError("No replay buffer contains a sequence window of the requested length")
         index = int(ready[np.random.randint(len(ready))])

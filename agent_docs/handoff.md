@@ -1870,3 +1870,15 @@ causal sequence BC is not written. The [record](performance/2026-09-13-sequence-
 the exact H4 command against the running dense/plain ablation; it was not launched, the GPU being
 held by that ablation, which the proposal's stage 0 gate requires to finish first. The stage 3 GRU
 pilot and the RLT-inspired variant remain proposals.
+
+## 2026-09-13 — Review follow-up on the frame history
+
+Three corrections from review, no behaviour change at H=1. Padded sequence sampling in `ReplaySet`
+now follows the flat `sample` rule exactly — uniform over the buffers holding more than a batch,
+the whole batch from one — so an H4 run and the dense ablation draw garments and temperatures
+alike, and the comparison is not confounded by a second sampling rule. `FrameHistory` zeroes
+padded frames with `torch.where` rather than multiplication, because a padded frame is an empty
+cloud and an encoder may return NaN for it; the H4 agent test now also runs the transformer
+encoder and checks every actor parameter stays finite. `--history-length` without
+`--sequence-replay` is refused right after argument parsing in both trainers, before Genesis or
+any world is built; the stub tests assert no world was constructed. 293 CPU tests pass.

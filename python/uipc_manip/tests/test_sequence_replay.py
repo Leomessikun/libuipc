@@ -447,9 +447,13 @@ def test_padding_admits_buffers_and_replays_that_hold_no_complete_window():
         replay.sample_sequences(2, pad=True)
     assert not replay.sequence_ready(2, pad=True)
     every = ReplaySet(["a", "b"], 3, 2, 16, 3, "cpu", sequence=True)
-    _add(every, 0, episode=4, end=True, key="a")
+    for episode in range(6):
+        _add(every, 0, episode=episode, end=True, key="a")
     with pytest.raises(RuntimeError):
         every.sample_sequences(2)
+    # The flat rule: a buffer must hold more than a batch before it is drawn from.
+    with pytest.raises(RuntimeError):
+        every.sample_sequences(2, batch_size=6, pad=True)
     batch = every.sample_sequences(2, batch_size=5, pad=True)
     assert batch.buffer_index == 0
     assert batch.valid[:, 0].sum() == 0 and batch.valid[:, 1].all()

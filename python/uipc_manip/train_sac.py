@@ -717,6 +717,10 @@ def main(argv: list[str] | None = None) -> None:
         saved_sac_cfg = restore_resume_args(args, argv, payload)
         if not args.eval_only and not args.resume_replay:
             raise ValueError("Training continuation requires --resume-replay from the same checkpoint step")
+    history_length = int(saved_sac_cfg.history_length if saved_sac_cfg is not None else args.history_length)
+    if history_length > 1 and not args.sequence_replay and not args.eval_only:
+        # Before any world is built: a dressing world costs minutes, a typo should cost none.
+        raise SystemExit("--history-length above 1 learns from padded episode windows; add --sequence-replay")
     if args.vis:
         args.num_envs = 1
     np.random.seed(args.seed)
