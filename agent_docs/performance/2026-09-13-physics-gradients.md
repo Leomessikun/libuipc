@@ -383,6 +383,22 @@ run settles:
   decisions `∂coverage_{t+h}/∂u_t` through a release phase is nonzero where the one-step
   gradient's direction is refused.
 
+## Decisions taken for Levels 2 and 3 (2026-09-14, delegated by the owner) [E]
+
+- **The tether and the no-move collision rule stay as they are.** Both come from the reference
+  environment; smoothing them into penalties would change the task against which every number in
+  this directory was measured. Level 2 differentiates with respect to the *executed* command, and
+  Level 3's actor is trained on the executed trajectory; where a command is refused the executed
+  derivative is zero on that side, which is the truth of the task.
+- **Gradient use is gated per state by a repeated decision, not by solver statistics.** Cell 2's
+  elbow scattered 23 mm with one Newton iteration; cell 1's 0.8 mm with three. The gate is the
+  spread of one repeated decision from the same restored state (one extra decision per state), and
+  a state that fails it contributes no physics gradient, only samples.
+- **Rotation is probed before the actor is designed.** The environment executes two rotation axes
+  (about x is clipped, 5° per decision at most); the elbow's coverage gain in the expert's hands
+  came with rotation, so the probe's rotation differences and rotation walks (below) decide whether
+  the elbow needs the critic or a one-step 5-D direction.
+
 ## What Level 1 says about Levels 2 and 3
 
 The quantity Level 2 would compute analytically — how the cloth state after a decision moves with

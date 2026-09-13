@@ -203,11 +203,32 @@ def restore(env, snap: dict) -> float:
     return float(max(np.abs(a - b).max() for a, b in zip(restored, snap["positions"], strict=True)))
 
 
+def rotation_angle(before: np.ndarray, after: np.ndarray) -> float:
+    """Angle [rad] of the rigid rotation taking the held offsets ``before`` to ``after`` (Kabsch)."""
+    before, after = np.asarray(before, dtype=np.float64), np.asarray(after, dtype=np.float64)
+    if before.shape[0] < 3:
+        a, b = before[0], after[0]
+        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+        return float(np.arccos(np.clip(a @ b / (na * nb), -1.0, 1.0))) if na > 0 and nb > 0 else 0.0
+    u, _, vt = np.linalg.svd(before.T @ after)
+    d = np.sign(np.linalg.det(vt.T @ u.T)) or 1.0
+    r = vt.T @ np.diag([1.0, 1.0, d]) @ u.T
+    return float(np.arccos(np.clip((np.trace(r) - 1.0) / 2.0, -1.0, 1.0)))
+
+
+def commanded_rotation(env, action: np.ndarray) -> np.ndarray:
+    """The rotation vector [rad] the environment derives from an action (one axis may be clipped)."""
+    rot = np.asarray(action[3:6], dtype=np.float64) * float(env.cfg.max_rotation)
+    if getattr(env.cfg, "clip_rotation_to_yz", False):
+        rot[0] = 0.0
+    return rot
+
+
 def decision(env, action: np.ndarray) -> dict:
-    """One decision; the outcome carries the commanded and the executed gripper translation [m], the
-    latter after the environment's tether and no-move collision rules."""
+    """One decision; the outcome carries the commanded and the executed gripper translation [m] and
+    rotation [rad], the latter after the environment's tether and no-move collision rules."""
     action = np.asarray(action, dtype=np.float32)
-    before = env._anchor[0].copy()
+    before, offsets_before = env._anchor[0].copy(), np.asarray(env._offsets[0]).copy()
     _, reward, done, infos = env.step(action[None])
     if infos[0].get("sim_error"):
         raise RuntimeError(f"simulator error: {infos[0].get('error')}")
@@ -215,6 +236,8 @@ def decision(env, action: np.ndarray) -> dict:
     out["reward_step"] = float(reward[0])
     out["commanded_m"] = float(np.linalg.norm(action[:3]) * float(env.cfg.max_translation))
     out["executed_m"] = float(np.linalg.norm(env._anchor[0] - before))
+    out["commanded_rad"] = float(np.linalg.norm(commanded_rotation(env, action)))
+    out["executed_rad"] = rotation_angle(offsets_before, np.asarray(env._offsets[0]))
     return out
 
 
@@ -244,50 +267,68 @@ def cosine(a, b) -> float:
     return float(a @ b / (na * nb)) if na > 0 and nb > 0 else float("nan")
 
 
-def gradients(env, snap: dict, base: np.ndarray, epsilons_m: list[float], repeats: int) -> dict:
-    """Central differences of the outcome quantities with respect to the gripper translation."""
-    max_t = float(env.cfg.max_translation)
+TRANSLATION_AXES = (0, 1, 2)
+ROTATION_AXES = (4, 5)  # the environment clips the rotation about x to zero
+
+
+def gradients(env, snap: dict, base: np.ndarray, epsilons: list[float], repeats: int,
+              axes: tuple[int, ...] = TRANSLATION_AXES) -> dict:
+    """Central differences of the outcome quantities with respect to the gripper command on ``axes``:
+    translation axes (0-2) in metres, rotation axes (3-5) in radians."""
+    rotation = axes[0] >= 3
+    cap = float(env.cfg.max_rotation) if rotation else float(env.cfg.max_translation)
+    exec_key = "executed_rad" if rotation else "executed_m"
+    n = len(axes)
     keys = ("upperarm_ratio", "opening_axis_m", "upperarm_axis_m", "net_normal_n", "summed_normal_n", "contact_energy", "reward")
     per_eps = {}
-    for eps in epsilons_m:
-        step = eps / max_t
+    for eps in epsilons:
+        step = eps / cap
         grads = []
         for _ in range(repeats):
             plus, minus = {}, {}
-            for axis in range(3):
+            for i, axis in enumerate(axes):
                 for sign, store in ((+1.0, plus), (-1.0, minus)):
                     action = base.copy()
                     action[axis] += sign * step
                     restore(env, snap)
-                    store[axis] = decision(env, action)
+                    store[i] = decision(env, action)
             grad = {}
             for k in keys:
-                if any(plus[a][k] is None or minus[a][k] is None for a in range(3)):
+                if any(plus[a][k] is None or minus[a][k] is None for a in range(n)):
                     grad[k] = None
                     continue
-                grad[k] = [(plus[a][k] - minus[a][k]) / (2.0 * eps) for a in range(3)]  # per commanded metre
-            grad["outcomes"] = {k: {"plus": [plus[a][k] for a in range(3)], "minus": [minus[a][k] for a in range(3)]} for k in keys}
+                grad[k] = [(plus[a][k] - minus[a][k]) / (2.0 * eps) for a in range(n)]  # per commanded unit
+            grad["outcomes"] = {k: {"plus": [plus[a][k] for a in range(n)], "minus": [minus[a][k] for a in range(n)]} for k in keys}
             # The environment may drop or shorten a move (tether, no-move collision); the difference per
-            # executed metre is the derivative of the physics, the one above of the environment.
-            executed = {"plus": [plus[a]["executed_m"] for a in range(3)], "minus": [minus[a]["executed_m"] for a in range(3)]}
-            grad["executed_m"] = executed
-            grad["per_executed_metre"] = {
+            # executed unit is the derivative of the physics, the one above of the environment.
+            executed = {"plus": [plus[a][exec_key] for a in range(n)], "minus": [minus[a][exec_key] for a in range(n)]}
+            grad["executed"] = executed
+            grad["executed_m" if not rotation else "executed_rad"] = executed
+            grad["per_executed_unit"] = {
                 k: (None if grad[k] is None else [
                     ((plus[a][k] - minus[a][k]) / (executed["plus"][a] + executed["minus"][a]))
-                    if executed["plus"][a] + executed["minus"][a] > 0.0 else None for a in range(3)])
+                    if executed["plus"][a] + executed["minus"][a] > 0.0 else None for a in range(n)])
                 for k in keys}
+            if not rotation:
+                grad["per_executed_metre"] = grad["per_executed_unit"]
             grads.append(grad)
         per_eps[str(eps)] = {
             "gradients": grads,
             "mean": {k: (np.mean([g[k] for g in grads], axis=0).tolist() if grads[0][k] is not None else None) for k in keys},
-            "mean_executed_m": {s: np.mean([g["executed_m"][s] for g in grads], axis=0).tolist() for s in ("plus", "minus")},
+            "mean_executed": {s: np.mean([g["executed"][s] for g in grads], axis=0).tolist() for s in ("plus", "minus")},
             "repeat_cosine": {k: ([cosine(grads[i][k], grads[j][k]) for i in range(len(grads)) for j in range(i + 1, len(grads))]
                                   if grads[0][k] is not None else None) for k in keys},
         }
-    eps_keys = [str(e) for e in epsilons_m]
+        if not rotation:
+            per_eps[str(eps)]["mean_executed_m"] = per_eps[str(eps)]["mean_executed"]
+    eps_keys = [str(e) for e in epsilons]
     locality = {k: [[cosine(per_eps[a]["mean"][k], per_eps[b]["mean"][k]) for b in eps_keys] for a in eps_keys]
                 for k in keys if per_eps[eps_keys[0]]["mean"][k] is not None}
-    return {"epsilons_m": epsilons_m, "per_epsilon": per_eps, "locality_cosine": locality, "base_action": base.tolist()}
+    out = {"axes": list(axes), "unit": "rad" if rotation else "m", "epsilons": list(epsilons), "per_epsilon": per_eps,
+           "locality_cosine": locality, "base_action": base.tolist()}
+    if not rotation:
+        out["epsilons_m"] = list(epsilons)
+    return out
 
 
 def walk(env, snap: dict, direction, steps: int, repeats: int = 1) -> dict:
@@ -310,6 +351,8 @@ def walk(env, snap: dict, direction, steps: int, repeats: int = 1) -> dict:
                      "mean_net_normal_n": float(np.mean([r["net_normal_n"] for r in rows])),
                      "executed_m": float(sum(r["executed_m"] for r in rows)),
                      "commanded_m": float(sum(r["commanded_m"] for r in rows)),
+                     "executed_rad": float(sum(r.get("executed_rad", 0.0) for r in rows)),
+                     "commanded_rad": float(sum(r.get("commanded_rad", 0.0) for r in rows)),
                      "final_tracking_error": last["tracking_error"], "final_arm_clearance_m": last["arm_clearance_m"]})
     out = dict(runs[0])
     if repeats > 1:
@@ -321,14 +364,15 @@ def walk(env, snap: dict, direction, steps: int, repeats: int = 1) -> dict:
 
 
 WALKS = ("coverage_gradient", "axis_gradient", "minus_force_gradient", "minus_energy_gradient", "combined_gradient",
-         "release_then_advance", "expert", "hold", "random")
+         "release_then_advance", "rotation_gradient", "full_gradient", "axis_gradient_expert_rotation", "expert", "hold",
+         "random")
 
 
 def usefulness(env, snap: dict, grad: dict, steps: int, magnitude_m: float, seed: int, repeats: int = 1,
-               walks: tuple[str, ...] = WALKS) -> dict:
+               walks: tuple[str, ...] = WALKS, rot_grad: dict | None = None, rot_magnitude_rad: float = 0.0) -> dict:
     max_t = float(env.cfg.max_translation)
     scale = magnitude_m / max_t
-    eps_key = str(grad["epsilons_m"][len(grad["epsilons_m"]) // 2])
+    eps_key = str(grad["epsilons"][len(grad["epsilons"]) // 2])
     g_cov = np.asarray(grad["per_epsilon"][eps_key]["mean"]["upperarm_ratio"], dtype=np.float64)
     g_force = np.asarray(grad["per_epsilon"][eps_key]["mean"]["net_normal_n"], dtype=np.float64)
     g_energy = grad["per_epsilon"][eps_key]["mean"]["contact_energy"]
@@ -338,6 +382,25 @@ def usefulness(env, snap: dict, grad: dict, steps: int, magnitude_m: float, seed
         a = np.zeros(6)
         a[:3] = _unit(v) * scale
         return lambda s: a
+
+    def fixed6(t, r, rot_axes):
+        """Translation direction ``t`` at the walk's magnitude plus rotation direction ``r`` on ``rot_axes``
+        at ``rot_magnitude_rad`` per decision; either may be zero."""
+        a = np.zeros(6)
+        if t is not None and np.linalg.norm(t) > 0:
+            a[:3] = _unit(np.asarray(t, dtype=np.float64)) * scale
+        if r is not None and np.linalg.norm(r) > 0:
+            a[list(rot_axes)] = _unit(np.asarray(r, dtype=np.float64)) * (rot_magnitude_rad / float(env.cfg.max_rotation))
+        return lambda s: a
+
+    def with_expert_rotation(t):
+        a_t = fixed(t)(0)
+
+        def direction(s):
+            a = a_t.copy()
+            a[3:] = np.asarray(heuristic(env).actions()[0], dtype=np.float64)[3:]
+            return a
+        return direction
 
     def expert(s):
         return heuristic(env).actions()[0]
@@ -363,6 +426,24 @@ def usefulness(env, snap: dict, grad: dict, steps: int, magnitude_m: float, seed
         out["walks"]["combined_gradient"] = walk(env, snap, fixed(_unit(g_cov) + _unit(-g_force)), steps, repeats)
     if "release_then_advance" in walks and np.linalg.norm(g_cov) > 0 and np.linalg.norm(g_force) > 0:
         out["walks"]["release_then_advance"] = walk(env, snap, sequenced(-g_force, g_cov, steps // 3), steps, repeats)
+    # Rotation: the coverage gradient where it exists, else the axis reading's; same choice for translation.
+    if rot_grad is not None:
+        r_key = str(rot_grad["epsilons"][len(rot_grad["epsilons"]) // 2])
+        r_cov = np.asarray(rot_grad["per_epsilon"][r_key]["mean"]["upperarm_ratio"], dtype=np.float64)
+        r_axis = rot_grad["per_epsilon"][r_key]["mean"]["opening_axis_m"]
+        r_axis = None if r_axis is None else np.asarray(r_axis, dtype=np.float64)
+        r_dir, r_from = (r_cov, "upperarm_ratio") if np.linalg.norm(r_cov) > 0 else (r_axis, "opening_axis_m")
+        t_dir, t_from = (g_cov, "upperarm_ratio") if np.linalg.norm(g_cov) > 0 else (
+            (np.asarray(g_axis, dtype=np.float64), "opening_axis_m") if g_axis is not None else (None, None))
+        rot_axes = tuple(rot_grad["axes"])
+        out["rotation"] = {"epsilon_rad": float(r_key), "magnitude_rad": rot_magnitude_rad, "axes": list(rot_axes),
+                           "rotation_direction_from": r_from, "translation_direction_from": t_from}
+        if "rotation_gradient" in walks and r_dir is not None and np.linalg.norm(r_dir) > 0:
+            out["walks"]["rotation_gradient"] = walk(env, snap, fixed6(None, r_dir, rot_axes), steps, repeats)
+        if "full_gradient" in walks and r_dir is not None and np.linalg.norm(r_dir) > 0 and t_dir is not None:
+            out["walks"]["full_gradient"] = walk(env, snap, fixed6(t_dir, r_dir, rot_axes), steps, repeats)
+    if "axis_gradient_expert_rotation" in walks and g_axis is not None:
+        out["walks"]["axis_gradient_expert_rotation"] = walk(env, snap, with_expert_rotation(np.asarray(g_axis)), steps, repeats)
     if "expert" in walks:
         out["walks"]["expert"] = walk(env, snap, expert, steps, repeats)
     if "hold" in walks:
@@ -412,6 +493,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", required=True)
     p.add_argument("--epsilons-mm", type=float, nargs="+", default=[1.0, 2.0, 5.0])
     p.add_argument("--repeats", type=int, default=3, help="Gradient repeats per step size.")
+    p.add_argument("--rot-epsilons-deg", type=float, nargs="+", default=[0.5, 1.0, 2.5],
+                   help="Rotation step sizes for the differences on the two live rotation axes; empty list disables.")
+    p.add_argument("--walk-rot-deg", type=float, default=2.5, help="Rotation per decision along a walked rotation direction.")
     p.add_argument("--repeatability", type=int, default=5, help="Identical decisions from the restored state.")
     p.add_argument("--walk-steps", type=int, default=12)
     p.add_argument("--walk-mm", type=float, default=4.0, help="Translation per decision along a walked direction.")
@@ -449,9 +533,14 @@ def main(argv: list[str] | None = None) -> None:
                 entry = {"name": snap["name"], "frame": snap["frame"], "episode_step": snap["episode_step"], "state": snap["measure"]}
                 entry["repeatability"] = repeatability(env, snap, base, args.repeatability)
                 entry["gradients"] = gradients(env, snap, base, epsilons, args.repeats)
+                rot_grad = None
+                if args.rot_epsilons_deg:
+                    rot_grad = gradients(env, snap, base, [np.deg2rad(d) for d in args.rot_epsilons_deg], args.repeats, ROTATION_AXES)
+                    entry["rotation_gradients"] = rot_grad
                 # The random directions are drawn per state; the first three cells drew the same three at every state.
                 entry["usefulness"] = usefulness(env, snap, entry["gradients"], args.walk_steps, args.walk_mm * 1.0e-3,
-                                                 [args.seed, int(body), int(snap["episode_step"])], args.walk_repeats, tuple(args.walks))
+                                                 [args.seed, int(body), int(snap["episode_step"])], args.walk_repeats, tuple(args.walks),
+                                                 rot_grad, float(np.deg2rad(args.walk_rot_deg)))
                 entry["seconds"] = time.time() - t1
                 record["snapshots"].append(entry)
                 summary = {k: entry["gradients"]["per_epsilon"][str(epsilons[-1])]["mean"][k] for k in ("upperarm_ratio", "opening_axis_m", "net_normal_n")}
@@ -460,7 +549,11 @@ def main(argv: list[str] | None = None) -> None:
                       f"spread_axis={entry['repeatability']['spread']['opening_axis_m']:.2e} "
                       f"grad_up/m={np.round(summary['upperarm_ratio'], 2).tolist()} grad_axis={np.round(summary['opening_axis_m'], 3).tolist()} "
                       f"grad_force/m={np.round(summary['net_normal_n'], 1).tolist()} "
+                      + (f"rot_grad_up/rad={np.round(rot_grad['per_epsilon'][str(rot_grad['epsilons'][-1])]['mean']['upperarm_ratio'], 2).tolist()} "
+                         f"rot_grad_axis/rad={np.round(rot_grad['per_epsilon'][str(rot_grad['epsilons'][-1])]['mean']['opening_axis_m'], 3).tolist()} "
+                         if rot_grad is not None else "") +
                       f"walks_axis_mm={ {k: round(v['delta_opening_axis_m'] * 1e3, 1) for k, v in entry['usefulness']['walks'].items()} } "
+                      f"walks_up={ {k: round(v['delta_upperarm'], 3) for k, v in entry['usefulness']['walks'].items()} } "
                       f"walks_travel_mm={ {k: round(v['executed_m'] * 1e3, 1) for k, v in entry['usefulness']['walks'].items()} } ({entry['seconds']:.0f}s)", flush=True)
         finally:
             suffix = "" if not args.states else "." + "_".join(args.states)

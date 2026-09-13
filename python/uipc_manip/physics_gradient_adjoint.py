@@ -1,0 +1,286 @@
+"""Level 2a: the adjoint through the solver's own Hessians, checked against finite differences.
+
+    PYTHONPATH=python python -m uipc_manip.physics_gradient_adjoint --garment tshirt_26 --body 14049 \\
+        --state stall --out output/uipc_manip/physics_gradient_adjoint
+
+No backend change: the engine's ``extras/debug/dump_linear_system`` switch writes the assembled
+system of every Newton iteration to Matrix Market files. From a restored state one hold decision
+(six frames) is run with the dump on; the last assembled Hessian of each frame is read back,
+symmetrised (the file holds the upper block triangle), and the reverse pass
+
+    H_f λ_f = ĝ_f,   ĝ_6 = ∂L/∂x_6,   ĝ_f = 2 M λ_{f+1} − M λ_{f+2}
+
+follows the BDF1 inertia term x̃_f = 2 x_{f−1} − x_{f−2} + g dt², with M the lumped vertex masses.
+The gripper enters through the soft position constraint E = ½ s m ‖x − aim‖² on the held vertices,
+so ∂L/∂aim_f = s m λ_f there, and with aim_f = anchor_0 + (f/6) Δ the derivative per commanded
+metre of translation is ∂L/∂Δ = Σ_f (f/6) Σ_I s m_I λ_{f,I}. Two objectives whose ∂L/∂x are known
+exactly are used: the opening centroid's position along the upper arm (linear in x) and the
+contact energy (its gradient is exported by the contact system). Each is compared with central
+differences of the same quantity at 1 and 2 mm from the same restored state. What the comparison
+cannot see: friction's lagged terms (the reverse pass ignores ∂G/∂x_prev outside inertia) and the
+SPD projection of the assembled Hessian; a cosine below the gate is a measurement of exactly those.
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+import shutil
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+import numpy as np
+import scipy.io
+import scipy.sparse
+import scipy.sparse.linalg
+
+from uipc_manip import physics_gradient_probe as probe
+
+ACCEPT_COSINE = 0.95
+
+
+# ------------------------------------------------------------------------ dump plumbing
+def enable_linear_system_dump():
+    """Make every scene the coupler builds write its linear systems; read once at engine init."""
+    from genesis.engine.couplers.ipc_coupler import coupler as coupler_module
+
+    original = coupler_module.build_ipc_scene_config
+
+    def build(options, sim_options):
+        config = original(options, sim_options)
+        config.setdefault("extras", {}).setdefault("debug", {})["dump_linear_system"] = 1
+        return config
+
+    coupler_module.build_ipc_scene_config = build
+
+
+def workspace_of(env) -> Path:
+    coupler = env.scene.sim.coupler
+    uid = coupler.sim.scene.uid.full()
+    return Path(tempfile.gettempdir()) / f"genesis_ipc_{uid}"
+
+
+def debug_dir(env) -> Path:
+    return workspace_of(env) / "cuda" / "linear_system" / "debug"
+
+
+def clear_dumps(env) -> None:
+    d = debug_dir(env)
+    if d.exists():
+        for f in d.iterdir():
+            f.unlink()
+
+
+def dumped_frames(env) -> dict[int, dict[int, Path]]:
+    """{frame: {newton_iter: path}} of the A matrices present."""
+    out: dict[int, dict[int, Path]] = {}
+    for path in debug_dir(env).glob("A.*.mtx"):
+        _, frame, it = path.stem.split(".")
+        out.setdefault(int(frame), {})[int(it)] = path
+    return out
+
+
+def read_symmetric(path: Path) -> scipy.sparse.csr_matrix:
+    """The dump holds the upper block triangle (block row ≤ block col, diagonal blocks whole)."""
+    a = scipy.io.mmread(path).tocoo()
+    r, c, v = a.row, a.col, a.data
+    off = (r // 3) != (c // 3)
+    full = scipy.sparse.coo_matrix(
+        (np.concatenate([v, v[off]]), (np.concatenate([r, c[off]]), np.concatenate([c, r[off]]))), shape=a.shape
+    )
+    return full.tocsr()
+
+
+# ------------------------------------------------------------------------ cloth bookkeeping
+def cloth_layout(env) -> dict:
+    """Global DOF offset of the cloth, its global vertex offset, lumped vertex masses (rest shape)."""
+    import uipc
+    from uipc import builtin
+
+    geo = env.slots[0].geometry()
+    dof_offset = int(np.asarray(uipc.view(geo.meta().find(builtin.dof_offset))).reshape(-1)[0])
+    dof_count = int(np.asarray(uipc.view(geo.meta().find(builtin.dof_count))).reshape(-1)[0])
+    vertex_offset = int(np.asarray(uipc.view(geo.meta().find(builtin.global_vertex_offset))).reshape(-1)[0])
+    cell = env.cells[0]
+    x0, faces = np.asarray(cell.cloth, dtype=np.float64), np.asarray(cell.faces)
+    n = x0.shape[0]
+    area = 0.5 * np.linalg.norm(np.cross(x0[faces[:, 1]] - x0[faces[:, 0]], x0[faces[:, 2]] - x0[faces[:, 0]]), axis=1)
+    mass = np.zeros(n)
+    for k in range(3):
+        np.add.at(mass, faces[:, k], area / 3.0)
+    mass *= float(env.cfg.cloth_density) * float(env.cfg.cloth_thickness)
+    return {"dof_offset": dof_offset, "dof_count": dof_count, "vertex_offset": vertex_offset, "n": n, "mass": mass,
+            "strength": float(env.cfg.constraint_strength), "anchor_idx": np.asarray(env._pickers[0]["anchor_idx"]),
+            "opening_idx": np.asarray(cell.opening_idx), "axis": (cell.shoulder - cell.elbow) / np.linalg.norm(cell.shoulder - cell.elbow)}
+
+
+def contact_gradient(env, layout: dict) -> np.ndarray:
+    """∂E_contact/∂x on the cloth vertices (3n), from the contact system's exported gradients."""
+    from uipc import view
+    from uipc.core import ContactSystemFeature
+    from uipc.geometry import Geometry
+
+    feature = env._world.features().find(ContactSystemFeature)
+    if feature is None:
+        raise RuntimeError("the backend exports no contact gradients")
+    g = np.zeros((layout["n"], 3))
+    lo, hi = layout["vertex_offset"], layout["vertex_offset"] + layout["n"]
+    for prim in feature.contact_primitive_types():
+        geom = Geometry()
+        feature.contact_gradient(prim, geom)
+        count = geom.instances().size()
+        if count == 0:
+            continue
+        i = np.asarray(view(geom.instances().find("i")), dtype=np.int64).reshape(count)
+        v = np.asarray(view(geom.instances().find("grad")), dtype=np.float64).reshape(count, 3)
+        keep = (i >= lo) & (i < hi)
+        np.add.at(g, i[keep] - lo, v[keep])
+    return g.reshape(-1)
+
+
+def axis_gradient(layout: dict) -> np.ndarray:
+    """∂(upper-arm axis reading)/∂x: the opening centroid projected on the elbow→shoulder axis."""
+    g = np.zeros((layout["n"], 3))
+    g[layout["opening_idx"]] = layout["axis"][None, :] / len(layout["opening_idx"])
+    return g.reshape(-1)
+
+
+# ------------------------------------------------------------------------ the reverse pass
+def reverse_pass(H: list, g_final: np.ndarray, layout: dict, chain: bool = True) -> dict:
+    """λ_f for f = 1..6 (index 0..5) and ∂L/∂Δ per commanded metre of gripper translation; ``H`` holds
+    one LU factorisation per frame."""
+    off, cnt, n = layout["dof_offset"], layout["dof_count"], layout["n"]
+    m3 = np.repeat(layout["mass"], 3)
+    steps = len(H)
+    lam = [None] * steps
+    g_next = np.zeros(cnt)
+    g_next2 = np.zeros(cnt)
+    contributions = []
+    for f in range(steps - 1, -1, -1):
+        ghat = np.zeros(H[f].shape[0])
+        if f == steps - 1:
+            ghat[off:off + cnt] = g_final
+        elif chain:
+            ghat[off:off + cnt] = 2.0 * m3 * g_next - m3 * g_next2
+        else:
+            break
+        sol = H[f].solve(ghat)
+        lam[f] = sol[off:off + cnt]
+        g_next2, g_next = g_next, lam[f]
+        held = lam[f].reshape(n, 3)[layout["anchor_idx"]] * (layout["strength"] * layout["mass"][layout["anchor_idx"]])[:, None]
+        contributions.append({"frame_index": f + 1, "dL_daim_sum": held.sum(axis=0).tolist(), "ratio": (f + 1) / steps})
+    dL_dDelta = np.zeros(3)
+    for c in contributions:
+        dL_dDelta += c["ratio"] * np.asarray(c["dL_daim_sum"])
+    return {"dL_dDelta": dL_dDelta, "contributions": contributions[::-1]}
+
+
+# ------------------------------------------------------------------------ main
+def main(argv: list[str] | None = None) -> None:
+    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument("--garment", default="tshirt_26")
+    p.add_argument("--body", type=int, default=14049)
+    p.add_argument("--region", type=int, default=13)
+    p.add_argument("--state", default="stall", help="elbow, passed or stall")
+    p.add_argument("--out", required=True)
+    p.add_argument("--epsilons-mm", type=float, nargs="+", default=[1.0, 2.0])
+    p.add_argument("--stall-window", type=int, default=15)
+    p.add_argument("--max-steps", type=int, default=300)
+    args = p.parse_args(argv)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    enable_linear_system_dump()
+    t0 = time.time()
+    env = probe.build_env(args.garment, args.body, args.region, out / "work")
+    record = {"garment": args.garment, "body": args.body, "state": args.state, "build_s": time.time() - t0,
+              "dt": float(env.cfg.dt), "action_repeat": int(env.cfg.action_repeat), "workspace": str(workspace_of(env))}
+    try:
+        # Drive with the dump on, discarding the files after every decision.
+        original_decision = probe.decision
+
+        def decision_discarding(env_, action):
+            out_ = original_decision(env_, action)
+            clear_dumps(env_)
+            return out_
+        probe.decision = decision_discarding
+        snaps, trace = probe.drive_to_snapshots(env, args.stall_window, 0.01, args.max_steps)
+        probe.decision = original_decision
+        snap = next(s for s in snaps if s["name"] == args.state)
+        record["episode_step"] = snap["episode_step"]
+        record["state_measure"] = snap["measure"]
+        layout = cloth_layout(env)
+        record["layout"] = {k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in layout.items() if k not in ("mass",)}
+        record["layout"]["mass_sum"] = float(layout["mass"].sum())
+
+        # One hold decision with the dump kept.
+        probe.restore(env, snap)
+        clear_dumps(env)
+        frame_before = int(env._world.frame())
+        hold = probe.decision(env, np.zeros(6))
+        frames = dumped_frames(env)
+        wanted = [f for f in sorted(frames) if frame_before < f <= frame_before + int(env.cfg.action_repeat)]
+        if len(wanted) != int(env.cfg.action_repeat):
+            raise RuntimeError(f"expected {env.cfg.action_repeat} dumped frames after {frame_before}, found {sorted(frames)}")
+        record["frames"] = [{"frame": f, "newton_iterations": max(frames[f]) + 1} for f in wanted]
+        H, lu = [], []
+        t1 = time.time()
+        for f in wanted:
+            H.append(read_symmetric(frames[f][max(frames[f])]))
+        record["read_s"] = time.time() - t1
+        record["dofs"] = int(H[-1].shape[0])
+        record["nnz"] = int(H[-1].nnz)
+        t1 = time.time()
+        lu = [scipy.sparse.linalg.splu(h.tocsc()) for h in H]
+        record["factorise_s"] = time.time() - t1
+        # A sanity read of the held rows: with s = 1e4 the constraint dominates the diagonal block.
+        diag = H[-1].diagonal()
+        held_dofs = (layout["dof_offset"] + 3 * layout["anchor_idx"][:, None] + np.arange(3)[None, :]).reshape(-1)
+        m_from_H = diag[held_dofs].reshape(-1, 3).mean(axis=1) / (1.0 + layout["strength"])
+        record["held_mass_check"] = {"lumped": layout["mass"][layout["anchor_idx"]].tolist(), "from_diagonal": m_from_H.tolist()}
+
+        objectives = {"upperarm_axis_m": axis_gradient(layout), "contact_energy": contact_gradient(env, layout)}
+        record["objectives"] = {}
+        for name, g in objectives.items():
+            t2 = time.time()
+            full = reverse_pass(lu, g, layout, chain=True)
+            single = reverse_pass(lu, g, layout, chain=False)
+            record["objectives"][name] = {"adjoint_chain": full["dL_dDelta"].tolist(), "adjoint_last_frame": single["dL_dDelta"].tolist(),
+                                          "contributions": full["contributions"], "solve_s": time.time() - t2,
+                                          "g_norm": float(np.linalg.norm(g))}
+
+        # Finite differences of the same quantities from the same restored state.
+        fd = probe.gradients(env, snap, np.zeros(6), [e * 1e-3 for e in args.epsilons_mm], 1)
+        record["finite_differences"] = {str(e): {k: fd["per_epsilon"][str(e * 1e-3)]["mean"][k] for k in ("upperarm_axis_m", "contact_energy", "upperarm_ratio")}
+                                        for e in args.epsilons_mm}
+        record["fd_executed"] = {str(e): fd["per_epsilon"][str(e * 1e-3)]["mean_executed"] for e in args.epsilons_mm}
+        record["comparison"] = {}
+        for name in objectives:
+            row = {}
+            for e in args.epsilons_mm:
+                fd_vec = np.asarray(record["finite_differences"][str(e)][name], dtype=np.float64)
+                for kind in ("adjoint_chain", "adjoint_last_frame"):
+                    adj = np.asarray(record["objectives"][name][kind])
+                    row[f"{kind}_vs_fd_{e:g}mm"] = {"cosine": probe.cosine(adj, fd_vec),
+                                                     "magnitude_ratio": float(np.linalg.norm(adj) / np.linalg.norm(fd_vec)) if np.linalg.norm(fd_vec) > 0 else None}
+            record["comparison"][name] = row
+        record["accepted"] = all(record["comparison"][n][f"adjoint_chain_vs_fd_{args.epsilons_mm[0]:g}mm"]["cosine"] >= ACCEPT_COSINE
+                                 for n in objectives)
+        print(f"[adjoint] {args.garment}/{args.body} {args.state}@{snap['episode_step']} dofs={record['dofs']} nnz={record['nnz']} "
+              f"newton={[f['newton_iterations'] for f in record['frames']]} "
+              + " ".join(f"{n}: chain={np.round(record['objectives'][n]['adjoint_chain'], 4).tolist()} "
+                         f"fd1mm={np.round(record['finite_differences'][str(args.epsilons_mm[0])][n], 4).tolist()} "
+                         f"cos={ {k: round(v['cosine'], 3) for k, v in record['comparison'][n].items()} }" for n in objectives)
+              + f" accepted={record['accepted']}", flush=True)
+    finally:
+        clear_dumps(env)
+        (out / f"{args.garment}_{args.body}.{args.state}.json").write_text(json.dumps(record, indent=1, default=float) + "\n")
+        env.close()
+
+
+if __name__ == "__main__":
+    main()

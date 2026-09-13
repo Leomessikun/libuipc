@@ -12,12 +12,14 @@ class LockedEnv:
     +3 mm in x is dropped, the way the environment's no-move collision rule drops a command."""
 
     def __init__(self):
-        self.cfg = type("Cfg", (), {"max_translation": 0.00866})()
+        self.cfg = type("Cfg", (), {"max_translation": 0.00866, "max_rotation": 0.08726646, "clip_rotation_to_yz": True})()
         self._anchor = np.zeros((1, 3))
+        self._offsets = [np.array([[0.01, 0.0, 0.0], [0.0, 0.01, 0.0], [0.0, 0.0, 0.01], [0.01, 0.01, 0.0]])]
+        self.yaw = 0.0  # accumulated rotation about z; coverage also rises with it
 
     def outcome(self):
         a = self._anchor[0]
-        return {"upperarm_ratio": 0.2 + 0.5 * a[0], "opening_axis_m": 0.4 + a[0], "upperarm_axis_m": 0.1 + a[0],
+        return {"upperarm_ratio": 0.2 + 0.5 * a[0] + 0.1 * self.yaw, "opening_axis_m": 0.4 + a[0], "upperarm_axis_m": 0.1 + a[0],
                 "net_normal_n": 600.0 - 40000.0 * a[1], "summed_normal_n": 0.0, "contact_energy": 1.0 - a[1],
                 "reward": 0.0, "tracking_error": 0.02, "arm_clearance_m": 0.012 - a[0], "anchor": a.tolist()}
 
@@ -25,6 +27,15 @@ class LockedEnv:
         move = np.asarray(action[0][:3], dtype=np.float64) * self.cfg.max_translation
         if self._anchor[0, 0] + move[0] <= 0.003:
             self._anchor = self._anchor + move[None]
+        rot = np.asarray(action[0][3:], dtype=np.float64) * self.cfg.max_rotation
+        rot[0] = 0.0
+        angle = np.linalg.norm(rot)
+        if angle > 0:
+            k = rot / angle
+            K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+            R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * K @ K
+            self._offsets = [self._offsets[0] @ R.T]
+            self.yaw += rot[2]
         return None, np.zeros(1, dtype=np.float32), np.zeros(1, dtype=bool), [{}]
 
 
@@ -32,12 +43,22 @@ class LockedEnv:
 def env(monkeypatch):
     env = LockedEnv()
     monkeypatch.setattr(probe, "measure", lambda e: e.outcome())
-    monkeypatch.setattr(probe, "restore", lambda e, snap: (e.__setattr__("_anchor", np.array(snap["anchor"])[None]), 0.0)[1])
+    def restore(e, snap):
+        e._anchor = np.array(snap["anchor"])[None]
+        e._offsets = [np.array(snap["offsets"])]
+        e.yaw = 0.0
+        return 0.0
+    monkeypatch.setattr(probe, "restore", restore)
+    monkeypatch.setattr(probe, "heuristic", lambda e: type("H", (), {"actions": lambda self: np.array([[0, 0, 0, 0, 0, 0.5]])})())
     return env
 
 
+def _snap(env):
+    return {"anchor": [0.0, 0.0, 0.0], "offsets": env._offsets[0].copy(), "measure": env.outcome()}
+
+
 def test_differences_are_reported_per_commanded_and_per_executed_metre(env):
-    snap = {"anchor": [0.0, 0.0, 0.0], "measure": env.outcome()}
+    snap = _snap(env)
     g = probe.gradients(env, snap, np.zeros(6), [0.001, 0.005], 2)
     pe = g["per_epsilon"]["0.005"]
     # +5 mm in x is refused by the lock, so the commanded-metre difference is one-sided ...
@@ -52,7 +73,7 @@ def test_differences_are_reported_per_commanded_and_per_executed_metre(env):
 
 
 def test_walks_carry_executed_travel_repeats_and_the_combined_directions(env):
-    snap = {"anchor": [0.0, 0.0, 0.0], "measure": env.outcome()}
+    snap = _snap(env)
     g = probe.gradients(env, snap, np.zeros(6), [0.001, 0.002], 1)
     u = probe.usefulness(env, snap, g, 6, 0.004, 0, repeats=2,
                          walks=("coverage_gradient", "combined_gradient", "release_then_advance", "hold", "random"))
@@ -77,3 +98,27 @@ def test_the_parser_selects_states_and_walks():
     assert probe.build_parser().parse_args(["--out", "x"]).walks == list(probe.WALKS)
     with pytest.raises(SystemExit):
         probe.build_parser().parse_args(["--out", "x", "--walks", "teleport"])
+
+
+def test_rotation_differences_and_walks_use_the_live_axes(env):
+    snap = _snap(env)
+    g = probe.gradients(env, snap, np.zeros(6), [0.001, 0.002], 1)
+    rg = probe.gradients(env, snap, np.zeros(6), [np.deg2rad(1.0), np.deg2rad(2.5)], 1, probe.ROTATION_AXES)
+    assert rg["axes"] == [4, 5] and rg["unit"] == "rad"
+    pe = rg["per_epsilon"][str(np.deg2rad(2.5))]
+    # coverage rises with yaw (axis 5) only; the executed rotation equals the commanded one
+    assert pe["mean"]["upperarm_ratio"][1] == pytest.approx(0.1, rel=1e-3) and abs(pe["mean"]["upperarm_ratio"][0]) < 1e-9
+    assert pe["mean_executed"]["plus"][1] == pytest.approx(np.deg2rad(2.5), rel=1e-6)
+    assert pe["gradients"][0]["per_executed_unit"]["upperarm_ratio"][1] == pytest.approx(0.1, rel=1e-3)
+    u = probe.usefulness(env, snap, g, 4, 0.004, 0, walks=("rotation_gradient", "full_gradient", "axis_gradient_expert_rotation", "hold"),
+                         rot_grad=rg, rot_magnitude_rad=np.deg2rad(2.5))
+    assert u["rotation"]["rotation_direction_from"] == "upperarm_ratio" and u["rotation"]["axes"] == [4, 5]
+    r = u["walks"]["rotation_gradient"]
+    assert r["executed_m"] == 0.0 and r["executed_rad"] == pytest.approx(4 * np.deg2rad(2.5), rel=1e-5)
+    assert r["delta_upperarm"] == pytest.approx(0.1 * 4 * np.deg2rad(2.5), rel=1e-3)
+    f = u["walks"]["full_gradient"]
+    assert f["executed_rad"] == pytest.approx(4 * np.deg2rad(2.5), rel=1e-5)
+    assert f["executed_m"] == 0.0 and f["commanded_m"] == pytest.approx(0.016), "4 mm along +x runs into the lock, the rotation still executes"
+    e = u["walks"]["axis_gradient_expert_rotation"]
+    assert e["executed_rad"] == pytest.approx(4 * 0.5 * 0.08726646, rel=1e-5), "the expert's own rotation each step"
+    assert e["rows"][0]["commanded_m"] == pytest.approx(0.004)
