@@ -373,6 +373,7 @@ class GlobalLinearSystem : public SimSystem
     friend class GlobalPreconditioner;
     friend class GlobalDiffSimManager;
     friend class CurrentFrameDiffDofReporter;
+    friend class LinearSystemAdjointFeatureOverrider;
 
     void add_subsystem(DiagLinearSubsystem* subsystem);
     void add_subsystem(OffDiagLinearSubsystem* subsystem);

@@ -114,6 +114,46 @@ def read_symmetric(path: Path) -> tuple[scipy.sparse.csr_matrix, dict]:
     return m, info
 
 
+# ------------------------------------------------------------------------ in-solver export (tree build)
+def adjoint_feature(env):
+    """The backend's LinearSystemAdjointFeature, or None on a build without it (the 0.0.28 wheel)."""
+    try:
+        from uipc.diff_sim import LinearSystemAdjointFeature
+    except ImportError:
+        return None
+    return env._world.features().find(LinearSystemAdjointFeature)
+
+
+def collect_via_feature(env, action, feature) -> tuple[dict, list]:
+    """One decision whose every frame's assembled system is exported right after the frame."""
+    systems = []
+    original = env._sim_step
+
+    def hooked():
+        original()
+        systems.append(feature.export_system())
+    env._sim_step = hooked
+    try:
+        out = probe.decision(env, action)
+    finally:
+        env._sim_step = original
+    return out, systems
+
+
+def system_to_matrix(rows, cols, values, dofs: int) -> scipy.sparse.csr_matrix:
+    """Scalar sparse matrix from the exported upper block triangle."""
+    rows = np.asarray(rows, dtype=np.int64)
+    cols = np.asarray(cols, dtype=np.int64)
+    values = np.asarray(values, dtype=np.float64).reshape(-1, 3, 3)
+    t = rows.shape[0]
+    i = (3 * rows[:, None, None] + np.arange(3)[None, :, None] + np.zeros((1, 1, 3), dtype=np.int64)).reshape(-1)
+    j = (3 * cols[:, None, None] + np.zeros((1, 3, 1), dtype=np.int64) + np.arange(3)[None, None, :]).reshape(-1)
+    v = values.reshape(-1)
+    off = np.repeat(rows != cols, 9)
+    m = scipy.sparse.coo_matrix((np.concatenate([v, v[off]]), (np.concatenate([i, j[off]]), np.concatenate([j, i[off]]))), shape=(dofs, dofs))
+    return m.tocsr()
+
+
 # ------------------------------------------------------------------------ cloth bookkeeping
 def cloth_layout(env, constraint_factor: float = 1.0) -> dict:
     """Global DOF offset of the cloth, its global vertex offset, lumped vertex masses (rest shape)."""
@@ -279,11 +319,15 @@ def main(argv: list[str] | None = None) -> None:
                    help="The soft position constraint's assembled stiffness as a multiple of strength × mass "
                         "(2 for an energy without the one-half; the held vertices' measured response settles it).")
     p.add_argument("--keep-last-matrix", action="store_true", help="Copy the last frame's A file next to the record.")
+    p.add_argument("--source", choices=("dump", "feature"), default="dump",
+                   help="Where the Hessians come from: the engine's debug dump (any build) or the "
+                        "LinearSystemAdjointFeature export (this tree's build).")
     args = p.parse_args(argv)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    enable_linear_system_dump()
+    if args.source == "dump":
+        enable_linear_system_dump()
     t0 = time.time()
     env = probe.build_env(args.garment, args.body, args.region, out / "work")
     record = {"garment": args.garment, "body": args.body, "state": args.state, "build_s": time.time() - t0,
@@ -313,30 +357,61 @@ def main(argv: list[str] | None = None) -> None:
         record["layout"] = {k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in layout.items() if k not in ("mass",)}
         record["layout"]["mass_sum"] = float(layout["mass"].sum())
 
-        # One hold decision with the dump kept.
+        # One hold decision whose six systems are kept: dumped files, or the feature's export.
         probe.restore(env, snap)
-        clear_dumps(env)
         frame_before = int(env._world.frame())
-        hold = probe.decision(env, np.zeros(6))
-        frames = dumped_frames(env)
-        wanted = [f for f in sorted(frames) if frame_before < f <= frame_before + int(env.cfg.action_repeat)]
-        if len(wanted) != int(env.cfg.action_repeat):
-            raise RuntimeError(f"expected {env.cfg.action_repeat} dumped frames after {frame_before}, found {sorted(frames)}")
-        record["frames"] = [{"frame": f, "newton_iterations": max(frames[f]) + 1} for f in wanted]
         H, lu = [], []
-        t1 = time.time()
-        for f in wanted:
-            h, info = read_symmetric(frames[f][max(frames[f])])
-            H.append(h)
-            record.setdefault("matrix_files", []).append(info)
-        record["read_s"] = time.time() - t1
-        if args.keep_last_matrix:
-            shutil.copy(frames[wanted[-1]][max(frames[wanted[-1]])], out / f"{args.garment}_{args.body}.{args.state}.A.mtx")
+        record["source"] = args.source
+        if args.source == "feature":
+            feature = adjoint_feature(env)
+            if feature is None:
+                raise RuntimeError("this build has no LinearSystemAdjointFeature; use --source dump")
+            t1 = time.time()
+            hold, systems = collect_via_feature(env, np.zeros(6), feature)
+            record["export_s"] = time.time() - t1
+            dofs = int(feature.dof_count())
+            if len(systems) != int(env.cfg.action_repeat):
+                raise RuntimeError(f"expected {env.cfg.action_repeat} exported systems, got {len(systems)}")
+            for rows, cols, values, gradient in systems:
+                H.append(system_to_matrix(rows, cols, values, dofs))
+            record["frames"] = [{"frame": frame_before + 1 + k, "triplets": int(len(s[0]))} for k, s in enumerate(systems)]
+            # The backend's own solve against the last frame, checked against the host factorisation below.
+            g_probe = np.zeros(dofs)
+            rng = np.random.default_rng(0)
+            g_probe[:] = rng.standard_normal(dofs)
+            t1 = time.time()
+            x_backend, reached = feature.solve(g_probe, 1e-6, 32)
+            x_backend = np.asarray(x_backend)
+            record["feature_solve_s"] = time.time() - t1
+            record["feature_solve_check"] = {"g": g_probe, "x": x_backend, "reached": float(reached)}
+        else:
+            clear_dumps(env)
+            hold = probe.decision(env, np.zeros(6))
+            frames = dumped_frames(env)
+            wanted = [f for f in sorted(frames) if frame_before < f <= frame_before + int(env.cfg.action_repeat)]
+            if len(wanted) != int(env.cfg.action_repeat):
+                raise RuntimeError(f"expected {env.cfg.action_repeat} dumped frames after {frame_before}, found {sorted(frames)}")
+            record["frames"] = [{"frame": f, "newton_iterations": max(frames[f]) + 1} for f in wanted]
+            t1 = time.time()
+            for f in wanted:
+                h, info = read_symmetric(frames[f][max(frames[f])])
+                H.append(h)
+                record.setdefault("matrix_files", []).append(info)
+            record["read_s"] = time.time() - t1
+            if args.keep_last_matrix:
+                shutil.copy(frames[wanted[-1]][max(frames[wanted[-1]])], out / f"{args.garment}_{args.body}.{args.state}.A.mtx")
         record["dofs"] = int(H[-1].shape[0])
         record["nnz"] = int(H[-1].nnz)
         t1 = time.time()
         lu = [scipy.sparse.linalg.splu(h.tocsc()) for h in H]
         record["factorise_s"] = time.time() - t1
+        if "feature_solve_check" in record:
+            chk = record["feature_solve_check"]
+            x_host = lu[-1].solve(chk["g"])
+            residual = float(np.linalg.norm(H[-1] @ chk["x"] - chk["g"]) / np.linalg.norm(chk["g"]))
+            record["feature_solve_check"] = {"cosine_vs_host_lu": probe.cosine(chk["x"], x_host), "backend_reported_residual": chk["reached"],
+                                             "relative_error_vs_host_lu": float(np.linalg.norm(chk["x"] - x_host) / np.linalg.norm(x_host)),
+                                             "relative_residual": residual, "solve_s": record.pop("feature_solve_s")}
         # A sanity read of the held rows: with s = 1e4 the constraint dominates the diagonal block.
         diag = H[-1].diagonal()
         held_dofs = (layout["dof_offset"] + 3 * layout["anchor_idx"][:, None] + np.arange(3)[None, :]).reshape(-1)
@@ -382,8 +457,13 @@ def main(argv: list[str] | None = None) -> None:
             record["comparison"][name] = row
         record["accepted"] = all(record["comparison"][n][f"adjoint_chain_vs_fd_{args.epsilons_mm[0]:g}mm"]["cosine"] >= ACCEPT_COSINE
                                  for n in objectives)
+        if "feature_solve_check" in record:
+            print(f"[adjoint-feature] export {record['export_s']:.2f}s for {len(H)} frames; backend solve vs host LU: "
+                  f"cos={record['feature_solve_check']['cosine_vs_host_lu']:.6f} rel_err={record['feature_solve_check']['relative_error_vs_host_lu']:.2e} "
+                  f"residual={record['feature_solve_check']['relative_residual']:.2e} backend_reported={record['feature_solve_check']['backend_reported_residual']:.2e} "
+                  f"({record['feature_solve_check']['solve_s']*1e3:.0f} ms)", flush=True)
         print(f"[adjoint] {args.garment}/{args.body} {args.state}@{snap['episode_step']} dofs={record['dofs']} nnz={record['nnz']} "
-              f"newton={[f['newton_iterations'] for f in record['frames']]} "
+              f"frames={[f.get('newton_iterations', f.get('triplets')) for f in record['frames']]} "
               + " ".join(f"{n}: chain={np.round(record['objectives'][n]['adjoint_chain'], 4).tolist()} "
                          f"fd1mm={np.round(record['finite_differences'][str(args.epsilons_mm[0])][n], 4).tolist()} "
                          f"cos={ {k: round(v['cosine'], 3) for k, v in record['comparison'][n].items()} }" for n in objectives)
@@ -394,8 +474,10 @@ def main(argv: list[str] | None = None) -> None:
               f"held={[round(fc['held'][a]['magnitude_ratio'], 3) for a in 'xyz']} free={[round(fc['free'][a]['magnitude_ratio'], 3) for a in 'xyz']} "
               f"| held follow fd={np.round(fc['held_follow']['fd'], 3).tolist()} tangent={np.round(fc['held_follow']['tangent'], 3).tolist()}", flush=True)
     finally:
-        clear_dumps(env)
-        (out / f"{args.garment}_{args.body}.{args.state}.json").write_text(json.dumps(record, indent=1, default=float) + "\n")
+        if args.source == "dump":
+            clear_dumps(env)
+        suffix = "" if args.source == "dump" else ".feature"
+        (out / f"{args.garment}_{args.body}.{args.state}{suffix}.json").write_text(json.dumps(record, indent=1, default=float) + "\n")
         env.close()
 
 

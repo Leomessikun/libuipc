@@ -460,6 +460,68 @@ the analytic `∂coverage/∂u` at cell 1's passed state and cells 2–3's stall
 central differences above to cosine ≥ 0.95, and the two noisy elbows must be rejected by the
 same repeatability gate.
 
+## Level 2a: the adjoint through the solver's own Hessians, against differences (2026-09-14) [MI]
+
+No backend change. The engine's `extras/debug/dump_linear_system` switch (present in the 0.0.28
+wheel) writes every Newton iteration's assembled system to Matrix Market files under
+`<workspace>/debug/cuda/linear_system/global_linear_system.cu/`; the files hold the upper block
+triangle under a `general` header. `python -m uipc_manip.physics_gradient_adjoint` drives the
+expert to a state with the dump on (discarding files after every decision), restores it, runs one
+hold decision, reads the six frames' last Hessians back (11,679 DOFs: a 12-DOF fixed arm body
+and 3,889 cloth vertices; 452k nonzeros; 3.6 MB each; scipy LU 0.3 s each), and runs
+
+- the reverse pass `H_f λ_f = ĝ_f`, `ĝ_6 = ∂L/∂x_6`, `ĝ_f = 2Mλ_{f+1} − Mλ_{f+2}` (BDF1 inertia,
+  `x̃_f = 2x_{f−1} − x_{f−2} + g dt²`, lumped masses from the rest mesh), with the gripper entering
+  through the soft position constraint on the 48 held vertices, `∂L/∂Δ = Σ_f (f/6) Σ_I K_I λ_{f,I}`;
+- the tangent pass, the same linear algebra forward, giving the full response `∂x_6/∂Δ` of every
+  cloth vertex to each translation axis, compared with central differences of every vertex position.
+
+Cell 3's stall (the expert's `align_yaw` stall, 23 N, two Newton iterations per frame), 1 mm and
+2 mm differences:
+
+| quantity | reverse pass vs differences (cosine / magnitude ratio) | note |
+|---|---|---|
+| held vertices' own response to their aim | **1.000 / 0.996** (measured 0.999 per metre) | after the constraint-stiffness correction below |
+| free cloth response field (all other vertices) | 0.87–0.93 / 0.72–0.80 per axis | the six-frame chain beats the last frame alone by 0.03–0.06 in cosine |
+| upper-arm axis reading (linear objective) | **0.988 at 1 mm, 1.000 at 2 mm** / 0.77, 0.71 | passes the 0.95 gate on direction |
+| contact energy | 0.74 at 1 mm, 0.13 at 2 mm | its own differences disagree between 1 and 2 mm by 6×: not a smooth function of the command at this scale |
+
+Two things the check settled that the source reading had not. (i) **The constraint's assembled
+stiffness is `2·s·m`, not `s·m`**: with the source's `½ s m ‖x − aim‖²` the predicted response of
+the held vertices was exactly half the measured one (0.498 against 0.999, cosine 1.000); with the
+factor 2 it is 0.996. Either the wheel's energy carries no one-half or the block is counted twice
+in assembly; the probe's `--constraint-factor` (default 2) carries it, and the same check on the
+tree's own build is below. (ii) **The 20–25 % magnitude shortfall on the free cloth is the price of
+the assembled Hessian**: every element and contact block is projected to positive semidefinite
+before assembly (28 `make_spd` sites), which makes `H` stiffer than the true `∂²E/∂x²` and its
+inverse response smaller; friction's lagged tangent basis, which the chain ignores, is the other
+candidate. Direction survives it, magnitude does not, which is what the reverse pass is for in a
+learner (the critic sets the scale) and what a greedy gradient controller would have to live with.
+
+Cost on this mesh: six dumps and six factorisations per decision took under 3 s on the host; the
+same solves on the device with the engine's PCG are milliseconds, and a stored matrix is 3.6 MB,
+so a device-side ring of the last 24–48 frames (a four-to-eight-decision horizon) is 100–200 MB.
+
+**Two more states, and the tree's own build.** The same check at cell 2's stall (the jam at
+49 N, 20,523 DOFs, three Newton iterations per frame) and cell 1's passed state (27 N, three
+iterations), plus cell 3's stall again on this tree's CUDA build instead of the 0.0.28 wheel:
+
+| state | axis reading: cosine at 1 / 2 mm | contact energy: cosine at 1 / 2 mm | free cloth field: cosine / magnitude | held vertices |
+|---|---|---|---|---|
+| cell 3 stall (wheel) | **0.988 / 1.000** | 0.74 / 0.13 | 0.87–0.93 / 0.72–0.80 | 1.000 / 0.996 |
+| cell 3 stall (tree build) | **0.986 / 0.987** | 0.70 / 0.67 | 0.87–0.93 / 0.72–0.79 | 1.000 / 0.995 |
+| cell 2 stall (jammed, 49 N) | **0.977** / 0.931 | 0.94 / 0.76 | 0.51–0.70 / 0.40–0.65 | 1.000 / 0.995 |
+| cell 1 passed | **0.987 / 0.994** | **0.97 / 0.97** | 0.75–0.85 / 0.62–0.72 | 1.000 / 0.995 |
+
+The smooth objective's direction passes the gate at every state at 1 mm (0.977–0.988) and at
+two of three at 2 mm; the contact energy passes only where it is itself smooth (cell 1's passed
+state). The free cloth's response is reproduced best where contact is light (cell 3, 23 N) and
+worst at the jam (cell 2), which is where the projected contact blocks dominate the Hessian: the
+approximation's cost is state-dependent and largest exactly where the load is. The tree's build
+reproduces the wheel's numbers, including the factor 2 on the constraint stiffness — so the
+double count is in the shared source, not a wheel-specific difference; the Level 2b feature
+below reads the same matrices.
+
 ## What this does not claim
 
 No policy has been trained with a physics gradient. Level 1 asks only whether the quantity is
