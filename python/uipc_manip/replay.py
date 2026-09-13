@@ -16,11 +16,15 @@ SEQUENCE_SCHEMA_VERSION = 1
 
 @dataclass(frozen=True)
 class SequenceBatch:
-    """Exact windows: observations/states have L+1 steps; other tensors have L.
+    """Windows: observations/states have L+1 steps; other tensors have L.
 
     Rewards and bootstrap masks retain their trailing singleton dimension.
     Identity, end and label tensors have shape [batch, length]. The final
     observation is the saved pre-reset successor of the final transition.
+
+    `valid` marks recorded transitions. A padded window begins before its
+    episode did: its leading positions carry zeros, identity -1 and valid
+    False, which is the same empty history a deployed policy starts from.
     """
 
     obs: torch.Tensor
@@ -31,6 +35,7 @@ class SequenceBatch:
     stream_ids: torch.Tensor
     episode_ids: torch.Tensor
     episode_steps: torch.Tensor
+    valid: torch.Tensor
     priv: torch.Tensor | None = None
     labels: torch.Tensor | None = None
     buffer_index: int | None = None
@@ -272,31 +277,80 @@ class FlatReplayBuffer:
             self._windows[length] = _IndexPool(self.capacity, ends[valid])
         return self._windows[length]
 
-    def sample_sequences(self, length: int, batch_size: int | None = None) -> SequenceBatch:
-        """Sample complete same-episode windows uniformly with replacement, without padding."""
-        pool = self._sequence_endpoints(length)
-        length = operator.index(length)
+    def sequence_ready(self, length: int, *, pad: bool = False) -> bool:
+        """Whether a window of this length can be drawn under the requested padding."""
+        if pad:
+            _nonnegative_int(length, "length")
+            if not self.sequence:
+                raise ValueError("Sequence sampling requires sequence=True")
+            return self.size > 0
+        return bool(self._sequence_endpoints(length).values)
+
+    def _window_indices(self, length: int, n: int, pad: bool) -> tuple[np.ndarray, np.ndarray]:
+        """Endpoint-uniform windows walked back through the episode links.
+
+        Without padding, endpoints are restricted to rows holding a complete
+        prefix. With padding, every retained row is an endpoint and a shorter
+        prefix is reported through the mask rather than silently extended into
+        an earlier episode. Padded columns repeat their successor's row so the
+        gathers stay in bounds; their content is discarded by the caller.
+        """
+        indices = np.empty((n, length), dtype=np.int64)
+        valid = np.zeros((n, length), dtype=bool)
+        if pad:
+            if self.size == 0:
+                raise RuntimeError("An empty replay contains no sequence window")
+            indices[:, -1] = np.random.randint(self.size, size=n)
+        else:
+            pool = self._sequence_endpoints(length)
+            if not pool.values:
+                raise RuntimeError("No complete sequence of the requested length is available")
+            indices[:, -1] = np.take(pool.values, np.random.randint(len(pool.values), size=n))
+        valid[:, -1] = True
+        for column in range(length - 2, -1, -1):
+            previous = self._prev[indices[:, column + 1]]
+            present = valid[:, column + 1] & (previous >= 0)
+            indices[:, column] = np.where(present, previous, indices[:, column + 1])
+            valid[:, column] = present
+        return indices, valid
+
+    def sample_sequences(self, length: int, batch_size: int | None = None, *, pad: bool = False) -> SequenceBatch:
+        """Sample same-episode windows uniformly over their endpoints, with replacement.
+
+        `pad=False` returns only complete windows. `pad=True` also draws windows
+        whose episode began fewer than `length` steps earlier, left-padding them:
+        every recorded transition then becomes a learning step, including the
+        episode openings a deployed policy always has to act through.
+        """
+        if not self.sequence:
+            raise ValueError("Sequence sampling requires sequence=True")
+        length = _nonnegative_int(length, "length")
+        if length == 0:
+            raise ValueError("Sequence length must be positive")
         n = self.batch_size if batch_size is None else _nonnegative_int(batch_size, "batch_size")
         if n <= 0:
             raise ValueError("Sequence batch size must be positive")
-        if not pool.values:
-            raise RuntimeError("No complete sequence of the requested length is available")
-        choices = np.random.randint(len(pool.values), size=n)
-        indices = np.empty((n, length), dtype=np.int64)
-        indices[:, -1] = [pool.values[i] for i in choices]
-        for column in range(length - 2, -1, -1):
-            indices[:, column] = self._prev[indices[:, column + 1]]
+        indices, valid = self._window_indices(length, n, pad)
+        blank = ~valid
         to = lambda value: torch.as_tensor(value, device=self.device)  # noqa: E731
-        obs = np.concatenate([self._obs[indices], self._next_obs[indices[:, -1], None]], axis=1)
-        priv = None
-        if self.priv_dim:
-            priv = to(np.concatenate([self._priv[indices], self._next_priv[indices[:, -1], None]], axis=1))
+
+        def frames(current: np.ndarray, successor: np.ndarray) -> torch.Tensor:
+            window = np.concatenate([current[indices], successor[indices[:, -1], None]], axis=1)
+            window[:, :length][blank] = 0.0
+            return to(window)
+
+        def steps(values: np.ndarray, empty) -> torch.Tensor:
+            window = values[indices].copy()
+            window[blank] = empty
+            return to(window)
+
         return SequenceBatch(
-            obs=to(obs), actions=to(self._actions[indices]), rewards=to(self._rewards[indices]),
-            not_dones=to(self._not_dones[indices]), episode_ends=to(self._episode_ends[indices]),
-            stream_ids=to(self._stream_ids[indices]), episode_ids=to(self._episode_ids[indices]),
-            episode_steps=to(self._episode_steps[indices]), priv=priv,
-            labels=to(self._labels[indices]) if self.labelled else None,
+            obs=frames(self._obs, self._next_obs), actions=steps(self._actions, 0.0),
+            rewards=steps(self._rewards, 0.0), not_dones=steps(self._not_dones, 0.0),
+            episode_ends=steps(self._episode_ends, False), stream_ids=steps(self._stream_ids, -1),
+            episode_ids=steps(self._episode_ids, -1), episode_steps=steps(self._episode_steps, -1),
+            valid=to(valid), priv=frames(self._priv, self._next_priv) if self.priv_dim else None,
+            labels=steps(self._labels, -1) if self.labelled else None,
         )
 
     def save(self, directory: str | Path, metadata: dict | None = None) -> None:
@@ -451,13 +505,13 @@ class ReplaySet:
         for buffer in self.buffers:
             buffer.close_episode(stream_id, episode_id)
 
-    def sample_sequences(self, length: int, batch_size: int | None = None) -> SequenceBatch:
+    def sample_sequences(self, length: int, batch_size: int | None = None, *, pad: bool = False) -> SequenceBatch:
         """Draw one complete batch from one uniformly chosen sequence-ready buffer."""
-        ready = [i for i, buffer in enumerate(self.buffers) if buffer._sequence_endpoints(length).values]
+        ready = [i for i, buffer in enumerate(self.buffers) if buffer.sequence_ready(length, pad=pad)]
         if not ready:
-            raise RuntimeError("No replay buffer contains a complete sequence of the requested length")
+            raise RuntimeError("No replay buffer contains a sequence window of the requested length")
         index = int(ready[np.random.randint(len(ready))])
-        return replace(self.buffers[index].sample_sequences(length, batch_size), buffer_index=index)
+        return replace(self.buffers[index].sample_sequences(length, batch_size, pad=pad), buffer_index=index)
 
     @property
     def size(self) -> int:

@@ -1805,3 +1805,18 @@ The [record](performance/2026-09-13-sequence-replay.md) states the collection bo
 window semantics and persistence rules. Validation is 64 CPU tests including a stub simulation
 through failure, rotation and resume; no GPU job ran and no learning improvement is claimed.
 Upstream RLT was re-checked on 2026-09-13: still `1bee93a9`, still no implementation.
+
+## 2026-09-13 — Padded windows and streaming rollout state (stage 2, part 1)
+
+`sample_sequences(..., pad=True)` left-pads windows whose episode began fewer than `L` steps
+earlier, so every recorded transition becomes a learning step. Without it the first `L-1` decisions
+of every episode would never be trained on, while a deployed policy has to act through exactly
+those steps with an empty history. `SequenceBatch` now always carries a `valid` mask; padded
+positions are zero and carry identity `-1`. Padding never reaches into an earlier episode and does
+not change windows that already existed.
+
+`history.RolloutHistory` is the collection-side counterpart, holding the raw prefix rather than
+encoded features so that a weight update cannot leave it stale. `length=1` is the single-frame
+policy and the parity setting for the history-aware model still to be written. The parity gate
+passes for `L` in 1, 2, 4 and 7: streaming reproduces the sampler's padded window at every
+decision, mask included. 269 CPU tests pass; no GPU job ran, and no learning change was made.

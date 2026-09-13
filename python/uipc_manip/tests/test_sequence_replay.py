@@ -376,3 +376,88 @@ def test_replay_set_sequences_preserve_labels_and_selected_buffer(tmp_path):
     assert batch.episode_ends[:, -1].all()
     with pytest.raises(RuntimeError):
         restored.sample_sequences(3)
+
+
+def test_padded_windows_open_every_episode_that_complete_windows_refuse():
+    replay = _buffer()
+    for step in range(3):
+        _add(replay, step, episode=4, end=step == 2)
+    with pytest.raises(RuntimeError):
+        replay.sample_sequences(5)
+    batch = replay.sample_sequences(5, batch_size=64, pad=True)
+    assert batch.obs.shape == (64, 6, 3) and batch.valid.shape == (64, 5)
+    assert batch.valid.dtype == torch.bool
+    ends = batch.episode_steps[:, -1]
+    assert set(ends.tolist()) == {0, 1, 2}, "every recorded transition must be a learning step"
+    lengths = batch.valid.sum(dim=1)
+    torch.testing.assert_close(lengths, ends + 1)
+    # A prefix is contiguous and right-aligned: no hole may appear inside it.
+    torch.testing.assert_close(batch.valid, torch.arange(5)[None] >= (5 - lengths)[:, None])
+
+
+def test_padded_positions_carry_zeros_and_no_identity():
+    replay = _buffer()
+    _add(replay, 0, episode=4)
+    _add(replay, 1, episode=4, end=True)
+    batch = replay.sample_sequences(4, batch_size=32, pad=True)
+    blank = ~batch.valid
+    assert blank.any()
+    assert not batch.obs[:, :4][blank].any() and not batch.actions[blank].any()
+    assert not batch.rewards[blank].any() and not batch.not_dones[blank].any()
+    assert not batch.episode_ends[blank].any()
+    for name in ("stream_ids", "episode_ids", "episode_steps"):
+        assert (getattr(batch, name)[blank] == -1).all(), f"{name} must not fake an identity"
+        assert (getattr(batch, name)[batch.valid] >= 0).all()
+    # The observation following the window is real even when the prefix is padded.
+    torch.testing.assert_close(batch.obs[:, -1, 2], batch.episode_steps[:, -1].float() + 1)
+
+
+def test_padding_never_reaches_into_the_previous_episode():
+    replay = _buffer()
+    for episode in (4, 5):
+        for step in range(2):
+            _add(replay, step, episode=episode, end=step == 1)
+    batch = replay.sample_sequences(3, batch_size=64, pad=True)
+    for row in range(64):
+        valid = batch.valid[row]
+        assert batch.episode_ids[row][valid].unique().numel() == 1
+        assert not batch.episode_ends[row][valid][:-1].any()
+    assert set(batch.episode_ids[:, -1].tolist()) == {4, 5}
+
+
+def test_a_complete_window_is_identical_with_and_without_padding():
+    """Padding only adds episode openings; it must not disturb the windows that already existed."""
+    replay = _buffer()
+    for step in range(6):
+        _add(replay, step, episode=4)
+    padded = replay.sample_sequences(3, batch_size=96, pad=True)
+    complete = replay.sample_sequences(3, batch_size=96)
+    assert complete.valid.all()
+    assert set(complete.episode_steps[:, -1].tolist()) == {2, 3, 4, 5}
+    assert padded.valid.all(dim=1).eq(padded.episode_steps[:, -1] >= 2).all()
+    for end in (2, 3, 4, 5):
+        left = padded.obs[padded.episode_steps[:, -1] == end][:1]
+        right = complete.obs[complete.episode_steps[:, -1] == end][:1]
+        torch.testing.assert_close(left, right)
+
+
+def test_padding_admits_buffers_and_replays_that_hold_no_complete_window():
+    replay = _buffer()
+    with pytest.raises(RuntimeError):
+        replay.sample_sequences(2, pad=True)
+    assert not replay.sequence_ready(2, pad=True)
+    every = ReplaySet(["a", "b"], 3, 2, 16, 3, "cpu", sequence=True)
+    _add(every, 0, episode=4, end=True, key="a")
+    with pytest.raises(RuntimeError):
+        every.sample_sequences(2)
+    batch = every.sample_sequences(2, batch_size=5, pad=True)
+    assert batch.buffer_index == 0
+    assert batch.valid[:, 0].sum() == 0 and batch.valid[:, 1].all()
+
+
+def test_flat_replay_refuses_padded_sequences():
+    flat = FlatReplayBuffer(3, 2, 8, 2, "cpu")
+    with pytest.raises(ValueError):
+        flat.sample_sequences(2, pad=True)
+    with pytest.raises(ValueError):
+        flat.sequence_ready(2, pad=True)
