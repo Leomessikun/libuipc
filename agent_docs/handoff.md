@@ -1932,7 +1932,8 @@ replay contract (recorded pass rebuilt under current parameters, candidates bran
 recorded state, successor advanced with the recorded command, nothing detached inside the window);
 `TrajectoryPretrainingHead` is the 5.1 objective with continuous targets over all recorded
 trajectories. CPU cost probe: per learning position the RLT-H8 window costs 1.6× a single-frame
-transition and 2.8× less than the H4 frame history. Recorded as decisions, not built: a frozen
+transition and 2.8× less than the H4 frame history. Not built, named in the record: the pretraining
+trainer command (the objective is a tested function only), recorded sequence data, a frozen
 spatial encoder arm and a cached feature column for whole-episode replay, and unconditional
 `priv` recording in sequence mode for the pretraining target. Commits `30bc39b1..` on
 `pretrain/recurrent-force-memory`; no GPU job ran (`abl_dense_s1` at 115k/125k).

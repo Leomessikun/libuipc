@@ -5,7 +5,8 @@ Usage: PYTHONPATH=python python -m uipc_manip.rlt_cost_probe [--device cpu|cuda]
 Times, per call after warm-up:
   1. the temporal stack alone (no point clouds): run(), branch() and a 300-step stream at the
      production width, for window lengths 8, 32 and 300 and batch sizes 1 and 64;
-  2. one SAC update with the real heads (PointNet++ at the production widths, `points` per cloud)
+  2. one decision for 25 streams through the acting path of each arm (raw-frame rollout state);
+  3. one SAC update with the real heads (PointNet++ at the production widths, `points` per cloud)
      for the single-frame agent, the H4 frame history, and the RLT history at H = 4 and 8, with the
      batch chosen so every arm sees the same number of learning positions.
 Prints JSON lines; nothing is written.
@@ -99,6 +100,30 @@ def updates(device, points):
                           "update_s": seconds, "per_position_s": seconds / positions}))
 
 
+def acting(device, points, num_envs=25):
+    """One decision for `num_envs` streams: the single-frame policy, and the H4/H8 windows that
+    collection re-encodes from raw frames every decision (`RolloutHistory`)."""
+    from uipc_manip.history import act_with, rollout_state
+
+    spec, action_dim = ObsSpec(points), 3
+    rng = np.random.default_rng(0)
+    block = np.zeros((num_envs, points, 7), dtype=np.float32)
+    block[:, :, :3] = rng.standard_normal((num_envs, points, 3)) * 0.1
+    block[:, :, 3] = 1.0
+    block[:, 0, 3], block[:, 0, 6] = 0.0, 1.0
+    obs = np.concatenate([block.reshape(num_envs, -1), np.zeros((num_envs, 7), dtype=np.float32)], axis=1)
+    for name, extra in [("single", dict(history_length=1)), ("frames_h4", dict(history_length=4)),
+                        ("rlt_h4", dict(history_length=4, history_kind="rlt")), ("rlt_h8", dict(history_length=8, history_kind="rlt"))]:
+        torch.manual_seed(0)
+        agent = SACAgent(spec, action_dim, SACConfig(actor_type="wang-flow", critic_action_mode="dense", **extra), device)
+        history = rollout_state(agent, num_envs)
+        for _ in range(8):  # fill the window so every frame is re-encoded
+            act_with(agent, obs, False, history)
+        seconds = timed(lambda: act_with(agent, obs, False, history), 5, device)
+        print(json.dumps({"probe": "act", "arm": name, "num_envs": num_envs, "decision_s": seconds,
+                          "frames_encoded": num_envs * int(agent.cfg.history_length)}))
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -109,6 +134,7 @@ def main():
     torch.set_num_threads(max(1, torch.get_num_threads() // 2))
     print(json.dumps({"probe": "env", "device": str(device), "threads": torch.get_num_threads(), "torch": torch.__version__}))
     temporal_stack(device)
+    acting(device, args.points)
     if not args.skip_updates:
         updates(device, args.points)
 

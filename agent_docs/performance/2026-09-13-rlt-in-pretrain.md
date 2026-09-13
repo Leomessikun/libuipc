@@ -79,12 +79,22 @@ The temporal stack alone (no clouds), forward under `no_grad`:
 | 32 | 12 ms | 24 ms | 6.6 ms | 87 ms |
 | 300 | 119 ms | 275 ms | 128 ms | 985 ms |
 
-Streaming `step` at B = 1: 0.70 ms per decision. What these say: at `H ≤ 16` the temporal stack is
+One decision for 25 streams through the acting path, which re-encodes the raw window each decision:
+
+| Arm | Clouds encoded per decision | Per decision |
+|---|---|---|
+| single-frame | 25 | 97 ms |
+| `frames`, H4 / `rlt`, H4 | 100 | 479 / 483 ms |
+| `rlt`, H8 | 200 | 1,030 ms |
+
+Streaming `step` of the temporal stack alone at B = 1: 0.70 ms per decision. What these say: at `H ≤ 16` the temporal stack is
 a rounding error next to the point encoders, and the per-position cost sits between single-frame
 and the frame history's; at `L = 300` the decoder recurrence is `300 × layers` small sequential
 steps — latency-bound on a GPU (about 9,000 kernel launches per `run`) unless captured in a CUDA
 graph — and the *spatial* side, 300 clouds per window, is what the exact-replay path cannot pay
-without a feature cache. On the measured GPU update (36 ms per single-frame transition, batch 64
+without a feature cache. Collection scales the same way — H8 acting encodes eight clouds per
+stream per decision, which the cached `RLTState` would reduce to one plus a 0.7 ms temporal step —
+so the GPU probe has to price both sides before the arm. On the measured GPU update (36 ms per single-frame transition, batch 64
 [`2026-09-12-wall-clock-budget.md`]), the H8 arm is expected at roughly 1.6× per learning
 position [E from the CPU ratio], which the probe on `--device cuda` has to confirm.
 
@@ -115,9 +125,13 @@ episode openings and for the window's last position. The frame history does not 
 mismatch (it learns only the last position), the exact-replay path removes it (the window is the
 episode). If the H8 arm loses to H4, this is the first suspect, before the temporal model itself.
 
-## Data for the pretraining stage
+## Data for the pretraining stage, and the missing trainer
 
-Today there is none: no finished run recorded sequence identities and the expert episodes hold no
+The objective is a tested function (`TrajectoryPretrainingHead`, `pretraining_step`); there is no
+command yet that iterates a replay snapshot, optimizes the actor's spatial encoder and RLT with it
+and saves weights `SACAgent.load` accepts. That trainer is the next code change of this stage.
+
+Data: today there is none: no finished run recorded sequence identities and the expert episodes hold no
 observations. The replay snapshot of any `--sequence-replay` run carries observations, commands,
 rewards and boundaries, so the H4/RLT arms below double as the recording. The privileged-state
 target needs one more change: the sequence replay stores `priv` only under the privileged critic,
@@ -144,7 +158,11 @@ PYTHONPATH=python /home/ge47gax/kun/genesis-world/.venv/bin/python -m uipc_manip
 ```
 
 Neither was launched: the GPU holds `abl_dense_s1` (115k of 125k transitions at the time of
-writing, held-out upper-arm ratio 0.10).
+writing, held-out upper-arm ratio 0.10). Read the H8 arm's batch with care: 8 windows × 8
+positions are cost-matched to the 64 transitions of the other arms, not statistically equivalent
+to them — positions within a window are correlated and 8 trajectories per gradient step is few.
+If the arm loses, the batch is the second suspect after the window mismatch above, before the
+model.
 
 ## Validation
 
@@ -163,11 +181,13 @@ exists at every recorded position; the frame history refuses per-position learni
 checks that every recorded position learned and that the target's temporal parameters moved; the
 `rlt` kind at `history_length 1` and an unknown kind are refused at construction.
 `tests/test_train_sac.py`: the `--rlt-*` knobs reach the config, and checkpoints without the keys
-default to the frame history. 322 CPU tests pass. None of this measures dressing success.
+default to the frame history. 323 CPU tests pass. None of this measures dressing success.
 
 ## What this does not claim
 
 No measurement shows the RLT policy dresses the elbow, and the CPU ratios are not GPU throughput.
 The claim is narrower: the report's method is now in the pretraining infrastructure end to end —
 model, per-position SAC update under its replay contract, pretraining objective, trainer flags —
-with its remaining cost problem named precisely (the spatial feature cache) rather than deferred.
+with what is missing named precisely — the pretraining trainer command, recorded sequence data,
+the spatial feature cache and frozen-encoder arm for whole-episode replay, `priv` in sequence
+replay — rather than deferred.
