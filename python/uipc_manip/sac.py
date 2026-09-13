@@ -22,6 +22,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .history import RolloutHistory
 from .models import Actor, CategoricalCritic, Critic, EncoderConfig, PrivilegedCritic, WangFlowActor, reuse_neighbourhoods
 from .obs import FLAG_TOOL, ObsSpec
 
@@ -125,6 +126,13 @@ class SACConfig:
     encoder_precision: str = "fp32"
     """``bf16`` runs the point encoders under bfloat16 autocast and hands their features on in fp32; the
     heads, targets, and losses stay fp32 either way. Weights are unchanged, so checkpoints load across both."""
+    history_length: int = 1
+    """Frames the policy and critic condition on, the proposal's H. ``1`` is the single-frame network
+    every earlier checkpoint stores. Above one, each frame is encoded on its own and the ordered frame
+    vectors, their validity and the commands between them feed the trunk (``models.FrameHistory``);
+    learning then draws padded windows from sequence replay, one learning step per window, and
+    collection carries a raw-frame ``RolloutHistory`` per stream. Implemented for the scalar dense
+    point critic without stochastic augmentation; other combinations are refused, not approximated."""
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
 
     def to_dict(self) -> dict:
@@ -184,6 +192,16 @@ class SACAgent:
         self.action_dim = int(action_dim)
         self.cfg = cfg
         self.device = torch.device(device)
+        history = int(cfg.history_length)
+        if history < 1:
+            raise ValueError("history_length must be at least 1")
+        if history > 1:
+            if cfg.algo != "sac" or cfg.critic_input != "points" or cfg.critic_action_mode != "dense":
+                raise ValueError("A frame history is implemented for the scalar dense point critic only; the flashsac, "
+                                 "privileged and latent critics refuse it until their sequence updates exist")
+            if cfg.random_shift_scale > 0.0 or cfg.point_jitter_scale > 0.0:
+                raise ValueError("Stochastic observation augmentation is not temporally consistent across a window; "
+                                 "disable it for a frame history")
         if cfg.actor_type == "wang-flow":
             actor_cls = WangFlowActor
         elif cfg.actor_type == "flat":
@@ -192,7 +210,7 @@ class SACAgent:
             raise ValueError(f"Unknown actor_type {cfg.actor_type!r}")
         self.actor = actor_cls(
             spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.actor_log_std_min,
-            cfg.actor_log_std_max, cfg.trunk_style, cfg.trunk_blocks,
+            cfg.actor_log_std_max, cfg.trunk_style, cfg.trunk_blocks, history_length=history,
         ).to(self.device)
         if cfg.critic_input == "privileged":
             if cfg.algo != "sac" or int(cfg.privileged_dim) <= 0:
@@ -205,7 +223,7 @@ class SACAgent:
         elif cfg.algo == "sac":
             make_critic = lambda: Critic(  # noqa: E731
                 spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.critic_action_mode,
-                cfg.trunk_style, cfg.trunk_blocks,
+                cfg.trunk_style, cfg.trunk_blocks, history_length=history,
             )
         elif cfg.algo == "flashsac":
             make_critic = lambda: CategoricalCritic(  # noqa: E731
@@ -255,6 +273,9 @@ class SACAgent:
 
     def set_teachers(self, teachers: dict[int, torch.nn.Module]) -> None:
         """Frozen teacher actors keyed by replay label, the arm-pose region, for Wang's distillation."""
+        if teachers and int(self.cfg.history_length) != 1:
+            raise ValueError("Teacher distillation onto a history-aware student is not implemented; "
+                             "each teacher would need a window of its own")
         self.teachers = {}
         for label, actor in teachers.items():
             actor = actor.to(self.device).eval()
@@ -299,15 +320,37 @@ class SACAgent:
             pos = pos + jitter * keep[..., None]
         return pos
 
-    def act(self, obs: np.ndarray, deterministic: bool) -> np.ndarray:
+    def make_history(self, num_streams: int) -> RolloutHistory:
+        """Rollout state for ``num_streams`` streams. State lives outside the network: training
+        collection, each evaluation world and each teacher own one, and reset it themselves."""
+        return RolloutHistory(num_streams, self.spec.dim, self.action_dim, self.cfg.history_length)
+
+    def _unpack_window(self, obs: torch.Tensor, valid: torch.Tensor, commands: torch.Tensor):
+        """``obs [B,L,D]``, ``valid [B,L]``, ``commands [B,L-1,A]`` -> the heads' ``(frames, valid, commands)``."""
+        return self._unpack(obs.reshape(-1, self.spec.dim)), valid, commands
+
+    def act(self, obs: np.ndarray, deterministic: bool, history: RolloutHistory | None = None) -> np.ndarray:
+        """Act on one observation per stream. A history-aware policy reads ``history`` and records the
+        decision into it; the caller resets the streams whose physics ended."""
+        obs = np.asarray(obs, dtype=np.float32).reshape(-1, self.spec.dim)
+        to = lambda value: torch.as_tensor(value, device=self.device)  # noqa: E731
         with torch.no_grad():
-            flat = torch.as_tensor(np.asarray(obs, dtype=np.float32), device=self.device).reshape(-1, self.spec.dim)
-            batch = self._unpack(flat)
+            if self.actor.history is None:
+                batch = self._unpack(to(obs))
+            elif history is None:
+                raise ValueError("A history-aware policy needs its rollout state; pass the RolloutHistory of these streams")
+            else:
+                frames, commands, valid = history.window(obs)
+                batch = self._unpack_window(to(frames), to(valid), to(commands))
             if deterministic:
                 mu, _, _, _ = self.actor(batch, compute_pi=False, compute_log_pi=False)
-                return mu.cpu().numpy()
-            _, pi, _, _ = self.actor(batch, compute_log_pi=False)
-            return pi.cpu().numpy()
+                action = mu.cpu().numpy()
+            else:
+                _, pi, _, _ = self.actor(batch, compute_log_pi=False)
+                action = pi.cpu().numpy()
+        if history is not None:
+            history.push(obs, action)
+        return action
 
     # ------------------------------------------------------------------
     def _update_critic(self, obs, action, reward, next_obs, not_done, state=None, next_state=None, index: int = 0) -> dict:
@@ -417,7 +460,7 @@ class SACAgent:
         with reuse_neighbourhoods():
             return self._update(replay)
 
-    def _update(self, replay) -> dict:
+    def _sample_single(self, replay):
         batch = replay.sample(self.cfg.batch_size)
         obs_flat, action, reward, next_obs_flat, not_done = batch[:5]
         rest = list(batch[5:])
@@ -436,6 +479,32 @@ class SACAgent:
         label = rest[0] if getattr(replay, "labelled", False) else None
         obs = self._unpack(obs_flat, augment=True)
         next_obs = self._unpack(next_obs_flat, augment=True)
+        return obs, action, reward, next_obs, not_done, state, next_state, label, index
+
+    def _sample_windows(self, replay):
+        """One learning step per window: its last transition, seen through ``history_length`` frames.
+
+        The successor window advances the history with the command actually recorded in replay
+        before the current policy proposes its next candidate, so the observed past is never
+        rewritten. Windows are padded at episode openings, where a deployed policy also starts empty.
+        """
+        if not getattr(replay, "sequence", False):
+            raise ValueError("A history-aware policy learns from sequence replay; record with --sequence-replay")
+        indexed = bool(getattr(replay, "indexed", False))
+        if self.log_alpha.dim() and not indexed:
+            raise ValueError("One temperature per replay buffer needs a replay set that reports which buffer each batch came from")
+        length = int(self.cfg.history_length)
+        batch = replay.sample_sequences(length, self.cfg.batch_size, pad=True)
+        index = int(batch.buffer_index) if indexed else 0
+        obs = self._unpack_window(batch.obs[:, :length], batch.valid, batch.actions[:, :-1])
+        next_valid = torch.cat([batch.valid[:, 1:], torch.ones_like(batch.valid[:, :1])], dim=1)
+        next_obs = self._unpack_window(batch.obs[:, 1:], next_valid, batch.actions[:, 1:])
+        label = batch.labels[:, -1] if getattr(replay, "labelled", False) else None
+        return obs, batch.actions[:, -1], batch.rewards[:, -1], next_obs, batch.not_dones[:, -1], None, None, label, index
+
+    def _update(self, replay) -> dict:
+        sample = self._sample_windows if int(self.cfg.history_length) > 1 else self._sample_single
+        obs, action, reward, next_obs, not_done, state, next_state, label, index = sample(replay)
         if self.cfg.algo == "flashsac":
             stats = self._update_critic_categorical(obs, action, reward, next_obs, not_done, index)
         else:
@@ -476,6 +545,10 @@ class SACAgent:
         if self.cfg.critic_input == "points" and self.cfg.critic_action_mode != "latent":
             # Absent, the key means the old latent critic, so checkpoints from before the fix still load.
             protocol.update(critic_action_mode=str(self.cfg.critic_action_mode))
+        if int(self.cfg.history_length) != 1:
+            # Absent, the key means the single-frame policy, so earlier checkpoints still load; a
+            # consumer that cannot carry rollout state must refuse the key before building a world.
+            protocol.update(history_length=int(self.cfg.history_length))
         return protocol
 
     def save(self, path: str | Path, step: int, metadata: dict | None = None) -> Path:

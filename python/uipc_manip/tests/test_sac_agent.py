@@ -410,3 +410,104 @@ def test_distillation_smoke_produces_a_loadable_student(tmp_path):
     payload = student.load(ckpt, load_optimizers=False)
     assert payload["metadata"]["stage"] == "fmvp_distillation"
     assert student.act(np.stack([env.reset()]), deterministic=True).shape == (1, 3)
+
+
+@pytest.mark.parametrize("actor_type", ["flat", "wang-flow"])
+def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type):
+    """H4 end to end on the toy problem: rollout state, padded windows, masked encoders."""
+    from uipc_manip.replay import FlatReplayBuffer
+
+    torch.manual_seed(0)
+    np.random.seed(0)
+    spec, length = ObsSpec(10), 4
+    cfg = _small_cfg(actor_type=actor_type)
+    cfg.history_length = length
+    agent = SACAgent(spec, 3, cfg, "cpu")
+    assert agent.actor.history is not None and agent.critic.history is not None
+    assert agent.protocol()["history_length"] == length
+
+    envs = [ToyEnv(spec, seed=s) for s in range(2)]
+    replay = FlatReplayBuffer(spec.dim, 3, 512, 16, "cpu", sequence=True)
+    history = agent.make_history(len(envs))
+    obs = np.stack([env.reset() for env in envs])
+    episode, step = [0, 1], [0, 0]
+    for vector_step in range(60):
+        actions = agent.act(obs, deterministic=False, history=history)
+        assert actions.shape == (2, 3) and np.all(np.isfinite(actions))
+        results = [env.step(a) for env, a in zip(envs, actions)]
+        next_obs = np.stack([r[0] for r in results])
+        done = (vector_step + 1) % 12 == 0
+        for i in range(2):
+            replay.add(obs[i], actions[i], results[i][1], next_obs[i], False, stream_id=i,
+                       episode_id=episode[i], episode_step=step[i], episode_end=done)
+            step[i] += 1
+        if done:
+            for i in range(2):
+                episode[i], step[i] = episode[i] + 2, 0
+            history.reset()
+            obs = np.stack([env.reset() for env in envs])
+        else:
+            obs = next_obs
+
+    stats = None
+    for _ in range(20):
+        stats = agent.update(replay)
+    assert np.isfinite(stats["critic_loss"]) and np.isfinite(stats["actor_loss"])
+
+    path = agent.save(tmp_path / "h.pt", step=3)
+    restored = SACAgent(spec, 3, cfg, "cpu")
+    restored.load(path)
+    fresh_a, fresh_b = agent.make_history(2), restored.make_history(2)
+    np.testing.assert_allclose(agent.act(obs, True, fresh_a), restored.act(obs, True, fresh_b), atol=1e-6)
+
+
+def test_a_history_agent_refuses_flat_replay_and_a_missing_rollout_state():
+    from uipc_manip.replay import FlatReplayBuffer
+
+    spec = ObsSpec(10)
+    cfg = _small_cfg()
+    cfg.history_length = 3
+    agent = SACAgent(spec, 3, cfg, "cpu")
+    with pytest.raises(ValueError):
+        agent.act(np.zeros((2, spec.dim), dtype=np.float32), deterministic=True)
+    flat = FlatReplayBuffer(spec.dim, 3, 32, 4, "cpu")
+    flat.add(np.zeros(spec.dim), np.zeros(3), 0.0, np.zeros(spec.dim), False)
+    with pytest.raises(ValueError):
+        agent.update(flat)
+
+
+@pytest.mark.parametrize("setting", [
+    {"algo": "flashsac"}, {"critic_input": "privileged", "privileged_dim": 4},
+    {"critic_action_mode": "latent"}, {"point_jitter_scale": 0.01}, {"history_length": 0},
+])
+def test_unsupported_history_settings_fail_at_construction(setting):
+    cfg = _small_cfg()
+    cfg.history_length = setting.pop("history_length", 4)
+    for key, value in setting.items():
+        setattr(cfg, key, value)
+    with pytest.raises(ValueError):
+        SACAgent(ObsSpec(10), 3, cfg, "cpu")
+
+
+def test_a_single_frame_agent_is_untouched_by_the_history_plumbing(tmp_path):
+    """The H1 parity gate: the default agent must still act and save exactly as before."""
+    from uipc_manip.replay import FlatReplayBuffer
+
+    spec = ObsSpec(10)
+    env = ToyEnv(spec)
+    torch.manual_seed(3)
+    agent = SACAgent(spec, 3, _small_cfg(), "cpu")
+    assert agent.actor.history is None and agent.critic.history is None
+    assert "history_length" not in agent.protocol()
+    replay = FlatReplayBuffer(spec.dim, 3, 256, 16, "cpu")
+    obs = env.reset()
+    for _ in range(64):
+        action = np.random.uniform(-1, 1, size=3)
+        next_obs, reward, _ = env.step(action)
+        replay.add(obs, action, reward, next_obs, False)
+        obs = next_obs
+    torch.manual_seed(11)
+    stats = agent.update(replay)
+    assert np.isfinite(stats["critic_loss"])
+    batch = np.stack([obs, obs])
+    np.testing.assert_allclose(agent.act(batch, True), agent.act(batch, True, agent.make_history(2)), atol=1e-6)

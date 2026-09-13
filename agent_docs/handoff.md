@@ -1837,3 +1837,23 @@ past and `dQ/da` flows as before. A history on the rejected `latent` critic is r
 holds no parameters, so the target critic has nothing new to track under Polyak. `SACConfig`, the
 sequence update and the trainers do not expose the head yet; the default runtime is unchanged and
 no GPU job ran.
+
+## 2026-09-13 — History-aware SAC update and rollout interface (stage 2, part 3)
+
+`SACConfig.history_length` (default 1) now reaches the agent. Above one, `SACAgent` draws padded
+windows from sequence replay and trains one learning step per window: its last transition, seen
+through H frames. The successor window advances the history with the command actually recorded in
+replay before the current policy proposes its next candidate, so a Bellman target never rewrites
+the observed past. Rollout state lives outside the network — `make_history(num_streams)` hands each
+collector, evaluation world and teacher its own `RolloutHistory`, and `act(obs, deterministic,
+history)` reads it and records the decision.
+
+Unsupported combinations fail at construction, before a world is allocated: flashsac, the
+privileged and latent critics, teacher distillation onto a history-aware student, and stochastic
+observation augmentation, which is not temporally consistent across a window. `protocol()` carries
+`history_length` only when it is not 1, so earlier checkpoints still load, and a consumer that
+cannot carry rollout state can refuse the key.
+
+289 CPU tests pass, including H4 end to end on both actor types over a toy vector rollout, and the
+H1 parity gate: the default agent acts, updates, saves and loads exactly as before. The trainers do
+not expose the flag yet and no GPU job ran.
