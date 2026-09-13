@@ -1891,3 +1891,18 @@ any RLT model. The fork `awdemos/recurrent-looped-transformer`, pushed today, ho
 Rust/candle language-model implementation of the paper; the proposal now records what it is, what
 it is good for (an executable specification of state, eviction and exact replay) and what a stage 4
 head in our `history_input` slot would consist of. No code from it was taken and no GPU job ran.
+
+## 2026-09-13 — Should the SAC structure change? The REAL lab's line, read at the source
+
+The owner asked whether Shuran Song's group's work means our SAC infrastructure should change. The
+[record](performance/2026-09-13-prior-and-residual-rl.md) reads DICE-RL (ICML 2026), Latent Policy
+Barrier, Compliant Residual DAgger, Gated Memory Policy and the force-adaptation paper at the source
+and puts the answer in one number: the reference solved this task with about five million
+transitions and we collect about fourteen thousand an hour, while the lab's line spends 100k–600k
+online steps refining a *usable prior*. We have no such prior — the scripted expert is deterministic,
+11/25, 0/25 filter passes — so the first change is a prior gate (bounded random residuals on the
+expert; needs a small `--residual-scale` flag) and, if it fails, a per-cell privileged parameter
+search producing a one-off dataset; only then residual RL at a matched budget against the running
+dense ablation. Two conflicts are recorded as decisions: the dense critic's 36 ms update against
+DICE-RL's UTD 10–20 on a frozen encoder, and open-loop action chunks against the 6 cm tether. No
+code changed, no GPU job ran; DF-ExpEnse could not be read.
