@@ -20,6 +20,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .obs import EXTRA_DIM, FEATURE_DIM, FLAG_TOOL, ObsSpec
+from .rlt import RLTConfig, RecurrentLoopedHistory, Run
 
 
 @dataclass
@@ -202,7 +203,8 @@ class PointNet2Encoder(nn.Module):
 def _weight_init(m: nn.Module) -> None:
     if isinstance(m, nn.Linear):
         nn.init.orthogonal_(m.weight.data)
-        m.bias.data.fill_(0.0)
+        if m.bias is not None:
+            m.bias.data.fill_(0.0)
 
 
 def gaussian_logprob(noise: torch.Tensor, log_std: torch.Tensor) -> torch.Tensor:
@@ -267,6 +269,8 @@ class Actor(nn.Module):
         trunk_style: str = "plain",
         trunk_blocks: int = 2,
         history_length: int = 1,
+        history_kind: str = "frames",
+        rlt: RLTConfig | None = None,
     ) -> None:
         super().__init__()
         self.spec = spec
@@ -275,7 +279,7 @@ class Actor(nn.Module):
         self.log_std_min = float(log_std_min)
         self.log_std_max = float(log_std_max)
         frame_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
-        self.history, in_dim = make_history(frame_dim, action_dim, history_length)
+        self.history, in_dim = make_history(frame_dim, action_dim, history_length, history_kind, rlt)
         self.trunk = trunk_layers(in_dim, hidden_dim, 2 * action_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
 
@@ -289,6 +293,12 @@ class Actor(nn.Module):
     def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
         """Pre-squash mean and bounded log standard deviation."""
         z = history_input(self.history, obs, lambda frames: self._frame_latent(frames, detach_encoder))
+        mu, log_std = self.trunk(z).chunk(2, dim=-1)
+        return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
+
+    def head_sequence(self, frames, valid: torch.Tensor, commands: torch.Tensor, detach_encoder: bool = False):
+        """The head at every frame of a window, ``[B,L,A]`` each, from the recurrent history's state there."""
+        z = history_sequence(self.history, frames, valid, commands, lambda f: self._frame_latent(f, detach_encoder))
         mu, log_std = self.trunk(z).chunk(2, dim=-1)
         return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
 
@@ -378,12 +388,29 @@ class FrameHistory(nn.Module):
         return torch.cat([frames, torch.where(keep[:, :-1], commands, torch.zeros_like(commands)).flatten(1)], dim=-1)
 
 
-def make_history(frame_dim: int, action_dim: int, length: int) -> tuple[FrameHistory | None, int]:
-    """``(history, trunk input width)``. ``length = 1`` keeps the single-frame network exactly."""
+def make_history(frame_dim: int, action_dim: int, length: int, kind: str = "frames", rlt: RLTConfig | None = None):
+    """``(history, trunk input width)``. ``length = 1`` keeps the single-frame network exactly.
+
+    ``frames`` is the ordered concatenation (:class:`FrameHistory`); ``rlt`` the recurrent looped
+    transformer (:class:`~uipc_manip.rlt.RecurrentLoopedHistory`), whose trunk reads its state.
+    """
     if int(length) == 1:
         return None, int(frame_dim)
-    memory = FrameHistory(frame_dim, action_dim, length)
+    if kind == "frames":
+        memory = FrameHistory(frame_dim, action_dim, length)
+    elif kind == "rlt":
+        memory = RecurrentLoopedHistory(frame_dim, action_dim, length, RLTConfig() if rlt is None else rlt)
+    else:
+        raise ValueError(f"Unknown history kind {kind!r}; expected 'frames' or 'rlt'")
     return memory, memory.out_dim
+
+
+def history_sequence(history, frames, valid: torch.Tensor, commands, frame_latent) -> torch.Tensor:
+    """Trunk input at every frame of a window, ``[B,L,out]``; only the recurrent history provides it."""
+    if not isinstance(history, RecurrentLoopedHistory):
+        raise ValueError("Learning at every position of a window needs the recurrent looped history (history_kind='rlt')")
+    latent = frame_latent(frames)
+    return history.sequence(latent.reshape(*valid.shape, -1), valid, commands)
 
 
 def history_input(history: FrameHistory | None, obs, frame_latent) -> torch.Tensor:
@@ -435,6 +462,7 @@ class Critic(nn.Module):
     def __init__(
         self, spec: ObsSpec, action_dim: int, hidden_dim: int, encoder_cfg: EncoderConfig, use_extra: bool = True,
         action_mode: str = "dense", trunk_style: str = "plain", trunk_blocks: int = 2, history_length: int = 1,
+        history_kind: str = "frames", rlt: RLTConfig | None = None,
     ) -> None:
         super().__init__()
         if action_mode not in ("dense", "latent"):
@@ -454,10 +482,36 @@ class Critic(nn.Module):
         frame_dim += EXTRA_DIM if self.use_extra else 0
         # Past commands enter each earlier frame the way the candidate enters the current one, so the
         # history layout carries no separate command block.
-        self.history, in_dim = make_history(frame_dim, 0, history_length)
+        self.history, in_dim = make_history(frame_dim, 0, history_length, history_kind, rlt)
         self.Q1 = QHead(in_dim, hidden_dim, trunk_style, trunk_blocks)
         self.Q2 = QHead(in_dim, hidden_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
+
+    def _recurrent(self) -> RecurrentLoopedHistory:
+        if not isinstance(self.history, RecurrentLoopedHistory):
+            raise ValueError("Learning at every position of a window needs the recurrent looped history (history_kind='rlt')")
+        return self.history
+
+    def run_sequence(self, frames, valid: torch.Tensor, commands: torch.Tensor, detach_encoder: bool = False) -> Run:
+        """The recorded pass over a window: frame ``t`` is encoded with its recorded command ``commands[:, t]``."""
+        latent = self._frame_latent(frames, commands.reshape(-1, self.action_dim), detach_encoder)
+        return self._recurrent().run(latent.reshape(*valid.shape, -1), valid)
+
+    def q_sequence(self, run: Run) -> tuple[torch.Tensor, torch.Tensor]:
+        """``Q(h_t, a_t)`` at every position of a recorded run, ``[B,L,1]`` each."""
+        z = self._recurrent().model.readout(run.s)
+        return self.Q1(z), self.Q2(z)
+
+    def q_branch(self, run: Run, frames, valid: torch.Tensor, candidates: torch.Tensor, detach_encoder: bool = False):
+        """``Q(h_t, a'_t)`` at every position for candidates ``[B,L,A]``.
+
+        The candidate is the per-point feature of frame ``t`` alone, so ``dQ/da'`` flows through that
+        frame's encoding exactly as in the single-frame critic, and the recorded prefix before ``t``
+        is read from ``run`` and never rewritten.
+        """
+        latent = self._frame_latent(frames, candidates.reshape(-1, self.action_dim), detach_encoder)
+        z = self._recurrent().branch(run, latent.reshape(*valid.shape, -1), valid)
+        return self.Q1(z), self.Q2(z)
 
     def encode(self, obs, action: torch.Tensor) -> torch.Tensor:
         """Encode the observation as this critic's Q heads see it.
@@ -665,6 +719,8 @@ class WangFlowActor(nn.Module):
         trunk_style: str = "plain",
         trunk_blocks: int = 2,
         history_length: int = 1,
+        history_kind: str = "frames",
+        rlt: RLTConfig | None = None,
     ) -> None:
         super().__init__()
         self.spec = spec
@@ -673,7 +729,7 @@ class WangFlowActor(nn.Module):
         self.log_std_min = float(log_std_min)
         self.log_std_max = float(log_std_max)
         frame_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
-        self.history, in_dim = make_history(frame_dim, action_dim, history_length)
+        self.history, in_dim = make_history(frame_dim, action_dim, history_length, history_kind, rlt)
         self.trunk = trunk_layers(in_dim, hidden_dim, 2 * action_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
 
@@ -689,6 +745,12 @@ class WangFlowActor(nn.Module):
     def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
         """Pre-squash mean and bounded log standard deviation read at the tool point."""
         z = history_input(self.history, obs, lambda frames: self._frame_latent(frames, detach_encoder))
+        mu, log_std = self.trunk(z).chunk(2, dim=-1)
+        return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
+
+    def head_sequence(self, frames, valid: torch.Tensor, commands: torch.Tensor, detach_encoder: bool = False):
+        """The head at every frame of a window, ``[B,L,A]`` each, from the recurrent history's state there."""
+        z = history_sequence(self.history, frames, valid, commands, lambda f: self._frame_latent(f, detach_encoder))
         mu, log_std = self.trunk(z).chunk(2, dim=-1)
         return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
 

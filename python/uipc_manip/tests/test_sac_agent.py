@@ -412,20 +412,28 @@ def test_distillation_smoke_produces_a_loadable_student(tmp_path):
     assert student.act(np.stack([env.reset()]), deterministic=True).shape == (1, 3)
 
 
+@pytest.mark.parametrize("kind", ["frames", "rlt"])
 @pytest.mark.parametrize("actor_type, encoder", [("flat", "pointnet2"), ("wang-flow", "pointnet2"), ("wang-flow", "transformer")])
-def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type, encoder):
+def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type, encoder, kind):
     """H4 end to end on the toy problem: rollout state, padded windows, and empty padded clouds
     through both encoders, where attention over no valid key must not leak NaN into the trunk."""
     from uipc_manip.replay import FlatReplayBuffer
+    from uipc_manip.rlt import RLTConfig
 
     torch.manual_seed(0)
     np.random.seed(0)
     spec, length = ObsSpec(10), 4
     cfg = _small_cfg(actor_type=actor_type, encoder=encoder)
     cfg.history_length = length
+    cfg.history_kind = kind
+    cfg.rlt = RLTConfig(dim=16, layers=1, heads=2, window=3)
     agent = SACAgent(spec, 3, cfg, "cpu")
     assert agent.actor.history is not None and agent.critic.history is not None
     assert agent.protocol()["history_length"] == length
+    assert ("history_kind" in agent.protocol()) == (kind == "rlt")
+    if kind == "rlt":
+        assert agent.protocol()["rlt"] == cfg.rlt.to_dict()
+        assert SACConfig.from_dict(cfg.to_dict()).rlt == cfg.rlt
 
     envs = [ToyEnv(spec, seed=s) for s in range(2)]
     replay = FlatReplayBuffer(spec.dim, 3, 512, 16, "cpu", sequence=True)
@@ -451,11 +459,16 @@ def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type, encod
             obs = next_obs
 
     stats = None
+    before = {k: v.clone() for k, v in agent.critic_target.history.state_dict().items()}
     for _ in range(20):
         stats = agent.update(replay)
         assert np.isfinite(stats["critic_loss"]) and np.isfinite(stats.get("actor_loss", 0.0))
     for parameter in agent.actor.parameters():
         assert torch.isfinite(parameter).all()
+    if kind == "rlt":
+        # Every recorded position of every window learned, and the target's temporal parameters track.
+        assert stats["learning_positions"] > cfg.batch_size
+        assert any(not torch.equal(before[k], v) for k, v in agent.critic_target.history.state_dict().items())
 
     path = agent.save(tmp_path / "h.pt", step=3)
     restored = SACAgent(spec, 3, cfg, "cpu")
@@ -482,6 +495,7 @@ def test_a_history_agent_refuses_flat_replay_and_a_missing_rollout_state():
 @pytest.mark.parametrize("setting", [
     {"algo": "flashsac"}, {"critic_input": "privileged", "privileged_dim": 4},
     {"critic_action_mode": "latent"}, {"point_jitter_scale": 0.01}, {"history_length": 0},
+    {"history_kind": "rlt", "history_length": 1}, {"history_kind": "gru"},
 ])
 def test_unsupported_history_settings_fail_at_construction(setting):
     cfg = _small_cfg()

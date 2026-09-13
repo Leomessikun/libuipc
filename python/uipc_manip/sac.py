@@ -23,8 +23,9 @@ import torch
 import torch.nn.functional as F
 
 from .history import RolloutHistory
-from .models import Actor, CategoricalCritic, Critic, EncoderConfig, PrivilegedCritic, WangFlowActor, reuse_neighbourhoods
+from .models import Actor, CategoricalCritic, Critic, EncoderConfig, PrivilegedCritic, WangFlowActor, _sample_head, reuse_neighbourhoods
 from .obs import FLAG_TOOL, ObsSpec
+from .rlt import RLTConfig
 
 WANG_HORIZON_STEPS = 150
 WANG_DISCOUNT = 0.99
@@ -133,17 +134,28 @@ class SACConfig:
     learning then draws padded windows from sequence replay, one learning step per window, and
     collection carries a raw-frame ``RolloutHistory`` per stream. Implemented for the scalar dense
     point critic without stochastic augmentation; other combinations are refused, not approximated."""
+    history_kind: str = "frames"
+    """How the frames of a window are read above one. ``frames`` concatenates them in order
+    (``models.FrameHistory``) and learns one step per window, its last transition. ``rlt`` runs the
+    recurrent looped transformer (``rlt.RecurrentLoopedHistory``) over them and learns at every
+    recorded position of the window: the recorded run rebuilds each state from the window's first
+    frame under the current parameters, a candidate action branches from the recorded state before it,
+    and the Bellman successor is the recorded run one position on. Collection is the same in both."""
+    rlt: RLTConfig = field(default_factory=RLTConfig)
+    """Width, depth, decoder window, memory groups, feedback scale and tying of the ``rlt`` history."""
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
 
     def to_dict(self) -> dict:
         data = asdict(self)
         data["encoder"] = self.encoder.to_dict()
+        data["rlt"] = self.rlt.to_dict()
         return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "SACConfig":
         data = dict(data)
         data["encoder"] = EncoderConfig.from_dict(data.get("encoder", {}))
+        data["rlt"] = RLTConfig.from_dict(data.get("rlt", {}))
         return cls(**data)
 
 
@@ -195,6 +207,10 @@ class SACAgent:
         history = int(cfg.history_length)
         if history < 1:
             raise ValueError("history_length must be at least 1")
+        if cfg.history_kind not in ("frames", "rlt"):
+            raise ValueError(f"Unknown history_kind {cfg.history_kind!r}; expected 'frames' or 'rlt'")
+        if history == 1 and cfg.history_kind != "frames":
+            raise ValueError("history_kind applies to a window; set history_length above 1 or leave the kind at 'frames'")
         if history > 1:
             if cfg.algo != "sac" or cfg.critic_input != "points" or cfg.critic_action_mode != "dense":
                 raise ValueError("A frame history is implemented for the scalar dense point critic only; the flashsac, "
@@ -211,6 +227,7 @@ class SACAgent:
         self.actor = actor_cls(
             spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.actor_log_std_min,
             cfg.actor_log_std_max, cfg.trunk_style, cfg.trunk_blocks, history_length=history,
+            history_kind=cfg.history_kind, rlt=cfg.rlt,
         ).to(self.device)
         if cfg.critic_input == "privileged":
             if cfg.algo != "sac" or int(cfg.privileged_dim) <= 0:
@@ -223,7 +240,7 @@ class SACAgent:
         elif cfg.algo == "sac":
             make_critic = lambda: Critic(  # noqa: E731
                 spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.critic_action_mode,
-                cfg.trunk_style, cfg.trunk_blocks, history_length=history,
+                cfg.trunk_style, cfg.trunk_blocks, history_length=history, history_kind=cfg.history_kind, rlt=cfg.rlt,
             )
         elif cfg.algo == "flashsac":
             make_critic = lambda: CategoricalCritic(  # noqa: E731
@@ -502,7 +519,95 @@ class SACAgent:
         label = batch.labels[:, -1] if getattr(replay, "labelled", False) else None
         return obs, batch.actions[:, -1], batch.rewards[:, -1], next_obs, batch.not_dones[:, -1], None, None, label, index
 
+    def _update_rlt(self, replay) -> dict:
+        """One update on windows whose every recorded position is a learning step.
+
+        The report's replay contract (5.3–5.4) inside a window: the recorded run rebuilds every state
+        from the window's first frame under the current parameters, the current policy's candidate at
+        position ``t`` branches from the recorded state of ``t-1`` and touches only frame ``t``'s
+        encoding, and the Bellman successor of ``t`` is the recorded run at ``t+1`` — advanced with the
+        command actually recorded, never with a fresh one. The window start is the declared truncation
+        of the recurrence; nothing inside the window is detached. Losses are averaged over the recorded
+        positions, so padded openings neither learn nor dilute.
+        """
+        if not getattr(replay, "sequence", False):
+            raise ValueError("A history-aware policy learns from sequence replay; record with --sequence-replay")
+        indexed = bool(getattr(replay, "indexed", False))
+        if self.log_alpha.dim() and not indexed:
+            raise ValueError("One temperature per replay buffer needs a replay set that reports which buffer each batch came from")
+        length = int(self.cfg.history_length)
+        batch = replay.sample_sequences(length, self.cfg.batch_size, pad=True)
+        index = int(batch.buffer_index) if indexed else 0
+        # The window's L transitions plus the saved successor: L+1 frames, the last always recorded.
+        frames = self._unpack(batch.obs.reshape(-1, self.spec.dim))
+        recorded = batch.valid.bool()
+        valid = torch.cat([recorded, torch.ones_like(recorded[:, :1])], dim=1)
+        # The successor's own command is not recorded; its zero is never read by a branch before it.
+        commands = torch.cat([batch.actions, torch.zeros_like(batch.actions[:, :1])], dim=1)
+        learn = recorded[..., None].to(batch.rewards.dtype)
+        weight = 1.0 / learn.sum().clamp_min(1.0)
+        alpha = self._alpha_at(index).detach()
+
+        mu, log_std = self.actor.head_sequence(frames, valid, batch.actions)
+        _, pi, log_pi, _ = _sample_head(mu, log_std, True, True)
+        with torch.no_grad():
+            target_run = self.critic_target.run_sequence(frames, valid, commands)
+            target_q1, target_q2 = self.critic_target.q_branch(target_run, frames, valid, pi)
+            target_v = torch.min(target_q1, target_q2)[:, 1:] - alpha * log_pi[:, 1:]
+            target_q = batch.rewards + batch.not_dones * self.cfg.discount * target_v
+            bound = float(self.cfg.reward_abs_bound) / max(1.0 - float(self.cfg.discount), 1e-6)
+            target_q = target_q.clamp(-bound, bound)
+        run = self.critic.run_sequence(frames, valid, commands)
+        current_q1, current_q2 = self.critic.q_sequence(run)
+        current_q1, current_q2 = current_q1[:, :length], current_q2[:, :length]
+        critic_loss = (((current_q1 - target_q) ** 2 + (current_q2 - target_q) ** 2) * learn).sum() * weight
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        grad_norm = self._clip(self.critic)
+        self.critic_optimizer.step()
+        stats = {
+            "critic_loss": float(critic_loss.item()), "q1_mean": float((current_q1 * learn).sum().item() * weight),
+            "critic_grad_norm": grad_norm, "batch_reward": float((batch.rewards * learn).sum().item() * weight),
+            "learning_positions": int(learn.sum().item()),
+        }
+        self.updates += 1
+        if self.updates % self.cfg.actor_update_freq == 0:
+            with frozen_parameters(self.critic):
+                # The recorded prefix under the critic just stepped; the candidate's path to Q runs
+                # through frame t's encoding, as in the single-frame dense critic, so it is not detached.
+                with torch.no_grad():
+                    run_now = self.critic.run_sequence(frames, valid, commands)
+                q1, q2 = self.critic.q_branch(run_now, frames, valid, pi)
+            actor_loss = ((alpha * log_pi - torch.min(q1, q2))[:, :length] * learn).sum() * weight
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            actor_grad_norm = self._clip(self.actor)
+            self.actor_optimizer.step()
+            entropy = -(log_pi[:, :length] * learn).sum() * weight
+            stats.update({"actor_loss": float(actor_loss.item()), "entropy": float(entropy.item()), "actor_grad_norm": actor_grad_norm})
+            if not self.cfg.alpha_fixed:
+                live_alpha = self._alpha_at(index)
+                alpha_loss = (live_alpha * ((-log_pi[:, :length] - self.target_entropy).detach() * learn)).sum() * weight
+                self.log_alpha_optimizer.zero_grad()
+                alpha_loss.backward()
+                self.log_alpha_optimizer.step()
+                if self.cfg.min_alpha > 0.0:
+                    with torch.no_grad():
+                        self.log_alpha.clamp_(min=float(np.log(self.cfg.min_alpha)))
+                stats["alpha_loss"] = float(alpha_loss.item())
+            stats["alpha"] = float(self._alpha_at(index).item())
+            if self.log_alpha.dim():
+                stats[f"alpha_{int(index)}"] = stats["alpha"]
+        if self.updates % self.cfg.critic_target_update_freq == 0:
+            soft_update(self.critic.Q1, self.critic_target.Q1, self.cfg.critic_tau)
+            soft_update(self.critic.Q2, self.critic_target.Q2, self.cfg.critic_tau)
+            soft_update(self.critic.encoder, self.critic_target.encoder, self.cfg.encoder_tau)
+            soft_update(self.critic.history, self.critic_target.history, self.cfg.encoder_tau)
+        return stats
+
     def _update(self, replay) -> dict:
+        if int(self.cfg.history_length) > 1 and self.cfg.history_kind == "rlt":
+            return self._update_rlt(replay)
         sample = self._sample_windows if int(self.cfg.history_length) > 1 else self._sample_single
         obs, action, reward, next_obs, not_done, state, next_state, label, index = sample(replay)
         if self.cfg.algo == "flashsac":
@@ -549,6 +654,9 @@ class SACAgent:
             # Absent, the key means the single-frame policy, so earlier checkpoints still load; a
             # consumer that cannot carry rollout state must refuse the key before building a world.
             protocol.update(history_length=int(self.cfg.history_length))
+            if self.cfg.history_kind != "frames":
+                # Absent, the key means the ordered frame concatenation, so H-frame checkpoints still load.
+                protocol.update(history_kind=str(self.cfg.history_kind), rlt=self.cfg.rlt.to_dict())
         return protocol
 
     def save(self, path: str | Path, step: int, metadata: dict | None = None) -> Path:

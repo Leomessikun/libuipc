@@ -14,6 +14,7 @@ from uipc_manip.sac import SACConfig
 from uipc_manip.train_sac import (
     CsvLogger,
     build_parser,
+    build_sac_config,
     evaluate,
     resolve_defaults,
     restore_env_config,
@@ -388,3 +389,18 @@ def test_a_history_policy_needs_sequence_replay_and_then_trains_through_its_stat
     # and the episode end after step 3 empties it again.
     assert seen[0][:, 0].tolist() == [True, True, True]
     assert seen[1][:, 0].tolist() == [False, False, False]
+
+
+def test_rlt_history_knobs_reach_the_agent_config_and_old_checkpoints_default_them():
+    from uipc_manip.sac import SACConfig
+
+    horizon = ["--horizon", "150"]
+    args = build_parser().parse_args([*horizon, "--history-length", "8", "--history-kind", "rlt", "--rlt-dim", "32", "--rlt-window", "4", "--rlt-tied"])
+    cfg = build_sac_config(args)
+    assert cfg.history_length == 8 and cfg.history_kind == "rlt"
+    assert (cfg.rlt.dim, cfg.rlt.window, cfg.rlt.tied, cfg.rlt.layers) == (32, 4, True, 2)
+    assert SACConfig.from_dict(cfg.to_dict()) == cfg
+    old = build_sac_config(build_parser().parse_args(horizon)).to_dict()
+    del old["rlt"], old["history_kind"]
+    restored = SACConfig.from_dict(old)
+    assert restored.history_kind == "frames" and restored.rlt == SACConfig().rlt

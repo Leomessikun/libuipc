@@ -42,6 +42,7 @@ from .dressing_env import DEFAULT_GARMENTS, DressingConfig, GenesisIPCDressingEn
 from .dressing_obs import RIG_MODES, DressingObsConfig
 from .genesis_env import EnvConfig, GenesisIPCManipEnv, ViewerClosed
 from .obs import ObsSpec, goal_rel, marker_centroid_rel
+from .rlt import RLTConfig
 from .sac import (
     SACConfig,
     gradient_update_budget,
@@ -95,6 +96,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--replay-capacity", type=int, default=200_000)
     p.add_argument("--sequence-replay", action="store_true", help="Record episode identities and boundaries for sequence sampling; SAC updates remain single-frame.")
     p.add_argument("--history-length", type=int, default=1, help="Frames the policy and critic condition on (the proposal's H); 1 is the single-frame network. Above 1 needs --sequence-replay.")
+    p.add_argument("--history-kind", choices=["frames", "rlt"], default="frames", help="How a window above 1 frame is read: 'frames' concatenates them and learns one step per window; 'rlt' runs the recurrent looped transformer over them and learns at every recorded position.")
+    p.add_argument("--rlt-dim", type=int, default=64, help="RLT state width d.")
+    p.add_argument("--rlt-layers", type=int, default=2, help="RLT encoder and decoder depth (equal, as in the tied configuration).")
+    p.add_argument("--rlt-heads", type=int, default=4, help="RLT attention heads.")
+    p.add_argument("--rlt-window", type=int, default=8, help="RLT decoder sliding window W over its own activations; 1 keeps no past.")
+    p.add_argument("--rlt-groups", type=int, default=1, help="RLT memory groups: 1 shared across decoder layers, or one per layer.")
+    p.add_argument("--rlt-alpha", type=float, default=0.5, help="RLT merge feedback scale (report eq. 2.11).")
+    p.add_argument("--rlt-tied", action="store_true", help="Share each RLT encoder layer's attention and FFN with the decoder layer of the same depth (report sec. 2.6).")
     p.add_argument("--discount", type=float, default=None, help="Override the horizon-equivalent Wang discount.")
     p.add_argument("--alpha-lr", type=float, default=None)
     p.add_argument("--actor-lr", type=float, default=1.0e-4)
@@ -266,6 +275,9 @@ def build_sac_config(args) -> SACConfig:
         trunk_style=args.trunk_style,
         trunk_blocks=args.trunk_blocks,
         history_length=int(args.history_length),
+        history_kind=str(args.history_kind),
+        rlt=RLTConfig(dim=int(args.rlt_dim), layers=int(args.rlt_layers), heads=int(args.rlt_heads), window=int(args.rlt_window),
+                      groups=int(args.rlt_groups), alpha=float(args.rlt_alpha), tied=bool(args.rlt_tied)),
         encoder_precision=args.encoder_precision,
         distill_weight=float(args.distill_weight) if args.teacher_checkpoints else 0.0,
     )
