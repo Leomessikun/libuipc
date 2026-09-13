@@ -155,6 +155,8 @@ privileged targets, controller feedback availability, filter labels and full pro
 successful prefixes, failed attempts and recoveries with distinct roles. The new target-recording
 flag helps create this corpus without adding privileged actor inputs. It does not add the missing
 offline optimization/checkpoint CLI or recover absent history from old flat snapshots.
+(Status, later the same day: the offline command exists, see
+[offline representation pretraining](2026-09-13-offline-pretraining.md); the corpus still does not.)
 
 Use offline probes to distinguish hypotheses: current privileged-state estimation tests whether
 history resolves hidden state; action-conditioned successor prediction tests whether it captures

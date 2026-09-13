@@ -138,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--device", type=str, default="cuda:0")
     p.add_argument("--resume", type=str, default=None, help="Checkpoint file to load (weights, temperature, optimizers).")
+    p.add_argument("--init-representation", type=str, default=None, help="Offline pretraining checkpoint (pretrain_offline) whose actor encoder and history initialise a fresh run; refused with --resume.")
     p.add_argument("--resume-replay", type=str, default=None, help="Replay snapshot directory saved with the checkpoint.")
     p.add_argument("--eval-only", action="store_true")
     p.add_argument("--save-trajectories", action="store_true", help="Store evaluation trajectories as .npz files.")
@@ -728,6 +729,8 @@ def main(argv: list[str] | None = None) -> None:
     saved_sac_cfg = None
     if args.resume_replay and not args.resume:
         raise ValueError("--resume-replay requires --resume")
+    if args.init_representation and args.resume:
+        raise ValueError("--init-representation starts a fresh run; it cannot be combined with --resume")
     if args.resume:
         from .sac import SACAgent
 
@@ -784,6 +787,10 @@ def main(argv: list[str] | None = None) -> None:
             elif sac_cfg.privileged_dim != env_dim:
                 raise ValueError(f"The checkpoint's critic reads a {sac_cfg.privileged_dim}-float state; this environment reports {env_dim}")
         agent = SACAgent(spec, env.action_dim, sac_cfg, args.device)
+        representation_init = None
+        if args.init_representation:
+            representation_init = agent.initialize_representation(args.init_representation)
+            print(f"[uipc-manip] representation initialised from {args.init_representation}: {representation_init['components']}", flush=True)
         if args.resume:
             payload = agent.load(args.resume, load_optimizers=not args.eval_only)
             saved_task = payload["metadata"].get("task")
@@ -860,6 +867,7 @@ def main(argv: list[str] | None = None) -> None:
         )},
         "curriculum_order": order,
         "teacher_regions": teacher_regions,
+        "representation_init": representation_init,
     }
     plan = getattr(args, "_cell_plan", None)
     if plan is not None:

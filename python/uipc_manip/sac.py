@@ -703,6 +703,44 @@ class SACAgent:
     def read_checkpoint(path: str | Path) -> dict:
         return torch.load(Path(path), map_location="cpu", weights_only=False)
 
+    def initialize_representation(self, path: str | Path) -> dict:
+        """Transfer an offline-trained actor representation into a fresh online run.
+
+        The policy output trunk, action-conditioned critic, temperature and optimizer states
+        remain those of this new agent. This is an initialization, never a training resume.
+        """
+        import hashlib
+
+        if self.updates or any(optimizer.state for optimizer in
+                               (self.actor_optimizer, self.critic_optimizer, self.log_alpha_optimizer)):
+            raise ValueError("Representation initialization requires a fresh agent")
+        payload = self.read_checkpoint(path)
+        if not isinstance(payload.get("metadata", {}).get("pretraining"), dict):
+            raise ValueError("Representation initialization needs an offline pretraining checkpoint")
+        # The learning mode is a property of the online update, not of the representation.
+        strip = lambda protocol: {k: v for k, v in dict(protocol or {}).items() if k != "rlt_learning_mode"}  # noqa: E731
+        if strip(payload.get("protocol")) != strip(self.protocol()):
+            raise ValueError("Pretrained representation protocol does not match the new agent")
+        # Every representation module the actor has: the spatial encoder, and the history when there is one.
+        modules = {name: module for name, module in ((n, getattr(self.actor, n, None)) for n in ("encoder", "history")) if module is not None}
+        states = {}
+        for name, module in modules.items():
+            prefix = name + "."
+            state = {key[len(prefix):]: value for key, value in payload["actor"].items() if key.startswith(prefix)}
+            expected = module.state_dict()
+            if state.keys() != expected.keys() or any(state[key].shape != value.shape for key, value in expected.items()):
+                raise ValueError(f"Pretrained actor {name} weights do not match the new agent")
+            if any(not torch.isfinite(value).all() for value in state.values()):
+                raise ValueError(f"Pretrained actor {name} contains nonfinite weights")
+            states[name] = state
+        for name, module in modules.items():
+            module.load_state_dict(states[name])
+        with Path(path).open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        return {"checkpoint": str(Path(path).resolve()), "sha256": digest,
+                "components": [f"actor.{name}" for name in modules],
+                "pretraining": payload["metadata"]["pretraining"]}
+
     def load(self, path: str | Path, *, load_optimizers: bool = True, strict_protocol: bool = True) -> dict:
         payload = self.read_checkpoint(path)
         if strict_protocol and payload["protocol"] != self.protocol():

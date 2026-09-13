@@ -490,3 +490,7 @@ objective and old checkpoints retain it. Required next work: versioned trajector
 target normalization/offline training, training-only valid guide prefixes and elbow roll-in,
 GRU/parallel-Transformer controls, then measured episode-memory/cache designs. A streaming RLTState
 is not an equivalent optimization of rolling H8; actor features cannot replace dense Q(o,a).
+
+Status, later on 2026-09-13: the offline trainer exists
+([record](performance/2026-09-13-offline-pretraining.md)); the corpus does not — the first run with
+`--sequence-replay --record-privileged` is the first usable data.

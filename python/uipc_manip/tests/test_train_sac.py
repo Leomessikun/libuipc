@@ -404,3 +404,56 @@ def test_rlt_history_knobs_reach_the_agent_config_and_old_checkpoints_default_th
     del old["rlt"], old["history_kind"]
     restored = SACConfig.from_dict(old)
     assert restored.history_kind == "frames" and restored.rlt == SACConfig().rlt
+
+
+def test_the_representation_flag_initialises_a_fresh_run_and_refuses_a_resume(monkeypatch, tmp_path):
+    from uipc_manip import sac, train_sac
+
+    saved: list = []
+
+    class Agent:
+        def __init__(self, spec, action_dim, cfg, device):
+            self.cfg, self.updates, self.initialized = cfg, 0, None
+
+        def initialize_representation(self, path):
+            self.initialized = str(path)
+            return {"checkpoint": str(path), "sha256": "stub", "components": ["actor.encoder"], "pretraining": {"steps": 1}}
+
+        def act(self, obs, deterministic, history=None):
+            return np.zeros((3, 1))
+
+        def update(self, replay):
+            self.updates += 1
+            return {}
+
+        def train(self, training):
+            pass
+
+        def save(self, path, step, metadata):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            saved.append(metadata)
+            return path
+
+    class Env:
+        num_envs, obs_dim, action_dim = 3, 1, 1
+        descriptions = [{"garment": "tshirt_26", "config": {}, "build_seconds": 0, "settle_displacement_m": 0}] * 3
+
+        def reset(self, seeds):
+            return np.zeros((3, 1))
+
+        def step(self, actions):
+            return np.zeros((3, 1)), np.ones(3), np.zeros(3, dtype=bool), [{"success": False}] * 3
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sac, "SACAgent", Agent)
+    monkeypatch.setattr(train_sac, "make_env", lambda args: Env())
+    monkeypatch.setattr(train_sac, "evaluate", lambda *a, **kw: {"success_rate": 0, "mean_final_distance": 1, "mean_return": 0})
+    argv = ["--num-envs", "3", "--total-transitions", "6", "--point-budget", "3", "--replay-capacity", "64", "--device", "cpu",
+            "--log-interval", "1", "--eval-freq", "0", "--checkpoint-interval", "0", "--init-steps", "2", "--work-dir", str(tmp_path),
+            "--init-representation", "rep.pt"]
+    train_sac.main(argv)
+    assert saved and saved[-1]["representation_init"]["checkpoint"] == "rep.pt"
+    with pytest.raises(ValueError, match="fresh run"):
+        train_sac.main(argv + ["--resume", str(tmp_path / "nothing.pt")])

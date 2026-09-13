@@ -246,10 +246,15 @@ def stub_run(monkeypatch):
     class Agent:
         def __init__(self, spec, action_dim, cfg, device):
             self.cfg, self.updates, self.alpha, self.batches, self.teachers = cfg, 0, torch.zeros(()), [], {}
+            self.initialized = None
             agents.append(self)
 
         def set_teachers(self, teachers):
             self.teachers = dict(teachers)
+
+        def initialize_representation(self, path):
+            self.initialized = str(path)
+            return {"checkpoint": str(path), "sha256": "stub", "components": ["actor.encoder"], "pretraining": {"steps": 1}}
 
         def make_history(self, num_streams):
             from uipc_manip.history import RolloutHistory
@@ -471,3 +476,16 @@ def test_history_policy_needs_sequence_replay_and_keeps_state_per_world(stub_run
     batch = replay.sample_sequences(2, 4, pad=True)
     assert batch.valid[:, -1].all() and set(batch.episode_steps[:, -1].tolist()) == {0, 1}
     pretrain_wang.main(["resume", str(tmp_path / "history"), "--transitions", "24"])
+
+
+def test_a_pretrained_representation_initialises_a_fresh_run_only(stub_run, tmp_path):
+    _, agents = stub_run
+    argv = RUN_ARGV + ["--transitions", "16", "--init-representation", "rep.pt", "--work-dir", str(tmp_path), "--run-name", "init"]
+    pretrain_wang.main(argv)
+    assert agents[-1].initialized == "rep.pt"
+    state = json.loads((tmp_path / "init" / "checkpoints" / "state.json").read_text())
+    saved = json.loads(Path(state["checkpoint"]).read_text())
+    assert saved["metadata"]["representation_init"]["checkpoint"] == "rep.pt"
+    pretrain_wang.main(["resume", str(tmp_path / "init"), "--transitions", "24"])
+    # The resumed run replays the saved command line but takes its weights from the checkpoint.
+    assert agents[-1].initialized is None

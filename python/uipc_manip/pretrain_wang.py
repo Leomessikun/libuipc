@@ -477,6 +477,11 @@ class WangRun:
             sac_cfg.privileged_dim = int(env.privileged_dim)
         self.spec = ObsSpec(targs.point_budget)
         self.agent = sac.SACAgent(self.spec, env.action_dim, sac_cfg, targs.device)
+        self.representation_init = None
+        if targs.init_representation and self.resume is None:
+            # A resumed run replays its saved command line; the representation it started from is in its checkpoint.
+            self.representation_init = self.agent.initialize_representation(targs.init_representation)
+            print(f"[wang] representation initialised from {targs.init_representation}: {self.representation_init['components']}", flush=True)
         self.labelled = plan["stage"] == "student"
         priv_dim = int(env.privileged_dim) if targs.record_privileged else (sac_cfg.privileged_dim if self.privileged else 0)
         if targs.record_privileged and priv_dim <= 0:
@@ -537,6 +542,7 @@ class WangRun:
             "env": self.env.descriptions[0]["config"] if self.env is not None else self.base_cfg.to_dict(),
             "sac_config": self.agent.cfg.to_dict(),
             "reward_scale": self.reward_scale,
+            "representation_init": getattr(self, "representation_init", None),
             "seed": int(self.args.seed),
             "num_envs": int(self.plan["num_envs"]),
             "cells": [[g, int(b)] for g, b in self.pool.configs()],

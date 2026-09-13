@@ -23,6 +23,7 @@ when iteration counts change. Report both and state which is the primary signal.
 | Record | Status | Scope |
 |---|---|---|
 | [RLT infrastructure review](2026-09-13-pretraining-infrastructure-review.md) | Audited and repaired; no policy gain measured | Context-consistent learning, causal pretraining, corrected cost evidence and research priorities |
+| [Offline representation pretraining](2026-09-13-offline-pretraining.md) | Implemented; toy corpus only | `pretrain_offline` trains the actor's encoder (and RLT history) on recorded episodes with an episode split and a constant-predictor baseline; `--init-representation` adopts it in a fresh run |
 | [Early-turn filter audit](2026-09-13-early-turn-filter-audit.md) | Measured; closes G14 | Every expert episode fails the reference filter under FMVP's own plane; the cause is the scripted `middle` stage's inner-side path, not the criterion |
 | [A prior and residual RL](2026-09-13-prior-and-residual-rl.md) | Proposed; no runtime change | Why SAC from scratch is starved, what the REAL lab's DICE-RL/LPB/GMP line presupposes, the prior gate and a residual-RL mapping onto this code |
 | [Recurrent pretraining proposal](2026-09-13-recurrent-pretraining-proposal.md) | Proposed; no runtime change | RLT source audit, episode replay, temporal policy/critic contracts and staged comparisons |

@@ -1955,3 +1955,20 @@ source papers and the recommendation to prioritize a reusable trajectory corpus 
 curriculum before larger memory. No offline trainer, usable prior or learned elbow gain is claimed.
 Final full CPU validation: 344 passed, 14 CUDA-marked tests deselected; one existing invalid-evaluation
 fixture warning. New launcher arguments pin endpoint mode, while old saved RLT commands retain prefix.
+
+## 2026-09-13 — Offline representation pretraining (review item 2, taken over)
+
+The review's author had left `SACAgent.initialize_representation` uncommitted at 19:39; this
+entry commits it with the sending half. `python -m uipc_manip.pretrain_offline` reads sequence
+replay snapshots (one buffer or a garment-split set), splits whole episodes into training and
+validation, fits target statistics on the training rows, and trains the actor's spatial encoder —
+and at `--history-kind rlt` its recurrent history, on its own learning rate — through the
+action-conditioned trajectory head; validation reports each target against the constant
+predictor's loss on the same windows, which is the number the "does history improve prediction"
+question reads. `--init-representation` on both trainers adopts the encoder (and history) into a
+fresh run, leaving trunk, critic, temperature and optimisers new; refused with `--resume`, skipped
+on a Wang resume, recorded in checkpoint metadata as `representation_init`. The protocol check
+ignores `rlt_learning_mode`, an online setting. Tested on a toy corpus only: no run has recorded
+sequences with `priv`, so no real corpus exists and no online run has started from a pretrained
+representation. The [record](performance/2026-09-13-offline-pretraining.md) has the diagnostic
+commands. No GPU job launched; the critic ablation chain moved on to `abl_residual_s1` on its own.
