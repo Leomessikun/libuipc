@@ -22,6 +22,7 @@ when iteration counts change. Report both and state which is the primary signal.
 
 | Record | Status | Scope |
 |---|---|---|
+| [Early-turn filter audit](2026-09-13-early-turn-filter-audit.md) | Measured; closes G14 | Every expert episode fails the reference filter under FMVP's own plane; the cause is the scripted `middle` stage's inner-side path, not the criterion |
 | [A prior and residual RL](2026-09-13-prior-and-residual-rl.md) | Proposed; no runtime change | Why SAC from scratch is starved, what the REAL lab's DICE-RL/LPB/GMP line presupposes, the prior gate and a residual-RL mapping onto this code |
 | [Recurrent pretraining proposal](2026-09-13-recurrent-pretraining-proposal.md) | Proposed; no runtime change | RLT source audit, episode replay, temporal policy/critic contracts and staged comparisons |
 | [Episode-aware replay and frame history](2026-09-13-sequence-replay.md) | Implemented, opt-in; unmeasured | Episode identities, padded window sampling, rollout state and the H-frame policy behind `--sequence-replay --history-length H` |

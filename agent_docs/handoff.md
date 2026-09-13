@@ -1906,3 +1906,15 @@ search producing a one-off dataset; only then residual RL at a matched budget ag
 dense ablation. Two conflicts are recorded as decisions: the dense critic's 36 ms update against
 DICE-RL's UTD 10–20 on a frozen encoder, and open-loop action chunks against the 6 cm tether. No
 code changed, no GPU job ran; DF-ExpEnse could not be read.
+
+## 2026-09-13 — G14 closed: the expert fails the reference filter in its own `middle` stage
+
+A CPU probe rebuilt the 25 held-out expert bodies from their ids (arm block matches to 2 mm),
+mapped the recorded tool positions to the world and re-scored the early-turn flag under our
+bend-plane criterion, FMVP's horizontal-plane intent and the Newton port's literal XZ. Every
+dressed episode is flagged under FMVP's own plane, so 0/25 filter passes is not a criterion
+artifact; the flag first fires in the scripted `middle` stage (or `approach`) on the arm's inner
+side, while `elbow_hook` and `last` alone pass 8/11 (ours) and 11/11 (FMVP). The
+[record](performance/2026-09-13-early-turn-filter-audit.md) names the cheapest fix: an outward
+offset of the `middle`-stage path, rerun on the same cells. Probe at
+`output/uipc_manip/early_turn_probe.py`; no GPU job ran.

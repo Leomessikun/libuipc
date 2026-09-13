@@ -150,6 +150,14 @@ distribution shift — but online RL grows the dataset the history is trained on
 half of that argument is weaker here; if H4 loses to dense, the gate-plus-noised-commands variant
 is the follow-up arm, not a reason to skip H4.
 
+## Update, later on 2026-09-13
+
+The [early-turn filter audit](2026-09-13-early-turn-filter-audit.md) located the expert's defect:
+under FMVP's own plane every dressed expert episode is flagged, in the `middle` stage's inner-side
+path along the forearm, while the elbow hook and final pull are clean. So the cheapest route to a
+filter-passing prior in step 1 is an outward offset of that one stage, rerun on the same 25 cells,
+before any parameter search.
+
 ## What this does not claim
 
 No measurement here shows a prior-plus-residual policy dresses the elbow. The claim is narrower:
