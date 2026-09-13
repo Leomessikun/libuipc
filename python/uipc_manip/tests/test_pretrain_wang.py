@@ -344,6 +344,30 @@ def test_episodes_that_all_end_on_a_simulator_error_still_evaluate_and_checkpoin
     assert state["counters"]["sim_errors"] == 3 and state["counters"]["episodes"] == 0
 
 
+def test_sequence_recording_survives_rotation_error_and_resume(stub_run, tmp_path):
+    TRIPS.append(1)
+    pretrain_wang.main(RUN_ARGV + ["--sequence-replay", "--transitions", "16", "--work-dir", str(tmp_path), "--run-name", "sequence"])
+    directory = tmp_path / "sequence"
+    replay_dir = directory / "checkpoints" / "replay_latest"
+    keys = json.loads((replay_dir / "replay_set.json").read_text())["keys"]
+    replay = ReplaySet(keys, 1, 1, 64, 2, "cpu", sequence=True)
+    replay.load(replay_dir)
+    first_next_id = replay.next_episode_id
+    batch = replay.sample_sequences(2, 16)
+    assert (batch.episode_steps[:, 0] == 0).all()
+    assert (batch.episode_steps[:, 1] == 1).all()
+    assert (batch.episode_ids[:, 0] == batch.episode_ids[:, 1]).all()
+    assert (batch.stream_ids[:, 0] == batch.stream_ids[:, 1]).all()
+    assert batch.episode_ends[:, -1].all() and (batch.not_dones == 1).all()
+    # The failed second step contributed no fabricated transition.
+    with pytest.raises(RuntimeError):
+        replay.sample_sequences(3)
+    pretrain_wang.main(["resume", str(directory), "--transitions", "24"])
+    replay.load(replay_dir)
+    assert replay.next_episode_id > first_next_id
+    assert replay.total_added == 24
+
+
 def test_student_deals_every_region_keeps_one_buffer_each_and_needs_every_teacher(stub_run, tmp_path, monkeypatch):
     from uipc_manip import train_sac
 

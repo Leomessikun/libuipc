@@ -50,6 +50,15 @@ def test_resume_recovers_timing_reward_camera_and_temperature():
     assert env_cfg.cache.cache_path.exists()
 
 
+def test_sequence_replay_setting_restores_from_checkpoint():
+    payload = _checkpoint()
+    payload["metadata"]["training_args"]["sequence_replay"] = True
+    args = build_parser().parse_args([])
+    assert not args.sequence_replay
+    restore_resume_args(args, [], payload)
+    assert args.sequence_replay
+
+
 def test_resume_rejects_silent_protocol_change_but_eval_allows_explicit_timing():
     argv = ["--horizon", "900"]
     with pytest.raises(ValueError, match="horizon"):

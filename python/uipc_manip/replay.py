@@ -3,10 +3,74 @@
 from __future__ import annotations
 
 import json
+import operator
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 import torch
+
+
+SEQUENCE_SCHEMA_VERSION = 1
+
+
+@dataclass(frozen=True)
+class SequenceBatch:
+    """Exact windows: observations/states have L+1 steps; other tensors have L.
+
+    Rewards and bootstrap masks retain their trailing singleton dimension.
+    Identity, end and label tensors have shape [batch, length]. The final
+    observation is the saved pre-reset successor of the final transition.
+    """
+
+    obs: torch.Tensor
+    actions: torch.Tensor
+    rewards: torch.Tensor
+    not_dones: torch.Tensor
+    episode_ends: torch.Tensor
+    stream_ids: torch.Tensor
+    episode_ids: torch.Tensor
+    episode_steps: torch.Tensor
+    priv: torch.Tensor | None = None
+    labels: torch.Tensor | None = None
+    buffer_index: int | None = None
+
+
+class _IndexPool:
+    """Uniformly sampled integer set with constant-time insertion/removal."""
+
+    def __init__(self, capacity: int, indices=()) -> None:
+        self.values = list(map(int, indices))
+        self.positions = np.full(capacity, -1, dtype=np.int64)
+        if self.values:
+            self.positions[self.values] = np.arange(len(self.values))
+
+    def add(self, index: int) -> None:
+        if self.positions[index] < 0:
+            self.positions[index] = len(self.values)
+            self.values.append(index)
+
+    def discard(self, index: int) -> None:
+        position = int(self.positions[index])
+        if position < 0:
+            return
+        last = self.values.pop()
+        if position < len(self.values):
+            self.values[position] = last
+            self.positions[last] = position
+        self.positions[index] = -1
+
+
+def _nonnegative_int(value, name: str) -> int:
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{name} must be a nonnegative integer")
+    try:
+        result = operator.index(value)
+    except TypeError as exc:
+        raise ValueError(f"{name} must be a nonnegative integer") from exc
+    if result < 0 or result > np.iinfo(np.int64).max:
+        raise ValueError(f"{name} must fit a nonnegative int64")
+    return result
 
 
 class FlatReplayBuffer:
@@ -20,13 +84,16 @@ class FlatReplayBuffer:
     """
 
     def __init__(
-        self, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False
+        self, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False, sequence: bool = False
     ) -> None:
         self.obs_dim = int(obs_dim)
         self.action_dim = int(action_dim)
         self.capacity = int(capacity)
         self.batch_size = int(batch_size)
         self.device = device
+        if self.capacity <= 0:
+            raise ValueError("Replay capacity must be positive")
+        self.sequence = bool(sequence)
         self._obs = np.empty((self.capacity, self.obs_dim), dtype=np.float32)
         self._next_obs = np.empty((self.capacity, self.obs_dim), dtype=np.float32)
         self._actions = np.empty((self.capacity, self.action_dim), dtype=np.float32)
@@ -40,11 +107,48 @@ class FlatReplayBuffer:
         self._idx = 0
         self._full = False
         self.total_added = 0
+        self._next_episode_id = 0
+        if self.sequence:
+            self._stream_ids = np.empty(self.capacity, dtype=np.int64)
+            self._episode_ids = np.empty(self.capacity, dtype=np.int64)
+            self._episode_steps = np.empty(self.capacity, dtype=np.int64)
+            self._episode_ends = np.empty(self.capacity, dtype=bool)
+            self._prev = np.full(self.capacity, -1, dtype=np.int64)
+            self._next = np.full(self.capacity, -1, dtype=np.int64)
+            self._tails: dict[tuple[int, int], int] = {}
+            self._stream_tails: dict[int, int] = {}
+            self._windows: dict[int, _IndexPool] = {}
 
     def add(
         self, obs: np.ndarray, action: np.ndarray, reward: float, next_obs: np.ndarray, done: bool, priv=None, next_priv=None,
-        label: int | None = None,
+        label: int | None = None, *, stream_id: int | None = None, episode_id: int | None = None,
+        episode_step: int | None = None, episode_end: bool | None = None,
     ) -> None:
+        identity = None
+        if self.sequence:
+            identity = tuple(_nonnegative_int(value, name) for value, name in (
+                (stream_id, "stream_id"), (episode_id, "episode_id"), (episode_step, "episode_step")))
+            if not isinstance(episode_end, (bool, np.bool_)):
+                raise ValueError("sequence replay requires boolean episode_end")
+            if done and not episode_end:
+                raise ValueError("A Bellman terminal transition must also end its episode")
+            previous = self._tails.get(identity[:2])
+            if previous is not None and identity[2] <= self._episode_steps[previous]:
+                raise ValueError("Episode steps must increase within a stream and episode")
+        elif any(value is not None for value in (stream_id, episode_id, episode_step, episode_end)):
+            raise ValueError("Episode metadata requires sequence=True")
+        # Validate all row shapes before mutating ring links or existing data.
+        obs = np.asarray(obs, dtype=np.float32).reshape(self.obs_dim)
+        next_obs = np.asarray(next_obs, dtype=np.float32).reshape(self.obs_dim)
+        action = np.asarray(action, dtype=np.float32).reshape(self.action_dim)
+        reward = float(reward)
+        if self.priv_dim:
+            if priv is None or next_priv is None:
+                raise ValueError("This buffer stores the privileged state; pass priv and next_priv")
+            priv = np.asarray(priv, dtype=np.float32).reshape(self.priv_dim)
+            next_priv = np.asarray(next_priv, dtype=np.float32).reshape(self.priv_dim)
+        if self.labelled and label is not None:
+            label = int(label)
         if self.labelled:
             if label is None:
                 raise ValueError("This buffer labels every transition; pass label")
@@ -59,6 +163,8 @@ class FlatReplayBuffer:
         np.copyto(self._actions[self._idx], np.asarray(action, dtype=np.float32).reshape(self.action_dim))
         self._rewards[self._idx, 0] = float(reward)
         self._not_dones[self._idx, 0] = 0.0 if done else 1.0
+        if identity is not None:
+            self._append_identity(identity, bool(episode_end))
         self._idx = (self._idx + 1) % self.capacity
         self._full = self._full or self._idx == 0
         self.total_added += 1
@@ -83,6 +189,116 @@ class FlatReplayBuffer:
             batch += (to(self._labels),)
         return batch
 
+    @property
+    def next_episode_id(self) -> int:
+        """Unused global ID, retaining the historical high-water mark across eviction."""
+        return self._next_episode_id
+
+    def _invalidate_followers(self, index: int, *, include_self: bool) -> None:
+        for length, pool in self._windows.items():
+            current = index if include_self else int(self._next[index])
+            for _ in range(length if include_self else length - 1):
+                if current < 0:
+                    break
+                pool.discard(current)
+                current = int(self._next[current])
+
+    def _append_identity(self, identity: tuple[int, int, int], episode_end: bool) -> None:
+        index = self._idx
+        if self._full:
+            self._invalidate_followers(index, include_self=True)
+            before, after = int(self._prev[index]), int(self._next[index])
+            if before >= 0:
+                self._next[before] = -1
+            if after >= 0:
+                self._prev[after] = -1
+            old_key = (int(self._stream_ids[index]), int(self._episode_ids[index]))
+            if self._tails.get(old_key) == index:
+                del self._tails[old_key]
+            if self._stream_tails.get(old_key[0]) == index:
+                del self._stream_tails[old_key[0]]
+        self._prev[index] = self._next[index] = -1
+        stream, episode, step = identity
+        previous = self._tails.get((stream, episode), -1)
+        if (previous >= 0 and self._stream_tails.get(stream) == previous
+                and not self._episode_ends[previous] and self._episode_steps[previous] + 1 == step):
+            self._prev[index] = previous
+            self._next[previous] = index
+        self._stream_ids[index], self._episode_ids[index], self._episode_steps[index] = identity
+        self._episode_ends[index] = episode_end
+        self._tails[(stream, episode)] = index
+        self._stream_tails[stream] = index
+        self._next_episode_id = max(self._next_episode_id, episode + 1)
+        for length, pool in self._windows.items():
+            current = index
+            for _ in range(length - 1):
+                current = int(self._prev[current])
+                if current < 0:
+                    break
+            if current >= 0:
+                pool.add(index)
+
+    def close_episode(self, stream_id: int, episode_id: int) -> None:
+        """Close the last retained row without changing its Bellman bootstrap mask."""
+        if not self.sequence:
+            raise ValueError("Closing episodes requires sequence=True")
+        key = (_nonnegative_int(stream_id, "stream_id"), _nonnegative_int(episode_id, "episode_id"))
+        index = self._tails.get(key)
+        if index is not None:
+            self._invalidate_followers(index, include_self=False)
+            after = int(self._next[index])
+            if after >= 0:
+                self._prev[after] = -1
+            self._next[index] = -1
+            self._episode_ends[index] = True
+
+    def _sequence_endpoints(self, length: int) -> _IndexPool:
+        if not self.sequence:
+            raise ValueError("Sequence sampling requires sequence=True")
+        length = _nonnegative_int(length, "length")
+        if length == 0:
+            raise ValueError("Sequence length must be positive")
+        if length > self.capacity:
+            raise RuntimeError("No complete sequence fits this replay capacity")
+        if length not in self._windows:
+            # One vectorized scan per requested length; subsequent appends/overwrites
+            # maintain its candidate set in O(length), not O(replay capacity).
+            ends = np.arange(self.size)
+            current = ends.copy()
+            valid = np.ones(self.size, dtype=bool)
+            for _ in range(length - 1):
+                current = self._prev[np.maximum(current, 0)]
+                valid &= current >= 0
+            self._windows[length] = _IndexPool(self.capacity, ends[valid])
+        return self._windows[length]
+
+    def sample_sequences(self, length: int, batch_size: int | None = None) -> SequenceBatch:
+        """Sample complete same-episode windows uniformly with replacement, without padding."""
+        pool = self._sequence_endpoints(length)
+        length = operator.index(length)
+        n = self.batch_size if batch_size is None else _nonnegative_int(batch_size, "batch_size")
+        if n <= 0:
+            raise ValueError("Sequence batch size must be positive")
+        if not pool.values:
+            raise RuntimeError("No complete sequence of the requested length is available")
+        choices = np.random.randint(len(pool.values), size=n)
+        indices = np.empty((n, length), dtype=np.int64)
+        indices[:, -1] = [pool.values[i] for i in choices]
+        for column in range(length - 2, -1, -1):
+            indices[:, column] = self._prev[indices[:, column + 1]]
+        to = lambda value: torch.as_tensor(value, device=self.device)  # noqa: E731
+        obs = np.concatenate([self._obs[indices], self._next_obs[indices[:, -1], None]], axis=1)
+        priv = None
+        if self.priv_dim:
+            priv = to(np.concatenate([self._priv[indices], self._next_priv[indices[:, -1], None]], axis=1))
+        return SequenceBatch(
+            obs=to(obs), actions=to(self._actions[indices]), rewards=to(self._rewards[indices]),
+            not_dones=to(self._not_dones[indices]), episode_ends=to(self._episode_ends[indices]),
+            stream_ids=to(self._stream_ids[indices]), episode_ids=to(self._episode_ids[indices]),
+            episode_steps=to(self._episode_steps[indices]), priv=priv,
+            labels=to(self._labels[indices]) if self.labelled else None,
+        )
+
     def save(self, directory: str | Path, metadata: dict | None = None) -> None:
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
@@ -99,6 +315,9 @@ class FlatReplayBuffer:
             arrays.update(priv=self._priv[order], next_priv=self._next_priv[order])
         if self.labelled:
             arrays.update(labels=self._labels[order])
+        if self.sequence:
+            arrays.update(stream_ids=self._stream_ids[order], episode_ids=self._episode_ids[order],
+                          episode_steps=self._episode_steps[order], episode_ends=self._episode_ends[order])
         np.savez_compressed(directory / "replay.npz", **arrays)
         payload = {
             "obs_dim": self.obs_dim,
@@ -111,6 +330,9 @@ class FlatReplayBuffer:
             "total_added": int(self.total_added),
             "metadata": metadata or {},
         }
+        if self.sequence:
+            payload.update(sequence=True, sequence_schema_version=SEQUENCE_SCHEMA_VERSION,
+                           next_episode_id=self.next_episode_id)
         (directory / "replay.json").write_text(json.dumps(payload, indent=2) + "\n")
 
     def load(self, directory: str | Path) -> dict:
@@ -126,22 +348,60 @@ class FlatReplayBuffer:
             )
         if bool(payload.get("labelled", False)) != self.labelled:
             raise ValueError("Replay snapshot and buffer disagree on region labels; a distillation run and a plain one do not resume each other")
-        data = np.load(directory / "replay.npz")
-        n = min(int(payload["size"]), self.capacity)
-        self._obs[:n] = data["obs"][-n:]
-        self._next_obs[:n] = data["next_obs"][-n:]
-        self._actions[:n] = data["actions"][-n:]
-        self._rewards[:n] = data["rewards"][-n:]
-        self._not_dones[:n] = data["not_dones"][-n:]
-        if self.priv_dim:
-            self._priv[:n] = data["priv"][-n:]
-            self._next_priv[:n] = data["next_priv"][-n:]
-        if self.labelled:
-            self._labels[:n] = data["labels"][-n:]
-        self._idx = n % self.capacity
-        self._full = n == self.capacity
-        self.total_added = int(payload.get("total_added", n))
-        return payload.get("metadata", {})
+        if bool(payload.get("sequence", False)) != self.sequence:
+            raise ValueError("Replay snapshot and buffer disagree on sequence metadata")
+        if self.sequence and payload.get("sequence_schema_version") != SEQUENCE_SCHEMA_VERSION:
+            raise ValueError("Unsupported sequence replay schema version")
+        with np.load(directory / "replay.npz") as data:
+            saved_size = int(payload["size"])
+            n = min(saved_size, self.capacity)
+            retained = slice(saved_size - n, saved_size)
+            self._obs[:n] = data["obs"][retained]
+            self._next_obs[:n] = data["next_obs"][retained]
+            self._actions[:n] = data["actions"][retained]
+            self._rewards[:n] = data["rewards"][retained]
+            self._not_dones[:n] = data["not_dones"][retained]
+            if self.priv_dim:
+                self._priv[:n] = data["priv"][retained]
+                self._next_priv[:n] = data["next_priv"][retained]
+            if self.labelled:
+                self._labels[:n] = data["labels"][retained]
+            if self.sequence:
+                names = ("stream_ids", "episode_ids", "episode_steps", "episode_ends")
+                for name in names:
+                    if name not in data:
+                        raise ValueError(f"Sequence replay snapshot is missing {name}")
+                saved_identity = {name: data[name] for name in names}
+                if any(value.shape != (saved_size,) for value in saved_identity.values()):
+                    raise ValueError("Sequence replay metadata has invalid dimensions")
+                for name in names[:3]:
+                    values = saved_identity[name]
+                    if not np.issubdtype(values.dtype, np.integer) or np.any(values < 0) or np.any(values > np.iinfo(np.int64).max):
+                        raise ValueError(f"Invalid nonnegative integer metadata in {name}")
+                if saved_identity["episode_ends"].dtype != np.bool_:
+                    raise ValueError("Invalid boolean episode end metadata")
+                self._prev.fill(-1)
+                self._next.fill(-1)
+                self._tails.clear()
+                self._stream_tails.clear()
+                self._windows.clear()
+                self._full = False
+                self._next_episode_id = max(int(payload.get("next_episode_id", 0)),
+                                            int(saved_identity["episode_ids"].max(initial=-1)) + 1)
+                for index in range(n):
+                    self._idx = index
+                    identity = tuple(_nonnegative_int(saved_identity[name][retained][index], name) for name in names[:3])
+                    end = saved_identity["episode_ends"][retained][index]
+                    if not isinstance(end, (bool, np.bool_)) or (self._not_dones[index, 0] == 0 and not end):
+                        raise ValueError("Invalid episode end metadata in sequence snapshot")
+                    previous = self._tails.get(identity[:2])
+                    if previous is not None and identity[2] <= self._episode_steps[previous]:
+                        raise ValueError("Non-increasing episode steps in sequence snapshot")
+                    self._append_identity(identity, bool(end))
+            self._idx = n % self.capacity
+            self._full = n == self.capacity
+            self.total_added = int(payload.get("total_added", n))
+            return payload.get("metadata", {})
 
 
 class ReplaySet:
@@ -161,7 +421,7 @@ class ReplaySet:
     indexed = True
 
     def __init__(
-        self, keys, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False
+        self, keys, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False, sequence: bool = False
     ) -> None:
         self.keys = list(keys)
         if not self.keys or len(set(self.keys)) != len(self.keys):
@@ -169,14 +429,35 @@ class ReplaySet:
         self._index = {key: i for i, key in enumerate(self.keys)}
         self.obs_dim, self.action_dim, self.batch_size = int(obs_dim), int(action_dim), int(batch_size)
         self.priv_dim, self.labelled = int(priv_dim), bool(labelled)
+        self.sequence = bool(sequence)
         per_buffer = int(capacity) // len(self.keys)
         self.buffers = [
-            FlatReplayBuffer(obs_dim, action_dim, per_buffer, batch_size, device, priv_dim=priv_dim, labelled=labelled) for _ in self.keys
+            FlatReplayBuffer(obs_dim, action_dim, per_buffer, batch_size, device, priv_dim=priv_dim, labelled=labelled, sequence=sequence) for _ in self.keys
         ]
         self.capacity = per_buffer * len(self.keys)
 
-    def add(self, key, obs, action, reward, next_obs, done, priv=None, next_priv=None, label: int | None = None) -> None:
-        self.buffers[self._index[key]].add(obs, action, reward, next_obs, done, priv=priv, next_priv=next_priv, label=label)
+    def add(self, key, obs, action, reward, next_obs, done, priv=None, next_priv=None, label: int | None = None,
+            *, stream_id: int | None = None, episode_id: int | None = None,
+            episode_step: int | None = None, episode_end: bool | None = None) -> None:
+        self.buffers[self._index[key]].add(obs, action, reward, next_obs, done, priv=priv, next_priv=next_priv, label=label,
+                                          stream_id=stream_id, episode_id=episode_id, episode_step=episode_step,
+                                          episode_end=episode_end)
+
+    @property
+    def next_episode_id(self) -> int:
+        return max(buffer.next_episode_id for buffer in self.buffers)
+
+    def close_episode(self, stream_id: int, episode_id: int) -> None:
+        for buffer in self.buffers:
+            buffer.close_episode(stream_id, episode_id)
+
+    def sample_sequences(self, length: int, batch_size: int | None = None) -> SequenceBatch:
+        """Draw one complete batch from one uniformly chosen sequence-ready buffer."""
+        ready = [i for i, buffer in enumerate(self.buffers) if buffer._sequence_endpoints(length).values]
+        if not ready:
+            raise RuntimeError("No replay buffer contains a complete sequence of the requested length")
+        index = int(ready[np.random.randint(len(ready))])
+        return replace(self.buffers[index].sample_sequences(length, batch_size), buffer_index=index)
 
     @property
     def size(self) -> int:

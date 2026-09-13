@@ -93,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--updates-per-step", type=int, default=0, help="Gradient updates per vector step; 0 = one per collected transition.")
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--replay-capacity", type=int, default=200_000)
+    p.add_argument("--sequence-replay", action="store_true", help="Record episode identities and boundaries for sequence sampling; SAC updates remain single-frame.")
     p.add_argument("--discount", type=float, default=None, help="Override the horizon-equivalent Wang discount.")
     p.add_argument("--alpha-lr", type=float, default=None)
     p.add_argument("--actor-lr", type=float, default=1.0e-4)
@@ -778,11 +779,12 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     from .replay import FlatReplayBuffer
+    from .replay_streams import ReplayStreams
 
     privileged = agent.cfg.critic_input == "privileged"
     replay = FlatReplayBuffer(
         env.obs_dim, env.action_dim, args.replay_capacity, args.batch_size, args.device, priv_dim=agent.cfg.privileged_dim if privileged else 0,
-        labelled=bool(args.teacher_checkpoints),
+        labelled=bool(args.teacher_checkpoints), sequence=args.sequence_replay,
     )
     reward_scale = float(payload.get("metadata", {}).get("reward_scale", wang_equivalent_reward_scale(agent.cfg.discount))) if payload is not None else wang_equivalent_reward_scale(agent.cfg.discount)
     start_step = 0
@@ -817,7 +819,7 @@ def main(argv: list[str] | None = None) -> None:
         "seed": args.seed,
         "num_envs": env.num_envs,
         "training_args": {key: getattr(args, key) for key in (
-            "garment_curriculum_interval", "garment_curriculum_order", "updates_per_step", "replay_capacity", "init_steps",
+            "garment_curriculum_interval", "garment_curriculum_order", "updates_per_step", "replay_capacity", "init_steps", "sequence_replay",
             "cell_source", "body_seeds", "heldout_bodies", "heldout_body_seeds", "allow_partial_cell_coverage", "teacher_checkpoints",
         )},
         "curriculum_order": order,
@@ -844,6 +846,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"[uipc-manip] garment curriculum every {curriculum_interval} vector steps, order={order}", flush=True)
 
     obs = env.reset(seeds)
+    streams = ReplayStreams(replay, env.num_envs)
     priv = env.privileged() if privileged else None
     episode_return = np.zeros(env.num_envs)
     updates_started = agent.updates > 0
@@ -869,6 +872,7 @@ def main(argv: list[str] | None = None) -> None:
         phase_s["env_s"] += time.time() - t_phase
         next_priv = env.privileged() if privileged else None
         if any(info.get("sim_error") for info in infos):
+            streams.close()
             env.close()
             raise RuntimeError("Simulator failed during training; invalid transitions were excluded. "
                                + str(next(info.get("error", "") for info in infos if info.get("sim_error"))))
@@ -896,6 +900,7 @@ def main(argv: list[str] | None = None) -> None:
                 state_pair = {"priv": priv[i], "next_priv": next_priv[i] if terminal_priv is None else terminal_priv}
             if replay.labelled:
                 state_pair["label"] = slot_region[i]
+            state_pair.update(streams.fields(i, dones[i]))
             replay.add(obs[i], actions[i], float(rewards[i]) * reward_scale, next_obs[i] if terminal_obs is None else terminal_obs, False, **state_pair)
             added += 1
             episode_return[i] += float(rewards[i])
@@ -903,6 +908,7 @@ def main(argv: list[str] | None = None) -> None:
                 recent_returns.append(float(episode_return[i]))
                 recent_success.append(float(info.get("success", False)))
                 episode_return[i] = 0.0
+        streams.advance(dones)
         obs = next_obs
         priv = next_priv
         budget, updates_started = gradient_update_budget(
@@ -943,6 +949,8 @@ def main(argv: list[str] | None = None) -> None:
         do_ckpt = args.checkpoint_interval > 0 and vector_step % args.checkpoint_interval == 0
         finished_budget = replay.total_added >= target_transitions
         if do_eval or do_ckpt or finished_budget:
+            if do_eval or finished_budget:
+                streams.close()
             ckpt_dir = run_dir / "checkpoints"
             path = agent.save(ckpt_dir / f"checkpoint_{vector_step:07d}.pt", vector_step, metadata)
             replay.save(ckpt_dir / f"replay_{vector_step:07d}", metadata={"step": vector_step, "reward_scale": reward_scale})
@@ -958,6 +966,7 @@ def main(argv: list[str] | None = None) -> None:
                     best_score = score
                     agent.save(ckpt_dir / "best.pt", vector_step, {**metadata, "eval": summary})
                 obs = env.reset(seeds)
+                streams.reset(env.num_envs)
                 priv = env.privileged() if privileged else None
                 episode_return[:] = 0.0
             print(f"[uipc-manip] saved {path}", flush=True)

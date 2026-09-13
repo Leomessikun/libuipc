@@ -1790,3 +1790,18 @@ replay, external rollout states, causal sequence distillation, and a history-awa
 Compare the corrected feedforward baseline, H4/H8, GRU, then a small RLT-inspired alternative.
 Per-decision force labels remain excluded after the failed gate. No runtime changes or GPU jobs;
 validation is document/link/JSON consistency, not a new training result.
+
+## 2026-09-13 — Episode-aware replay (recurrent pretraining, stage 1)
+
+Implemented the proposal's data contract without touching the actor, critic or SAC loss.
+`FlatReplayBuffer`/`ReplaySet` accept `sequence=True`; `ReplayStreams` allocates episode
+identities per vector slot and closes them on reset, world rotation, evaluation and simulator
+error. `sample_sequences(length)` returns exact same-episode windows with the true pre-reset
+successor. Snapshots carry schema version 1 and rebuild links on load, including into a smaller
+capacity; flat and sequence snapshots stay deliberately incompatible. Both trainers expose
+`--sequence-replay`, default disabled.
+
+The [record](performance/2026-09-13-sequence-replay.md) states the collection boundaries,
+window semantics and persistence rules. Validation is 64 CPU tests including a stub simulation
+through failure, rotation and resume; no GPU job ran and no learning improvement is claimed.
+Upstream RLT was re-checked on 2026-09-13: still `1bee93a9`, still no implementation.

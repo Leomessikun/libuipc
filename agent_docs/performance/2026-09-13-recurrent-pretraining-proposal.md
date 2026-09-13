@@ -1,5 +1,9 @@
 # Recurrent dressing pretraining infrastructure
 
+> Implementation update: [episode-aware replay](2026-09-13-sequence-replay.md) now records and
+> samples exact trajectory windows through an opt-in flag in both trainers. Policy memory and
+> sequence-learning objectives below remain proposed; no training improvement is established.
+
 Proposal, not an implemented architecture or a measured training improvement. Local baseline:
 `01bf913e09fc1b8017ef5bd47bd182d02835d7c2`. Work branch: `pretrain/recurrent-force-memory`.
 
@@ -151,7 +155,8 @@ Minimal implementation locations:
   before allocating a simulation world. Unsupported FlashSAC/recurrent-teacher combinations
   should fail explicitly until their sequence algorithms are implemented.
 
-This is a change specification. No new CLI flag or sequence feature is claimed to exist yet.
+This is the full change specification. Only sequence recording/sampling and collector episode
+tracking have been implemented so far; the actor/critic and loss changes remain future stages.
 
 ## Experiments that can answer the elbow question
 

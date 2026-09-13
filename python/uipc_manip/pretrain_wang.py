@@ -459,6 +459,7 @@ class WangRun:
     def make_agent(self, env):
         from . import sac
         from .replay import FlatReplayBuffer, ReplaySet
+        from .replay_streams import ReplayStreams
         from .sac import wang_equivalent_reward_scale
 
         targs, plan = self.targs, self.plan
@@ -476,10 +477,10 @@ class WangRun:
         priv_dim = sac_cfg.privileged_dim if self.privileged else 0
         if plan["replay_split"] == "none":
             self.replay = FlatReplayBuffer(env.obs_dim, env.action_dim, targs.replay_capacity, targs.batch_size, targs.device,
-                                           priv_dim=priv_dim, labelled=self.labelled)
+                                           priv_dim=priv_dim, labelled=self.labelled, sequence=targs.sequence_replay)
         else:
             self.replay = ReplaySet(plan["buffer_keys"], env.obs_dim, env.action_dim, targs.replay_capacity, targs.batch_size,
-                                    targs.device, priv_dim=priv_dim, labelled=self.labelled)
+                                    targs.device, priv_dim=priv_dim, labelled=self.labelled, sequence=targs.sequence_replay)
         self.reward_scale = wang_equivalent_reward_scale(sac_cfg.discount)
         self.teacher_regions = sorted(self.teachers)
         if self.teachers:
@@ -490,6 +491,7 @@ class WangRun:
             meta = self.replay.load(self.resume["replay"])
             if int(meta.get("transitions", -1)) != int(self.resume["transitions"]):
                 raise ValueError("The replay snapshot does not come from the checkpoint it is resumed with")
+        self.streams = ReplayStreams(self.replay, env.num_envs)
 
     def policy(self, obs, deterministic):
         return self.agent.act(obs, deterministic)
@@ -659,6 +661,7 @@ class WangRun:
             next_obs, rewards, dones, infos = env.step(actions)
             self.timing["env_s"] += time.time() - t
             if any(info.get("sim_error") for info in infos):
+                self.streams.close()
                 # The reference ends the episode on a simulator error and draws the next one; so does a rotation.
                 # The schedule still runs: the decision watchdog can cut every episode of a run short.
                 self.counters["sim_errors"] += 1
@@ -670,6 +673,7 @@ class WangRun:
                     break
                 self.on_schedule(transitions)
                 obs = self.rotate(transitions)
+                self.streams.reset(self.env.num_envs)
                 priv = self.env.privileged() if self.privileged else None
                 continue
             next_priv = env.privileged() if self.privileged else None
@@ -680,12 +684,14 @@ class WangRun:
                 if self.privileged:
                     terminal_priv = info.get("terminal_privileged", None)
                     kw = {"priv": priv[i], "next_priv": next_priv[i] if terminal_priv is None else terminal_priv}
+                kw.update(self.streams.fields(i, dones[i]))
                 self.add(i, obs[i], actions[i], float(rewards[i]) * self.reward_scale, next_obs[i] if terminal_obs is None else terminal_obs, **kw)
                 episode_return[i] += float(rewards[i])
                 if dones[i]:
                     recent_returns.append(float(episode_return[i]))
                     recent_success.append(float(info.get("success", False)))
                     episode_return[i] = 0.0
+            self.streams.advance(dones)
             obs, priv = next_obs, next_priv
             sizes = self.replay.sizes() if plan["replay_split"] != "none" else [self.replay.size]
             budget, self.updates_started = gradient_update_budget(
@@ -726,8 +732,10 @@ class WangRun:
             self.on_schedule(transitions)
             if self.counters["episodes"] % max(1, int(plan["rotate_every_episodes"])) == 0:
                 obs = self.rotate(transitions)
+                self.streams.reset(self.env.num_envs)
                 priv = self.env.privileged() if self.privileged else None
                 episode_return = np.zeros(len(self.slot_cells))
+        self.streams.close()
         self.evaluate()
         self.checkpoint()
         self.close()
