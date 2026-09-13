@@ -1882,3 +1882,12 @@ cloud and an encoder may return NaN for it; the H4 agent test now also runs the 
 encoder and checks every actor parameter stays finite. `--history-length` without
 `--sequence-replay` is refused right after argument parsing in both trainers, before Genesis or
 any world is built; the stub tests assert no world was constructed. 293 CPU tests pass.
+
+## 2026-09-13 — RLT fork audit
+
+The owner asked whether RLT itself was used: it was not. This branch implements the proposal's
+stages 1–2, episode replay and a finite ordered frame history, which the proposal places before
+any RLT model. The fork `awdemos/recurrent-looped-transformer`, pushed today, holds a demo-scale
+Rust/candle language-model implementation of the paper; the proposal now records what it is, what
+it is good for (an executable specification of state, eviction and exact replay) and what a stage 4
+head in our `history_input` slot would consist of. No code from it was taken and no GPU job ran.

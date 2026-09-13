@@ -33,6 +33,27 @@ include all caches. Decoder replay remains sequential, and global memory grows w
 Its 48+48-layer configuration and RL discussion do not establish a robotics speed or success gain.
 These are source claims from sections 2–5, not our experimental findings.[^1]
 
+Fork audit, 2026-09-13: [`awdemos/recurrent-looped-transformer`][2] (fork of the above, pushed
+12:40 UTC) adds a Rust/candle implementation, `rust/rlt-core`, generated from an agent plan under
+`docs/superpowers/`. It is a byte-level *language model* at demo scale (d 256, 4+4 layers, W 64,
+CPU by default, CUDA "experimental, not validated"): causal encoder with per-group KV memory,
+gated merge of `e_t` with `s_{t-1}`, decoder blocks of sliding-window self-attention →
+memory cross-attention → FFN, full-BPTT `forward_loss`, and `replay()` that rebuilds a whole
+prompt+response under current parameters and returns token importance ratios. Its value to us is
+as an executable specification of the state layout `H_t = (s_t, C_t^D)` plus encoder cache and
+memory, the W−1 eviction convention and the exact-replay contract; none of its code links into a
+point-cloud SAC pipeline, its readout is a vocabulary softmax, and its importance ratios are the
+language-model quantity this proposal already declines to transplant into SAC. Nothing in the fork
+is a training result. Not used on this branch.
+
+In our terms, an RLT-inspired stage 4 head would replace `models.FrameHistory` in the same
+`history_input` slot: `e_t` is the frame's spatial encoding rather than a token embedding, the
+window is the whole retained episode rather than H frames (the sampler's padded windows already
+allow any length), the readout is the squashed-Gaussian head on `s_t` for the actor and the dense
+`Q(frame_t ⊕ a_t, s_{t-1})` for the critic, and the loss is the masked multi-step SAC update that
+stage 3 has to write anyway. Rollout state would either carry `(s, KV window, memory)` per stream
+or keep the current rebuild-from-raw-prefix, whose cost grows with episode length.
+
 Our proposed translation is one spatially encoded observation per control decision. A useful
 history could distinguish a sleeve approaching the elbow from a similar-looking sleeve that has
 failed to advance after repeated pulls. This is a partial-observability hypothesis, not evidence
@@ -191,6 +212,7 @@ the available controller budget rather than relying on the paper's unmeasured ef
 [^1]: Yifan Zhang, *Recurrent Looped Transformer*, September 12, 2026, [English report][1], sections 2–5. Inspected pinned revision above. The robotics contracts and staged experiments in this document are our engineering proposals.
 
 [1]: https://github.com/yifanzhang-pro/recurrent-looped-tranformer/blob/1bee93a9b01c21bea0c7a50ce3f6619f24731e19/Recurrent_Looped_Transformer.pdf
+[2]: https://github.com/awdemos/recurrent-looped-transformer
 
 Local code was inspected at the baseline hash above. Historical force and elbow findings are
 linked in place; their later supersession is explicit. No policy training, runtime implementation,
