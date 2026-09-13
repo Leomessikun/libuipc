@@ -89,7 +89,8 @@ the elbow, `forearm_ratio ≥ 0.95`), *passed* (upper-arm coverage first ≥ 0.1
    gradients, a release-then-advance sequence (four decisions down the force gradient, eight up the
    coverage gradient), the expert's own commands, three random directions and the hold; each with
    its executed travel, and repeatable (`--walk-repeats`) at states whose decision is noisy. The two
-   combined walks were added after the first three cells and have not run yet.
+   combined walks were added after the first three cells and run on cell 1's stall state
+   (`--states stall`, below).
 
 The cells are the expert's own elbow failures on region 13's held-out poses
 (`expert_r13_heldout_s0`): `tshirt_392` on bodies 14045–14049 stall at upper-arm 0.23–0.50 in the
@@ -338,11 +339,49 @@ Four readings across the seven states.
    is therefore "a fixed forward-up direction escapes", not a lucky draw, and "beats the best
    random" is read against three fixed directions. The probe now draws per state. The walks that
    combine both gradients (`combined_gradient`, `release_then_advance`) were added after these runs
-   and have not been run.
+   and run once, on cell 1's stall state, next.
 
-GPU used: about 45 minutes of a shared GPU — 7.5 minutes for the first elbow-only run and 34
-minutes for the three-cell queue (21:06–21:40), alongside `abl_residual_s1` and another session's
-evaluation. Everything is in `output/uipc_manip/physics_gradient_probe/*.json`.
+GPU used: about 49 minutes of a shared GPU — 7.5 minutes for the first elbow-only run, 34
+minutes for the three-cell queue (21:06–21:40) and 4 minutes for the stall re-probe below,
+alongside `abl_residual_s1` and another session's evaluation. Everything is in
+`output/uipc_manip/physics_gradient_probe/*.json`.
+
+### Cell 1's stall re-probed with the combined walks (`--states stall`) [MI]
+
+The expert was driven again to its stall on the same cell. Because the elbow decision scatters
+by ~1 mm the episode diverged a little and stalled at decision 195 instead of 180, at coverage
+0.202 and 442 N (before: 0.204, 646 N); the state is the same kind of place. Three things this
+run settles:
+
+- **The lock is the no-move collision rule.** The anchor's clearance to the arm shell at the
+  stall is **12.6 mm** against the rule's 12 mm; every forward walk executed 0.7 mm and then
+  nothing (clearance 12.2 mm), the expert executed 0 of its 141 mm. The ± probes show it per
+  axis: at 5 mm the +x side executed 0.83 mm and the −y side 0 mm, so the earlier "central"
+  differences there were one-sided; per executed metre the coverage gradient is (1.13, −0.40,
+  0.30), per commanded metre (0.57, −0.20, 0.30) — same direction, half the magnitude.
+- **Two one-step gradients compose into the escape.** Twelve decisions of 4 mm, all executed:
+
+  | direction | Δ axis | Δ coverage | F at the end / mean | clearance at the end |
+  |---|---|---|---|---|
+  | coverage gradient alone | +2.1 mm (0.7 mm executed) | +0.006 | 460 / 464 N | 12.2 mm |
+  | minus force gradient alone | −3.3 mm | −0.017 | 59 / 68 N | 58 mm |
+  | unit(∂coverage) + unit(−∂force), (0.62, 0.66, 0.43) | **+16.5 mm** | +0.029 | **42 / 66 N** | 41 mm |
+  | release 4 down the force gradient, then 8 up the coverage gradient | **+17.5 mm** | **+0.053** | 142 / 100 N | 20 mm |
+  | expert | +1.2 mm (0 executed) | +0.004 | 391 / 414 N | 12.6 mm |
+  | hold | +1.8 mm | +0.006 | 450 / 451 N | 12.6 mm |
+  | random, drawn for this state (3) | −2.7, +10.5, +12.0 mm | −0.013, +0.007, +0.011 | 396, 89, 58 N | — |
+
+  Both combinations recover and exceed the earlier fixed forward-up direction (+16 mm, +0.019).
+  The sequence is the stronger of the two on coverage: once four release decisions have taken the
+  anchor off the wall, the coverage direction computed *at the locked state* executes in full and
+  gains +0.053 in eight decisions, more than any walk from any state in the three cells except
+  cell 1's passed state.
+- **So the jam is not a case for a multi-step sensitivity; it is a case for a policy that
+  sequences two one-step ones.** The information needed to escape was in the two gradients the
+  probe had at the locked state; what was missing is the decision to release first. That is
+  exactly what an actor trained on a short-horizon physics gradient learns, because over h ≥ 4
+  decisions `∂coverage_{t+h}/∂u_t` through a release phase is nonzero where the one-step
+  gradient's direction is refused.
 
 ## What Level 1 says about Levels 2 and 3
 
@@ -353,8 +392,10 @@ there). What is flat at the elbow is the *reward* as a function of `x⁺`, not t
 sensitivity to the command. So the split has to be SHAC's: the physics supplies `∂x_{t+h}/∂u_t`
 through the solver, a learned value supplies `∂V/∂x_{t+h}` and bridges the plateau — a critic
 can rank elbow states by how close they are to passing even where the reward cannot. A greedy
-one-step gradient controller (DiffCloth's use) would be enough after the elbow and useless at it;
-the elbow is where our policy fails, so Level 3, not Level 2 alone, is the deliverable.
+one-step gradient controller (DiffCloth's use) would be enough after the elbow, would need a
+hand-written release phase at a lock, and is useless at the elbow; the elbow is where our policy
+fails, so Level 3, not Level 2 alone, is the deliverable. The lock re-probe fixes the horizon's
+lower bound: at least the four decisions of a release phase, i.e. h ≥ 4 decisions = 24 frames.
 
 Level 2 in the backend, minimal form, to be validated against this probe before anything is
 trained: after a frame's Newton loop converges, keep its assembled system (`GlobalLinearSystem`'s

@@ -2003,3 +2003,17 @@ bookkeeping on a fake environment. [Record](performance/2026-09-13-physics-gradi
 tables, the Level 2 backend design (solve `Hλ = g` on the converged frame's system, chain six
 frames through the inertia term, validate against these differences to cosine ≥ 0.95) and the
 Level 3 plan. No learner changed, no training launched.
+
+## 2026-09-13 — Physics gradients: the locked stall re-probed with the combined walks
+
+Owner's go for one more few-minute run: cell 1's stall state only, with the two walks added
+after the queue. The anchor's clearance to the arm shell at the stall is 12.6 mm against the
+no-move rule's 12 mm, which confirms the lock is that rule (forward walks execute 0.7 mm then
+nothing, the expert 0 of 141 mm; the ± probes' forward sides were partly or wholly refused, so
+the earlier stall differences were one-sided). Both combinations of the two one-step gradients
+escape: their normalised sum +16.5 mm at 42 N, and four decisions down the force gradient then
+eight up the coverage gradient +17.5 mm with +0.053 of coverage — more than the earlier fixed
+forward-up direction and more than any single gradient, the expert (0 mm executed) or three
+per-state random directions. Reading: the jam needs a policy that sequences release and advance,
+not a longer sensitivity; a short-horizon physics gradient with h ≥ 4 decisions carries that.
+[Record](performance/2026-09-13-physics-gradients.md), ~4 shared-GPU minutes, nothing else launched.
