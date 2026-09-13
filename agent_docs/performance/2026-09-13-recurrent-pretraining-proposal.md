@@ -1,8 +1,11 @@
 # Recurrent dressing pretraining infrastructure
 
 > Implementation update: [episode-aware replay](2026-09-13-sequence-replay.md) now records and
-> samples exact trajectory windows through an opt-in flag in both trainers. Policy memory and
-> sequence-learning objectives below remain proposed; no training improvement is established.
+> samples exact and left-padded trajectory windows through an opt-in flag in both trainers, with a
+> raw-frame `RolloutHistory` as the streaming counterpart. `models.py` carries the stage 2 ordered
+> feature history (`FrameHistory`, `history_length` on both actors and the dense critic), kept at
+> its single-frame default until the sequence update and trainers wire it. Sequence-learning
+> objectives below remain proposed; no training improvement is established.
 
 Proposal, not an implemented architecture or a measured training improvement. Local baseline:
 `01bf913e09fc1b8017ef5bd47bd182d02835d7c2`. Work branch: `pretrain/recurrent-force-memory`.

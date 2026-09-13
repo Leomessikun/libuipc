@@ -266,6 +266,7 @@ class Actor(nn.Module):
         log_std_max: float = 2.0,
         trunk_style: str = "plain",
         trunk_blocks: int = 2,
+        history_length: int = 1,
     ) -> None:
         super().__init__()
         self.spec = spec
@@ -273,18 +274,21 @@ class Actor(nn.Module):
         self.use_extra = bool(use_extra)
         self.log_std_min = float(log_std_min)
         self.log_std_max = float(log_std_max)
-        in_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
+        frame_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
+        self.history, in_dim = make_history(frame_dim, action_dim, history_length)
         self.trunk = trunk_layers(in_dim, hidden_dim, 2 * action_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
 
-    def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
-        """Pre-squash mean and bounded log standard deviation."""
+    def _frame_latent(self, obs, detach_encoder: bool = False) -> torch.Tensor:
         pos, feat, valid, extra = obs
         z = self.encoder(pos, feat, valid)
         if detach_encoder:
             z = z.detach()
-        if self.use_extra:
-            z = torch.cat([z, extra], dim=-1)
+        return torch.cat([z, extra], dim=-1) if self.use_extra else z
+
+    def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pre-squash mean and bounded log standard deviation."""
+        z = history_input(self.history, obs, lambda frames: self._frame_latent(frames, detach_encoder))
         mu, log_std = self.trunk(z).chunk(2, dim=-1)
         return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
 
@@ -338,6 +342,63 @@ def trunk_layers(in_dim: int, hidden_dim: int, out_dim: int, style: str, blocks:
     )
 
 
+class FrameHistory(nn.Module):
+    """Ordered finite history: spatial encoding first, temporal concatenation after.
+
+    Point order is not time, so each cloud is encoded on its own and only the
+    resulting frame vectors are concatenated in decision order, together with the
+    commands recorded between them. Padded frames contribute zeros and carry a
+    validity flag, so the empty history at an episode opening stays distinguishable
+    from a frame that happens to encode to zero. The module holds no parameters:
+    it defines the layout the trunk reads, and a target copy has nothing to track.
+
+    ``action_dim = 0`` means the commands are already inside the frame encodings,
+    as they are in the dense critic, where each frame is encoded with its own
+    command as a per-point feature.
+    """
+
+    def __init__(self, frame_dim: int, action_dim: int, length: int) -> None:
+        super().__init__()
+        self.length, self.frame_dim, self.action_dim = int(length), int(frame_dim), int(action_dim)
+        if self.length < 2:
+            raise ValueError("A frame history needs at least two frames; length 1 is the single-frame policy")
+        self.out_dim = self.length * (self.frame_dim + 1) + (self.length - 1) * self.action_dim
+
+    def forward(self, latent: torch.Tensor, valid: torch.Tensor, commands: torch.Tensor | None = None) -> torch.Tensor:
+        """``latent [B,L,frame_dim]``, ``valid [B,L]``, ``commands [B,L-1,action_dim]`` -> ``[B,out_dim]``."""
+        if latent.shape[1] != self.length:
+            raise ValueError(f"This history holds {self.length} frames, got {latent.shape[1]}")
+        mask = valid.to(latent.dtype).unsqueeze(-1)
+        frames = torch.cat([latent * mask, mask], dim=-1).flatten(1)
+        if not self.action_dim:
+            return frames
+        # A command is valid exactly where the observation it followed is.
+        return torch.cat([frames, (commands * mask[:, :-1]).flatten(1)], dim=-1)
+
+
+def make_history(frame_dim: int, action_dim: int, length: int) -> tuple[FrameHistory | None, int]:
+    """``(history, trunk input width)``. ``length = 1`` keeps the single-frame network exactly."""
+    if int(length) == 1:
+        return None, int(frame_dim)
+    memory = FrameHistory(frame_dim, action_dim, length)
+    return memory, memory.out_dim
+
+
+def history_input(history: FrameHistory | None, obs, frame_latent) -> torch.Tensor:
+    """Trunk input for one frame, or for a window encoded frame by frame.
+
+    Without history ``obs`` is the usual ``(pos, feat, valid, extra)``. With it,
+    ``obs`` is ``(frames, valid, commands)``: the same four tensors flattened to
+    ``B*L`` rows, the ``[B,L]`` mask of recorded frames, and the ``[B,L-1,A]``
+    commands between them.
+    """
+    if history is None:
+        return frame_latent(obs)
+    frames, valid, commands = obs
+    latent = frame_latent(frames)
+    return history(latent.reshape(*valid.shape, -1), valid, commands)
+
+
 class QHead(nn.Module):
     def __init__(self, in_dim: int, hidden_dim: int, trunk_style: str = "plain", blocks: int = 2) -> None:
         super().__init__()
@@ -371,11 +432,15 @@ class Critic(nn.Module):
 
     def __init__(
         self, spec: ObsSpec, action_dim: int, hidden_dim: int, encoder_cfg: EncoderConfig, use_extra: bool = True,
-        action_mode: str = "dense", trunk_style: str = "plain", trunk_blocks: int = 2,
+        action_mode: str = "dense", trunk_style: str = "plain", trunk_blocks: int = 2, history_length: int = 1,
     ) -> None:
         super().__init__()
         if action_mode not in ("dense", "latent"):
             raise ValueError(f"Unknown critic action_mode {action_mode!r}")
+        if int(history_length) != 1 and action_mode != "dense":
+            # The latent critic is kept only for old checkpoints and its ablation; a history on top
+            # of the rejected baseline would measure two things at once.
+            raise ValueError("A history-aware critic requires action_mode='dense'")
         self.spec = spec
         self.action_mode = str(action_mode)
         self.action_dim = int(action_dim)
@@ -383,8 +448,11 @@ class Critic(nn.Module):
         self.encoder = make_global_encoder(FEATURE_DIM + extra_point_features, encoder_cfg)
         self.use_extra = bool(use_extra)
         # Under ``dense`` the action is already inside the encoding, so the head does not take it again.
-        in_dim = self.encoder.feature_dim + (0 if self.action_mode == "dense" else self.action_dim)
-        in_dim += EXTRA_DIM if self.use_extra else 0
+        frame_dim = self.encoder.feature_dim + (0 if self.action_mode == "dense" else self.action_dim)
+        frame_dim += EXTRA_DIM if self.use_extra else 0
+        # Past commands enter each earlier frame the way the candidate enters the current one, so the
+        # history layout carries no separate command block.
+        self.history, in_dim = make_history(frame_dim, 0, history_length)
         self.Q1 = QHead(in_dim, hidden_dim, trunk_style, trunk_blocks)
         self.Q2 = QHead(in_dim, hidden_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
@@ -401,14 +469,29 @@ class Critic(nn.Module):
             feat = _broadcast_action(feat, action)
         return self.encoder(pos, feat, valid)
 
-    def forward(self, obs, action: torch.Tensor, detach_encoder: bool = False):
+    def _frame_latent(self, obs, action: torch.Tensor, detach_encoder: bool = False) -> torch.Tensor:
         z = self.encode(obs, action)
         if detach_encoder:
             z = z.detach()
         parts = [z] if self.action_mode == "dense" else [z, action]
         if self.use_extra:
             parts.append(obs[3])
-        z = torch.cat(parts, dim=-1)
+        return torch.cat(parts, dim=-1)
+
+    def forward(self, obs, action: torch.Tensor, detach_encoder: bool = False):
+        """``Q(history, action)``: the candidate action is a per-point feature of the current frame only.
+
+        With history, every earlier frame is encoded with the command that was actually recorded
+        after it. Scoring a candidate therefore never rewrites the observed past, and ``dQ/da``
+        flows through the current frame's encoding exactly as in the single-frame critic.
+        """
+        if self.history is None:
+            z = self._frame_latent(obs, action, detach_encoder)
+        else:
+            frames, valid, commands = obs
+            per_frame = torch.cat([commands, action.unsqueeze(1)], dim=1).reshape(-1, self.action_dim)
+            latent = self._frame_latent(frames, per_frame, detach_encoder)
+            z = self.history(latent.reshape(*valid.shape, -1), valid)
         return self.Q1(z), self.Q2(z)
 
 
@@ -579,6 +662,7 @@ class WangFlowActor(nn.Module):
         log_std_max: float = 2.0,
         trunk_style: str = "plain",
         trunk_blocks: int = 2,
+        history_length: int = 1,
     ) -> None:
         super().__init__()
         self.spec = spec
@@ -586,20 +670,23 @@ class WangFlowActor(nn.Module):
         self.use_extra = bool(use_extra)
         self.log_std_min = float(log_std_min)
         self.log_std_max = float(log_std_max)
-        in_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
+        frame_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
+        self.history, in_dim = make_history(frame_dim, action_dim, history_length)
         self.trunk = trunk_layers(in_dim, hidden_dim, 2 * action_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
 
-    def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
-        """Pre-squash mean and bounded log standard deviation read at the tool point."""
+    def _frame_latent(self, obs, detach_encoder: bool = False) -> torch.Tensor:
         pos, feat, valid, extra = obs
         point_features = self.encoder(pos, feat, valid)
         if detach_encoder:
             point_features = point_features.detach()
         tool_index = (feat[:, :, FLAG_TOOL] * valid).argmax(dim=1)
         z = point_features[torch.arange(pos.shape[0], device=pos.device), tool_index]
-        if self.use_extra:
-            z = torch.cat([z, extra], dim=-1)
+        return torch.cat([z, extra], dim=-1) if self.use_extra else z
+
+    def head(self, obs, detach_encoder: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pre-squash mean and bounded log standard deviation read at the tool point."""
+        z = history_input(self.history, obs, lambda frames: self._frame_latent(frames, detach_encoder))
         mu, log_std = self.trunk(z).chunk(2, dim=-1)
         return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
 

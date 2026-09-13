@@ -1820,3 +1820,20 @@ encoded features so that a weight update cannot leave it stale. `length=1` is th
 policy and the parity setting for the history-aware model still to be written. The parity gate
 passes for `L` in 1, 2, 4 and 7: streaming reproduces the sampler's padded window at every
 decision, mask included. 269 CPU tests pass; no GPU job ran, and no learning change was made.
+
+## 2026-09-13 — Ordered feature history in the policy heads (stage 2, part 2)
+
+`FrameHistory` in `models.py` is the proposal's H4/H8 memory: each cloud is encoded spatially on
+its own, and the resulting frame vectors are concatenated in decision order with their validity
+flags and the commands recorded between them. Padded frames are zeroed and flagged, so an episode
+opening stays distinguishable from a frame that encodes to zero. `Actor`, `WangFlowActor` and the
+dense `Critic` take `history_length`; `1` is the default and is the single-frame network exactly —
+same parameter names, same outputs — which is the parity the H4 comparison against `abl_dense_s1`
+depends on.
+
+In the dense critic every earlier frame is encoded with the command actually recorded after it and
+only the current frame sees the candidate action, so scoring a candidate never rewrites the observed
+past and `dQ/da` flows as before. A history on the rejected `latent` critic is refused. The module
+holds no parameters, so the target critic has nothing new to track under Polyak. `SACConfig`, the
+sequence update and the trainers do not expose the head yet; the default runtime is unchanged and
+no GPU job ran.
