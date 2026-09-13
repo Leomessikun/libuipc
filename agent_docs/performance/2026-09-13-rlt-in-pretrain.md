@@ -1,5 +1,7 @@
 # The recurrent looped transformer in the pretraining infrastructure
 
+> **Superseded assessment:** The [independent review](2026-09-13-pretraining-infrastructure-review.md) found collection/learning context mismatch, biased position weighting, incomplete optimizer-cost measurement, and action-blind prediction targets. Endpoint learning is now the new-run RLT default; prefix remains explicit. The old timing table and proposed single feature-cache equivalence below must not be used as current conclusions.
+
 Date: 2026-09-13. Status: implemented and CPU-tested on `pretrain/recurrent-force-memory`; cost
 measured on CPU only; no GPU run. This answers, concretely, how Zhang's *Recurrent Looped
 Transformer* (RLT; upstream `1bee93a9`, report only) is used in our pretraining, after the

@@ -14,6 +14,40 @@ def _buffer(capacity=32, batch_size=4, **kwargs):
     return FlatReplayBuffer(3, 2, capacity, batch_size, "cpu", sequence=True, **kwargs)
 
 
+def test_strict_context_does_not_treat_missing_past_as_an_episode_opening():
+    replay = _buffer(capacity=6)
+    for step in range(6):
+        _add(replay, step)
+    replay.sample_sequences(4, pad=True, strict_context=True)  # Populate the candidate cache.
+    _add(replay, 6)
+    batch = replay.sample_sequences(4, 128, pad=True, strict_context=True)
+    assert set(batch.episode_steps[:, -1].tolist()) == {4, 5, 6}
+    assert batch.valid.all()
+    _add(replay, 9)  # Gap: this retained row is not a fresh episode.
+    batch = replay.sample_sequences(4, 128, pad=True, strict_context=True)
+    assert set(batch.episode_steps[:, -1].tolist()) == {5, 6}
+    _add(replay, 0, episode=1)
+    batch = replay.sample_sequences(4, 128, pad=True, strict_context=True)
+    assert 0 in batch.episode_steps[:, -1].tolist()
+    assert (batch.valid[batch.episode_steps[:, -1] == 0].sum(dim=1) == 1).all()
+
+
+def test_strict_context_survives_reload_and_refuses_only_orphaned_rows(tmp_path):
+    replay = _buffer()
+    _add(replay, 8)
+    _add(replay, 9)
+    assert not replay.sequence_ready(4, pad=True, strict_context=True)
+    with pytest.raises(RuntimeError, match="context"):
+        replay.sample_sequences(4, pad=True, strict_context=True)
+    replay.save(tmp_path)
+    restored = _buffer()
+    restored.load(tmp_path)
+    _add(restored, 10)
+    _add(restored, 11)
+    batch = restored.sample_sequences(4, pad=True, strict_context=True)
+    assert batch.episode_steps.tolist() == [[8, 9, 10, 11]] * 4
+
+
 def _add(replay, step, *, stream=0, episode=0, end=False, done=False, key=None):
     metadata = dict(stream_id=stream, episode_id=episode, episode_step=step, episode_end=end)
     if replay.priv_dim:

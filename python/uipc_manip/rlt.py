@@ -339,7 +339,7 @@ class RecurrentLoopedTransformer(nn.Module):
     def init_state(self, num_streams: int, max_len: int, device=None) -> RLTState:
         d, h, dh = self.out_dim, self.cfg.heads, self.out_dim // self.cfg.heads
         device = self.s_star.device if device is None else device
-        buf = lambda: torch.zeros(num_streams, max_len, h, dh, device=device)  # noqa: E731
+        buf = lambda: torch.zeros(num_streams, max_len, h, dh, device=device, dtype=self.s_star.dtype)  # noqa: E731
         layers, groups = len(self.enc), len(self.memory.k)
         state = RLTState(
             s=self.s_star.detach().expand(num_streams, -1).clone(), count=torch.zeros(num_streams, dtype=torch.long, device=device),
@@ -439,43 +439,59 @@ class RecurrentLoopedHistory(nn.Module):
 
 
 class TrajectoryPretrainingHead(nn.Module):
-    """The report's autoregressive pretraining (5.1) with continuous targets.
+    """Action-conditioned trajectory prediction, a robotics adaptation of recurrent pretraining.
 
-    A dressing trajectory has no vocabulary, so "predict the next token from ``s_t``" becomes: from
-    the state after frame ``t``, predict the command taken there (the action *is* the next token),
-    the privileged state the simulator reached next, and the reward. The privileged target is fixed
-    by the simulator, so the objective cannot collapse onto its own features; the reward target is
-    the value learner's first ingredient. Every recorded sequence qualifies — the expert's, a failed
-    policy's, a random one's — which is what makes this a pretraining stage rather than imitation.
-    Losses are mean squared errors averaged over recorded positions (5.2: masking never detaches
-    the state). The scripted expert is bang-bang, so its commands get a squared error, not a
-    Gaussian likelihood (see ``squashed_action_log_prob``).
+    The state after observation ``t`` contains only preceding commands. Successor-state and reward
+    predictions additionally read the recorded current command ``a_t``. Optional command regression
+    reads the state alone and is behavior cloning; its default zero weight prevents imitation of
+    random or failed behavior. This continuous multitask loss is not the report's language-model
+    likelihood. Each component is an elementwise mean over valid positions, with explicit weights
+    needed to account for different target units. Padding neither contributes losses nor cuts the
+    valid recurrent state's gradient paths.
     """
 
-    def __init__(self, dim: int, action_dim: int, priv_dim: int = 0, reward: bool = True) -> None:
+    def __init__(self, dim: int, action_dim: int, priv_dim: int = 0, reward: bool = True, *,
+                 command_weight: float = 0.0, priv_weight: float = 1.0, reward_weight: float = 1.0) -> None:
         super().__init__()
+        self.command_weight, self.priv_weight, self.reward_weight = map(float, (command_weight, priv_weight, reward_weight))
+        if any(not math.isfinite(w) or w < 0 for w in (self.command_weight, self.priv_weight, self.reward_weight)):
+            raise ValueError("Pretraining weights must be finite and nonnegative")
         self.command = nn.Linear(dim, int(action_dim))
-        self.priv = nn.Linear(dim, int(priv_dim)) if int(priv_dim) > 0 else None
-        self.reward = nn.Linear(dim, 1) if reward else None
+        self.priv = nn.Linear(dim + int(action_dim), int(priv_dim)) if int(priv_dim) > 0 else None
+        self.reward = nn.Linear(dim + int(action_dim), 1) if reward else None
 
     def forward(self, state: torch.Tensor, valid: torch.Tensor, commands: torch.Tensor,
                 next_priv: torch.Tensor | None = None, rewards: torch.Tensor | None = None) -> dict:
         """``state [B,T,d]`` readouts, ``valid [B,T]``, ``commands [B,T,A]`` taken at each position,
-        ``next_priv [B,T,P]`` reached after it, ``rewards [B,T,1]``. Returns the per-target losses
-        and their sum under ``"loss"``."""
-        mask = valid.to(state.dtype)[..., None]
-        weight = 1.0 / mask.sum().clamp_min(1.0)
-        mse = lambda pred, target: (((pred - target) ** 2) * mask).sum() * weight  # noqa: E731
-        out = {"next_command": mse(torch.tanh(self.command(state)), commands)}
+        ``next_priv [B,T,P]`` reached after it, ``rewards [B,T,1]``. Returns unweighted per-target
+        diagnostics and their weighted sum under ``"loss"``. Disabled command diagnostics are
+        detached and supply no imitation gradient."""
+        valid = valid.bool()
+        state = torch.where(valid[..., None], state, torch.zeros_like(state))
+        commands = torch.where(valid[..., None], commands, torch.zeros_like(commands))
+        dynamics = torch.cat([state, commands], dim=-1)
+
+        def mse(pred, target):
+            # Select before arithmetic: a missing padded target may contain NaN or Inf.
+            selected = pred[valid]
+            return (selected - target[valid]).square().mean() if selected.numel() else pred.sum() * 0.0
+
+        command_loss = mse(torch.tanh(self.command(state)), commands)
+        out = {"next_command": command_loss if self.command_weight else command_loss.detach()}
+        total = state.sum() * 0.0
+        if self.command_weight:
+            total = total + self.command_weight * command_loss
         if self.priv is not None:
             if next_priv is None:
                 raise ValueError("This head predicts the privileged state; the batch carries none")
-            out["next_priv"] = mse(self.priv(state), next_priv)
+            out["next_priv"] = mse(self.priv(dynamics), next_priv)
+            total = total + self.priv_weight * out["next_priv"]
         if self.reward is not None:
             if rewards is None:
                 raise ValueError("This head predicts the reward; the batch carries none")
-            out["reward"] = mse(self.reward(state), rewards)
-        out["loss"] = sum(out.values())
+            out["reward"] = mse(self.reward(dynamics), rewards)
+            total = total + self.reward_weight * out["reward"]
+        out["loss"] = total
         return out
 
 

@@ -480,3 +480,13 @@ First remeasure the corrected dense critic baseline. Then add optional episode i
 sequence sampling without changing legacy flat replay. Separate episode resets from bootstrap,
 keep independent train/eval states, and preserve dense action gradients and target-memory updates.
 H4/H8 and GRU are controls before RLT-inspired attention; no architecture gain is established.
+
+## RLT review and repaired experiment contract (2026-09-13)
+
+The [independent review](performance/2026-09-13-pretraining-infrastructure-review.md) supersedes
+claims that the original H8 all-position run isolates architecture or that the old probe measures
+full SAC cost. New RLT runs default to endpoint learning; prefix remains a named different
+objective and old checkpoints retain it. Required next work: versioned trajectory corpus and
+target normalization/offline training, training-only valid guide prefixes and elbow roll-in,
+GRU/parallel-Transformer controls, then measured episode-memory/cache designs. A streaming RLTState
+is not an equivalent optimization of rolling H8; actor features cannot replace dense Q(o,a).

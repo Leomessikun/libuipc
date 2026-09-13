@@ -385,6 +385,34 @@ def test_sequence_recording_survives_rotation_error_and_resume(stub_run, tmp_pat
     assert replay.total_added == 24
 
 
+def test_sequence_targets_can_be_recorded_with_a_point_critic(stub_run, tmp_path, monkeypatch):
+    _, agents = stub_run
+    world = pretrain_wang.GenesisIPCDressingEnv
+    monkeypatch.setattr(world, "privileged_dim", 3)
+    monkeypatch.setattr(world, "privileged", lambda env: np.full((env.num_envs, 3), 2.0, dtype=np.float32), raising=False)
+    pretrain_wang.main(RUN_ARGV + ["--sequence-replay", "--record-privileged", "--transitions", "8",
+                                  "--work-dir", str(tmp_path), "--run-name", "targets"])
+    assert agents[-1].cfg.critic_input == "points" and agents[-1].cfg.privileged_dim == 0
+    replay_dir = tmp_path / "targets" / "checkpoints" / "replay_latest"
+    keys = json.loads((replay_dir / "replay_set.json").read_text())["keys"]
+    replay = ReplaySet(keys, 1, 1, 64, 2, "cpu", sequence=True, priv_dim=3)
+    replay.load(replay_dir)
+    batch = replay.sample_sequences(2, 2, pad=True)
+    assert batch.priv.shape == (2, 3, 3)
+    assert (batch.priv[:, -1] == 2).all()
+
+
+def test_new_rlt_run_pins_its_resolved_learning_mode_on_resume(stub_run, tmp_path):
+    _, agents = stub_run
+    pretrain_wang.main(RUN_ARGV + ["--sequence-replay", "--history-length", "2", "--history-kind", "rlt",
+                                  "--transitions", "8", "--work-dir", str(tmp_path), "--run-name", "rlt_mode"])
+    directory = tmp_path / "rlt_mode"
+    state = json.loads((directory / "checkpoints" / "state.json").read_text())
+    assert state["argv"][state["argv"].index("--rlt-learning-mode") + 1] == "endpoint"
+    pretrain_wang.main(["resume", str(directory), "--transitions", "16"])
+    assert agents[-1].cfg.rlt_learning_mode == "endpoint"
+
+
 def test_student_deals_every_region_keeps_one_buffer_each_and_needs_every_teacher(stub_run, tmp_path, monkeypatch):
     from uipc_manip import train_sac
 

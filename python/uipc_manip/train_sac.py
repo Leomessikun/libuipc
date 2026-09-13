@@ -94,9 +94,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--updates-per-step", type=int, default=0, help="Gradient updates per vector step; 0 = one per collected transition.")
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--replay-capacity", type=int, default=200_000)
-    p.add_argument("--sequence-replay", action="store_true", help="Record episode identities and boundaries for sequence sampling; SAC updates remain single-frame.")
+    p.add_argument("--sequence-replay", action="store_true", help="Record episode identities and boundaries; --history-length selects whether SAC uses them.")
+    p.add_argument("--record-privileged", action="store_true", help="Dressing sequence replay: store privileged targets without exposing them to a point-based actor or critic.")
     p.add_argument("--history-length", type=int, default=1, help="Frames the policy and critic condition on (the proposal's H); 1 is the single-frame network. Above 1 needs --sequence-replay.")
-    p.add_argument("--history-kind", choices=["frames", "rlt"], default="frames", help="How a window above 1 frame is read: 'frames' concatenates them and learns one step per window; 'rlt' runs the recurrent looped transformer over them and learns at every recorded position.")
+    p.add_argument("--history-kind", choices=["frames", "rlt"], default="frames", help="How a window above 1 frame is read: 'frames' concatenates them and learns one step per window; 'rlt' uses recurrent attention; --rlt-learning-mode selects its learning positions.")
+    p.add_argument("--rlt-learning-mode", choices=["endpoint", "prefix"], default="endpoint", help="RLT: endpoint matches collection's sliding history and learns one transition per window; prefix retains the experimental all-position objective with different contexts.")
     p.add_argument("--rlt-dim", type=int, default=64, help="RLT state width d.")
     p.add_argument("--rlt-layers", type=int, default=2, help="RLT encoder and decoder depth (equal, as in the tied configuration).")
     p.add_argument("--rlt-heads", type=int, default=4, help="RLT attention heads.")
@@ -144,6 +146,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def resolve_defaults(args) -> None:
     """Fill the task-dependent launcher defaults in place."""
+    if args.record_privileged and (not args.sequence_replay or args.task != "dressing"):
+        raise ValueError("--record-privileged requires dressing and --sequence-replay")
     if args.horizon is None:
         args.horizon = 900 if args.task == "dressing" else 150
     if args.action_repeat is None:
@@ -200,6 +204,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
         cfg_names[key] = key
     saved.update({key: getattr(cfg, name) for key, name in cfg_names.items()})
     saved.update(encoder=cfg.encoder.kind, sa_neighbors=cfg.encoder.sa_neighbors)
+    saved["rlt_learning_mode"] = cfg.rlt_learning_mode
     network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "sa_neighbors", "algo", "num_bins", "min_v", "max_v", "critic_input"}
     for key, value in saved.items():
         if not hasattr(args, key):
@@ -276,6 +281,7 @@ def build_sac_config(args) -> SACConfig:
         trunk_blocks=args.trunk_blocks,
         history_length=int(args.history_length),
         history_kind=str(args.history_kind),
+        rlt_learning_mode=str(args.rlt_learning_mode),
         rlt=RLTConfig(dim=int(args.rlt_dim), layers=int(args.rlt_layers), heads=int(args.rlt_heads), window=int(args.rlt_window),
                       groups=int(args.rlt_groups), alpha=float(args.rlt_alpha), tied=bool(args.rlt_tied)),
         encoder_precision=args.encoder_precision,
@@ -808,9 +814,12 @@ def main(argv: list[str] | None = None) -> None:
     from .replay import FlatReplayBuffer
     from .replay_streams import ReplayStreams
 
-    privileged = agent.cfg.critic_input == "privileged"
+    privileged = agent.cfg.critic_input == "privileged" or args.record_privileged
+    replay_priv_dim = int(getattr(env, "privileged_dim", 0)) if args.record_privileged else agent.cfg.privileged_dim
+    if privileged and replay_priv_dim <= 0:
+        raise ValueError("Privileged replay recording needs an environment with privileged targets")
     replay = FlatReplayBuffer(
-        env.obs_dim, env.action_dim, args.replay_capacity, args.batch_size, args.device, priv_dim=agent.cfg.privileged_dim if privileged else 0,
+        env.obs_dim, env.action_dim, args.replay_capacity, args.batch_size, args.device, priv_dim=replay_priv_dim if privileged else 0,
         labelled=bool(args.teacher_checkpoints), sequence=args.sequence_replay,
     )
     reward_scale = float(payload.get("metadata", {}).get("reward_scale", wang_equivalent_reward_scale(agent.cfg.discount))) if payload is not None else wang_equivalent_reward_scale(agent.cfg.discount)
@@ -846,7 +855,7 @@ def main(argv: list[str] | None = None) -> None:
         "seed": args.seed,
         "num_envs": env.num_envs,
         "training_args": {key: getattr(args, key) for key in (
-            "garment_curriculum_interval", "garment_curriculum_order", "updates_per_step", "replay_capacity", "init_steps", "sequence_replay",
+            "garment_curriculum_interval", "garment_curriculum_order", "updates_per_step", "replay_capacity", "init_steps", "sequence_replay", "record_privileged",
             "cell_source", "body_seeds", "heldout_bodies", "heldout_body_seeds", "allow_partial_cell_coverage", "teacher_checkpoints",
         )},
         "curriculum_order": order,

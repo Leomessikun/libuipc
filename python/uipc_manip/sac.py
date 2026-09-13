@@ -137,12 +137,16 @@ class SACConfig:
     history_kind: str = "frames"
     """How the frames of a window are read above one. ``frames`` concatenates them in order
     (``models.FrameHistory``) and learns one step per window, its last transition. ``rlt`` runs the
-    recurrent looped transformer (``rlt.RecurrentLoopedHistory``) over them and learns at every
-    recorded position of the window: the recorded run rebuilds each state from the window's first
-    frame under the current parameters, a candidate action branches from the recorded state before it,
-    and the Bellman successor is the recorded run one position on. Collection is the same in both."""
+    recurrent looped transformer (``rlt.RecurrentLoopedHistory``) over them. Its learning positions
+    and successor context are selected by ``rlt_learning_mode``. Collection uses the same sliding
+    raw-frame window for both history kinds."""
     rlt: RLTConfig = field(default_factory=RLTConfig)
     """Width, depth, decoder window, memory groups, feedback scale and tying of the ``rlt`` history."""
+    rlt_learning_mode: str = "endpoint"
+    """``endpoint`` learns one transition with the same sliding H-frame context used to act,
+    including a separately shifted H-frame Bellman successor. ``prefix`` retains the experimental
+    all-position objective: shorter prefixes and an H+1 successor differ from rollout context.
+    Old RLT checkpoints without this field restore ``prefix`` explicitly."""
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
 
     def to_dict(self) -> dict:
@@ -156,6 +160,8 @@ class SACConfig:
         data = dict(data)
         data["encoder"] = EncoderConfig.from_dict(data.get("encoder", {}))
         data["rlt"] = RLTConfig.from_dict(data.get("rlt", {}))
+        if "rlt_learning_mode" not in data and data.get("history_kind") == "rlt":
+            data["rlt_learning_mode"] = "prefix"
         return cls(**data)
 
 
@@ -209,6 +215,8 @@ class SACAgent:
             raise ValueError("history_length must be at least 1")
         if cfg.history_kind not in ("frames", "rlt"):
             raise ValueError(f"Unknown history_kind {cfg.history_kind!r}; expected 'frames' or 'rlt'")
+        if cfg.rlt_learning_mode not in ("endpoint", "prefix"):
+            raise ValueError("rlt_learning_mode must be 'endpoint' or 'prefix'")
         if history == 1 and cfg.history_kind != "frames":
             raise ValueError("history_kind applies to a window; set history_length above 1 or leave the kind at 'frames'")
         if history > 1:
@@ -511,7 +519,7 @@ class SACAgent:
         if self.log_alpha.dim() and not indexed:
             raise ValueError("One temperature per replay buffer needs a replay set that reports which buffer each batch came from")
         length = int(self.cfg.history_length)
-        batch = replay.sample_sequences(length, self.cfg.batch_size, pad=True)
+        batch = replay.sample_sequences(length, self.cfg.batch_size, pad=True, strict_context=True)
         index = int(batch.buffer_index) if indexed else 0
         obs = self._unpack_window(batch.obs[:, :length], batch.valid, batch.actions[:, :-1])
         next_valid = torch.cat([batch.valid[:, 1:], torch.ones_like(batch.valid[:, :1])], dim=1)
@@ -548,8 +556,10 @@ class SACAgent:
         weight = 1.0 / learn.sum().clamp_min(1.0)
         alpha = self._alpha_at(index).detach()
 
-        mu, log_std = self.actor.head_sequence(frames, valid, batch.actions)
-        _, pi, log_pi, _ = _sample_head(mu, log_std, True, True)
+        actor_step = (self.updates + 1) % self.cfg.actor_update_freq == 0
+        with torch.set_grad_enabled(actor_step):
+            mu, log_std = self.actor.head_sequence(frames, valid, batch.actions)
+            _, pi, log_pi, _ = _sample_head(mu, log_std, True, True)
         with torch.no_grad():
             target_run = self.critic_target.run_sequence(frames, valid, commands)
             target_q1, target_q2 = self.critic_target.q_branch(target_run, frames, valid, pi)
@@ -606,7 +616,8 @@ class SACAgent:
         return stats
 
     def _update(self, replay) -> dict:
-        if int(self.cfg.history_length) > 1 and self.cfg.history_kind == "rlt":
+        if (int(self.cfg.history_length) > 1 and self.cfg.history_kind == "rlt"
+                and self.cfg.rlt_learning_mode == "prefix"):
             return self._update_rlt(replay)
         sample = self._sample_windows if int(self.cfg.history_length) > 1 else self._sample_single
         obs, action, reward, next_obs, not_done, state, next_state, label, index = sample(replay)
@@ -615,6 +626,7 @@ class SACAgent:
         else:
             stats = self._update_critic(obs, action, reward, next_obs, not_done, state, next_state, index)
         stats["batch_reward"] = float(reward.mean().item())
+        stats["learning_positions"] = int(action.shape[0])
         self.updates += 1
         if self.updates % self.cfg.actor_update_freq == 0:
             stats.update(self._update_actor_and_alpha(obs, state, label, index))
@@ -623,6 +635,8 @@ class SACAgent:
             soft_update(self.critic.Q2, self.critic_target.Q2, self.cfg.critic_tau)
             if self.critic.encoder is not None:
                 soft_update(self.critic.encoder, self.critic_target.encoder, self.cfg.encoder_tau)
+            if getattr(self.critic, "history", None) is not None:
+                soft_update(self.critic.history, self.critic_target.history, self.cfg.encoder_tau)
         return stats
 
     # ------------------------------------------------------------------
@@ -657,6 +671,8 @@ class SACAgent:
             if self.cfg.history_kind != "frames":
                 # Absent, the key means the ordered frame concatenation, so H-frame checkpoints still load.
                 protocol.update(history_kind=str(self.cfg.history_kind), rlt=self.cfg.rlt.to_dict())
+                if self.cfg.rlt_learning_mode != "prefix":
+                    protocol.update(rlt_learning_mode=str(self.cfg.rlt_learning_mode))
         return protocol
 
     def save(self, path: str | Path, step: int, metadata: dict | None = None) -> Path:

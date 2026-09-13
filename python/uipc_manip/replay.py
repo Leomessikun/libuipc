@@ -123,6 +123,7 @@ class FlatReplayBuffer:
             self._tails: dict[tuple[int, int], int] = {}
             self._stream_tails: dict[int, int] = {}
             self._windows: dict[int, _IndexPool] = {}
+            self._strict_windows: dict[int, _IndexPool] = {}
 
     def add(
         self, obs: np.ndarray, action: np.ndarray, reward: float, next_obs: np.ndarray, done: bool, priv=None, next_priv=None,
@@ -200,13 +201,19 @@ class FlatReplayBuffer:
         return self._next_episode_id
 
     def _invalidate_followers(self, index: int, *, include_self: bool) -> None:
-        for length, pool in self._windows.items():
+        for length, pool, _ in self._window_pools():
             current = index if include_self else int(self._next[index])
             for _ in range(length if include_self else length - 1):
                 if current < 0:
                     break
                 pool.discard(current)
                 current = int(self._next[current])
+
+    def _window_pools(self):
+        for length, pool in self._windows.items():
+            yield length, pool, False
+        for length, pool in self._strict_windows.items():
+            yield length, pool, True
 
     def _append_identity(self, identity: tuple[int, int, int], episode_end: bool) -> None:
         index = self._idx
@@ -234,13 +241,15 @@ class FlatReplayBuffer:
         self._tails[(stream, episode)] = index
         self._stream_tails[stream] = index
         self._next_episode_id = max(self._next_episode_id, episode + 1)
-        for length, pool in self._windows.items():
+        for length, pool, opening_allowed in self._window_pools():
             current = index
+            natural_opening = opening_allowed and self._episode_steps[current] == 0
             for _ in range(length - 1):
                 current = int(self._prev[current])
                 if current < 0:
                     break
-            if current >= 0:
+                natural_opening |= opening_allowed and self._episode_steps[current] == 0
+            if current >= 0 or natural_opening:
                 pool.add(index)
 
     def close_episode(self, stream_id: int, episode_id: int) -> None:
@@ -277,8 +286,31 @@ class FlatReplayBuffer:
             self._windows[length] = _IndexPool(self.capacity, ends[valid])
         return self._windows[length]
 
-    def sequence_ready(self, length: int, *, pad: bool = False) -> bool:
+    def _strict_endpoints(self, length: int) -> _IndexPool:
+        """Full context or a genuine episode opening, never an evicted/gapped prefix."""
+        length = _nonnegative_int(length, "length")
+        if length < 1 or not self.sequence:
+            raise ValueError("Strict context needs sequence=True and a positive length")
+        if length not in self._strict_windows:
+            ends = np.arange(self.size)
+            current = ends.copy()
+            counts = np.ones(self.size, dtype=np.int64)
+            active = np.ones(self.size, dtype=bool)
+            for _ in range(length - 1):
+                previous = self._prev[np.maximum(current, 0)]
+                active &= previous >= 0
+                counts += active
+                current = np.where(active, previous, current)
+            valid = (counts == length) | (counts == self._episode_steps[ends] + 1)
+            self._strict_windows[length] = _IndexPool(self.capacity, ends[valid])
+        return self._strict_windows[length]
+
+    def sequence_ready(self, length: int, *, pad: bool = False, strict_context: bool = False) -> bool:
         """Whether a window of this length can be drawn under the requested padding."""
+        if strict_context:
+            if not pad:
+                raise ValueError("strict_context requires pad=True")
+            return bool(self._strict_endpoints(length).values)
         if pad:
             _nonnegative_int(length, "length")
             if not self.sequence:
@@ -286,7 +318,7 @@ class FlatReplayBuffer:
             return self.size > 0
         return bool(self._sequence_endpoints(length).values)
 
-    def _window_indices(self, length: int, n: int, pad: bool) -> tuple[np.ndarray, np.ndarray]:
+    def _window_indices(self, length: int, n: int, pad: bool, strict_context: bool = False) -> tuple[np.ndarray, np.ndarray]:
         """Endpoint-uniform windows walked back through the episode links.
 
         Without padding, endpoints are restricted to rows holding a complete
@@ -297,7 +329,12 @@ class FlatReplayBuffer:
         """
         indices = np.empty((n, length), dtype=np.int64)
         valid = np.zeros((n, length), dtype=bool)
-        if pad:
+        if strict_context:
+            pool = self._strict_endpoints(length)
+            if not pool.values:
+                raise RuntimeError("No endpoint has its required context or a genuine episode opening")
+            indices[:, -1] = np.take(pool.values, np.random.randint(len(pool.values), size=n))
+        elif pad:
             if self.size == 0:
                 raise RuntimeError("An empty replay contains no sequence window")
             indices[:, -1] = np.random.randint(self.size, size=n)
@@ -314,7 +351,8 @@ class FlatReplayBuffer:
             valid[:, column] = present
         return indices, valid
 
-    def sample_sequences(self, length: int, batch_size: int | None = None, *, pad: bool = False) -> SequenceBatch:
+    def sample_sequences(self, length: int, batch_size: int | None = None, *, pad: bool = False,
+                         strict_context: bool = False) -> SequenceBatch:
         """Sample same-episode windows uniformly over their endpoints, with replacement.
 
         `pad=False` returns only complete windows. `pad=True` also draws windows
@@ -330,7 +368,9 @@ class FlatReplayBuffer:
         n = self.batch_size if batch_size is None else _nonnegative_int(batch_size, "batch_size")
         if n <= 0:
             raise ValueError("Sequence batch size must be positive")
-        indices, valid = self._window_indices(length, n, pad)
+        if strict_context and not pad:
+            raise ValueError("strict_context requires pad=True")
+        indices, valid = self._window_indices(length, n, pad, strict_context)
         blank = ~valid
         to = lambda value: torch.as_tensor(value, device=self.device)  # noqa: E731
 
@@ -439,6 +479,7 @@ class FlatReplayBuffer:
                 self._tails.clear()
                 self._stream_tails.clear()
                 self._windows.clear()
+                self._strict_windows.clear()
                 self._full = False
                 self._next_episode_id = max(int(payload.get("next_episode_id", 0)),
                                             int(saved_identity["episode_ids"].max(initial=-1)) + 1)
@@ -505,7 +546,8 @@ class ReplaySet:
         for buffer in self.buffers:
             buffer.close_episode(stream_id, episode_id)
 
-    def sample_sequences(self, length: int, batch_size: int | None = None, *, pad: bool = False) -> SequenceBatch:
+    def sample_sequences(self, length: int, batch_size: int | None = None, *, pad: bool = False,
+                         strict_context: bool = False) -> SequenceBatch:
         """Draw one complete batch from one uniformly chosen sequence-ready buffer.
 
         Padded sampling keeps :meth:`sample`'s buffer rule, uniform over the buffers holding more
@@ -513,11 +555,11 @@ class ReplaySet:
         """
         n = self.batch_size if batch_size is None else int(batch_size)
         ready = [i for i, buffer in enumerate(self.buffers)
-                 if buffer.sequence_ready(length, pad=pad) and (not pad or buffer.size > n)]
+                 if buffer.sequence_ready(length, pad=pad, strict_context=strict_context) and (not pad or buffer.size > n)]
         if not ready:
             raise RuntimeError("No replay buffer contains a sequence window of the requested length")
         index = int(ready[np.random.randint(len(ready))])
-        return replace(self.buffers[index].sample_sequences(length, batch_size, pad=pad), buffer_index=index)
+        return replace(self.buffers[index].sample_sequences(length, batch_size, pad=pad, strict_context=strict_context), buffer_index=index)
 
     @property
     def size(self) -> int:

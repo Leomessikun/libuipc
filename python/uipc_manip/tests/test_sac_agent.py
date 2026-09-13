@@ -412,9 +412,9 @@ def test_distillation_smoke_produces_a_loadable_student(tmp_path):
     assert student.act(np.stack([env.reset()]), deterministic=True).shape == (1, 3)
 
 
-@pytest.mark.parametrize("kind", ["frames", "rlt"])
+@pytest.mark.parametrize("kind,mode", [("frames", "endpoint"), ("rlt", "endpoint"), ("rlt", "prefix")])
 @pytest.mark.parametrize("actor_type, encoder", [("flat", "pointnet2"), ("wang-flow", "pointnet2"), ("wang-flow", "transformer")])
-def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type, encoder, kind):
+def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type, encoder, kind, mode):
     """H4 end to end on the toy problem: rollout state, padded windows, and empty padded clouds
     through both encoders, where attention over no valid key must not leak NaN into the trunk."""
     from uipc_manip.replay import FlatReplayBuffer
@@ -426,6 +426,7 @@ def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type, encod
     cfg = _small_cfg(actor_type=actor_type, encoder=encoder)
     cfg.history_length = length
     cfg.history_kind = kind
+    cfg.rlt_learning_mode = mode
     cfg.rlt = RLTConfig(dim=16, layers=1, heads=2, window=3)
     agent = SACAgent(spec, 3, cfg, "cpu")
     assert agent.actor.history is not None and agent.critic.history is not None
@@ -467,7 +468,10 @@ def test_a_history_agent_acts_updates_and_roundtrips(tmp_path, actor_type, encod
         assert torch.isfinite(parameter).all()
     if kind == "rlt":
         # Every recorded position of every window learned, and the target's temporal parameters track.
-        assert stats["learning_positions"] > cfg.batch_size
+        if mode == "prefix":
+            assert stats["learning_positions"] > cfg.batch_size
+        else:
+            assert stats["learning_positions"] == cfg.batch_size
         assert any(not torch.equal(before[k], v) for k, v in agent.critic_target.history.state_dict().items())
 
     path = agent.save(tmp_path / "h.pt", step=3)
@@ -490,6 +494,69 @@ def test_a_history_agent_refuses_flat_replay_and_a_missing_rollout_state():
     flat.add(np.zeros(spec.dim), np.zeros(3), 0.0, np.zeros(spec.dim), False)
     with pytest.raises(ValueError):
         agent.update(flat)
+
+
+def test_rlt_checkpoint_defaults_preserve_the_old_objective(tmp_path):
+    from uipc_manip.rlt import RLTConfig
+
+    cfg = _small_cfg()
+    cfg.history_length, cfg.history_kind = 4, "rlt"
+    cfg.rlt = RLTConfig(dim=16, layers=1, heads=2, window=3)
+    assert cfg.rlt_learning_mode == "endpoint"
+    old = cfg.to_dict()
+    old.pop("rlt_learning_mode")
+    restored = SACConfig.from_dict(old)
+    assert restored.rlt_learning_mode == "prefix"
+    legacy = SACAgent(ObsSpec(10), 3, restored, "cpu")
+    path = legacy.save(tmp_path / "legacy.pt", 0)
+    payload = legacy.read_checkpoint(path)
+    payload["sac_config"].pop("rlt_learning_mode")
+    torch.save(payload, path)
+    legacy.load(path)
+    assert "rlt_learning_mode" not in legacy.protocol()
+    endpoint = SACAgent(ObsSpec(10), 3, cfg, "cpu")
+    with pytest.raises(ValueError, match="protocol"):
+        endpoint.load(path)
+
+
+@pytest.mark.parametrize("kind", ["frames", "rlt"])
+def test_learning_current_and_successor_contexts_equal_actual_rollout(kind):
+    from types import SimpleNamespace
+    from uipc_manip.rlt import RLTConfig
+
+    cfg = _small_cfg()
+    cfg.batch_size, cfg.history_length, cfg.history_kind = 1, 4, kind
+    cfg.rlt = RLTConfig(dim=16, layers=1, heads=2, window=3)
+    agent = SACAgent(ObsSpec(10), 3, cfg, "cpu")
+    env = ToyEnv(agent.spec)
+    history = agent.make_history(1)
+    replay = FlatReplayBuffer(agent.spec.dim, 3, 64, 1, "cpu", sequence=True)
+    obs = env.reset()
+    for step in range(10):
+        current_window = history.window(obs[None])
+        command = np.array([0.1, step / 20, -0.1], dtype=np.float32)
+        next_obs, reward, _ = env.step(command)
+        replay.add(obs, command, reward, next_obs, False, stream_id=0, episode_id=0,
+                   episode_step=step, episode_end=step == 9)
+        history.push(obs[None], command[None])
+        successor_window = history.window(next_obs[None])
+        batch = replay.sample_sequences(4, 1, pad=True, strict_context=True)
+        while batch.episode_steps[0, -1] != step:
+            batch = replay.sample_sequences(4, 1, pad=True, strict_context=True)
+        fixed = SimpleNamespace(sequence=True, sample_sequences=lambda *a, **kw: batch)
+        sampled = agent._sample_windows(fixed)
+        for actual, raw in ((sampled[0], current_window), (sampled[3], successor_window)):
+            frames, commands, valid = raw
+            expected = agent._unpack_window(torch.as_tensor(frames), torch.as_tensor(valid), torch.as_tensor(commands))
+            for left, right in zip(actual[0], expected[0]):
+                torch.testing.assert_close(left, right)
+            torch.testing.assert_close(actual[1], expected[1])
+            torch.testing.assert_close(actual[2], expected[2])
+            with torch.no_grad():
+                torch.testing.assert_close(agent.actor.head(actual)[0], agent.actor.head(expected)[0])
+                torch.testing.assert_close(agent.critic(actual, torch.zeros(1, 3))[0],
+                                           agent.critic(expected, torch.zeros(1, 3))[0])
+        obs = next_obs
 
 
 @pytest.mark.parametrize("setting", [

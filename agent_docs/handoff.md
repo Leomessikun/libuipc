@@ -1937,3 +1937,21 @@ trainer command (the objective is a tested function only), recorded sequence dat
 spatial encoder arm and a cached feature column for whole-episode replay, and unconditional
 `priv` recording in sequence mode for the pretraining target. Commits `30bc39b1..` on
 `pretrain/recurrent-force-memory`; no GPU job ran (`abl_dense_s1` at 115k/125k).
+
+## 2026-09-13 — Independent review of RLT pretraining at dc953a34
+
+Three bounded audits reviewed model equations, replay/SAC semantics and primary recurrent-RL
+literature. Fixed new-run RLT learning to endpoint sliding-window semantics; preserved legacy
+prefix checkpoint/launcher behavior explicitly. Strict context rejects evicted or gapped prefixes
+instead of pretending they are episode openings. Endpoint target history receives Polyak updates.
+Action-conditioned prediction heads now separate optional behavior regression (zero default),
+use component element means and robust padding; streaming KV follows model dtype. The cost probe
+measures full optimizer cadence and actual spatial forwards/valid positions. A bounded 40-point CPU
+probe is archived; it is not a GPU speed prediction. Added optional privileged-target recording
+independent of the point critic. No GPU training launched or existing job interrupted.
+
+See [review](performance/2026-09-13-pretraining-infrastructure-review.md) for retained limitations,
+source papers and the recommendation to prioritize a reusable trajectory corpus and elbow roll-in
+curriculum before larger memory. No offline trainer, usable prior or learned elbow gain is claimed.
+Final full CPU validation: 344 passed, 14 CUDA-marked tests deselected; one existing invalid-evaluation
+fixture warning. New launcher arguments pin endpoint mode, while old saved RLT commands retain prefix.

@@ -1,5 +1,7 @@
 """CPU checks that the three execution schedules of the recurrent looped transformer agree."""
 
+import copy
+
 import pytest
 import torch
 
@@ -37,6 +39,20 @@ def test_streaming_reproduces_the_window_at_every_position(window, groups, tied)
     with torch.no_grad():
         window_out = model.readout(model.run(tokens, torch.ones(B, T, dtype=torch.bool)).s)
     torch.testing.assert_close(_stream(model, tokens), window_out, atol=1e-5, rtol=1e-5)
+
+
+@pytest.mark.parametrize("dtype", [torch.float64, torch.bfloat16])
+def test_streaming_cache_matches_model_dtype(dtype):
+    model = _model().to(dtype=dtype)
+    tokens = _tokens().to(dtype=dtype)
+    state = model.init_state(B, T)
+    for caches in (state.enc_k, state.enc_v, state.mem_k, state.mem_v, state.dec_k, state.dec_v):
+        assert all(cache.dtype == dtype for cache in caches)
+    with torch.no_grad():
+        expected = model.readout(model.run(tokens, torch.ones(B, T, dtype=torch.bool)).s)
+        actual = torch.stack([model.step(state, tokens[:, t]) for t in range(T)], dim=1)
+    tolerance = 1e-10 if dtype == torch.float64 else 0.05
+    torch.testing.assert_close(actual, expected, atol=tolerance, rtol=tolerance)
 
 
 def test_a_padded_row_equals_the_shorter_sequence_and_starts_from_s_star():
@@ -96,6 +112,31 @@ def test_gradients_reach_the_first_token_and_the_initial_state_through_the_recur
     model.run(tokens, torch.ones(B, T, dtype=torch.bool)).s[:, -1].sum().backward()
     assert tokens.grad[:, 0].abs().sum() > 0
     assert model.s_star.grad is not None and model.s_star.grad.abs().sum() > 0
+
+
+def test_branch_gradients_match_independent_prefix_interventions():
+    model = _model().double()
+    independent = copy.deepcopy(model)
+    recorded = _tokens().double().requires_grad_()
+    candidates = _tokens(3).double().requires_grad_()
+    recorded_copy = recorded.detach().clone().requires_grad_()
+    candidates_copy = candidates.detach().clone().requires_grad_()
+    valid = torch.ones(B, T, dtype=torch.bool)
+    branch = model.branch(model.run(recorded, valid), candidates)
+    reference = torch.stack([
+        independent.run(torch.cat([recorded_copy[:, :t], candidates_copy[:, t:t + 1]], dim=1), valid[:, :t + 1]).s[:, -1]
+        for t in range(T)
+    ], dim=1)
+    coefficients = torch.randn_like(branch)
+    (branch * coefficients).sum().backward()
+    (reference * coefficients).sum().backward()
+    torch.testing.assert_close(branch, reference, atol=1e-10, rtol=1e-10)
+    torch.testing.assert_close(recorded.grad, recorded_copy.grad, atol=1e-10, rtol=1e-10)
+    torch.testing.assert_close(candidates.grad, candidates_copy.grad, atol=1e-10, rtol=1e-10)
+    for (name, parameter), (_, other) in zip(model.named_parameters(), independent.named_parameters()):
+        assert (parameter.grad is None) == (other.grad is None), name
+        if parameter.grad is not None:
+            torch.testing.assert_close(parameter.grad, other.grad, atol=1e-7, rtol=1e-10, msg=name)
 
 
 def test_streams_of_different_ages_advance_together_and_reset_individually():
@@ -204,3 +245,75 @@ def test_the_pretraining_step_runs_an_actor_on_a_sequence_batch():
     assert torch.isfinite(out["loss"]) and out["loss"].requires_grad
     out["loss"].backward()
     assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in actor.encoder.parameters())
+
+
+def test_pretraining_fits_action_dependent_outcomes_at_the_same_history():
+    from uipc_manip.rlt import TrajectoryPretrainingHead
+
+    torch.manual_seed(92)
+    head = TrajectoryPretrainingHead(4, 1, priv_dim=2)
+    # Identical history with opposite actions: a state-only predictor cannot fit these outcomes.
+    state = torch.zeros(2, 1, 4)
+    commands = torch.tensor([[[-1.0]], [[1.0]]])
+    valid = torch.ones(2, 1, dtype=torch.bool)
+    next_priv = torch.cat([2 * commands, -commands], dim=-1)
+    reward = 3 * commands
+    optimizer = torch.optim.SGD(head.parameters(), lr=0.15)
+    for _ in range(80):
+        losses = head(state, valid, commands, next_priv, reward)
+        optimizer.zero_grad()
+        losses["loss"].backward()
+        optimizer.step()
+    losses = head(state, valid, commands, next_priv, reward)
+    assert losses["next_priv"].item() < 1e-6
+    assert losses["reward"].item() < 1e-6
+    assert not losses["next_command"].requires_grad
+    assert all(parameter.grad is None for parameter in head.command.parameters())
+
+
+def test_pretraining_masks_nonfinite_padding_before_arithmetic():
+    from uipc_manip.rlt import TrajectoryPretrainingHead
+
+    torch.manual_seed(94)
+    head = TrajectoryPretrainingHead(4, 2, priv_dim=3, command_weight=0.5)
+    reference = copy.deepcopy(head)
+    state = torch.randn(1, 3, 4)
+    state[:, :2] = float("nan")
+    state.requires_grad_()
+    valid = torch.tensor([[False, False, True]])
+    commands, next_priv, rewards = torch.randn(1, 3, 2), torch.randn(1, 3, 3), torch.randn(1, 3, 1)
+    for target in (commands, next_priv, rewards):
+        target[:, :2] = float("nan")
+    actual = head(state, valid, commands, next_priv, rewards)
+    expected = reference(state.detach()[:, -1:], valid[:, -1:], commands[:, -1:], next_priv[:, -1:], rewards[:, -1:])
+    torch.testing.assert_close(actual["loss"], expected["loss"])
+    actual["loss"].backward()
+    expected["loss"].backward()
+    assert torch.isfinite(state.grad).all() and not state.grad[:, :2].any()
+    for parameter, other in zip(head.parameters(), reference.parameters()):
+        torch.testing.assert_close(parameter.grad, other.grad)
+
+
+def test_pretraining_component_means_and_weights_are_explicit():
+    from uipc_manip.rlt import TrajectoryPretrainingHead
+
+    head = TrajectoryPretrainingHead(4, 2, priv_dim=3, command_weight=2, priv_weight=3, reward_weight=4)
+    with torch.no_grad():
+        for parameter in head.parameters():
+            parameter.zero_()
+    state, valid = torch.zeros(1, 2, 4), torch.ones(1, 2, dtype=torch.bool)
+    losses = head(state, valid, torch.ones(1, 2, 2), torch.full((1, 2, 3), 2.0), torch.full((1, 2, 1), 3.0))
+    assert losses["next_command"].item() == 1
+    assert losses["next_priv"].item() == 4
+    assert losses["reward"].item() == 9
+    assert losses["loss"].item() == 2 * 1 + 3 * 4 + 4 * 9
+
+
+def test_actor_state_never_consumes_its_current_or_future_command():
+    history = RecurrentLoopedHistory(4, 2, 4, RLTConfig(dim=16, layers=1, heads=2))
+    latent = torch.randn(1, 4, 4)
+    commands = torch.randn(1, 4, 2, requires_grad=True)
+    state = history.sequence(latent, torch.ones(1, 4, dtype=torch.bool), commands[:, :-1])
+    state[:, 2].sum().backward()
+    assert commands.grad[:, :2].abs().sum() > 0
+    assert not commands.grad[:, 2:].any()

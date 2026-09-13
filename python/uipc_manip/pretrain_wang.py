@@ -478,7 +478,10 @@ class WangRun:
         self.spec = ObsSpec(targs.point_budget)
         self.agent = sac.SACAgent(self.spec, env.action_dim, sac_cfg, targs.device)
         self.labelled = plan["stage"] == "student"
-        priv_dim = sac_cfg.privileged_dim if self.privileged else 0
+        priv_dim = int(env.privileged_dim) if targs.record_privileged else (sac_cfg.privileged_dim if self.privileged else 0)
+        if targs.record_privileged and priv_dim <= 0:
+            raise ValueError("Privileged replay recording needs an environment with privileged targets")
+        self.privileged = bool(priv_dim)  # Recording is independent of what the critic is allowed to read.
         if plan["replay_split"] == "none":
             self.replay = FlatReplayBuffer(env.obs_dim, env.action_dim, targs.replay_capacity, targs.batch_size, targs.device,
                                            priv_dim=priv_dim, labelled=self.labelled, sequence=targs.sequence_replay)
@@ -801,6 +804,11 @@ def main(argv: list[str] | None = None) -> None:
         # The run continues where it was saved, whatever its directory is called now.
         argv += ["--work-dir", str(run_dir.parent), "--run-name", run_dir.name]
     args, targs, plan = prepare(argv)
+    if targs.history_kind == "rlt" and not any(token.split("=", 1)[0] == "--rlt-learning-mode" for token in argv):
+        # Old saved commands predate the mode flag and always used prefix losses.
+        # Pin resolved new-run defaults in argv so later resumes cannot change them.
+        targs.rlt_learning_mode = "prefix" if resume is not None else "endpoint"
+        argv += ["--rlt-learning-mode", targs.rlt_learning_mode]
     if resume is not None:
         saved = json.loads(json.dumps(resume["plan"]))
         if saved != json.loads(json.dumps(plan)):
