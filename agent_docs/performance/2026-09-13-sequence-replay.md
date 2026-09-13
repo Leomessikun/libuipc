@@ -143,6 +143,12 @@ world's build: flashsac, the privileged and latent critics, stochastic augmentat
 distillation onto a history-aware student. `distill` refuses a history teacher before loading data.
 Earlier checkpoints carry no `history_length` protocol key and keep loading as single-frame policies.
 
+`--history-kind rlt` keeps the same collection, replay and refusals and changes how a window is
+read and learned from: the recurrent looped transformer runs over the frames and every recorded
+position of the window is a learning step, as the [RLT record](2026-09-13-rlt-in-pretrain.md)
+describes; `--batch-size` then counts windows, so the record's H8 command uses 8 windows for 64
+learning positions per update.
+
 ## Validation
 
 CPU coverage exercises interleaved slots, gaps, episode ends versus bootstrap, stale circular

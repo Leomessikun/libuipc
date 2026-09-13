@@ -1918,3 +1918,21 @@ side, while `elbow_hook` and `last` alone pass 8/11 (ours) and 11/11 (FMVP). The
 [record](performance/2026-09-13-early-turn-filter-audit.md) names the cheapest fix: an outward
 offset of the `middle`-stage path, rerun on the same cells. Probe at
 `output/uipc_manip/early_turn_probe.py`; no GPU job ran.
+
+## 2026-09-13 — RLT in the pretraining infrastructure (stage 4 built, unmeasured on GPU)
+
+The owner rejected the deferral: "how could we use RLT in our pretrain infra". The
+[record](performance/2026-09-13-rlt-in-pretrain.md) answers with code on the branch: `rlt.py`
+implements the report's equations 2.1–2.16 (causal encoder with memory groups, gated merge,
+decoder blocks of sliding-window attention → memory cross-attention → FFN, optional tying) with
+three execution schedules — window `run`, per-position `branch`, streaming `step` — held equal by
+tests; `--history-kind rlt` puts it in the history slot of the actor and the dense critic, and
+`SACAgent._update_rlt` learns at every recorded position of a padded window under the report's
+replay contract (recorded pass rebuilt under current parameters, candidates branched from the
+recorded state, successor advanced with the recorded command, nothing detached inside the window);
+`TrajectoryPretrainingHead` is the 5.1 objective with continuous targets over all recorded
+trajectories. CPU cost probe: per learning position the RLT-H8 window costs 1.6× a single-frame
+transition and 2.8× less than the H4 frame history. Recorded as decisions, not built: a frozen
+spatial encoder arm and a cached feature column for whole-episode replay, and unconditional
+`priv` recording in sequence mode for the pretraining target. Commits `30bc39b1..` on
+`pretrain/recurrent-force-memory`; no GPU job ran (`abl_dense_s1` at 115k/125k).

@@ -217,3 +217,15 @@ the available controller budget rather than relying on the paper's unmeasured ef
 Local code was inspected at the baseline hash above. Historical force and elbow findings are
 linked in place; their later supersession is explicit. No policy training, runtime implementation,
 or measured gain was produced by this proposal.
+
+## Update, later on 2026-09-13: stage 4 built as a head, ahead of stage 3
+
+The owner asked for the concrete use of RLT rather than a deferral, so the gating language above
+no longer applies to it: the [RLT record](2026-09-13-rlt-in-pretrain.md) implements the report's
+equations 2.1–2.16 in `rlt.py`, puts the model in the `history_input` slot of the actor and the
+dense critic (`--history-kind rlt`), learns at every recorded position of a padded window under the
+report's replay contract, and adds its trajectory pretraining objective. The H4 frame history stays
+the control arm. The GRU pilot of stage 3 is now optional: the RLT windowed arm costs less per
+learning position than the frame history [MI, CPU] and needs no burn-in convention. What the RLT
+record leaves for later is the cached spatial feature column that whole-episode replay needs, and a
+frozen-encoder arm for it.
