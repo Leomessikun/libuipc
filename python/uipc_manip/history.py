@@ -75,3 +75,21 @@ class RolloutHistory:
             self._obs[:, -1] = obs
             self._actions[:, -1] = action
         np.minimum(self._filled + 1, self.length - 1, out=self._filled)
+
+
+def rollout_state(agent, num_streams: int) -> RolloutHistory | None:
+    """The agent's rollout state for these streams, or ``None`` for a single-frame policy.
+
+    A single-frame agent keeps its exact old call path: no state is created and
+    ``act`` is called as before, so enabling the machinery cannot change it.
+    """
+    if int(getattr(getattr(agent, "cfg", None), "history_length", 1)) > 1:
+        return agent.make_history(num_streams)
+    return None
+
+
+def act_with(agent, obs, deterministic: bool, history: RolloutHistory | None):
+    """Act through the rollout state when there is one; the caller resets finished streams."""
+    if history is None:
+        return agent.act(obs, deterministic)
+    return agent.act(obs, deterministic, history)

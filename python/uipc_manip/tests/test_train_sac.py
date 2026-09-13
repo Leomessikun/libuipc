@@ -282,3 +282,107 @@ def test_resume_refuses_a_changed_garment_placement(capsys):
         reconcile_resume_placement(SimpleNamespace(_resume_cell_plan={"live": old}, eval_only=False), new)
     reconcile_resume_placement(SimpleNamespace(_resume_cell_plan={"live": old}, eval_only=True), new)
     assert "sleeve_outward_garments [] -> ['tshirt_392', 'tshirt_4']" in capsys.readouterr().out
+
+
+class _ResetEnv:
+    """Two slots; slot 0 finishes every second step, slot 1 every fourth, and finished slots auto-reset."""
+
+    num_envs, obs_dim, action_dim = 2, 1, 1
+    descriptions = [{"garment": "tshirt_26", "config": {}, "build_seconds": 0, "settle_displacement_m": 0}] * 2
+    metric_keys = ()
+
+    def __init__(self):
+        self.step_count = 0
+
+    def reset(self, seeds):
+        return np.zeros((2, 1))
+
+    def step(self, actions):
+        self.step_count += 1
+        dones = np.array([self.step_count % 2 == 0, self.step_count % 4 == 0])
+        infos = [{"success": False, "distance": 0.5, "garment": "tshirt_26"} for _ in range(2)]
+        return np.zeros((2, 1)), np.zeros(2), dones, infos
+
+
+def test_evaluation_resets_only_the_rollout_state_of_a_finished_slot():
+    from uipc_manip.history import RolloutHistory
+
+    masks = []
+
+    def policy(obs, deterministic, history):
+        masks.append(history.window(obs)[2].copy())
+        history.push(obs, np.zeros((2, 1)))
+        return np.zeros((2, 1))
+
+    history = RolloutHistory(2, 1, 1, 3)
+    history.push(np.zeros((2, 1)), np.zeros((2, 1)))  # stale state from before this evaluation
+    evaluate(_ResetEnv(), policy, ObsSpec(3), SimpleNamespace(seed=0), 3, history=history)
+    # Decision 1 starts empty despite the stale push; slot 0 restarts after its step-2 finish while
+    # slot 1 keeps growing; both restart after step 4.
+    assert [m[0].tolist() for m in masks[:4]] == [[False, False, True], [False, True, True], [False, False, True], [False, True, True]]
+    assert [m[1].tolist() for m in masks[:4]] == [[False, False, True], [False, True, True], [True, True, True], [True, True, True]]
+    assert masks[4][0].tolist() == masks[4][1].tolist() == [False, False, True]
+
+
+def test_a_history_policy_needs_sequence_replay_and_then_trains_through_its_state(monkeypatch, tmp_path):
+    from uipc_manip import sac, train_sac
+    from uipc_manip.history import RolloutHistory
+
+    seen: list = []
+
+    class Agent:
+        def __init__(self, spec, action_dim, cfg, device):
+            self.cfg, self.updates = cfg, 0
+
+        def make_history(self, num_streams):
+            return RolloutHistory(num_streams, 1, 1, self.cfg.history_length)
+
+        def act(self, obs, deterministic, history=None):
+            assert history is not None, "a history-aware agent must be handed its rollout state"
+            seen.append(history.window(obs)[2].copy())
+            action = np.zeros((3, 1))
+            history.push(obs, action)
+            return action
+
+        def update(self, replay):
+            self.updates += 1
+            batch = replay.sample_sequences(self.cfg.history_length, 2, pad=True)
+            assert batch.valid[:, -1].all()
+            return {}
+
+        def train(self, training):
+            pass
+
+        def save(self, path, step, metadata):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return path
+
+    class Env:
+        num_envs, obs_dim, action_dim = 3, 1, 1
+        descriptions = [{"garment": "tshirt_26", "config": {}, "build_seconds": 0, "settle_displacement_m": 0}] * 3
+        count = 0
+
+        def reset(self, seeds):
+            return np.zeros((3, 1))
+
+        def step(self, actions):
+            self.count += 1
+            done = self.count % 3 == 0
+            return np.zeros((3, 1)), np.ones(3), np.full(3, done), [{"success": False}] * 3
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sac, "SACAgent", Agent)
+    monkeypatch.setattr(train_sac, "make_env", lambda args: Env())
+    monkeypatch.setattr(train_sac, "evaluate", lambda *a, **kw: {"success_rate": 0, "mean_final_distance": 1, "mean_return": 0})
+    argv = ["--num-envs", "3", "--total-transitions", "18", "--point-budget", "3", "--replay-capacity", "64", "--device", "cpu",
+            "--log-interval", "1", "--eval-freq", "0", "--checkpoint-interval", "0", "--init-steps", "2", "--history-length", "2",
+            "--work-dir", str(tmp_path)]
+    with pytest.raises(SystemExit):
+        train_sac.main(argv)
+    train_sac.main(argv + ["--sequence-replay"])
+    # Two warm-up commands entered the history: the first policy decision already sees a full prefix,
+    # and the episode end after step 3 empties it again.
+    assert seen[0][:, 0].tolist() == [True, True, True]
+    assert seen[1][:, 0].tolist() == [False, False, False]

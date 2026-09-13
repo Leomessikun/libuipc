@@ -130,14 +130,17 @@ class EpisodeTape:
 
 
 def run_world(env, cells, horizon: int, seed_base: int, out_dir: Path, index: int, *,
-              save_observations: bool = False, policy=None) -> list[dict]:
+              save_observations: bool = False, policy=None, history=None) -> list[dict]:
     """Play one episode on every slot of a built world; return one record per slot.
 
     ``policy`` maps observations to actions; without one the environment's scripted expert plays.
+    ``history`` is a history-aware policy's rollout state for this world, emptied at its reset.
     """
     (out_dir / "episodes").mkdir(parents=True, exist_ok=True)
     tapes = [EpisodeTape(env.metric_keys, save_observations) for _ in range(env.num_envs)]
     obs = env.reset([seed_base + i for i in range(env.num_envs)])
+    if history is not None:
+        history.reset()
     records: list[dict] = []
     for _ in range(int(horizon)):
         privileged = env.privileged()
@@ -198,7 +201,7 @@ def main(argv: list[str] | None = None) -> None:
     # Genesis must come up before anything runs matrix work on the GPU: generating a body does, and so
     # does building the agent, and cuBLAS first leaves Quadrants unable to start (``dressing_env``).
     _ensure_genesis(base_cfg.logging_level)
-    policy = None
+    policy = agent = None
     if payload is not None:
         import torch
 
@@ -210,7 +213,6 @@ def main(argv: list[str] | None = None) -> None:
                          SACConfig.from_dict(payload["sac_config"]), targs.device)
         agent.load(args.checkpoint, load_optimizers=False)
         agent.train(False)
-        policy = lambda obs: agent.act(obs, deterministic=True)  # noqa: E731
 
     factory = LiveCellFactory(base_cfg.live)
     wanted = pretrain_wang.region_configs([int(args.region)], garments, poses)
@@ -236,9 +238,15 @@ def main(argv: list[str] | None = None) -> None:
         # Without the watchdog a slow decision costs time only; a trip would void the whole world.
         cfg = replace(base_cfg, cells=tuple(chunk), decision_watchdog=False)
         env = GenesisIPCDressingEnv(cfg, num_envs=len(chunk), cell_factory=factory)
+        history = None
+        if agent is not None:
+            from .history import act_with, rollout_state
+
+            history = rollout_state(agent, env.num_envs)
+            policy = lambda obs, history=history: act_with(agent, obs, True, history)  # noqa: E731
         try:
             records += run_world(env, chunk, targs.horizon, int(args.seed) * 1000 + start, out_dir, start,
-                                 save_observations=bool(args.save_observations), policy=policy)
+                                 save_observations=bool(args.save_observations), policy=policy, history=history)
         finally:
             env.close()
             gc.collect()

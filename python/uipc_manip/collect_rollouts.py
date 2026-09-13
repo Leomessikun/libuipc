@@ -154,6 +154,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.checkpoint is not None:
         import torch
 
+        from .history import act_with, rollout_state
         from .obs import ObsSpec
         from .sac import SACAgent, SACConfig
 
@@ -162,14 +163,17 @@ def main(argv: list[str] | None = None) -> None:
         agent = SACAgent(ObsSpec(args.point_budget), env.action_dim, cfg, args.device)
         agent.load(args.checkpoint, load_optimizers=False)
         agent.train(False)
-        policy = lambda obs: agent.act(obs, deterministic=not args.stochastic)  # noqa: E731
+        history = rollout_state(agent, env.num_envs)
+        policy = lambda obs: act_with(agent, obs, not args.stochastic, history)  # noqa: E731
         manifest["checkpoint"] = str(args.checkpoint)
         manifest["sac_config"] = cfg.to_dict()
         manifest["protocol"] = agent.protocol()
         manifest["teacher_step"] = int(payload.get("step", 0))
     elif args.policy == "heuristic":
+        history = None
         policy = lambda obs: env.scripted_actions()  # noqa: E731
     else:
+        history = None
         policy = lambda obs: np.random.uniform(-1.0, 1.0, size=(obs.shape[0], env.action_dim))  # noqa: E731
     manifest["policy"] = "sac" if args.checkpoint is not None else str(args.policy)
     if args.checkpoint is None and args.policy == "sac":
@@ -182,6 +186,8 @@ def main(argv: list[str] | None = None) -> None:
     while collector.kept < args.target_kept_episodes and collector.attempts < args.max_episodes:
         actions = np.asarray(policy(obs), dtype=np.float32)
         next_obs, rewards, dones, infos = env.step(actions)
+        if history is not None and np.any(dones):
+            history.reset(np.asarray(dones, dtype=bool))
         for i, info in enumerate(infos):
             record = collector.step(i, obs[i], actions[i], float(rewards[i]), info)
             if record is not None:

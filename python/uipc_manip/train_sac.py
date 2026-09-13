@@ -94,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--replay-capacity", type=int, default=200_000)
     p.add_argument("--sequence-replay", action="store_true", help="Record episode identities and boundaries for sequence sampling; SAC updates remain single-frame.")
+    p.add_argument("--history-length", type=int, default=1, help="Frames the policy and critic condition on (the proposal's H); 1 is the single-frame network. Above 1 needs --sequence-replay.")
     p.add_argument("--discount", type=float, default=None, help="Override the horizon-equivalent Wang discount.")
     p.add_argument("--alpha-lr", type=float, default=None)
     p.add_argument("--actor-lr", type=float, default=1.0e-4)
@@ -264,6 +265,7 @@ def build_sac_config(args) -> SACConfig:
         critic_action_mode=args.critic_action_mode,
         trunk_style=args.trunk_style,
         trunk_blocks=args.trunk_blocks,
+        history_length=int(args.history_length),
         encoder_precision=args.encoder_precision,
         distill_weight=float(args.distill_weight) if args.teacher_checkpoints else 0.0,
     )
@@ -511,6 +513,7 @@ def heuristic_actions(obs: np.ndarray, spec: ObsSpec, max_translation: float) ->
 def evaluate(
     env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Path | None = None,
     *, slot_cells: list[tuple[str, int]] | None = None, heldout_slots=(),
+    history=None,
 ) -> dict:
     """Play deterministic episodes and report success and distance statistics.
 
@@ -533,6 +536,8 @@ def evaluate(
     seed_base = args.seed * 1000 + 97 * int(getattr(args, "_eval_round", 0))
     args._eval_round = int(getattr(args, "_eval_round", 0)) + 1
     obs = env.reset([seed_base + i for i in range(env.num_envs)])
+    if history is not None:
+        history.reset()
     finished: list[dict] = []
     returns = np.zeros(env.num_envs)
     max_tracking = np.zeros(env.num_envs)
@@ -543,11 +548,14 @@ def evaluate(
     trajectories = [[] for _ in range(env.num_envs)] if trajectory_dir is not None else None
     episode_index = 0
     while len(finished) < episodes:
-        actions = policy(obs, True)
+        actions = policy(obs, True) if history is None else policy(obs, True, history)
         if trajectories is not None:
             for i, state in enumerate(env.states()):
                 trajectories[i].append(state)
         obs, rewards, dones, infos = env.step(actions)
+        if history is not None and np.any(dones):
+            # A finished slot is reset by the environment; its prefix belongs to the old physics.
+            history.reset(np.asarray(dones, dtype=bool))
         returns += rewards
         for i, info in enumerate(infos):
             max_tracking[i] = max(max_tracking[i], float(info.get("tracking_error", 0.0)))
@@ -760,14 +768,17 @@ def main(argv: list[str] | None = None) -> None:
             if saved_task is not None and saved_task != args.task:
                 raise ValueError(f"Checkpoint was trained on task {saved_task!r}, not {args.task!r}")
             print(f"[uipc-manip] resumed {args.resume} at step {payload['step']}", flush=True)
-        policy = lambda obs, deterministic: agent.act(obs, deterministic)  # noqa: E731
+        from .history import act_with, rollout_state
+
+        policy = lambda obs, deterministic, history=None: act_with(agent, obs, deterministic, history)  # noqa: E731
 
     trajectory_dir = run_dir / "trajectories" if args.save_trajectories else None
     if args.eval_only or agent is None:
         if args.vis:
             _set_viewer_caption(env, f"uipc_manip {args.task} | {args.policy} policy | blue: deformable, green: goal, red: marker centroid")
         try:
-            metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir, slot_cells=slot_cells, heldout_slots=heldout_slots)
+            metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir, slot_cells=slot_cells, heldout_slots=heldout_slots,
+                                   history=rollout_state(agent, env.num_envs))
         except ViewerClosed:
             print("[uipc-manip] viewer closed; exiting", flush=True)
             return
@@ -847,6 +858,9 @@ def main(argv: list[str] | None = None) -> None:
 
     obs = env.reset(seeds)
     streams = ReplayStreams(replay, env.num_envs)
+    history = rollout_state(agent, env.num_envs)
+    if history is not None and not replay.sequence:
+        raise SystemExit("--history-length above 1 learns from padded episode windows; add --sequence-replay")
     priv = env.privileged() if privileged else None
     episode_return = np.zeros(env.num_envs)
     updates_started = agent.updates > 0
@@ -864,8 +878,11 @@ def main(argv: list[str] | None = None) -> None:
         t_phase = time.time()
         if vector_step <= args.init_steps:
             actions = np.random.uniform(-1.0, 1.0, size=(env.num_envs, env.action_dim)).astype(np.float32)
+            if history is not None:
+                # Warm-up commands shape the next decisions' history exactly as policy commands do.
+                history.push(obs, actions)
         else:
-            actions = agent.act(obs, deterministic=False).astype(np.float32)
+            actions = act_with(agent, obs, False, history).astype(np.float32)
         phase_s["act_s"] += time.time() - t_phase
         t_phase = time.time()
         next_obs, rewards, dones, infos = env.step(actions)
@@ -909,6 +926,8 @@ def main(argv: list[str] | None = None) -> None:
                 recent_success.append(float(info.get("success", False)))
                 episode_return[i] = 0.0
         streams.advance(dones)
+        if history is not None and np.any(dones):
+            history.reset(np.asarray(dones, dtype=bool))
         obs = next_obs
         priv = next_priv
         budget, updates_started = gradient_update_budget(
@@ -956,7 +975,8 @@ def main(argv: list[str] | None = None) -> None:
             replay.save(ckpt_dir / f"replay_{vector_step:07d}", metadata={"step": vector_step, "reward_scale": reward_scale})
             if do_eval or finished_budget:
                 agent.train(False)
-                metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir, slot_cells=slot_cells, heldout_slots=heldout_slots)
+                metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir, slot_cells=slot_cells, heldout_slots=heldout_slots,
+                                   history=rollout_state(agent, env.num_envs))
                 agent.train(True)
                 summary = {k: v for k, v in metrics.items() if k != "records"}
                 eval_logger.log({"step": vector_step, **summary})
@@ -967,6 +987,8 @@ def main(argv: list[str] | None = None) -> None:
                     agent.save(ckpt_dir / "best.pt", vector_step, {**metadata, "eval": summary})
                 obs = env.reset(seeds)
                 streams.reset(env.num_envs)
+                if history is not None:
+                    history.reset()
                 priv = env.privileged() if privileged else None
                 episode_return[:] = 0.0
             print(f"[uipc-manip] saved {path}", flush=True)

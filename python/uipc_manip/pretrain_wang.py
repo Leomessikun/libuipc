@@ -459,6 +459,7 @@ class WangRun:
     def make_agent(self, env):
         from . import sac
         from .replay import FlatReplayBuffer, ReplaySet
+        from .history import rollout_state
         from .replay_streams import ReplayStreams
         from .sac import wang_equivalent_reward_scale
 
@@ -492,9 +493,20 @@ class WangRun:
             if int(meta.get("transitions", -1)) != int(self.resume["transitions"]):
                 raise ValueError("The replay snapshot does not come from the checkpoint it is resumed with")
         self.streams = ReplayStreams(self.replay, env.num_envs)
+        self.history = rollout_state(self.agent, env.num_envs)
+        if self.history is not None and not self.replay.sequence:
+            raise SystemExit("--history-length above 1 learns from padded episode windows; add --sequence-replay")
 
-    def policy(self, obs, deterministic):
-        return self.agent.act(obs, deterministic)
+    def policy(self, obs, deterministic, history=None):
+        from .history import act_with
+
+        return act_with(self.agent, obs, deterministic, history)
+
+    def eval_history(self, env):
+        """A fresh rollout state per evaluation world; the training world keeps its own."""
+        from .history import rollout_state
+
+        return rollout_state(self.agent, env.num_envs)
 
     def add(self, i: int, obs, action, reward, next_obs, **kw) -> None:
         if self.labelled:
@@ -555,7 +567,7 @@ class WangRun:
         for chunk, (env, cells) in enumerate(self.eval_worlds):
             trajectories = self.run_dir / "trajectories" / f"eval_{transitions:08d}_{chunk}" if self.args.save_trajectories else None
             result = self.train_sac.evaluate(env, self.policy, self.spec, self.targs, env.num_envs, trajectories,
-                                             slot_cells=cells, heldout_slots=range(env.num_envs))
+                                             slot_cells=cells, heldout_slots=range(env.num_envs), history=self.eval_history(env))
             records += [{**r, "slot": int(r["slot"]) + offset} for r in result["records"]]
             offset += env.num_envs
         self.agent.train(True)
@@ -654,14 +666,19 @@ class WangRun:
             t = time.time()
             if step <= targs.init_steps:
                 actions = np.random.uniform(-1.0, 1.0, size=(env.num_envs, env.action_dim)).astype(np.float32)
+                if self.history is not None:
+                    # Warm-up commands shape the next decisions' history exactly as policy commands do.
+                    self.history.push(obs, actions)
             else:
-                actions = self.agent.act(obs, deterministic=False).astype(np.float32)
+                actions = self.policy(obs, False, self.history).astype(np.float32)
             self.timing["act_s"] += time.time() - t
             t = time.time()
             next_obs, rewards, dones, infos = env.step(actions)
             self.timing["env_s"] += time.time() - t
             if any(info.get("sim_error") for info in infos):
                 self.streams.close()
+                if self.history is not None:
+                    self.history.reset()
                 # The reference ends the episode on a simulator error and draws the next one; so does a rotation.
                 # The schedule still runs: the decision watchdog can cut every episode of a run short.
                 self.counters["sim_errors"] += 1
@@ -674,6 +691,7 @@ class WangRun:
                 self.on_schedule(transitions)
                 obs = self.rotate(transitions)
                 self.streams.reset(self.env.num_envs)
+                self.history = self.eval_history(self.env)
                 priv = self.env.privileged() if self.privileged else None
                 continue
             next_priv = env.privileged() if self.privileged else None
@@ -692,6 +710,8 @@ class WangRun:
                     recent_success.append(float(info.get("success", False)))
                     episode_return[i] = 0.0
             self.streams.advance(dones)
+            if self.history is not None and np.any(dones):
+                self.history.reset(np.asarray(dones, dtype=bool))
             obs, priv = next_obs, next_priv
             sizes = self.replay.sizes() if plan["replay_split"] != "none" else [self.replay.size]
             budget, self.updates_started = gradient_update_budget(
@@ -733,6 +753,7 @@ class WangRun:
             if self.counters["episodes"] % max(1, int(plan["rotate_every_episodes"])) == 0:
                 obs = self.rotate(transitions)
                 self.streams.reset(self.env.num_envs)
+                self.history = self.eval_history(self.env)
                 priv = self.env.privileged() if self.privileged else None
                 episode_return = np.zeros(len(self.slot_cells))
         self.streams.close()

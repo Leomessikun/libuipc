@@ -148,6 +148,9 @@ def main(argv: list[str] | None = None) -> None:
         min_upperarm_ratio=args.min_upperarm_ratio,
     )
     cfg = student_config(args, manifests)
+    if int(cfg.history_length) != 1:
+        raise SystemExit("The teacher is a history-aware policy; causal sequence behaviour cloning is not implemented, "
+                         "so a student cannot be distilled from single-frame demonstrations")
     agent = SACAgent(ObsSpec(summary["point_budget"]), summary["action_dim"], cfg, args.device)
     run_name = args.run_name or f"distill_{cfg.actor_type}_{cfg.encoder.kind}_seed{args.seed}"
     run_dir = Path(args.work_dir) / run_name

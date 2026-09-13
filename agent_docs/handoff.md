@@ -1857,3 +1857,16 @@ cannot carry rollout state can refuse the key.
 289 CPU tests pass, including H4 end to end on both actor types over a toy vector rollout, and the
 H1 parity gate: the default agent acts, updates, saves and loads exactly as before. The trainers do
 not expose the flag yet and no GPU job ran.
+
+## 2026-09-13 — Frame history reaches the trainers (stage 2 complete, unmeasured)
+
+`--history-length H` on both trainers (the Wang launcher forwards it) builds the H-frame policy
+and requires `--sequence-replay`. `history.rollout_state`/`act_with` keep the single-frame path
+byte-for-byte: no state is created and `act` is called as before. Above 1, the training world,
+each evaluation world, `expert_baseline` and `collect_rollouts` own a `RolloutHistory`, emptied on
+episode end, rotation, evaluation, simulator error and resume; warm-up commands enter it like policy
+commands; `evaluate` resets only the finished slots. `distill` refuses a history teacher because
+causal sequence BC is not written. The [record](performance/2026-09-13-sequence-replay.md) carries
+the exact H4 command against the running dense/plain ablation; it was not launched, the GPU being
+held by that ablation, which the proposal's stage 0 gate requires to finish first. The stage 3 GRU
+pilot and the RLT-inspired variant remain proposals.

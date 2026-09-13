@@ -176,10 +176,14 @@ RUN_ARGV = [
 ]
 
 
+MASKS: list = []
+
+
 @pytest.fixture
 def stub_run(monkeypatch):
     """The real run loop over stub worlds, placement and agent; yields every world built."""
     TRIPS.clear()
+    MASKS.clear()
     built: list = []
     agents: list = []
 
@@ -247,10 +251,23 @@ def stub_run(monkeypatch):
         def set_teachers(self, teachers):
             self.teachers = dict(teachers)
 
-        def act(self, obs, deterministic):
-            return np.zeros((obs.shape[0], 1), dtype=np.float32)
+        def make_history(self, num_streams):
+            from uipc_manip.history import RolloutHistory
+
+            return RolloutHistory(num_streams, 1, 1, self.cfg.history_length)
+
+        def act(self, obs, deterministic, history=None):
+            assert (history is None) == (self.cfg.history_length == 1)
+            action = np.zeros((obs.shape[0], 1), dtype=np.float32)
+            if history is not None:
+                MASKS.append(history.window(obs)[2].copy())
+                history.push(obs, action)
+            return action
 
         def update(self, replay):
+            if self.cfg.history_length > 1:
+                self.updates += 1
+                return {}
             batch = replay.sample(self.cfg.batch_size)
             # (buffer index, garments of the batch's rows, their region labels when the replay carries them)
             labels = sorted({int(v) for v in batch[-2].tolist()}) if replay.labelled else None
@@ -401,3 +418,24 @@ def test_a_world_that_fails_to_build_is_drawn_again(stub_run, tmp_path):
     pretrain_wang.main(RUN_ARGV + ["--transitions", "8", "--work-dir", str(tmp_path), "--run-name", "retry"])
     state = json.loads((tmp_path / "retry" / "checkpoints" / "state.json").read_text())
     assert not FAIL_BUILDS and state["counters"]["build_failures"] == 1 and state["counters"]["rotations"] == 1
+
+
+def test_history_policy_needs_sequence_replay_and_keeps_state_per_world(stub_run, tmp_path):
+    argv = RUN_ARGV + ["--history-length", "2", "--transitions", "16", "--work-dir", str(tmp_path), "--run-name", "history"]
+    with pytest.raises(SystemExit):
+        pretrain_wang.main(argv)
+    assert not MASKS
+    pretrain_wang.main(argv + ["--sequence-replay"])
+    seen = [tuple(m[0].tolist()) for m in MASKS]
+    # Every decision of a two-step episode: an empty prefix, then a full one, in every world including
+    # the evaluation worlds; a prefix never survives an episode end, a rotation or an evaluation.
+    assert (False, True) in seen and (True, True) in seen
+    for earlier, later in zip(seen, seen[1:]):
+        assert earlier != (True, True) or later == (False, True)
+    replay_dir = tmp_path / "history" / "checkpoints" / "replay_latest"
+    keys = json.loads((replay_dir / "replay_set.json").read_text())["keys"]
+    replay = ReplaySet(keys, 1, 1, 64, 2, "cpu", sequence=True)
+    replay.load(replay_dir)
+    batch = replay.sample_sequences(2, 8, pad=True)
+    assert batch.valid[:, -1].all() and set(batch.episode_steps[:, -1].tolist()) == {0, 1}
+    pretrain_wang.main(["resume", str(tmp_path / "history"), "--transitions", "24"])

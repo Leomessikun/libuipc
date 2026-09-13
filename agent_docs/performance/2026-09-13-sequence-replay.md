@@ -4,8 +4,9 @@ The first implementation stage of the [recurrent pretraining proposal](2026-09-1
 records continuous interaction histories without changing the current actor, critic or SAC loss.
 `train_sac` and the regional teacher/student launcher accept `--sequence-replay` (default: disabled).
 Enabling it records additional metadata; the existing learner still samples independent transitions.
-Padded windows and the matching streaming rollout state were added afterwards, still without
-changing the actor, critic or loss. GRU/RLT models and sequence losses are subsequent work.
+Padded windows, the matching streaming rollout state and the stage 2 ordered frame history were
+added afterwards; `--history-length H` above 1 switches both trainers to it and requires the flag.
+GRU/RLT models and burn-in sequence losses are subsequent work.
 
 ## Collection and boundaries
 
@@ -112,6 +113,34 @@ prefix from different physics is not a shorter history but a wrong one.
 no command. It is the parity setting against which the history-aware model must reproduce the
 current feedforward baseline.
 
+## Running the finite-history policy
+
+`--history-length H` sets `SACConfig.history_length`. At 1, the default, nothing changes: no rollout
+state is created and the agent is called exactly as before. Above 1 the actor and the dense critic
+encode each of the last `H` frames on its own and read the ordered frame vectors, their validity
+and the commands between them (`models.FrameHistory`); learning draws padded windows of length `H`
+from sequence replay and trains one step per window, its last transition; and every collector —
+the training world, each evaluation world, `expert_baseline`, `collect_rollouts` — owns a
+`RolloutHistory` that it empties on episode end, rotation, evaluation, simulator error and resume.
+Warm-up commands enter the history like policy commands. Each decision costs `H` encoder passes;
+that price is unmeasured here. The successor window of a Bellman target advances the history with
+the command actually recorded, never with a fresh candidate.
+
+The H4 arm of the proposal's comparison against the running dense/plain ablation is:
+
+```bash
+PYTHONPATH=python /home/ge47gax/kun/genesis-world/.venv/bin/python -m uipc_manip.pretrain_wang teacher \
+  --region 13 --transitions 125000 --seed 1 --checkpoint-every 25000 \
+  --obs-mode wang_static_arm --no-obs-augment --critic-action-mode dense --trunk-style plain \
+  --sequence-replay --history-length 4 --run-name abl_h4_s1
+```
+
+It was not launched: the GPU is held by the critic ablation, and the proposal gates this arm on
+that ablation's valid held-out result. Refused before a world is allocated: flashsac, the privileged
+and latent critics, teacher distillation onto a history-aware student, stochastic augmentation, a
+history checkpoint given to `distill`, and `--history-length` without `--sequence-replay`. Earlier
+checkpoints carry no `history_length` protocol key and keep loading as single-frame policies.
+
 ## Validation
 
 CPU coverage exercises interleaved slots, gaps, episode ends versus bootstrap, stale circular
@@ -121,7 +150,11 @@ covers padded coverage of every transition, zeroed and identity-free padding, th
 across an episode boundary, and equality between padded and complete windows. A stub simulation
 drives the real Wang training loop through a failed episode, world rotations and checkpoint resume.
 
-The parity gate for the next stage is explicit: for `L` in 1, 2, 4 and 7, stepping `RolloutHistory`
-through a recorded episode reproduces the sampler's padded window at every decision, mask included.
-These checks validate data semantics; they do not establish GPU simulation performance or improved
-dressing success.
+The parity gates are explicit: for `L` in 1, 2, 4 and 7, stepping `RolloutHistory` through a
+recorded episode reproduces the sampler's padded window at every decision, mask included; at
+`history_length=1` the heads keep their parameter names and outputs, the default agent acts, updates,
+saves and loads exactly as before, and the trainers never create a state. Model tests cover masked
+padding, that the oldest frame and command are read, and that the candidate action touches only
+the current frame while keeping its gradient. Stub runs of both trainers drive an H2 policy through
+warm-up, episode ends, rotation, evaluation and resume, checking the state empties at each. These
+checks validate semantics; they do not establish GPU cost, throughput or improved dressing success.
