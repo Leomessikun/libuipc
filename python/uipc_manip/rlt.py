@@ -436,3 +436,59 @@ class RecurrentLoopedHistory(nn.Module):
     def forward(self, latent: torch.Tensor, valid: torch.Tensor, commands: torch.Tensor | None = None) -> torch.Tensor:
         """``latent [B,L,frame_dim]``, ``valid [B,L]``, ``commands [B,L-1,action_dim]`` -> ``[B,d]`` at the last frame."""
         return self.sequence(latent, valid, commands)[:, -1]
+
+
+class TrajectoryPretrainingHead(nn.Module):
+    """The report's autoregressive pretraining (5.1) with continuous targets.
+
+    A dressing trajectory has no vocabulary, so "predict the next token from ``s_t``" becomes: from
+    the state after frame ``t``, predict the command taken there (the action *is* the next token),
+    the privileged state the simulator reached next, and the reward. The privileged target is fixed
+    by the simulator, so the objective cannot collapse onto its own features; the reward target is
+    the value learner's first ingredient. Every recorded sequence qualifies — the expert's, a failed
+    policy's, a random one's — which is what makes this a pretraining stage rather than imitation.
+    Losses are mean squared errors averaged over recorded positions (5.2: masking never detaches
+    the state). The scripted expert is bang-bang, so its commands get a squared error, not a
+    Gaussian likelihood (see ``squashed_action_log_prob``).
+    """
+
+    def __init__(self, dim: int, action_dim: int, priv_dim: int = 0, reward: bool = True) -> None:
+        super().__init__()
+        self.command = nn.Linear(dim, int(action_dim))
+        self.priv = nn.Linear(dim, int(priv_dim)) if int(priv_dim) > 0 else None
+        self.reward = nn.Linear(dim, 1) if reward else None
+
+    def forward(self, state: torch.Tensor, valid: torch.Tensor, commands: torch.Tensor,
+                next_priv: torch.Tensor | None = None, rewards: torch.Tensor | None = None) -> dict:
+        """``state [B,T,d]`` readouts, ``valid [B,T]``, ``commands [B,T,A]`` taken at each position,
+        ``next_priv [B,T,P]`` reached after it, ``rewards [B,T,1]``. Returns the per-target losses
+        and their sum under ``"loss"``."""
+        mask = valid.to(state.dtype)[..., None]
+        weight = 1.0 / mask.sum().clamp_min(1.0)
+        mse = lambda pred, target: (((pred - target) ** 2) * mask).sum() * weight  # noqa: E731
+        out = {"next_command": mse(torch.tanh(self.command(state)), commands)}
+        if self.priv is not None:
+            if next_priv is None:
+                raise ValueError("This head predicts the privileged state; the batch carries none")
+            out["next_priv"] = mse(self.priv(state), next_priv)
+        if self.reward is not None:
+            if rewards is None:
+                raise ValueError("This head predicts the reward; the batch carries none")
+            out["reward"] = mse(self.reward(state), rewards)
+        out["loss"] = sum(out.values())
+        return out
+
+
+def pretraining_step(actor, head: TrajectoryPretrainingHead, batch, unpack) -> dict:
+    """One pretraining loss on a padded ``SequenceBatch`` for an actor with an RLT history.
+
+    The actor's own stack — spatial encoder, tokens ``[frame_t ; a_{t-1}]``, recurrent state —
+    is what pretrains, so RL then starts from the weights that predicted the trajectories.
+    ``unpack`` turns flat observations into the encoder's ``(pos, feat, valid, extra)``.
+    """
+    length = batch.actions.shape[1]
+    frames = unpack(batch.obs[:, :length].reshape(-1, batch.obs.shape[-1]))
+    valid = batch.valid.bool()
+    state = actor.history.sequence(actor._frame_latent(frames).reshape(*valid.shape, -1), valid, batch.actions[:, :-1])
+    next_priv = batch.priv[:, 1:] if getattr(batch, "priv", None) is not None else None
+    return head(state, valid, batch.actions, next_priv, batch.rewards)

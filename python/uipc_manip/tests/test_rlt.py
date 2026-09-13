@@ -145,3 +145,62 @@ def test_history_tokens_carry_the_previous_command_only_where_its_frame_is_recor
         every = history.sequence(latent, valid, commands)
     torch.testing.assert_close(last, every[:, -1])
     assert last.shape == (2, 16) and torch.isfinite(every).all()
+
+
+def test_the_pretraining_objective_reads_only_recorded_positions_and_fits_a_predictable_sequence():
+    from uipc_manip.rlt import TrajectoryPretrainingHead
+
+    torch.manual_seed(0)
+    history = RecurrentLoopedHistory(4, 2, 3, RLTConfig(dim=16, layers=1, heads=2)).train()
+    head = TrajectoryPretrainingHead(16, action_dim=2, priv_dim=3, reward=True)
+    latent, valid = torch.randn(4, 6, 4), _padded_rows([[False, False, True, True, True, True], [True] * 6, [True] * 6, [False] * 5 + [True]])
+    commands = torch.tanh(latent[:, :, :2])            # the command is a function of the frame: learnable
+    next_priv, rewards = latent[:, :, :3] * 2.0, latent[:, :, :1].sum(-1, keepdim=True)
+    with pytest.raises(ValueError, match="privileged"):
+        head(history.sequence(latent, valid, commands[:, :-1]), valid, commands, None, rewards)
+    # Padded content is unread: changing it changes nothing.
+    other = torch.where(valid[..., None], latent, torch.randn_like(latent))
+    with torch.no_grad():
+        a = head(history.sequence(latent, valid, commands[:, :-1]), valid, commands, next_priv, rewards)
+        b = head(history.sequence(other, valid, commands[:, :-1]), valid, commands, next_priv, rewards)
+    torch.testing.assert_close(a["loss"], b["loss"])
+    assert set(a) == {"next_command", "next_priv", "reward", "loss"}
+    optim = torch.optim.Adam([*history.parameters(), *head.parameters()], lr=3e-3)
+    first = None
+    for _ in range(150):
+        out = head(history.sequence(latent, valid, commands[:, :-1]), valid, commands, next_priv, rewards)
+        optim.zero_grad()
+        out["loss"].backward()
+        optim.step()
+        first = out["loss"].item() if first is None else first
+    assert out["loss"].item() < 0.25 * first
+
+
+def _padded_rows(rows):
+    return torch.tensor(rows)
+
+
+def test_the_pretraining_step_runs_an_actor_on_a_sequence_batch():
+    from uipc_manip.models import Actor, EncoderConfig
+    from uipc_manip.obs import ObsSpec
+    from uipc_manip.replay import FlatReplayBuffer
+    from uipc_manip.rlt import TrajectoryPretrainingHead, pretraining_step
+
+    torch.manual_seed(0)
+    spec, action_dim, priv_dim, length = ObsSpec(8), 2, 3, 4
+    encoder = EncoderConfig(sa_mlp=[[8, 8], [8, 8], [8, 8]], fp_mlp=[[8, 8], [8, 8], [8, 8]], linear_mlp=[8], output_dim=5,
+                            sa_neighbors=[2, 2], sa_ratio=[1.0, 1.0])
+    actor = Actor(spec, action_dim, 16, encoder, history_length=length, history_kind="rlt", rlt=RLTConfig(dim=16, layers=1, heads=2))
+    head = TrajectoryPretrainingHead(16, action_dim, priv_dim)
+    replay = FlatReplayBuffer(spec.dim, action_dim, 64, 4, "cpu", priv_dim=priv_dim, sequence=True)
+    rng = torch.Generator().manual_seed(1)
+    for step in range(10):
+        obs = torch.rand(spec.dim, generator=rng).numpy()
+        obs[7 * 8 - 4] = 1.0  # a tool flag somewhere so the cloud has a valid point
+        replay.add(obs, torch.rand(action_dim, generator=rng).numpy(), 0.5, obs, False, priv=torch.rand(priv_dim, generator=rng).numpy(),
+                   next_priv=torch.rand(priv_dim, generator=rng).numpy(), stream_id=0, episode_id=0, episode_step=step, episode_end=step == 9)
+    batch = replay.sample_sequences(length, 4, pad=True)
+    out = pretraining_step(actor, head, batch, spec.unpack_torch)
+    assert torch.isfinite(out["loss"]) and out["loss"].requires_grad
+    out["loss"].backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in actor.encoder.parameters())
