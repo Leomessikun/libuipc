@@ -1973,3 +1973,33 @@ sequences with `priv`, so no real corpus exists and no online run has started fr
 representation. The [record](performance/2026-09-13-offline-pretraining.md) has the diagnostic
 commands. Full CPU suite: 351 passed, 14 CUDA-marked deselected. No GPU job launched; the critic
 ablation chain moved on to `abl_residual_s1` on its own.
+
+## 2026-09-13 — Physics gradients as control signals: Level 1 probe (new line, branch `research/physics-gradients`)
+
+The owner rejected further recombination of known recipes and asked for a novel contribution to
+policy training. The line opened here uses the simulator's own optimizer: IPC solves
+`x⁺ = argmin E(x; u)`, so `∂x⁺/∂u = −H⁻¹ ∂²E/∂x∂u` with the Newton Hessian the solver already
+assembled and the gripper entering through `SoftPositionConstraint`. Novelty is stated narrowly
+(DiffCloth did differentiable assisted dressing, DiffIPC the adjoint through IPC, SHAC the
+actor-critic split): IPC barrier contact + sleeve threading + closed-loop policy learning.
+`python -m uipc_manip.physics_gradient_probe` (Level 1, black box) drives the expert to its
+elbow / passed / stall states on one cell, dumps and restores them (`World.dump`/`recover`), and
+measures repeatability, locality (central differences at 1, 2, 5 mm, three repeats) and
+usefulness (twelve 4 mm decisions along each gradient, the expert, random, hold), recording the
+translation the environment actually executed. Three cells, seven states, ~45 shared-GPU
+minutes. Findings: decision noise is state-dependent (five states ≤ 0.2 mm, two elbows 0.8 and
+23 mm); after the elbow the coverage gradient is a genuine derivative (repeat cosine 1.0, stable
+across step sizes, SNR 10²–10³) and walking it beat the expert and the best random direction at
+all three executable post-elbow states with half the expert's travel (e.g. +24 mm at 16 N against
+the expert's +20 mm at 368 N); at the elbow the coverage reward is flat in every cell (Wang's
+ratio is zero before the elbow), so a one-step reward gradient cannot be the elbow's signal — the
+state sensitivity exists there, the reward's does not, which is SHAC's split (physics `∂x/∂u`,
+learned `∂V/∂x`); cell 1's stall is a lock of the environment's no-move collision rule, not the
+tether (held-vertex gap 19.6 mm < 60 mm), a non-physical command→executed map no adjoint sees.
+The probe now also walks the normalised sum of the coverage and minus-force gradients and a
+release-then-advance sequence (not yet run), repeats walks at noisy states, and reports
+differences per executed metre; `tests/test_physics_gradient_probe.py` (3) covers that
+bookkeeping on a fake environment. [Record](performance/2026-09-13-physics-gradients.md) has the
+tables, the Level 2 backend design (solve `Hλ = g` on the converged frame's system, chain six
+frames through the inertia term, validate against these differences to cosine ≥ 0.95) and the
+Level 3 plan. No learner changed, no training launched.

@@ -17,9 +17,11 @@ measures three things:
    the gripper translation, at several step sizes and repeated: the cosine similarity between
    repeats (noise) and between step sizes (is it a gradient or a step-size artefact?).
 3. **Usefulness** — from the restored state, walk several decisions along the coverage gradient,
-   along minus the contact-energy gradient, along the expert's own commands, along random
-   directions and holding still: does the direction the physics gives raise coverage or lower
-   force better than the alternatives over a short horizon?
+   along minus the force and contact-energy gradients, along both at once (their normalised sum,
+   and release-then-advance), along the expert's own commands, along random directions and
+   holding still: does the direction the physics gives raise coverage or lower force better than
+   the alternatives over a short horizon? Every outcome carries the translation the environment
+   actually executed, since its tether and no-move collision rules can shorten or drop a command.
 
 Everything is written as JSON; nothing is interpreted here. The base command is the hold
 (zero translation, zero rotation) unless ``--base expert`` centres the differences on the
@@ -121,6 +123,25 @@ def opening_axis(env, positions) -> float:
     return best[1]
 
 
+def arm_clearance(env) -> float:
+    """Distance [m] from the gripper anchor to the nearest arm-shell point; the environment drops
+    any move that would bring it under ``no_move_collision_threshold`` (12 mm)."""
+    cell = env.cells[0]
+    return float(np.min(np.linalg.norm(cell.arm_points - env._anchor[0][None, :], axis=1)))
+
+
+def upperarm_axis(env, positions) -> float:
+    """Signed projection [m] of the opening centroid onto the elbow -> shoulder axis, unclipped.
+
+    ``opening_axis`` clips its projection onto both segments, which flattens it at the elbow corner;
+    this reading is linear there (negative below the elbow).
+    """
+    cell = env.cells[0]
+    c = positions[0][cell.opening_idx].mean(axis=0)
+    d = cell.shoulder - cell.elbow
+    return float((c - cell.elbow) @ d / float(np.linalg.norm(d)))
+
+
 def measure(env) -> dict:
     positions = env.positions()
     pr = env._progress(positions)[0]
@@ -133,6 +154,8 @@ def measure(env) -> dict:
         "contact_energy": contact_energy(env),
         "tracking_error": float(env._tracking_error(0, positions)),
         "anchor": env._anchor[0].tolist(),
+        "arm_clearance_m": arm_clearance(env),
+        "upperarm_axis_m": upperarm_axis(env, positions),
     }
     out.update({f"solver_{k}": v for k, v in frame_stats(env).items()})
     return out
@@ -181,11 +204,17 @@ def restore(env, snap: dict) -> float:
 
 
 def decision(env, action: np.ndarray) -> dict:
-    _, reward, done, infos = env.step(np.asarray(action, dtype=np.float32)[None])
+    """One decision; the outcome carries the commanded and the executed gripper translation [m], the
+    latter after the environment's tether and no-move collision rules."""
+    action = np.asarray(action, dtype=np.float32)
+    before = env._anchor[0].copy()
+    _, reward, done, infos = env.step(action[None])
     if infos[0].get("sim_error"):
         raise RuntimeError(f"simulator error: {infos[0].get('error')}")
     out = measure(env)
     out["reward_step"] = float(reward[0])
+    out["commanded_m"] = float(np.linalg.norm(action[:3]) * float(env.cfg.max_translation))
+    out["executed_m"] = float(np.linalg.norm(env._anchor[0] - before))
     return out
 
 
@@ -218,7 +247,7 @@ def cosine(a, b) -> float:
 def gradients(env, snap: dict, base: np.ndarray, epsilons_m: list[float], repeats: int) -> dict:
     """Central differences of the outcome quantities with respect to the gripper translation."""
     max_t = float(env.cfg.max_translation)
-    keys = ("upperarm_ratio", "opening_axis_m", "net_normal_n", "summed_normal_n", "contact_energy", "reward")
+    keys = ("upperarm_ratio", "opening_axis_m", "upperarm_axis_m", "net_normal_n", "summed_normal_n", "contact_energy", "reward")
     per_eps = {}
     for eps in epsilons_m:
         step = eps / max_t
@@ -236,12 +265,22 @@ def gradients(env, snap: dict, base: np.ndarray, epsilons_m: list[float], repeat
                 if any(plus[a][k] is None or minus[a][k] is None for a in range(3)):
                     grad[k] = None
                     continue
-                grad[k] = [(plus[a][k] - minus[a][k]) / (2.0 * eps) for a in range(3)]  # per metre
+                grad[k] = [(plus[a][k] - minus[a][k]) / (2.0 * eps) for a in range(3)]  # per commanded metre
             grad["outcomes"] = {k: {"plus": [plus[a][k] for a in range(3)], "minus": [minus[a][k] for a in range(3)]} for k in keys}
+            # The environment may drop or shorten a move (tether, no-move collision); the difference per
+            # executed metre is the derivative of the physics, the one above of the environment.
+            executed = {"plus": [plus[a]["executed_m"] for a in range(3)], "minus": [minus[a]["executed_m"] for a in range(3)]}
+            grad["executed_m"] = executed
+            grad["per_executed_metre"] = {
+                k: (None if grad[k] is None else [
+                    ((plus[a][k] - minus[a][k]) / (executed["plus"][a] + executed["minus"][a]))
+                    if executed["plus"][a] + executed["minus"][a] > 0.0 else None for a in range(3)])
+                for k in keys}
             grads.append(grad)
         per_eps[str(eps)] = {
             "gradients": grads,
             "mean": {k: (np.mean([g[k] for g in grads], axis=0).tolist() if grads[0][k] is not None else None) for k in keys},
+            "mean_executed_m": {s: np.mean([g["executed_m"][s] for g in grads], axis=0).tolist() for s in ("plus", "minus")},
             "repeat_cosine": {k: ([cosine(grads[i][k], grads[j][k]) for i in range(len(grads)) for j in range(i + 1, len(grads))]
                                   if grads[0][k] is not None else None) for k in keys},
         }
@@ -251,23 +290,42 @@ def gradients(env, snap: dict, base: np.ndarray, epsilons_m: list[float], repeat
     return {"epsilons_m": epsilons_m, "per_epsilon": per_eps, "locality_cosine": locality, "base_action": base.tolist()}
 
 
-def walk(env, snap: dict, direction, steps: int) -> dict:
-    """``direction(step) -> action``; returns the outcome after every decision."""
-    err = restore(env, snap)
-    rows = []
-    for s in range(steps):
-        rows.append(decision(env, np.clip(direction(s), -1.0, 1.0)))
-    first, last = snap["measure"], rows[-1]
-    return {"restore_error_m": err, "rows": rows,
-            "delta_upperarm": last["upperarm_ratio"] - first["upperarm_ratio"],
-            "delta_opening_axis_m": last["opening_axis_m"] - first["opening_axis_m"],
-            "max_opening_axis_m": max(r["opening_axis_m"] for r in rows),
-            "max_upperarm": max(r["upperarm_ratio"] for r in rows),
-            "delta_net_normal_n": last["net_normal_n"] - first["net_normal_n"],
-            "mean_net_normal_n": float(np.mean([r["net_normal_n"] for r in rows]))}
+def walk(env, snap: dict, direction, steps: int, repeats: int = 1) -> dict:
+    """``direction(step) -> action``; returns the outcome after every decision of the first run and,
+    with ``repeats > 1``, the end-of-walk summaries of every run (for states whose decision is noisy)."""
+    runs = []
+    for _ in range(repeats):
+        err = restore(env, snap)
+        rows = []
+        for s in range(steps):
+            rows.append(decision(env, np.clip(direction(s), -1.0, 1.0)))
+        first, last = snap["measure"], rows[-1]
+        runs.append({"restore_error_m": err, "rows": rows,
+                     "delta_upperarm": last["upperarm_ratio"] - first["upperarm_ratio"],
+                     "delta_opening_axis_m": last["opening_axis_m"] - first["opening_axis_m"],
+                     "delta_upperarm_axis_m": last["upperarm_axis_m"] - first["upperarm_axis_m"],
+                     "max_opening_axis_m": max(r["opening_axis_m"] for r in rows),
+                     "max_upperarm": max(r["upperarm_ratio"] for r in rows),
+                     "delta_net_normal_n": last["net_normal_n"] - first["net_normal_n"],
+                     "mean_net_normal_n": float(np.mean([r["net_normal_n"] for r in rows])),
+                     "executed_m": float(sum(r["executed_m"] for r in rows)),
+                     "commanded_m": float(sum(r["commanded_m"] for r in rows)),
+                     "final_tracking_error": last["tracking_error"], "final_arm_clearance_m": last["arm_clearance_m"]})
+    out = dict(runs[0])
+    if repeats > 1:
+        summary_keys = ("delta_upperarm", "delta_opening_axis_m", "delta_upperarm_axis_m", "delta_net_normal_n", "mean_net_normal_n", "executed_m")
+        out["repeats"] = [{k: r[k] for k in summary_keys} for r in runs]
+        out["repeat_mean"] = {k: float(np.mean([r[k] for r in runs])) for k in summary_keys}
+        out["repeat_std"] = {k: float(np.std([r[k] for r in runs])) for k in summary_keys}
+    return out
 
 
-def usefulness(env, snap: dict, grad: dict, steps: int, magnitude_m: float, seed: int) -> dict:
+WALKS = ("coverage_gradient", "axis_gradient", "minus_force_gradient", "minus_energy_gradient", "combined_gradient",
+         "release_then_advance", "expert", "hold", "random")
+
+
+def usefulness(env, snap: dict, grad: dict, steps: int, magnitude_m: float, seed: int, repeats: int = 1,
+               walks: tuple[str, ...] = WALKS) -> dict:
     max_t = float(env.cfg.max_translation)
     scale = magnitude_m / max_t
     eps_key = str(grad["epsilons_m"][len(grad["epsilons_m"]) // 2])
@@ -284,18 +342,34 @@ def usefulness(env, snap: dict, grad: dict, steps: int, magnitude_m: float, seed
     def expert(s):
         return heuristic(env).actions()[0]
 
-    out = {"gradient_epsilon_m": float(eps_key), "step_magnitude_m": magnitude_m, "steps": steps, "walks": {}}
-    out["walks"]["coverage_gradient"] = walk(env, snap, fixed(g_cov), steps)
+    def sequenced(first, then, switch):
+        a_first, a_then = fixed(first)(0), fixed(then)(0)
+        return lambda s: a_first if s < switch else a_then
+
+    out = {"gradient_epsilon_m": float(eps_key), "step_magnitude_m": magnitude_m, "steps": steps, "walk_repeats": repeats,
+           "release_steps": steps // 3, "random_seed": seed, "walks": {}}
     g_axis = grad["per_epsilon"][eps_key]["mean"]["opening_axis_m"]
-    if g_axis is not None:
-        out["walks"]["axis_gradient"] = walk(env, snap, fixed(np.asarray(g_axis)), steps)
-    out["walks"]["minus_force_gradient"] = walk(env, snap, fixed(-g_force), steps)
-    if g_energy is not None:
-        out["walks"]["minus_energy_gradient"] = walk(env, snap, fixed(-np.asarray(g_energy)), steps)
-    out["walks"]["expert"] = walk(env, snap, expert, steps)
-    out["walks"]["hold"] = walk(env, snap, lambda s: np.zeros(6), steps)
-    for i in range(3):
-        out["walks"][f"random_{i}"] = walk(env, snap, fixed(rng.standard_normal(3)), steps)
+    if "coverage_gradient" in walks:
+        out["walks"]["coverage_gradient"] = walk(env, snap, fixed(g_cov), steps, repeats)
+    if "axis_gradient" in walks and g_axis is not None:
+        out["walks"]["axis_gradient"] = walk(env, snap, fixed(np.asarray(g_axis)), steps, repeats)
+    if "minus_force_gradient" in walks:
+        out["walks"]["minus_force_gradient"] = walk(env, snap, fixed(-g_force), steps, repeats)
+    if "minus_energy_gradient" in walks and g_energy is not None:
+        out["walks"]["minus_energy_gradient"] = walk(env, snap, fixed(-np.asarray(g_energy)), steps, repeats)
+    # Two ways of using both one-step gradients at once: their normalised sum, and release first
+    # (down the force gradient), then advance (up the coverage gradient).
+    if "combined_gradient" in walks and np.linalg.norm(g_cov) > 0 and np.linalg.norm(g_force) > 0:
+        out["walks"]["combined_gradient"] = walk(env, snap, fixed(_unit(g_cov) + _unit(-g_force)), steps, repeats)
+    if "release_then_advance" in walks and np.linalg.norm(g_cov) > 0 and np.linalg.norm(g_force) > 0:
+        out["walks"]["release_then_advance"] = walk(env, snap, sequenced(-g_force, g_cov, steps // 3), steps, repeats)
+    if "expert" in walks:
+        out["walks"]["expert"] = walk(env, snap, expert, steps, repeats)
+    if "hold" in walks:
+        out["walks"]["hold"] = walk(env, snap, lambda s: np.zeros(6), steps, repeats)
+    if "random" in walks:
+        for i in range(3):
+            out["walks"][f"random_{i}"] = walk(env, snap, fixed(rng.standard_normal(3)), steps, repeats)
     return out
 
 
@@ -330,7 +404,7 @@ def drive_to_snapshots(env, stall_window: int, stall_delta: float, max_steps: in
     return snaps, trace
 
 
-def main(argv: list[str] | None = None) -> None:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--garment", default="tshirt_392")
     p.add_argument("--bodies", type=int, nargs="+", default=[14046])
@@ -341,11 +415,18 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--repeatability", type=int, default=5, help="Identical decisions from the restored state.")
     p.add_argument("--walk-steps", type=int, default=12)
     p.add_argument("--walk-mm", type=float, default=4.0, help="Translation per decision along a walked direction.")
+    p.add_argument("--walk-repeats", type=int, default=1, help="Runs per walked direction (for states whose decision is noisy).")
+    p.add_argument("--walks", nargs="+", default=list(WALKS), choices=WALKS, help="Which walks to run.")
+    p.add_argument("--states", nargs="+", default=None, help="Probe only these snapshots (elbow, passed, stall, done).")
     p.add_argument("--base", choices=("hold", "expert"), default="hold")
     p.add_argument("--stall-window", type=int, default=15)
     p.add_argument("--max-steps", type=int, default=300)
     p.add_argument("--seed", type=int, default=0)
-    args = p.parse_args(argv)
+    return p
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     epsilons = [e * 1.0e-3 for e in args.epsilons_mm]
@@ -358,6 +439,8 @@ def main(argv: list[str] | None = None) -> None:
             snaps, trace = drive_to_snapshots(env, args.stall_window, 0.01, args.max_steps)
             record["trace"] = trace
             for snap in snaps:
+                if args.states and snap["name"] not in args.states:
+                    continue
                 t1 = time.time()
                 base = np.zeros(6)
                 if args.base == "expert":
@@ -366,7 +449,9 @@ def main(argv: list[str] | None = None) -> None:
                 entry = {"name": snap["name"], "frame": snap["frame"], "episode_step": snap["episode_step"], "state": snap["measure"]}
                 entry["repeatability"] = repeatability(env, snap, base, args.repeatability)
                 entry["gradients"] = gradients(env, snap, base, epsilons, args.repeats)
-                entry["usefulness"] = usefulness(env, snap, entry["gradients"], args.walk_steps, args.walk_mm * 1.0e-3, args.seed)
+                # The random directions are drawn per state; the first three cells drew the same three at every state.
+                entry["usefulness"] = usefulness(env, snap, entry["gradients"], args.walk_steps, args.walk_mm * 1.0e-3,
+                                                 [args.seed, int(body), int(snap["episode_step"])], args.walk_repeats, tuple(args.walks))
                 entry["seconds"] = time.time() - t1
                 record["snapshots"].append(entry)
                 summary = {k: entry["gradients"]["per_epsilon"][str(epsilons[-1])]["mean"][k] for k in ("upperarm_ratio", "opening_axis_m", "net_normal_n")}
@@ -375,9 +460,11 @@ def main(argv: list[str] | None = None) -> None:
                       f"spread_axis={entry['repeatability']['spread']['opening_axis_m']:.2e} "
                       f"grad_up/m={np.round(summary['upperarm_ratio'], 2).tolist()} grad_axis={np.round(summary['opening_axis_m'], 3).tolist()} "
                       f"grad_force/m={np.round(summary['net_normal_n'], 1).tolist()} "
-                      f"walks_axis_mm={ {k: round(v['delta_opening_axis_m'] * 1e3, 1) for k, v in entry['usefulness']['walks'].items()} } ({entry['seconds']:.0f}s)", flush=True)
+                      f"walks_axis_mm={ {k: round(v['delta_opening_axis_m'] * 1e3, 1) for k, v in entry['usefulness']['walks'].items()} } "
+                      f"walks_travel_mm={ {k: round(v['executed_m'] * 1e3, 1) for k, v in entry['usefulness']['walks'].items()} } ({entry['seconds']:.0f}s)", flush=True)
         finally:
-            (out / f"{args.garment}_{body}.json").write_text(json.dumps(record, indent=1, default=float) + "\n")
+            suffix = "" if not args.states else "." + "_".join(args.states)
+            (out / f"{args.garment}_{body}{suffix}.json").write_text(json.dumps(record, indent=1, default=float) + "\n")
             env.close()
 
 
