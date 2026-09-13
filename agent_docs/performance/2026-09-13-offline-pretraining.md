@@ -25,7 +25,7 @@ actor's representation on recorded episodes and writes a checkpoint a fresh onli
 | Learning rates | `--lr`, `--history-lr` | The recurrent history gets its own rate (the review's RESeL note) |
 | Checkpoint | `checkpoints/pretrain_best.pt`, `pretrain_final.pt` | `actor` and `head` weights, `sac_config`, `protocol`, and `metadata.pretraining`: sources with sha256, split, normalisation, weights, steps, validation losses |
 | Transfer | `SACAgent.initialize_representation` | Fresh agents only (no update, no optimiser state); the protocol must match apart from `rlt_learning_mode`, which is an online setting; copies `actor.encoder` and, when present, `actor.history`; the policy trunk, critic, temperature and optimisers stay the new run's; returns provenance that lands in the checkpoint metadata under `representation_init` |
-| Trainer flag | `--init-representation` in `train_sac`/`pretrain_wang` | Refused with `--resume` before any file is read; a resumed Wang run replays its saved command line and skips the initialisation, its weights come from its checkpoint |
+| Trainer flag | `--init-representation` in `train_sac`/`pretrain_wang` | A missing file or an online checkpoint is refused right after argument parsing, before any world is built; refused with `--resume`; a resumed Wang run replays its saved command line and skips the initialisation, its weights come from its checkpoint |
 
 Log: `pretrain_log.csv` with per-step training losses and, at every `--eval-every`, the validation
 losses and baselines over the same `--eval-batches` windows.
@@ -36,11 +36,10 @@ Two runs on the same snapshots, the same split seed and the same steps:
 
 ```bash
 PYTHONPATH=python /home/ge47gax/kun/genesis-world/.venv/bin/python -m uipc_manip.pretrain_offline \
-  --replay RUN/checkpoints/replay_latest --out output/uipc_manip/pre_single --history-length 1 \
-  --obs-mode wang_static_arm --steps 20000 --seed 1
+  --replay RUN/checkpoints/replay_latest --out output/uipc_manip/pre_single --history-length 1 --steps 20000 --seed 1
 PYTHONPATH=python /home/ge47gax/kun/genesis-world/.venv/bin/python -m uipc_manip.pretrain_offline \
   --replay RUN/checkpoints/replay_latest --out output/uipc_manip/pre_rlt8 --history-length 8 --history-kind rlt \
-  --obs-mode wang_static_arm --steps 20000 --seed 1
+  --steps 20000 --seed 1
 ```
 
 Read `val_next_priv` against `val_priv_baseline` in both: if the single-frame predictor already
@@ -70,4 +69,5 @@ learning mode; the transfer refuses a different width, an online checkpoint and 
 updated; the trainer refuses flat snapshots, the frame concatenation and a missing privileged
 target unless its weight is zero; two runs' episodes stay apart. Stub tests in
 `tests/test_train_sac.py` and `tests/test_pretrain_wang.py` cover the flag on fresh runs, its
-refusal with `--resume`, and the skip on a Wang resume. Full CPU suite: see the handoff entry.
+refusal with `--resume`, the pre-world refusal of a mistyped or online checkpoint, and the skip on a
+Wang resume. Full CPU suite: 351 passed, 14 CUDA-marked tests deselected.

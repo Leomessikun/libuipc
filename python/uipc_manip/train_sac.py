@@ -162,6 +162,23 @@ def resolve_defaults(args) -> None:
         args.num_eval_episodes = args.num_envs
 
 
+def check_representation_checkpoint(path) -> None:
+    """Refuse a mistyped or wrong-kind ``--init-representation`` before any world is built.
+
+    The protocol comparison needs the agent and stays post-world; a missing file or an online
+    checkpoint should cost no simulator minutes.
+    """
+    from pathlib import Path as _Path
+
+    import torch
+
+    if not _Path(path).is_file():
+        raise SystemExit(f"--init-representation {path}: no such checkpoint")
+    payload = torch.load(_Path(path), map_location="cpu", weights_only=False)
+    if not isinstance(payload.get("metadata", {}).get("pretraining"), dict):
+        raise SystemExit(f"--init-representation {path} is not an offline pretraining checkpoint (pretrain_offline writes those)")
+
+
 def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     """Restore the saved experiment before constructing the simulator or agent.
 
@@ -742,6 +759,8 @@ def main(argv: list[str] | None = None) -> None:
     if history_length > 1 and not args.sequence_replay and not args.eval_only:
         # Before any world is built: a dressing world costs minutes, a typo should cost none.
         raise SystemExit("--history-length above 1 learns from padded episode windows; add --sequence-replay")
+    if args.init_representation:
+        check_representation_checkpoint(args.init_representation)
     if args.vis:
         args.num_envs = 1
     np.random.seed(args.seed)

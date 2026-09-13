@@ -1971,4 +1971,5 @@ on a Wang resume, recorded in checkpoint metadata as `representation_init`. The 
 ignores `rlt_learning_mode`, an online setting. Tested on a toy corpus only: no run has recorded
 sequences with `priv`, so no real corpus exists and no online run has started from a pretrained
 representation. The [record](performance/2026-09-13-offline-pretraining.md) has the diagnostic
-commands. No GPU job launched; the critic ablation chain moved on to `abl_residual_s1` on its own.
+commands. Full CPU suite: 351 passed, 14 CUDA-marked deselected. No GPU job launched; the critic
+ablation chain moved on to `abl_residual_s1` on its own.

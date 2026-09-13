@@ -4,6 +4,7 @@ import csv
 from types import SimpleNamespace
 
 import numpy as np
+import torch
 import pytest
 
 pytest.importorskip("torch")
@@ -447,13 +448,20 @@ def test_the_representation_flag_initialises_a_fresh_run_and_refuses_a_resume(mo
         def close(self):
             pass
 
+    built: list = []
     monkeypatch.setattr(sac, "SACAgent", Agent)
-    monkeypatch.setattr(train_sac, "make_env", lambda args: Env())
+    monkeypatch.setattr(train_sac, "make_env", lambda args: built.append(Env()) or built[-1])
     monkeypatch.setattr(train_sac, "evaluate", lambda *a, **kw: {"success_rate": 0, "mean_final_distance": 1, "mean_return": 0})
     argv = ["--num-envs", "3", "--total-transitions", "6", "--point-budget", "3", "--replay-capacity", "64", "--device", "cpu",
-            "--log-interval", "1", "--eval-freq", "0", "--checkpoint-interval", "0", "--init-steps", "2", "--work-dir", str(tmp_path),
-            "--init-representation", "rep.pt"]
-    train_sac.main(argv)
-    assert saved and saved[-1]["representation_init"]["checkpoint"] == "rep.pt"
+            "--log-interval", "1", "--eval-freq", "0", "--checkpoint-interval", "0", "--init-steps", "2", "--work-dir", str(tmp_path)]
+    with pytest.raises(SystemExit, match="no such checkpoint"):
+        train_sac.main(argv + ["--init-representation", str(tmp_path / "typo.pt")])
+    torch.save({"metadata": {}}, tmp_path / "online.pt")
+    with pytest.raises(SystemExit, match="not an offline pretraining checkpoint"):
+        train_sac.main(argv + ["--init-representation", str(tmp_path / "online.pt")])
+    assert not built, "a bad checkpoint must be refused before a world is built"
+    torch.save({"metadata": {"pretraining": {"steps": 1}}}, tmp_path / "rep.pt")
+    train_sac.main(argv + ["--init-representation", str(tmp_path / "rep.pt")])
+    assert saved and saved[-1]["representation_init"]["checkpoint"] == str(tmp_path / "rep.pt")
     with pytest.raises(ValueError, match="fresh run"):
-        train_sac.main(argv + ["--resume", str(tmp_path / "nothing.pt")])
+        train_sac.main(argv + ["--init-representation", str(tmp_path / "rep.pt"), "--resume", str(tmp_path / "nothing.pt")])

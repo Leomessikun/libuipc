@@ -479,13 +479,18 @@ def test_history_policy_needs_sequence_replay_and_keeps_state_per_world(stub_run
 
 
 def test_a_pretrained_representation_initialises_a_fresh_run_only(stub_run, tmp_path):
-    _, agents = stub_run
-    argv = RUN_ARGV + ["--transitions", "16", "--init-representation", "rep.pt", "--work-dir", str(tmp_path), "--run-name", "init"]
+    built, agents = stub_run
+    with pytest.raises(SystemExit, match="no such checkpoint"):
+        pretrain_wang.main(RUN_ARGV + ["--transitions", "16", "--init-representation", str(tmp_path / "typo.pt"), "--work-dir", str(tmp_path), "--run-name", "typo"])
+    assert not built, "a bad checkpoint must be refused before a world is built"
+    rep = tmp_path / "rep.pt"
+    torch.save({"metadata": {"pretraining": {"steps": 1}}}, rep)
+    argv = RUN_ARGV + ["--transitions", "16", "--init-representation", str(rep), "--work-dir", str(tmp_path), "--run-name", "init"]
     pretrain_wang.main(argv)
-    assert agents[-1].initialized == "rep.pt"
+    assert agents[-1].initialized == str(rep)
     state = json.loads((tmp_path / "init" / "checkpoints" / "state.json").read_text())
     saved = json.loads(Path(state["checkpoint"]).read_text())
-    assert saved["metadata"]["representation_init"]["checkpoint"] == "rep.pt"
+    assert saved["metadata"]["representation_init"]["checkpoint"] == str(rep)
     pretrain_wang.main(["resume", str(tmp_path / "init"), "--transitions", "24"])
     # The resumed run replays the saved command line but takes its weights from the checkpoint.
     assert agents[-1].initialized is None
