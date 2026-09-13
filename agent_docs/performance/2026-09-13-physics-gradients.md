@@ -383,6 +383,38 @@ run settles:
   decisions `∂coverage_{t+h}/∂u_t` through a release phase is nonzero where the one-step
   gradient's direction is refused.
 
+### The two quiet elbows re-probed with rotation (2026-09-14) [MI]
+
+Same states as the queue (cell 1 @85, cell 3 @93), now with central differences on the two
+rotation axes the environment executes (0.5°, 1°, 2.5°; about x is clipped) and every walk run
+three times; the tables give mean ± std over the three runs. Twelve decisions of 4 mm and, for
+the rotation walks, 2.5° per decision; ~25 GPU minutes for both.
+
+- **Coverage is flat in all five dimensions at both elbows**; the axis reading has a small,
+  repeatable rotation gradient (cosine 1.0 at 1° and 2.5°).
+- **The decisions scatter by 1–1.5 mm at both elbows, the walk outcomes do not** (std ≤ 0.5 mm of
+  advance, ≤ 0.005 of coverage), so the elbow walk figures below are established, not one draw.
+
+| walk | cell 1 elbow: Δ axis / Δ coverage / mean F | cell 3 elbow: Δ axis / Δ coverage / mean F |
+|---|---|---|
+| axis gradient, translation only | +17.2 ± 0.3 mm / +0.004 / 37 N | +15.6 ± 0.2 mm / +0.022 / 43 N |
+| rotation gradient only (2.5°/decision) | +4.8 mm / 0.000 / 36 N | +8.2 mm / +0.020 / 40 N |
+| **5-D axis gradient** (translation + rotation) | +21.2 ± 0.2 mm / +0.015 ± 0.001 / 43 N | **+24.9 ± 0.0 mm / +0.077 ± 0.000 / 45 N** |
+| axis gradient + the expert's own rotation | +17.3 mm / +0.004 / 39 N | +16.0 mm / +0.025 / 43 N |
+| expert (96 / 88 mm executed, 0.04 / 0.19 rad) | +6.1 mm / **+0.027 ± 0.000** / 61 N | +3.9 ± 0.5 mm / +0.024 ± 0.004 / 69 N |
+| minus force gradient | +10.8 mm / 0.000 / 40 N | +6.2 mm / 0.000 / 40 N |
+| random (3, drawn per state) | ≤ +8.9 mm / 0.000 | ≤ +9.6 mm / ≤ +0.035 |
+
+Reading. Rotation is not a detail: adding the rotation part of the axis gradient to its
+translation part raises the coverage gain from +0.004 to +0.015 at cell 1 and from +0.022 to
+**+0.077** at cell 3, where the 5-D proxy gradient walks the sleeve over the elbow with three
+times the expert's coverage gain at half its travel and two thirds of its load. At cell 1 the
+same walk stays below the expert (+0.015 against +0.027): the expert's gain there comes from a
+translation direction, (0.25, 0.90, −0.36), that the coverage reward cannot rank (flat) and the
+axis proxy points away from. So one of two quiet elbows is solved by a one-step 5-D gradient of
+a proxy, the other is not; the elbow needs the critic for generality, and the 5-D proxy gradient
+is the baseline Level 3 has to beat there.
+
 ## Decisions taken for Levels 2 and 3 (2026-09-14, delegated by the owner) [E]
 
 - **The tether and the no-move collision rule stay as they are.** Both come from the reference

@@ -64,39 +64,58 @@ def workspace_of(env) -> Path:
     return Path(tempfile.gettempdir()) / f"genesis_ipc_{uid}"
 
 
-def debug_dir(env) -> Path:
-    return workspace_of(env) / "cuda" / "linear_system" / "debug"
+def dump_files(env) -> list[Path]:
+    """Every Matrix Market file the engine has written under its workspace."""
+    return list(workspace_of(env).rglob("*.mtx"))
 
 
 def clear_dumps(env) -> None:
-    d = debug_dir(env)
-    if d.exists():
-        for f in d.iterdir():
-            f.unlink()
+    for f in dump_files(env):
+        f.unlink()
 
 
 def dumped_frames(env) -> dict[int, dict[int, Path]]:
     """{frame: {newton_iter: path}} of the A matrices present."""
     out: dict[int, dict[int, Path]] = {}
-    for path in debug_dir(env).glob("A.*.mtx"):
+    for path in dump_files(env):
+        if not path.name.startswith("A."):
+            continue
         _, frame, it = path.stem.split(".")
         out.setdefault(int(frame), {})[int(it)] = path
     return out
 
 
-def read_symmetric(path: Path) -> scipy.sparse.csr_matrix:
-    """The dump holds the upper block triangle (block row ≤ block col, diagonal blocks whole)."""
+def dump_switch_value(env):
+    """The scene's value of extras/debug/dump_linear_system, as the backend read it."""
+    try:
+        import uipc
+        cfg = env.scene.sim.coupler._ipc_scene.config()
+        attr = cfg.find("extras/debug/dump_linear_system")
+        return None if attr is None else int(np.asarray(uipc.view(attr)).reshape(-1)[0])
+    except Exception as exc:  # noqa: BLE001 - diagnostic only
+        return f"unreadable: {exc!r}"
+
+
+def read_symmetric(path: Path) -> tuple[scipy.sparse.csr_matrix, dict]:
+    """The dump normally holds the upper block triangle (block row ≤ block col, diagonal blocks
+    whole) under a 'general' header; if lower blocks are present the file is already full."""
     a = scipy.io.mmread(path).tocoo()
     r, c, v = a.row, a.col, a.data
-    off = (r // 3) != (c // 3)
-    full = scipy.sparse.coo_matrix(
-        (np.concatenate([v, v[off]]), (np.concatenate([r, c[off]]), np.concatenate([c, r[off]]))), shape=a.shape
-    )
-    return full.tocsr()
+    lower = int(np.count_nonzero((r // 3) > (c // 3)))
+    upper = int(np.count_nonzero((r // 3) < (c // 3)))
+    info = {"lower_block_entries": lower, "upper_block_entries": upper, "mirrored": lower == 0}
+    if lower == 0:
+        off = (r // 3) != (c // 3)
+        a = scipy.sparse.coo_matrix(
+            (np.concatenate([v, v[off]]), (np.concatenate([r, c[off]]), np.concatenate([c, r[off]]))), shape=a.shape
+        )
+    m = a.tocsr()
+    info["asymmetry"] = float(abs(m - m.T).max() / abs(m).max())
+    return m, info
 
 
 # ------------------------------------------------------------------------ cloth bookkeeping
-def cloth_layout(env) -> dict:
+def cloth_layout(env, constraint_factor: float = 1.0) -> dict:
     """Global DOF offset of the cloth, its global vertex offset, lumped vertex masses (rest shape)."""
     import uipc
     from uipc import builtin
@@ -114,7 +133,7 @@ def cloth_layout(env) -> dict:
         np.add.at(mass, faces[:, k], area / 3.0)
     mass *= float(env.cfg.cloth_density) * float(env.cfg.cloth_thickness)
     return {"dof_offset": dof_offset, "dof_count": dof_count, "vertex_offset": vertex_offset, "n": n, "mass": mass,
-            "strength": float(env.cfg.constraint_strength), "anchor_idx": np.asarray(env._pickers[0]["anchor_idx"]),
+            "strength": float(env.cfg.constraint_strength) * constraint_factor, "anchor_idx": np.asarray(env._pickers[0]["anchor_idx"]),
             "opening_idx": np.asarray(cell.opening_idx), "axis": (cell.shoulder - cell.elbow) / np.linalg.norm(cell.shoulder - cell.elbow)}
 
 
@@ -179,6 +198,71 @@ def reverse_pass(H: list, g_final: np.ndarray, layout: dict, chain: bool = True)
     return {"dL_dDelta": dL_dDelta, "contributions": contributions[::-1]}
 
 
+def tangent_pass(lu: list, layout: dict, chain: bool = True) -> np.ndarray:
+    """∂x_6/∂Δ for the three translation axes (3n × 3), propagated forward through the frames with
+    the same inertia coupling the reverse pass uses; aim_f = anchor_0 + (f/6) Δ."""
+    off, cnt, n = layout["dof_offset"], layout["dof_count"], layout["n"]
+    m3 = np.repeat(layout["mass"], 3)
+    held = (3 * layout["anchor_idx"][:, None] + np.arange(3)[None, :]).reshape(-1)
+    s_m = np.repeat(layout["strength"] * layout["mass"][layout["anchor_idx"]], 3)
+    steps = len(lu)
+    out = np.zeros((cnt, 3))
+    for k in range(3):
+        dx_prev = np.zeros(cnt)
+        dx_prev2 = np.zeros(cnt)
+        for f in range(steps):
+            rhs = np.zeros(lu[f].shape[0])
+            local = np.zeros(cnt)
+            if chain:
+                local += 2.0 * m3 * dx_prev - m3 * dx_prev2
+            daim = np.zeros(cnt)
+            daim[held[k::3]] = (f + 1) / steps  # the k-th component of every held vertex's aim
+            local += np.repeat(layout["strength"] * layout["mass"], 3) * daim
+            rhs[off:off + cnt] = local
+            dx = lu[f].solve(rhs)[off:off + cnt]
+            dx_prev2, dx_prev = dx_prev, dx
+        out[:, k] = dx_prev
+    return out
+
+
+def position_differences(env, snap: dict, eps_m: float) -> np.ndarray:
+    """Central differences of every cloth vertex position (3n × 3) with respect to the commanded
+    translation, from the restored state."""
+    max_t = float(env.cfg.max_translation)
+    cols = []
+    for k in range(3):
+        sides = []
+        for sign in (+1.0, -1.0):
+            action = np.zeros(6)
+            action[k] = sign * eps_m / max_t
+            probe.restore(env, snap)
+            probe.decision(env, action)
+            sides.append(env.positions()[0].reshape(-1).astype(np.float64))
+        cols.append((sides[0] - sides[1]) / (2.0 * eps_m))
+    return np.stack(cols, axis=1)
+
+
+def compare_fields(tangent: np.ndarray, fd: np.ndarray, layout: dict) -> dict:
+    """Cosine and magnitude of the predicted against the measured response, over all cloth DOFs,
+    over the held vertices and over the rest."""
+    held = np.zeros(layout["n"], dtype=bool)
+    held[layout["anchor_idx"]] = True
+    held3 = np.repeat(held, 3)
+    out = {}
+    for name, mask in (("all", np.ones_like(held3)), ("held", held3), ("free", ~held3)):
+        row = {}
+        for k, ax in enumerate("xyz"):
+            a, b = tangent[mask, k], fd[mask, k]
+            row[ax] = {"cosine": probe.cosine(a, b), "magnitude_ratio": float(np.linalg.norm(a) / np.linalg.norm(b)) if np.linalg.norm(b) > 0 else None,
+                       "fd_rms_per_m": float(np.sqrt(np.mean(b * b))), "tangent_rms_per_m": float(np.sqrt(np.mean(a * a)))}
+        out[name] = row
+    # how far the held vertices follow the aim: the k-th component response to the k-th axis
+    held_idx = (3 * layout["anchor_idx"][:, None] + np.arange(3)[None, :])
+    out["held_follow"] = {"fd": [float(np.mean(fd[held_idx[:, k], k])) for k in range(3)],
+                          "tangent": [float(np.mean(tangent[held_idx[:, k], k])) for k in range(3)]}
+    return out
+
+
 # ------------------------------------------------------------------------ main
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -190,6 +274,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--epsilons-mm", type=float, nargs="+", default=[1.0, 2.0])
     p.add_argument("--stall-window", type=int, default=15)
     p.add_argument("--max-steps", type=int, default=300)
+    p.add_argument("--check-only", action="store_true", help="Build, take one decision, report where the dump landed.")
+    p.add_argument("--constraint-factor", type=float, default=2.0,
+                   help="The soft position constraint's assembled stiffness as a multiple of strength × mass "
+                        "(2 for an energy without the one-half; the held vertices' measured response settles it).")
+    p.add_argument("--keep-last-matrix", action="store_true", help="Copy the last frame's A file next to the record.")
     args = p.parse_args(argv)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -200,6 +289,13 @@ def main(argv: list[str] | None = None) -> None:
     record = {"garment": args.garment, "body": args.body, "state": args.state, "build_s": time.time() - t0,
               "dt": float(env.cfg.dt), "action_repeat": int(env.cfg.action_repeat), "workspace": str(workspace_of(env))}
     try:
+        if args.check_only:
+            env.reset([0])
+            probe.decision(env, np.zeros(6))
+            files = dump_files(env)
+            print(f"[adjoint-check] switch={dump_switch_value(env)} workspace={workspace_of(env)} "
+                  f"files={len(files)} first={[str(f) for f in files[:3]]} frame={env._world.frame()}", flush=True)
+            return
         # Drive with the dump on, discarding the files after every decision.
         original_decision = probe.decision
 
@@ -213,7 +309,7 @@ def main(argv: list[str] | None = None) -> None:
         snap = next(s for s in snaps if s["name"] == args.state)
         record["episode_step"] = snap["episode_step"]
         record["state_measure"] = snap["measure"]
-        layout = cloth_layout(env)
+        layout = cloth_layout(env, args.constraint_factor)
         record["layout"] = {k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in layout.items() if k not in ("mass",)}
         record["layout"]["mass_sum"] = float(layout["mass"].sum())
 
@@ -230,8 +326,12 @@ def main(argv: list[str] | None = None) -> None:
         H, lu = [], []
         t1 = time.time()
         for f in wanted:
-            H.append(read_symmetric(frames[f][max(frames[f])]))
+            h, info = read_symmetric(frames[f][max(frames[f])])
+            H.append(h)
+            record.setdefault("matrix_files", []).append(info)
         record["read_s"] = time.time() - t1
+        if args.keep_last_matrix:
+            shutil.copy(frames[wanted[-1]][max(frames[wanted[-1]])], out / f"{args.garment}_{args.body}.{args.state}.A.mtx")
         record["dofs"] = int(H[-1].shape[0])
         record["nnz"] = int(H[-1].nnz)
         t1 = time.time()
@@ -252,6 +352,18 @@ def main(argv: list[str] | None = None) -> None:
             record["objectives"][name] = {"adjoint_chain": full["dL_dDelta"].tolist(), "adjoint_last_frame": single["dL_dDelta"].tolist(),
                                           "contributions": full["contributions"], "solve_s": time.time() - t2,
                                           "g_norm": float(np.linalg.norm(g))}
+
+        # The full response field, predicted forward through the frames and measured by differences.
+        t3 = time.time()
+        tangent = tangent_pass(lu, layout, chain=True)
+        tangent_last = tangent_pass(lu, layout, chain=False)
+        record["tangent_s"] = time.time() - t3
+        fd_field = position_differences(env, snap, args.epsilons_mm[0] * 1e-3)
+        record["field_comparison"] = {"chain": compare_fields(tangent, fd_field, layout), "last_frame": compare_fields(tangent_last, fd_field, layout),
+                                      "epsilon_mm": args.epsilons_mm[0]}
+        # The objectives through the tangent field must agree with the reverse pass (same linear algebra).
+        record["tangent_objectives"] = {name: (g @ tangent).tolist() for name, g in objectives.items()}
+        record["fd_field_objectives"] = {name: (g @ fd_field).tolist() for name, g in objectives.items()}
 
         # Finite differences of the same quantities from the same restored state.
         fd = probe.gradients(env, snap, np.zeros(6), [e * 1e-3 for e in args.epsilons_mm], 1)
@@ -276,6 +388,11 @@ def main(argv: list[str] | None = None) -> None:
                          f"fd1mm={np.round(record['finite_differences'][str(args.epsilons_mm[0])][n], 4).tolist()} "
                          f"cos={ {k: round(v['cosine'], 3) for k, v in record['comparison'][n].items()} }" for n in objectives)
               + f" accepted={record['accepted']}", flush=True)
+        fc = record["field_comparison"]["chain"]
+        print(f"[adjoint-field] cos all={[round(fc['all'][a]['cosine'], 3) for a in 'xyz']} held={[round(fc['held'][a]['cosine'], 3) for a in 'xyz']} "
+              f"free={[round(fc['free'][a]['cosine'], 3) for a in 'xyz']} | magnitude ratio all={[round(fc['all'][a]['magnitude_ratio'], 3) for a in 'xyz']} "
+              f"held={[round(fc['held'][a]['magnitude_ratio'], 3) for a in 'xyz']} free={[round(fc['free'][a]['magnitude_ratio'], 3) for a in 'xyz']} "
+              f"| held follow fd={np.round(fc['held_follow']['fd'], 3).tolist()} tangent={np.round(fc['held_follow']['tangent'], 3).tolist()}", flush=True)
     finally:
         clear_dumps(env)
         (out / f"{args.garment}_{args.body}.{args.state}.json").write_text(json.dumps(record, indent=1, default=float) + "\n")
