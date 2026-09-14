@@ -2113,3 +2113,27 @@ non-start states (0.222 at 18 N vs 0.168 at 318 N; 0.189 vs 0.116). SAC's loss: 
 β used, never best. `tests/test_physics_gradient_finetune.py` (2). Record section, README
 row, memory updated. Not a training run: critic frozen, one cell at a time, two draws per
 evaluation. The other sessions' processes untouched.
+
+## 2026-09-14 — Physics gradients: the direction inside the SAC update, seed-matched pair launched
+
+Owner's go for the training run. The physics direction is now an opt-in term of the actor
+update, default off: `--physics-actor-weight w` (relative to the SAC term's first gradient
+norm, matched once and kept, saved in the checkpoint as `physics_beta`) and
+`--physics-actor-gate` (least executed fraction). `physics_actor_signal.PhysicsActorSignal`
+computes, after every vector step, every slot's `∂V(x')/∂u` at once: the critic's value of the
+returned observation differentiated through the observation function (visibility and voxel
+membership captured from the environment's own call inside `env.step`), one refined device
+solve against the world's global system (block-diagonal across slots), and each slot's held
+vertices; `FlatReplayBuffer`/`ReplaySet` store `(physics, physics_valid)` per row (returned last
+by `sample`, kept in snapshots, older snapshots load as rows without a direction);
+`SACAgent._update_actor_and_alpha` adds `−β · unit(g) · μ` on the rows that count.
+`--init-from` starts a fresh run from a checkpoint's weights and temperature. `pretrain_wang`
+binds the signal to every rotated world and aborts it on a simulator error. Smoke on 8 envs ×
+240 transitions from `abl_dense_s1` at 125k: 0.28 s of physics per vector step (solve 0.18 s,
+residual 4e-5, 87.5 % of rows counted, β 0.14), checkpoint saved and loads. Tests:
+`test_physics_actor_signal.py` (4); the agent, replay, trainer and pretrain suites still pass
+(124). Launched 14:55 (`scratchpad/run_pg_pair.sh`, logs `output/uipc_manip/logs/pg_{phys,ctrl}_s1.log`):
+`pg_phys_s1` (weight 0.5) then `pg_ctrl_s1` (weight 0), each `teacher --region 13 --num-envs 24
+--transitions 24000 --eval-every 0 --init-from abl_dense_s1/checkpoint_00125016.pt`, held-out
+evaluation before and after, then the elbow yardstick (`physics_gradient_actor --walks policy`
+at both cells) on each final checkpoint. Expected ~2.5 h per arm. Not yet evaluated.

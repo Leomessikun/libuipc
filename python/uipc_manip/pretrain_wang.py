@@ -434,6 +434,8 @@ class WangRun:
         self.slot_keys = [buffer_key(self.plan["replay_split"], g, b) for g, b in cells]
         self.slot_regions = [pose_region(b) for _, b in cells]
         self.counters["rotations"] += 1
+        if getattr(self, "physics_signal", None) is not None:
+            self.physics_signal.bind(env)
         spent = time.time() - t0
         self.timing["rebuild_s"] += spent
         print(f"[wang] world {self.counters['rotations']}: {n} cells built in {build_s:.1f}s (scene build "
@@ -479,6 +481,10 @@ class WangRun:
             sac_cfg.privileged_dim = int(env.privileged_dim)
         self.spec = ObsSpec(targs.point_budget)
         self.agent = sac.SACAgent(self.spec, env.action_dim, sac_cfg, targs.device)
+        if getattr(targs, "init_from", None) and self.resume is None:
+            payload = self.agent.load(targs.init_from, load_optimizers=False)
+            print(f"[wang] weights and temperature initialised from {targs.init_from} (after {payload.get('updates', 0)} updates); "
+                  "optimizers and replay start fresh", flush=True)
         self.representation_init = None
         if targs.init_representation and self.resume is None:
             # A resumed run replays its saved command line; the representation it started from is in its checkpoint.
@@ -491,10 +497,12 @@ class WangRun:
         self.privileged = bool(priv_dim)  # Recording is independent of what the critic is allowed to read.
         if plan["replay_split"] == "none":
             self.replay = FlatReplayBuffer(env.obs_dim, env.action_dim, targs.replay_capacity, targs.batch_size, targs.device,
-                                           priv_dim=priv_dim, labelled=self.labelled, sequence=targs.sequence_replay)
+                                           priv_dim=priv_dim, labelled=self.labelled, sequence=targs.sequence_replay,
+                                           physics=sac_cfg.physics_actor_weight > 0.0)
         else:
             self.replay = ReplaySet(plan["buffer_keys"], env.obs_dim, env.action_dim, targs.replay_capacity, targs.batch_size,
-                                    targs.device, priv_dim=priv_dim, labelled=self.labelled, sequence=targs.sequence_replay)
+                                    targs.device, priv_dim=priv_dim, labelled=self.labelled, sequence=targs.sequence_replay,
+                                    physics=sac_cfg.physics_actor_weight > 0.0)
         self.reward_scale = wang_equivalent_reward_scale(sac_cfg.discount)
         self.teacher_regions = sorted(self.teachers)
         if self.teachers:
@@ -653,6 +661,15 @@ class WangRun:
         self.build_eval_worlds()
         env = self.env
         self.make_agent(env)
+        self.physics_signal = None
+        if self.agent.cfg.physics_actor_weight > 0.0:
+            from .physics_actor_signal import PhysicsActorSignal
+
+            self.physics_signal = PhysicsActorSignal(self.agent, self.agent.cfg.physics_actor_gate)
+            self.physics_signal.bind(env)
+            self.timing["physics_s"] = 0.0
+            print(f"[wang] physics actor signal on: weight {self.agent.cfg.physics_actor_weight} of the SAC gradient, "
+                  f"gate {self.agent.cfg.physics_actor_gate}", flush=True)
         target = int(args.transitions)
         (self.run_dir / "config.json").write_text(json.dumps(
             {"argv": self.argv, "trainer_args": vars(targs), **self.metadata()}, indent=2, default=str) + "\n")
@@ -687,9 +704,13 @@ class WangRun:
                 actions = self.policy(obs, False, self.history).astype(np.float32)
             self.timing["act_s"] += time.time() - t
             t = time.time()
+            if self.physics_signal is not None:
+                self.physics_signal.before_step()
             next_obs, rewards, dones, infos = env.step(actions)
             self.timing["env_s"] += time.time() - t
             if any(info.get("sim_error") for info in infos):
+                if self.physics_signal is not None:
+                    self.physics_signal.abort()
                 self.streams.close()
                 if self.history is not None:
                     self.history.reset()
@@ -709,6 +730,12 @@ class WangRun:
                 priv = self.env.privileged() if self.privileged else None
                 continue
             next_priv = env.privileged() if self.privileged else None
+            physics = None
+            if self.physics_signal is not None:
+                t = time.time()
+                physics = self.physics_signal.after_step(next_obs, actions)
+                self.timing["physics_s"] += time.time() - t
+                stats = {**stats, **{k: v for k, v in physics[2].items() if isinstance(v, (int, float))}}
             for i, info in enumerate(infos):
                 # Time limits are not terminal: bootstrap from the true final observation.
                 terminal_obs = info.get("terminal_obs", None)
@@ -717,6 +744,8 @@ class WangRun:
                     terminal_priv = info.get("terminal_privileged", None)
                     kw = {"priv": priv[i], "next_priv": next_priv[i] if terminal_priv is None else terminal_priv}
                 kw.update(self.streams.fields(i, dones[i]))
+                if physics is not None:
+                    kw.update(physics=physics[0][i], physics_valid=float(physics[1][i]))
                 self.add(i, obs[i], actions[i], float(rewards[i]) * self.reward_scale, next_obs[i] if terminal_obs is None else terminal_obs, **kw)
                 episode_return[i] += float(rewards[i])
                 if dones[i]:

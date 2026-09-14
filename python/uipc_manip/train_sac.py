@@ -127,6 +127,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sa-neighbors", type=int, nargs="+", default=[8, 16], help="Ball-query neighbours per set-abstraction level.")
     p.add_argument("--point-jitter", type=float, default=0.0, help="Per-point jitter [m] applied to replay samples.")
     p.add_argument("--grad-clip-max-norm", type=float, default=0.0)
+    p.add_argument("--physics-actor-weight", type=float, default=0.0, help="dressing: weight of the physics direction of the next state's value in the actor loss, relative to the SAC term's first gradient norm; 0 is off. Needs a build with LinearSystemAdjointFeature.")
+    p.add_argument("--physics-actor-gate", type=float, default=0.5, help="dressing: least executed fraction of a transition's command for its physics direction to count.")
+    p.add_argument("--init-from", type=str, default=None, help="Checkpoint whose weights and temperature start a fresh run; optimizers and replay start fresh.")
     p.add_argument("--min-alpha", type=float, default=0.0)
     p.add_argument("--init-temperature", type=float, default=0.1, help="Initial SAC temperature; the reference uses 0.1 at a 150-step horizon.")
     p.add_argument("--eval-freq", type=int, default=500, help="Vector steps between evaluations (0 disables).")
@@ -304,6 +307,8 @@ def build_sac_config(args) -> SACConfig:
                       groups=int(args.rlt_groups), alpha=float(args.rlt_alpha), tied=bool(args.rlt_tied)),
         encoder_precision=args.encoder_precision,
         distill_weight=float(args.distill_weight) if args.teacher_checkpoints else 0.0,
+        physics_actor_weight=float(getattr(args, "physics_actor_weight", 0.0)),
+        physics_actor_gate=float(getattr(args, "physics_actor_gate", 0.5)),
     )
     neighbors = [int(n) for n in args.sa_neighbors]
     if len(neighbors) == 1:

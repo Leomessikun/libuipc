@@ -87,6 +87,11 @@ class SACConfig:
     hidden_dim: int = 1024
     batch_size: int = 64
     reward_abs_bound: float = 2.0
+    # The physics direction of the next state's value (physics_actor_signal) in the actor loss:
+    # its weight relative to the SAC term's first gradient norm (0 is off), and the least executed
+    # fraction of a transition's command for its direction to count.
+    physics_actor_weight: float = 0.0
+    physics_actor_gate: float = 0.5
     grad_clip_max_norm: float = 0.0
     random_shift_scale: float = 0.0
     point_jitter_scale: float = 0.0
@@ -173,6 +178,18 @@ def wang_distill_loss(student_mu, student_log_std, teacher_mu, teacher_log_std) 
     dimensions rather than averaged.
     """
     return ((teacher_mu - student_mu) ** 2).sum() + ((teacher_log_std.exp().sqrt() - student_log_std.exp().sqrt()) ** 2).sum()
+
+
+def physics_direction(g: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+    """Unit rows of the stored physics directions, zero where they do not count."""
+    norm = g.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+    return g / norm * (valid.reshape(-1, 1) > 0.5).to(g.dtype)
+
+
+def physics_actor_loss(mu: torch.Tensor, direction: torch.Tensor, beta: float) -> torch.Tensor:
+    """``-β · direction · μ(s)``: a deterministic-policy-gradient surrogate whose action derivative is
+    the solver's Jacobian applied to the critic's state gradient (physics_gradient_finetune's ``phys``)."""
+    return -(float(beta) * (direction * mu).sum(dim=-1)).mean()
 
 
 def soft_update(src: torch.nn.Module, tgt: torch.nn.Module, tau: float) -> None:
@@ -289,6 +306,7 @@ class SACAgent:
             [self.log_alpha], lr=cfg.alpha_lr, betas=(cfg.alpha_beta, 0.999), fused=fused
         )
         self.updates = 0
+        self.physics_beta: float | None = None  # matched to the SAC term's gradient at the first physics batch
         self.teachers: dict[int, torch.nn.Module] = {}
         # Clouds are packed valid-first and every PointNet++ stage masks by validity, so the columns
         # no cloud in a batch reaches change nothing. A sampling ratio below one would draw its
@@ -430,7 +448,20 @@ class SACAgent:
         probs.scatter_add_(1, upper, frac)
         return probs
 
-    def _update_actor_and_alpha(self, obs, state=None, label=None, index: int = 0) -> dict:
+    def _match_physics_beta(self, actor_loss: torch.Tensor, mu: torch.Tensor, direction: torch.Tensor) -> float:
+        """β such that the physics term's gradient on the actor has ``physics_actor_weight`` times the
+        SAC term's norm, measured once on the first batch that carries a direction."""
+        params = [p for p in self.actor.parameters() if p.requires_grad]
+
+        def norm_of(loss):
+            grads = torch.autograd.grad(loss, params, retain_graph=True, allow_unused=True)
+            return float(torch.sqrt(sum((g.detach() ** 2).sum() for g in grads if g is not None)).item())
+
+        norm_sac = norm_of(actor_loss)
+        norm_phys = norm_of(physics_actor_loss(mu, direction, 1.0))
+        return float(self.cfg.physics_actor_weight) * norm_sac / max(norm_phys, 1e-12)
+
+    def _update_actor_and_alpha(self, obs, state=None, label=None, index: int = 0, physics=None) -> dict:
         mu, pi, log_pi, log_std = self.actor(obs)
         with frozen_parameters(self.critic):
             # Detaching the critic's encoder saves a backward pass through it, but only the latent
@@ -455,11 +486,22 @@ class SACAgent:
                     teacher_mu, _, _, teacher_log_std = teacher(tuple(t[rows] for t in obs), compute_pi=False, compute_log_pi=False)
                 distill = distill + wang_distill_loss(mu[rows], log_std[rows], teacher_mu, teacher_log_std)
             actor_loss = actor_loss + self.cfg.distill_weight * distill
+        physics_stats = {}
+        if physics is not None and self.cfg.physics_actor_weight > 0.0:
+            g, valid = physics
+            rows = int((valid.reshape(-1) > 0.5).sum().item())
+            if rows > 0:
+                direction = physics_direction(g, valid)
+                if self.physics_beta is None:
+                    self.physics_beta = self._match_physics_beta(actor_loss, mu, direction)
+                physics_loss = physics_actor_loss(mu, direction, self.physics_beta)
+                actor_loss = actor_loss + physics_loss
+                physics_stats = {"physics_loss": float(physics_loss.item()), "physics_rows": rows, "physics_beta": float(self.physics_beta)}
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         grad_norm = self._clip(self.actor)
         self.actor_optimizer.step()
-        stats = {"actor_loss": float(actor_loss.item()), "entropy": float(-log_pi.mean().item()), "actor_grad_norm": grad_norm}
+        stats = {"actor_loss": float(actor_loss.item()), "entropy": float(-log_pi.mean().item()), "actor_grad_norm": grad_norm, **physics_stats}
         if distill is not None:
             stats["distill_loss"] = float(distill.item())
         if not self.cfg.alpha_fixed:
@@ -501,10 +543,14 @@ class SACAgent:
             state, next_state = rest[:2]
         if getattr(replay, "priv_dim", 0):
             rest = rest[2:]
+        physics = None
+        if getattr(replay, "physics", False):
+            physics_valid = rest.pop()
+            physics = (rest.pop(), physics_valid)
         label = rest[0] if getattr(replay, "labelled", False) else None
         obs = self._unpack(obs_flat, augment=True)
         next_obs = self._unpack(next_obs_flat, augment=True)
-        return obs, action, reward, next_obs, not_done, state, next_state, label, index
+        return obs, action, reward, next_obs, not_done, state, next_state, label, index, physics
 
     def _sample_windows(self, replay):
         """One learning step per window: its last transition, seen through ``history_length`` frames.
@@ -525,7 +571,7 @@ class SACAgent:
         next_valid = torch.cat([batch.valid[:, 1:], torch.ones_like(batch.valid[:, :1])], dim=1)
         next_obs = self._unpack_window(batch.obs[:, 1:], next_valid, batch.actions[:, 1:])
         label = batch.labels[:, -1] if getattr(replay, "labelled", False) else None
-        return obs, batch.actions[:, -1], batch.rewards[:, -1], next_obs, batch.not_dones[:, -1], None, None, label, index
+        return obs, batch.actions[:, -1], batch.rewards[:, -1], next_obs, batch.not_dones[:, -1], None, None, label, index, None
 
     def _update_rlt(self, replay) -> dict:
         """One update on windows whose every recorded position is a learning step.
@@ -620,7 +666,7 @@ class SACAgent:
                 and self.cfg.rlt_learning_mode == "prefix"):
             return self._update_rlt(replay)
         sample = self._sample_windows if int(self.cfg.history_length) > 1 else self._sample_single
-        obs, action, reward, next_obs, not_done, state, next_state, label, index = sample(replay)
+        obs, action, reward, next_obs, not_done, state, next_state, label, index, physics = sample(replay)
         if self.cfg.algo == "flashsac":
             stats = self._update_critic_categorical(obs, action, reward, next_obs, not_done, index)
         else:
@@ -629,7 +675,7 @@ class SACAgent:
         stats["learning_positions"] = int(action.shape[0])
         self.updates += 1
         if self.updates % self.cfg.actor_update_freq == 0:
-            stats.update(self._update_actor_and_alpha(obs, state, label, index))
+            stats.update(self._update_actor_and_alpha(obs, state, label, index, physics))
         if self.updates % self.cfg.critic_target_update_freq == 0:
             soft_update(self.critic.Q1, self.critic_target.Q1, self.cfg.critic_tau)
             soft_update(self.critic.Q2, self.critic_target.Q2, self.cfg.critic_tau)
@@ -690,6 +736,7 @@ class SACAgent:
             "log_alpha_optimizer": self.log_alpha_optimizer.state_dict(),
             "sac_config": self.cfg.to_dict(),
             "protocol": self.protocol(),
+            "physics_beta": self.physics_beta,
             "metadata": metadata or {},
         }
         torch.save(payload, path)
@@ -761,4 +808,6 @@ class SACAgent:
             self.critic_optimizer.load_state_dict(payload["critic_optimizer"])
             self.log_alpha_optimizer.load_state_dict(payload["log_alpha_optimizer"])
         self.updates = int(payload.get("updates", 0))
+        if payload.get("physics_beta") is not None:
+            self.physics_beta = float(payload["physics_beta"])
         return payload

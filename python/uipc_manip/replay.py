@@ -89,7 +89,8 @@ class FlatReplayBuffer:
     """
 
     def __init__(
-        self, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False, sequence: bool = False
+        self, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False, sequence: bool = False,
+        physics: bool = False,
     ) -> None:
         self.obs_dim = int(obs_dim)
         self.action_dim = int(action_dim)
@@ -109,6 +110,11 @@ class FlatReplayBuffer:
         self._next_priv = np.empty((self.capacity, self.priv_dim), dtype=np.float32)
         self.labelled = bool(labelled)
         self._labels = np.zeros(self.capacity if self.labelled else 0, dtype=np.int64)
+        # The physics direction of the next state's value at the action taken (action_dim per row)
+        # and whether it counts; rows added without one carry zeros and do not count.
+        self.physics = bool(physics)
+        self._physics = np.zeros((self.capacity if self.physics else 0, self.action_dim), dtype=np.float32)
+        self._physics_valid = np.zeros((self.capacity if self.physics else 0, 1), dtype=np.float32)
         self._idx = 0
         self._full = False
         self.total_added = 0
@@ -128,7 +134,7 @@ class FlatReplayBuffer:
     def add(
         self, obs: np.ndarray, action: np.ndarray, reward: float, next_obs: np.ndarray, done: bool, priv=None, next_priv=None,
         label: int | None = None, *, stream_id: int | None = None, episode_id: int | None = None,
-        episode_step: int | None = None, episode_end: bool | None = None,
+        episode_step: int | None = None, episode_end: bool | None = None, physics=None, physics_valid=None,
     ) -> None:
         identity = None
         if self.sequence:
@@ -164,6 +170,9 @@ class FlatReplayBuffer:
                 raise ValueError("This buffer stores the privileged state; pass priv and next_priv")
             np.copyto(self._priv[self._idx], np.asarray(priv, dtype=np.float32).reshape(self.priv_dim))
             np.copyto(self._next_priv[self._idx], np.asarray(next_priv, dtype=np.float32).reshape(self.priv_dim))
+        if self.physics:
+            self._physics[self._idx] = 0.0 if physics is None else np.asarray(physics, dtype=np.float32).reshape(self.action_dim)
+            self._physics_valid[self._idx, 0] = 0.0 if physics_valid is None else float(physics_valid)
         np.copyto(self._obs[self._idx], np.asarray(obs, dtype=np.float32).reshape(self.obs_dim))
         np.copyto(self._next_obs[self._idx], np.asarray(next_obs, dtype=np.float32).reshape(self.obs_dim))
         np.copyto(self._actions[self._idx], np.asarray(action, dtype=np.float32).reshape(self.action_dim))
@@ -181,7 +190,7 @@ class FlatReplayBuffer:
 
     def sample(self, batch_size: int | None = None):
         """``(obs, action, reward, next_obs, not_done)``, then ``(priv, next_priv)`` when the buffer stores them,
-        then the labels when it is labelled."""
+        then the labels when it is labelled, then ``(physics, physics_valid)`` when it stores the physics direction."""
         upper = self.size
         if upper == 0:
             raise RuntimeError("Cannot sample from an empty replay buffer")
@@ -193,6 +202,8 @@ class FlatReplayBuffer:
             batch += (to(self._priv), to(self._next_priv))
         if self.labelled:
             batch += (to(self._labels),)
+        if self.physics:
+            batch += (to(self._physics), to(self._physics_valid))
         return batch
 
     @property
@@ -409,6 +420,8 @@ class FlatReplayBuffer:
             arrays.update(priv=self._priv[order], next_priv=self._next_priv[order])
         if self.labelled:
             arrays.update(labels=self._labels[order])
+        if self.physics:
+            arrays.update(physics=self._physics[order], physics_valid=self._physics_valid[order])
         if self.sequence:
             arrays.update(stream_ids=self._stream_ids[order], episode_ids=self._episode_ids[order],
                           episode_steps=self._episode_steps[order], episode_ends=self._episode_ends[order])
@@ -418,6 +431,7 @@ class FlatReplayBuffer:
             "action_dim": self.action_dim,
             "priv_dim": self.priv_dim,
             "labelled": self.labelled,
+            "physics": self.physics,
             "capacity": self.capacity,
             "batch_size": self.batch_size,
             "size": int(n),
@@ -460,6 +474,14 @@ class FlatReplayBuffer:
                 self._next_priv[:n] = data["next_priv"][retained]
             if self.labelled:
                 self._labels[:n] = data["labels"][retained]
+            if self.physics:
+                # A snapshot without the direction resumes with rows that carry none.
+                if "physics" in data:
+                    self._physics[:n] = data["physics"][retained]
+                    self._physics_valid[:n] = data["physics_valid"][retained]
+                else:
+                    self._physics[:n] = 0.0
+                    self._physics_valid[:n] = 0.0
             if self.sequence:
                 names = ("stream_ids", "episode_ids", "episode_steps", "episode_ends")
                 for name in names:
@@ -516,7 +538,8 @@ class ReplaySet:
     indexed = True
 
     def __init__(
-        self, keys, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False, sequence: bool = False
+        self, keys, obs_dim: int, action_dim: int, capacity: int, batch_size: int, device, priv_dim: int = 0, labelled: bool = False, sequence: bool = False,
+        physics: bool = False,
     ) -> None:
         self.keys = list(keys)
         if not self.keys or len(set(self.keys)) != len(self.keys):
@@ -525,18 +548,20 @@ class ReplaySet:
         self.obs_dim, self.action_dim, self.batch_size = int(obs_dim), int(action_dim), int(batch_size)
         self.priv_dim, self.labelled = int(priv_dim), bool(labelled)
         self.sequence = bool(sequence)
+        self.physics = bool(physics)
         per_buffer = int(capacity) // len(self.keys)
         self.buffers = [
-            FlatReplayBuffer(obs_dim, action_dim, per_buffer, batch_size, device, priv_dim=priv_dim, labelled=labelled, sequence=sequence) for _ in self.keys
+            FlatReplayBuffer(obs_dim, action_dim, per_buffer, batch_size, device, priv_dim=priv_dim, labelled=labelled, sequence=sequence,
+                             physics=physics) for _ in self.keys
         ]
         self.capacity = per_buffer * len(self.keys)
 
     def add(self, key, obs, action, reward, next_obs, done, priv=None, next_priv=None, label: int | None = None,
             *, stream_id: int | None = None, episode_id: int | None = None,
-            episode_step: int | None = None, episode_end: bool | None = None) -> None:
+            episode_step: int | None = None, episode_end: bool | None = None, physics=None, physics_valid=None) -> None:
         self.buffers[self._index[key]].add(obs, action, reward, next_obs, done, priv=priv, next_priv=next_priv, label=label,
                                           stream_id=stream_id, episode_id=episode_id, episode_step=episode_step,
-                                          episode_end=episode_end)
+                                          episode_end=episode_end, physics=physics, physics_valid=physics_valid)
 
     @property
     def next_episode_id(self) -> int:

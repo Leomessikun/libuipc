@@ -155,16 +155,16 @@ def system_to_matrix(rows, cols, values, dofs: int) -> scipy.sparse.csr_matrix:
 
 
 # ------------------------------------------------------------------------ cloth bookkeeping
-def cloth_layout(env, constraint_factor: float = 1.0) -> dict:
-    """Global DOF offset of the cloth, its global vertex offset, lumped vertex masses (rest shape)."""
+def cloth_layout(env, constraint_factor: float = 1.0, slot: int = 0) -> dict:
+    """Global DOF offset of the cloth of one slot, its global vertex offset, lumped vertex masses (rest shape)."""
     import uipc
     from uipc import builtin
 
-    geo = env.slots[0].geometry()
+    geo = env.slots[slot].geometry()
     dof_offset = int(np.asarray(uipc.view(geo.meta().find(builtin.dof_offset))).reshape(-1)[0])
     dof_count = int(np.asarray(uipc.view(geo.meta().find(builtin.dof_count))).reshape(-1)[0])
     vertex_offset = int(np.asarray(uipc.view(geo.meta().find(builtin.global_vertex_offset))).reshape(-1)[0])
-    cell = env.cells[0]
+    cell = env.cells[slot]
     x0, faces = np.asarray(cell.cloth, dtype=np.float64), np.asarray(cell.faces)
     n = x0.shape[0]
     # The backend lumps density × the vertex volume it computed at apply_to; for a shell that volume is
@@ -187,7 +187,7 @@ def cloth_layout(env, constraint_factor: float = 1.0) -> dict:
         mass_source = "density x area x 2 thickness / 3 (attribute missing)"
     mass = float(env.cfg.cloth_density) * volume
     return {"dof_offset": dof_offset, "dof_count": dof_count, "vertex_offset": vertex_offset, "n": n, "mass": mass, "mass_source": mass_source,
-            "strength": float(env.cfg.constraint_strength) * constraint_factor, "anchor_idx": np.asarray(env._pickers[0]["anchor_idx"]),
+            "strength": float(env.cfg.constraint_strength) * constraint_factor, "anchor_idx": np.asarray(env._pickers[slot]["anchor_idx"]),
             "opening_idx": np.asarray(cell.opening_idx), "axis": (cell.shoulder - cell.elbow) / np.linalg.norm(cell.shoulder - cell.elbow)}
 
 
