@@ -2182,3 +2182,32 @@ deselected. Launched 16:24 (`scratchpad/run_iaql_pair_now.sh`, logs
 3 × 50 steps every 500; about 1.7 s per step on the shared GPU, so 2.5–3 h per
 arm. Not yet evaluated. The other sessions' jobs untouched.
 [Record](performance/2026-09-14-iaql-benchmark.md).
+
+## 2026-09-14 — Adjoint export modes: the raw Hessian at the accepted state
+
+Owner's reading of the tolerance probe: the SPD projection is the likely
+cause of the tangent error but not proven until the raw Hessian is compared;
+the experiment to run is `D_PSD` vs `D_raw` vs `D_FD`. Implemented in the CUDA
+backend without touching the forward solve: a device-side projection switch
+read by every `make_spd` site and the friction helper's 2x2 projection
+(`utils/make_spd.h`, defined in `linear_system_adjoint.cu`; StableNeoHookean-3D's
+analytic projection is not covered), `GlobalLinearSystem::Impl::build_linear_system(bool
+with_preconditioner)`, and after the Newton loop of the IPC pipeline a
+re-detection and re-assembly at the accepted state when
+`LinearSystemAdjointFeature.set_export_mode` is `converged` or `converged_raw`
+(RAII guard restores the switch; `solve()` refuses the raw mode; AL pipeline
+untouched). `iaql_env` takes `export_mode`; the probe captures each decision
+once per `--export-modes` entry against one set of differences and
+`--guided-steps-min 1` keeps every snapshot one advance past its recover.
+Built in `build_raw/` (the in-place post-build copy would have replaced the
+`.so` under the running 5k pair). `uipc_test_diff_sim` gained the
+export-modes case (3 cases, 563 assertions pass). Smoke on two states: the
+re-assembly at the accepted state changes nothing to three digits and the raw
+matrix brings the position tangent error from 2–8 % to 0.03–0.2 % and the
+Bellman-gradient error from 0.04 to 0.0003–0.006, so the projection was the
+whole frictionless error. Also added: the ADR's total-derivative statement for
+`dY/du`, and the online shuffled-label control `--shuffle-labels` (batch-wise
+permutation among valid rows, everything else matched; test). The 100-state
+three-mode probe is running (about 1 min per state with the pair sharing the
+GPU); the 5k pair is at 1,500 steps, both arms still at zero success.
+[Record](performance/2026-09-14-iaql-benchmark.md).

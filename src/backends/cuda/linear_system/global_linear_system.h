@@ -276,7 +276,9 @@ class GlobalLinearSystem : public SimSystem
       public:
         void init();
 
-        void build_linear_system();
+        /// Assemble the system at the current state; `with_preconditioner`
+        /// false skips the preconditioner (an export-only assembly).
+        void build_linear_system(bool with_preconditioner = true);
         bool _update_subsystem_extent();
         void _assemble_linear_system();
         void _assemble_preconditioner();

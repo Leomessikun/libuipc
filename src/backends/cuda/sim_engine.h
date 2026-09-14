@@ -21,6 +21,7 @@ class GlobalLinearSystem;
 class GlobalAnimator;
 class GlobalExternalForceManager;
 class GlobalDiffSimManager;
+class LinearSystemAdjoint;
 class AffineBodyDynamics;
 class FiniteElementMethod;
 class InterAffineBodyConstitutionManager;
@@ -104,6 +105,7 @@ class SimEngine final : public backend::SimEngine
     GlobalAnimator*             m_global_animator               = nullptr;
     GlobalExternalForceManager* m_global_external_force_manager = nullptr;
     GlobalDiffSimManager*       m_global_diff_sim_manager       = nullptr;
+    LinearSystemAdjoint*        m_linear_system_adjoint         = nullptr;
     GlobalActiveSetManager*     m_global_active_set_manager     = nullptr;
     //GlobalDiffContactManager*    m_global_diff_contact_manager    = nullptr;
     //GlobalAdjointMethodReplayer* m_global_adjoint_method_replayer = nullptr;

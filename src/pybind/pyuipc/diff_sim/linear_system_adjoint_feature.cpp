@@ -2,6 +2,8 @@
 #include <uipc/diff_sim/linear_system_adjoint_feature.h>
 #include <uipc/core/feature.h>
 #include <pybind11/numpy.h>
+#include <stdexcept>
+#include <string>
 
 namespace pyuipc::diff_sim
 {
@@ -29,6 +31,49 @@ until the next frame's first Newton solve.)");
         "triplet_count",
         &LinearSystemAdjointFeature::triplet_count,
         R"(Number of 3x3 blocks stored (upper block triangle, diagonal blocks whole).)");
+
+    class_LinearSystemAdjointFeature.def(
+        "set_export_mode",
+        [](LinearSystemAdjointFeature& self, const std::string& mode)
+        {
+            if(mode == "last_iterate")
+                self.set_export_mode(LinearSystemExportMode::LastIterate);
+            else if(mode == "converged")
+                self.set_export_mode(LinearSystemExportMode::Converged);
+            else if(mode == "converged_raw")
+                self.set_export_mode(LinearSystemExportMode::ConvergedRaw);
+            else
+                throw std::runtime_error("set_export_mode: expected 'last_iterate', 'converged' or 'converged_raw'");
+        },
+        py::arg("mode"),
+        R"(Choose which system the following frames leave for export; takes effect from the
+next World.advance().
+
+Args:
+    mode: 'last_iterate' (default): the matrix of the frame's last Newton iteration as the
+        solver used it; 'converged': contact pairs, gradient and projected Hessian
+        re-assembled at the accepted state after Newton ends; 'converged_raw': the same
+        without projecting the stencil Hessians to positive semidefinite (the Jacobian the
+        implicit function theorem needs; it may be indefinite, so solve() refuses it).
+        The forward solve is never affected. Every make_spd() site and the friction
+        helper's 2x2 projection honour the switch; StableNeoHookean 3D's analytic
+        projection does not.)");
+
+    class_LinearSystemAdjointFeature.def(
+        "export_mode",
+        [](const LinearSystemAdjointFeature& self) -> std::string
+        {
+            switch(self.export_mode())
+            {
+                case LinearSystemExportMode::Converged:
+                    return "converged";
+                case LinearSystemExportMode::ConvergedRaw:
+                    return "converged_raw";
+                default:
+                    return "last_iterate";
+            }
+        },
+        R"(The current export mode name.)");
 
     class_LinearSystemAdjointFeature.def(
         "export_system",

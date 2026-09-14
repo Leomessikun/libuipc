@@ -62,18 +62,31 @@ def guided_action(env, rng, noise=0.3):
 
 
 def probe(env, agent, args):
+    """The gate. Every snapshot's centre decision is captured once per export mode (the same
+    restored state; the modes differ only in the matrix the backend leaves behind) and the
+    differences are taken once, in the default mode, against all of them."""
     rng = np.random.default_rng(args.seed)
     noise = tensor([[0.2, -0.7, 0.4]])
     records = []
+    modes = list(args.export_modes)
     for i in range(args.snapshots):
         env.reset(100+i)
-        for _ in range(i % 4 * 4):
+        # Every snapshot follows at least one advance: a dump straight after a recover is not
+        # restorable in every scene (2026-09-14 physics-gradient entry in the handoff).
+        for _ in range(args.guided_steps_min + i % 4 * 4):
             env.step(guided_action(env, rng))
         snap = env.snapshot()
         action = rng.uniform(-0.5, 0.5, 3)
-        center = env.step(action, capture=True)
+        captures = {}
+        for mode in modes:
+            env.restore(snap)
+            env.set_export_mode(mode)
+            captures[mode] = env.step(action, capture=True)
+        env.set_export_mode(modes[0])
+        center = captures[modes[0]]
         row = dict(center, next_obs=center["obs"])
         y, g = labels(agent, [row], noise)
+        others = {mode: labels(agent, [dict(c, next_obs=c["obs"])], noise)[1][0] for mode, c in captures.items()}
         checks = []
         for eps in args.eps:
             gradients, rewards, state_derivatives = [], [], []
@@ -97,10 +110,19 @@ def probe(env, agent, args):
             state_errors = {}
             for name, sl in [("position", slice(0, 3*env.n)), ("velocity", slice(3*env.n, 6*env.n)), ("tool", slice(6*env.n, 6*env.n+3))]:
                 state_errors[name] = [comparison(center["tangent"][sl, axis], fd_state[sl, axis]) for axis in range(3)]
+            by_mode = {}
+            for mode, c in captures.items():
+                by_mode[mode] = dict(bellman=comparison(others[mode].numpy(), fd),
+                                     reward=comparison(c["reward_gradient"], np.mean(rewards, 0)),
+                                     state_errors={name: [comparison(c["tangent"][sl, axis], fd_state[sl, axis]) for axis in range(3)]
+                                                   for name, sl in [("position", slice(0, 3*env.n)), ("velocity", slice(3*env.n, 6*env.n))]},
+                                     capture_forward_s=c["capture_forward_s"])
             checks.append(dict(epsilon=eps, bellman=comparison(g[0].numpy(), fd),
                                reward=comparison(center["reward_gradient"], np.mean(rewards, 0)),
-                               fd_gradient=fd.tolist(), repeat_std=np.std(gradients, axis=0).tolist(), state_errors=state_errors))
+                               fd_gradient=fd.tolist(), repeat_std=np.std(gradients, axis=0).tolist(), state_errors=state_errors,
+                               by_mode=by_mode))
         records.append(dict(snapshot=i, action=action.tolist(), value=float(y), gradient=g[0].tolist(),
+                            modes={mode: others[mode].tolist() for mode in modes},
                             checks=checks, capture_forward_s=center["capture_forward_s"], tangent_s=center["tangent_s"]))
         print(json.dumps({"probe": records[-1]}), flush=True)
     # Both step sizes must agree, so a favorable difference scale cannot hide an unstable local map.
@@ -224,11 +246,18 @@ def evaluate(env, agent, seeds, horizon):
     return episodes
 
 
-def sidecar_batch(batch, state_dim, action_dim=3):
-    """Mechanics for the rows the bounded sidecar still holds; the others are valid 0 with zero tangents."""
+def sidecar_batch(batch, state_dim, action_dim=3, shuffle=None):
+    """Mechanics for the rows the bounded sidecar still holds; the others are valid 0 with zero tangents.
+    ``shuffle`` (a Generator) permutes the mechanics among the valid rows: the design's shuffled-label
+    control, matched to the paired arm in sidecar lifetime, sampling, weight and scale."""
     has = torch.tensor([("tangent" in r) for r in batch])
     tangent = torch.stack([tensor(r["tangent"]) if "tangent" in r else torch.zeros(state_dim, action_dim) for r in batch])
     reward_gradient = torch.stack([tensor(r["reward_gradient"]) if "tangent" in r else torch.zeros(action_dim) for r in batch])
+    if shuffle is not None:
+        rows = torch.nonzero(has).reshape(-1)
+        if len(rows) > 1:
+            perm = rows[torch.as_tensor(shuffle.permutation(len(rows)))]
+            tangent[rows], reward_gradient[rows] = tangent[perm], reward_gradient[perm]
     return dict(tangent=tangent, reward_gradient=reward_gradient, valid=has.float())
 
 
@@ -238,6 +267,7 @@ def online(env, args):
     for weight in ([0.0, args.beta] if args.online_weights is None else args.online_weights):
         agent = agent_for(env.obs_dim, args.seed+50, weight)
         rng = np.random.default_rng(args.seed+60)
+        shuffle_rng = np.random.default_rng(args.seed+70)
         # The TD replay keeps every transition; the mechanics sidecar is bounded and evicts on its own,
         # so an old row keeps learning values after its tangent is gone (design: replay and target freshness).
         replay, sidecar = [], collections.deque()
@@ -260,7 +290,7 @@ def online(env, args):
             if len(replay) >= 64:
                 for _ in range(args.updates_per_step):
                     batch = [replay[k] for k in rng.integers(0, len(replay), 32)]
-                    kw = sidecar_batch(batch, env.obs_dim) if weight else {}
+                    kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if weight else {}
                     last_stats = agent.update_state_batch(tensor([r["obs"] for r in batch]), tensor([r["action"] for r in batch]),
                         tensor([[r["reward"]] for r in batch]), tensor([r["next_obs"] for r in batch]), torch.ones(32, 1), **kw)
             if (i+1) % 64 == 0:
@@ -278,7 +308,8 @@ def online(env, args):
         duration = time.monotonic()-t0-eval_s
         evaluation = evaluate(env, agent, eval_seeds, args.eval_steps)
         result = dict(weight=weight, steps=args.online_steps, training_s=duration, evaluation=evaluation, progress=progress,
-                      stats=last_stats, replay_rows=len(replay), sidecar_rows=len(sidecar))
+                      stats=last_stats, replay_rows=len(replay), sidecar_rows=len(sidecar),
+                      labels="shuffled" if args.shuffle_labels and weight else "paired")
         agent.save(args.out/f"online_beta_{weight}.pt", step=args.online_steps, metadata=result)
         results.append(result)
         print(json.dumps({"online_result": result}), flush=True)
@@ -292,6 +323,11 @@ def main(argv=None):
     p.add_argument("--velocity-tolerance", type=float, default=.001)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--snapshots", type=int, default=4)
+    p.add_argument("--guided-steps-min", type=int, default=0,
+                   help="guided steps before every probe snapshot, on top of 4*(i mod 4); use 1 so no snapshot dumps straight after a recover")
+    p.add_argument("--export-modes", nargs="+", default=["last_iterate"],
+                   choices=["last_iterate", "converged", "converged_raw"],
+                   help="backend export modes to capture each probe decision with; the first is the run's mode")
     p.add_argument("--eps", type=float, nargs="+", default=[.03, .1])
     p.add_argument("--fd-repeats", type=int, default=2)
     p.add_argument("--collect", type=int, default=128)
@@ -305,6 +341,8 @@ def main(argv=None):
     p.add_argument("--tangent-rows", type=int, default=1024, help="bounded mechanics sidecar; older rows learn values only")
     p.add_argument("--beta", type=float, default=.1)
     p.add_argument("--refit-weights", type=float, nargs="+", default=[0.0, 0.01, 0.1, 1.0])
+    p.add_argument("--shuffle-labels", action="store_true",
+                   help="online control: permute each batch's mechanics among its valid rows (everything else matched)")
     p.add_argument("--online-weights", type=float, nargs="+", default=None,
                    help="online arms to run in this process (default: 0 and --beta); one arm per process runs the pair in parallel")
     p.add_argument("--phase", choices=["probe", "all", "refit", "online"], default="all",
@@ -317,7 +355,8 @@ def main(argv=None):
         refit(args)
         return
     t0 = time.monotonic()
-    env = IAQLClothEnv(args.out/"world", IAQLEnvConfig(friction=args.friction, velocity_tolerance=args.velocity_tolerance))
+    env = IAQLClothEnv(args.out/"world", IAQLEnvConfig(friction=args.friction, velocity_tolerance=args.velocity_tolerance,
+                                                        export_mode=args.export_modes[0]))
     report = dict(environment=env.describe(), seed=args.seed, state_activation="silu",
                   arguments={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()})
     path = args.out/"report.json"

@@ -212,7 +212,7 @@ void GlobalLinearSystem::Impl::init()
     initialized = true;
 }
 
-void GlobalLinearSystem::Impl::build_linear_system()
+void GlobalLinearSystem::Impl::build_linear_system(bool with_preconditioner)
 {
     Timer timer{"Build Linear System"};
     empty_system = !_update_subsystem_extent();
@@ -237,6 +237,7 @@ void GlobalLinearSystem::Impl::build_linear_system()
         triplet_count_dev = (IndexT)bcoo_A.triplet_count();
     }
 
+    if(with_preconditioner)
     {
         Timer t{"Assemble Preconditioner"};
         _assemble_preconditioner();

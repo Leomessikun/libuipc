@@ -19,6 +19,18 @@ SizeT LinearSystemAdjointFeature::triplet_count() const
     return m_impl->get_triplet_count();
 }
 
+void LinearSystemAdjointFeature::set_export_mode(LinearSystemExportMode mode)
+{
+    auto value = static_cast<int>(mode);
+    UIPC_ASSERT_THROW(value >= 0 && value <= 2, "set_export_mode: unknown export mode {}", value);
+    m_impl->do_set_export_mode(mode);
+}
+
+LinearSystemExportMode LinearSystemAdjointFeature::export_mode() const
+{
+    return m_impl->do_export_mode();
+}
+
 void LinearSystemAdjointFeature::export_system(span<IndexT> block_rows,
                                                span<IndexT> block_cols,
                                                span<Float>  block_values,

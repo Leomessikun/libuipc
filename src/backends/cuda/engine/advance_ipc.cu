@@ -7,6 +7,8 @@
 #include <collision_detection/global_trajectory_filter.h>
 #include <line_search/line_searcher.h>
 #include <linear_system/global_linear_system.h>
+#include <linear_system/linear_system_adjoint.h>
+#include <utils/make_spd.h>
 #include <animator/global_animator.h>
 #include <diff_sim/global_diff_sim_manager.h>
 #include <newton_tolerance/newton_tolerance_manager.h>
@@ -77,6 +79,31 @@ void SimEngine::advance()
             Timer timer{"Compute DyTopo Effect"};
             m_global_dytopo_effect_manager->compute_dytopo_effect();
         }
+    };
+
+    // Re-assemble the system at the accepted state for the adjoint export
+    // (LinearSystemAdjointFeature modes other than LastIterate): the contact
+    // pairs of x*, then the gradient and Hessian at x*, projected or raw. The
+    // frame's own solve is over; the animator's substep ratio stays what the
+    // final iterate used; the projection switch is restored whatever happens.
+    auto assemble_at_accepted_state = [&]
+    {
+        using ExportMode = LinearSystemAdjoint::ExportMode;
+        auto mode        = m_linear_system_adjoint->export_mode();
+        if(mode == ExportMode::LastIterate)
+            return;
+        Timer timer{"Assemble At Accepted State"};
+        struct ProjectionGuard
+        {
+            ~ProjectionGuard() { set_hessian_projection(true); }
+        } guard;
+        set_hessian_projection(mode != ExportMode::ConvergedRaw);
+        detect_dcd_candidates();
+        m_state = SimEngineState::ComputeDyTopoEffect;
+        compute_dytopo_effect();
+        m_state = SimEngineState::SolveGlobalLinearSystem;
+        m_global_linear_system->m_impl.build_linear_system(false);
+        cuda_tool::wait_device();
     };
 
     auto cfl_condition = [&cfl_alpha, this](Float alpha)
@@ -463,6 +490,9 @@ void SimEngine::advance()
                     }
                 }
             }
+
+            if(m_linear_system_adjoint)
+                assemble_at_accepted_state();
 
             // 5. Update Velocity => v = (x - x_0) / dt
             m_state = SimEngineState::UpdateVelocity;

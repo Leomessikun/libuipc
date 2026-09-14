@@ -15,11 +15,29 @@ namespace uipc::diff_sim
  * that system to host memory and solves `H x = rhs` for a caller's right-hand
  * side with the backend's own iterative solver and preconditioner, leaving
  * the frame's own solution untouched.
+ *
+ * The export mode chooses which system the next frames leave behind:
+ * `LastIterate` (the default) is the matrix of the frame's last Newton
+ * iteration, as the solver used it; `Converged` re-assembles the contact
+ * pairs, gradient and projected Hessian at the accepted state after Newton
+ * ends; `ConvergedRaw` does the same without projecting the stencil Hessians
+ * to positive semidefinite, which is the Jacobian the implicit function
+ * theorem needs. The forward solve is never affected.
  */
+enum class LinearSystemExportMode : int
+{
+    LastIterate  = 0,
+    Converged    = 1,
+    ConvergedRaw = 2,
+};
+
 class UIPC_CORE_API LinearSystemAdjointFeatureOverrider
 {
   public:
     virtual ~LinearSystemAdjointFeatureOverrider() = default;
+
+    virtual void do_set_export_mode(LinearSystemExportMode mode) = 0;
+    virtual LinearSystemExportMode do_export_mode()              = 0;
 
     /// Number of scalar degrees of freedom of the assembled system.
     virtual SizeT get_dof_count() = 0;
@@ -62,6 +80,14 @@ class UIPC_CORE_API LinearSystemAdjointFeature final : public core::Feature
 
     SizeT dof_count() const;
     SizeT triplet_count() const;
+
+    /**
+     * @brief Choose the system the following frames leave for export; takes
+     * effect from the next `World::advance()`. `ConvergedRaw` may be
+     * indefinite, so `solve()` refuses it: export it and factorise on the host.
+     */
+    void                   set_export_mode(LinearSystemExportMode mode);
+    LinearSystemExportMode export_mode() const;
 
     /**
      * @brief Copy the assembled system of the current frame to host memory.

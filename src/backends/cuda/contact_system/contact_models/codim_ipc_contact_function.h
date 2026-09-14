@@ -4,6 +4,7 @@
 #include <utils/distance.h>
 #include <utils/distance/distance_flagged.h>
 #include <utils/friction_utils.h>
+#include <utils/make_spd.h>
 
 namespace uipc::backend::cuda
 {
@@ -63,6 +64,8 @@ namespace sym::codim_ipc_contact
 
     inline __device__ void make_spd(Matrix2x2& mat)
     {
+        if(!uipc_hessian_projection_enabled)
+            return;
         Vector2   eigen_values;
         Matrix2x2 eigen_vectors;
         cuda_tool::eigen::template evd(mat, eigen_values, eigen_vectors);

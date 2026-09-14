@@ -33,6 +33,21 @@ The initial implementation runs from a modified working tree. It adds:
   `--updates-per-step`; `--phase online --online-weights w` runs one arm per
   process so a pair can run in parallel.
 
+- Backend export modes (takeover, after the tolerance probe):
+  `LinearSystemAdjointFeature.set_export_mode('last_iterate' | 'converged' |
+  'converged_raw')`. After the Newton loop the engine re-detects contact pairs
+  and re-assembles the system at the accepted state, projected or with the
+  device-side projection switch off (`utils/make_spd.h`, honoured by every
+  `make_spd` site and the friction helper's 2x2 projection; not by
+  StableNeoHookean-3D's analytic projection); the forward solve is untouched
+  and the switch is restored by an RAII guard. `solve()` refuses the raw mode.
+  `iaql_env` takes `export_mode`; the probe captures each decision once per
+  `--export-modes` entry and reports every mode against the same differences;
+  `--guided-steps-min 1` keeps every snapshot one advance past its recover.
+  Test: `uipc_test_diff_sim` "linear_system_adjoint_export_modes" (a shell
+  triangle at rest: projected and raw agree; compressed to 60 %: they differ,
+  same sparsity, projected curvature never below raw).
+
 The first run's replay stored all transition/tangent fields in one bounded row
 of 1,024 and evicted them together; its `report.json` arguments lack the
 sidecar keys. Neither is the large-scale sequence-replay sidecar proposed in
@@ -246,3 +261,30 @@ here for the settled initial state, but each such snapshot should follow an
 advance before the gate grows to the ADR's hundred states. And the coded gate
 is per snapshot over all checks, stricter than the ADR's median form; report
 which one was applied.
+
+## Export modes: the projection is the whole tangent error (smoke, 2 states; 100-state run in progress)
+
+Three modes of the same restored state and centre action, differences taken
+once. `last_iterate -> converged` isolates the evaluation point and the
+contact pair set; `converged -> converged_raw` isolates the SPD projection.
+Friction 0, tolerance 1e-3, one guided step before snapshot 0 and five before
+snapshot 1, `output/iaql/modes_smoke`:
+
+| Mode | Position tangent rel. error per axis (snap 0 / snap 1) | Velocity tangent rel. error (snap 0 / snap 1) | Bellman rel. error (snap 0 / snap 1) | Forward per captured decision |
+|---|---|---|---|---|
+| last_iterate | 0.016, 0.013, 0.023 / 0.081, 0.049, 0.037 | 0.019, 0.011, 0.051 / 0.059, 0.052, 0.070 | 0.042 / 0.037 | 2.6–3.1 s |
+| converged | 0.016, 0.013, 0.023 / 0.081, 0.049, 0.037 | 0.019, 0.011, 0.051 / 0.059, 0.052, 0.070 | 0.041 / 0.037 | 2.8–3.3 s |
+| converged_raw | 0.0014, 0.0015, 0.0023 / 0.0003, 0.0006, 0.0010 | 0.0015, 0.0016, 0.0059 / 0.0008, 0.0007, 0.0017 | 0.006 / 0.0003 | 3.1–3.2 s |
+
+Re-assembling at the accepted state changes nothing to three digits, so
+neither the evaluation point nor the pair set was the error; switching the
+projection off removes it: the raw tangent agrees with the differences to
+0.03–0.2 % and the Bellman gradient to 0.03–0.6 %, against 2–8 % and 4 % with
+the projected matrix. The re-assembly costs one extra detection and assembly
+per frame, about 0.2 s per five-substep decision here on the shared GPU. The
+host LU factorises the raw (possibly indefinite) matrix without trouble at
+1,200 degrees of freedom. `uipc_test_diff_sim` (3 cases, 563 assertions)
+passes on the new build: at rest the projected and raw re-assemblies agree
+to 1e-8, compressed to 60 % they differ and the projected curvature is never
+below the raw. The 100-state run (`output/iaql/modes100_s0`, one to thirteen
+guided steps, all three modes) is in progress; its statistics follow.

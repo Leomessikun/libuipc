@@ -9,6 +9,8 @@
 #include <global_geometry/global_vertex_manager.h>
 #include <line_search/line_searcher.h>
 #include <linear_system/global_linear_system.h>
+#include <linear_system/linear_system_adjoint.h>
+#include <linear_system/linear_system_adjoint.h>
 #include <uipc/common/log.h>
 #include <affine_body/affine_body_dynamics.h>
 #include <finite_element/finite_element_method.h>
@@ -44,6 +46,7 @@ void SimEngine::build()
     m_global_animator               = find<GlobalAnimator>();
     m_global_external_force_manager = find<GlobalExternalForceManager>();
     m_global_diff_sim_manager       = find<GlobalDiffSimManager>();
+    m_linear_system_adjoint         = find<LinearSystemAdjoint>();
 
     m_affine_body_dynamics = find<AffineBodyDynamics>();
     m_inter_affine_body_constitution_manager =

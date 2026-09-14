@@ -136,7 +136,11 @@ PYTHONPATH=build/python/src:python OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
 ```
 
 `--phase probe --friction 0.6` measures the frictional regime before trusting
-its approximate gradients. `--phase refit` re-fits critics on a finished run's
+its approximate gradients. `--export-modes last_iterate converged converged_raw`
+captures every probe decision with each backend export mode (the last Newton
+iterate's projected matrix, or a re-assembly at the accepted state, projected
+or raw) against one set of differences; `--shuffle-labels` is the matched
+online control. `--phase refit` re-fits critics on a finished run's
 saved fixed dataset on the CPU (weight sweep, shuffled-label control, constant
 mean slope). `--phase online --online-weights 0.1 --eval-every 500` runs one
 online arm with periodic evaluation; one process per arm runs the SAC/IAQL

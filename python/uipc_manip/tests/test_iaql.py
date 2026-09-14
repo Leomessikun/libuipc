@@ -125,3 +125,13 @@ def test_refit_sweeps_weights_and_shuffles_only_training_labels(tmp_path):
     assert [(r["weight"], r["labels"]) for r in results] == [(None, "train_mean_slope"), (0.0, "paired"), (0.1, "paired"), (0.1, "shuffled")]
     assert all(np.isfinite(h["slope_mse"]) for r in results for h in r["heads"])
     assert (tmp_path/"refit.json").exists()
+
+
+def test_sidecar_batch_shuffle_permutes_only_valid_rows():
+    from uipc_manip.iaql_benchmark import sidecar_batch
+    rows = [dict(tangent=np.full((2, 3), k, np.float32), reward_gradient=np.full(3, k)) for k in (1., 2., 3.)] + [dict()]
+    kw = sidecar_batch(rows, 2, shuffle=np.random.default_rng(0))
+    assert kw["valid"].tolist() == [1., 1., 1., 0.]
+    assert sorted(float(t[0, 0]) for t in kw["tangent"][:3]) == [1., 2., 3.]
+    assert all(float(kw["tangent"][i, 0, 0]) == float(kw["reward_gradient"][i, 0]) for i in range(3))
+    assert float(kw["tangent"][3].abs().sum()) == 0

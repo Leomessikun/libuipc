@@ -132,7 +132,10 @@ y=\operatorname{sg}[T(Y)],\qquad
 g=\operatorname{sg}[T'(Y)\,dY/du].
 \]
 
-Here `T` is identity or the existing scalar target clamp. For a clamped target,
+Here `dY/du` is the total derivative: `R_u + D^T (R_{s'} + gamma m V_{s'})`
+with `D = ds'/du`, so a reward that depends on the successor state (the
+benchmark's progress term) contributes through `D`, not only through its
+explicit action term. `T` is identity or the existing scalar target clamp. For a clamped target,
 the derivative is zero outside the interval; reject the derivative at its kink.
 Log the clamped fraction. Do not pair a clamped scalar with an unclamped slope.
 Any experiment removing the clamp must remove it for both SAC and IAQL.
@@ -210,6 +213,19 @@ Call the resulting label an **approximate IPC sensitivity**. Iterative
 refinement improves the solve for `H_tilde`; it does not correct projection,
 missing terms, wrong evaluation point, or discrete contact changes. A stricter
 forward tolerance may reduce some errors but must be measured and costed.
+
+Implemented on this branch (2026-09-14): `LinearSystemAdjointFeature.set_export_mode`
+separates two of those error sources. `last_iterate` is the retained matrix
+above. `converged` re-detects the contact pairs and re-assembles the gradient
+and projected Hessian at the accepted state after the Newton loop, with the
+frame's own solve untouched (evaluation point and pair set isolated).
+`converged_raw` does the same with every `make_spd` site and the friction
+helper's 2x2 projection switched off, which is the residual Jacobian the
+implicit function theorem needs for the frictionless case (projection
+isolated); StableNeoHookean-3D's analytic projection is not covered, and the
+lagged friction terms are still absent from the chain. The raw system may be
+indefinite: the feature's `solve()` refuses it and the host factorises it.
+The measurements belong to the benchmark record, not to this design.
 
 For the full decision, if the true `A` is available and
 `r_adj = ell_X - A^T lambda_hat`, the local error with otherwise exact inputs is

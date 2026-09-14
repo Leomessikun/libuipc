@@ -32,6 +32,10 @@ class IAQLEnvConfig:
     action_cost: float = 0.01
     state_scale: float = 0.1
     velocity_tolerance: float = 0.001
+    export_mode: str = "last_iterate"
+    """Which system the backend leaves for the tangent: the last Newton iterate's projected
+    matrix, or a re-assembly at the accepted state, projected (``converged``) or not
+    (``converged_raw``); see LinearSystemAdjointFeature.set_export_mode."""
 
 
 class IAQLClothEnv:
@@ -95,6 +99,7 @@ class IAQLClothEnv:
         self.feature = self.world.features().find(LinearSystemAdjointFeature)
         if self.feature is None:
             raise RuntimeError("Use PYTHONPATH=build/python/src:python for the tree's adjoint feature")
+        self.set_export_mode(cfg.export_mode)
         for _ in range(cfg.settle_steps):
             self._advance()
         geo = self.slot.geometry()
@@ -106,6 +111,15 @@ class IAQLClothEnv:
         self.steps = 0
         self.initial = self.snapshot()
         self.reset(0)
+
+    def set_export_mode(self, mode: str):
+        """Takes effect from the next advance; a build without the mode API accepts only the default."""
+        if not hasattr(self.feature, "set_export_mode"):
+            if mode != "last_iterate":
+                raise RuntimeError("This build's adjoint feature has no export modes; rebuild the tree")
+            return
+        self.feature.set_export_mode(mode)
+        self.cfg.export_mode = mode
 
     def _advance(self):
         self.world.advance()
@@ -205,4 +219,4 @@ class IAQLClothEnv:
 
     def describe(self):
         return dict(config=asdict(self.cfg), variant="cloth_drag_direct_picker", state_dim=self.obs_dim,
-                    vertices=self.n, derivative="projected Hessian with inertia-only history")
+                    vertices=self.n, derivative=f"{self.cfg.export_mode} Hessian with inertia-only history")

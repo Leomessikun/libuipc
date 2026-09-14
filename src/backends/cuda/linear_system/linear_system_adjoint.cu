@@ -1,5 +1,7 @@
 #include <sim_system.h>
 #include <linear_system/global_linear_system.h>
+#include <linear_system/linear_system_adjoint.h>
+#include <utils/make_spd.h>
 #include <uipc/diff_sim/linear_system_adjoint_feature.h>
 #include <uipc/common/log.h>
 #include <vector>
@@ -8,6 +10,23 @@
 
 namespace uipc::backend::cuda
 {
+// The projection switch every make_spd() reads (declared in utils/make_spd.h).
+__device__ int uipc_hessian_projection_enabled = 1;
+static bool    host_hessian_projection_enabled = true;
+
+void set_hessian_projection(bool enabled)
+{
+    int value = enabled ? 1 : 0;
+    cuda_tool::wait_device();
+    CUDA_TOOL_CHECK(cudaMemcpyToSymbol(uipc_hessian_projection_enabled, &value, sizeof(int)));
+    host_hessian_projection_enabled = enabled;
+}
+
+bool hessian_projection_enabled()
+{
+    return host_hessian_projection_enabled;
+}
+
 /**
  * @brief Exposes the assembled system of the current frame and a solve
  * against it, for sensitivities computed outside the backend.
@@ -15,16 +34,29 @@ namespace uipc::backend::cuda
  * `GlobalLinearSystem` keeps `bcoo_A` (the block-sparse Hessian after
  * symmetric compression, upper block triangle), `b` (the gradient) and `x`
  * (the last Newton step) from the frame's last iteration until the next
- * frame's first solve. Nothing here rebuilds the system; `do_solve` swaps a
- * caller's right-hand side in, runs the frame's solver on the frame's matrix
- * and preconditioner, and swaps the frame's own vectors back.
+ * frame's first solve, or, in the `Converged` and `ConvergedRaw` export
+ * modes, the system the engine re-assembled at the accepted state after the
+ * Newton loop. Nothing here rebuilds the system; `do_solve` swaps a caller's
+ * right-hand side in, runs the frame's solver on the frame's matrix and
+ * preconditioner, and swaps the frame's own vectors back.
  */
 class LinearSystemAdjointFeatureOverrider final : public diff_sim::LinearSystemAdjointFeatureOverrider
 {
   public:
-    explicit LinearSystemAdjointFeatureOverrider(GlobalLinearSystem& system)
+    LinearSystemAdjointFeatureOverrider(GlobalLinearSystem& system, LinearSystemAdjoint& owner)
         : m_system(system)
+        , m_owner(owner)
     {
+    }
+
+    void do_set_export_mode(diff_sim::LinearSystemExportMode mode) override
+    {
+        m_owner.set_export_mode(mode);
+    }
+
+    diff_sim::LinearSystemExportMode do_export_mode() override
+    {
+        return m_owner.export_mode();
     }
 
     SizeT get_dof_count() override { return m_system.m_impl.x.size(); }
@@ -77,6 +109,10 @@ class LinearSystemAdjointFeatureOverrider final : public diff_sim::LinearSystemA
         UIPC_ASSERT_THROW(!impl.empty_system,
                           "LinearSystemAdjoint: no system has been assembled "
                           "yet; call after a frame has been advanced.");
+        UIPC_ASSERT_THROW(m_owner.export_mode() != diff_sim::LinearSystemExportMode::ConvergedRaw,
+                          "LinearSystemAdjoint: the raw system may be "
+                          "indefinite and has no preconditioner; export it "
+                          "and factorise on the host instead of solve().");
         auto dofs = impl.x.size();
         UIPC_ASSERT_THROW(rhs.size() == dofs && solution.size() == dofs,
                           "LinearSystemAdjoint: rhs has {} and solution {} "
@@ -151,24 +187,18 @@ class LinearSystemAdjointFeatureOverrider final : public diff_sim::LinearSystemA
 
   private:
     GlobalLinearSystem&                 m_system;
+    LinearSystemAdjoint&                m_owner;
     cuda_tool::DeviceDenseVector<Float> m_x;
     cuda_tool::DeviceDenseVector<Float> m_y;
 };
 
-// A SimSystem that registers the LinearSystemAdjointFeature with the engine.
-class LinearSystemAdjoint final : public SimSystem
+void LinearSystemAdjoint::do_build()
 {
-  public:
-    using SimSystem::SimSystem;
-
-    virtual void do_build() override
-    {
-        auto& system = require<GlobalLinearSystem>();
-        auto overrider = std::make_shared<LinearSystemAdjointFeatureOverrider>(system);
-        auto feature = std::make_shared<diff_sim::LinearSystemAdjointFeature>(overrider);
-        features().insert(feature);
-    }
-};
+    auto& system = require<GlobalLinearSystem>();
+    auto overrider = std::make_shared<LinearSystemAdjointFeatureOverrider>(system, *this);
+    auto feature = std::make_shared<diff_sim::LinearSystemAdjointFeature>(overrider);
+    features().insert(feature);
+}
 
 REGISTER_SIM_SYSTEM(LinearSystemAdjoint);
 }  // namespace uipc::backend::cuda
