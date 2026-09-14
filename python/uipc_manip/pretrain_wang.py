@@ -227,6 +227,11 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument("--run-name", default=None)
         s.add_argument("--log-interval", type=int, default=20, help="Vector steps between log rows.")
         s.add_argument("--save-trajectories", action="store_true", help="Store every evaluation episode as an .npz file.")
+        s.add_argument("--init-from", default=None,
+                       help="Start from this checkpoint's actor, critic and temperature instead of a fresh "
+                            "initialisation. Optimizer moments, the replay buffer and every counter start empty, "
+                            "so this is a new run that inherits weights, not a resume; a resume of it continues "
+                            "from its own checkpoints and does not read this file again.")
     r = stages.add_parser("resume", allow_abbrev=False, help="continue a run from its latest checkpoint")
     r.add_argument("run_dir", help="The run directory holding checkpoints/state.json.")
     r.add_argument("--transitions", type=int, default=None, help="New total budget; default the saved one.")
@@ -484,6 +489,12 @@ class WangRun:
         self.teacher_regions = sorted(self.teachers)
         if self.teachers:
             self.agent.set_teachers(self.teachers)
+        if self.resume is None and getattr(self.args, "init_from", None):
+            # Weights only: fresh optimizer moments and an empty replay, so the temperature floor and the
+            # entropy target this run sets apply from its first update rather than being carried over.
+            self.agent.load(self.args.init_from, load_optimizers=False)
+            self.agent.updates = 0
+            print(f"[wang] actor, critic and temperature initialised from {self.args.init_from}", flush=True)
         if self.resume is not None:
             payload = self.agent.load(self.resume["checkpoint"], load_optimizers=True)
             self.reward_scale = float(payload.get("metadata", {}).get("reward_scale", self.reward_scale))
@@ -518,6 +529,7 @@ class WangRun:
             "sac_config": self.agent.cfg.to_dict(),
             "reward_scale": self.reward_scale,
             "seed": int(self.args.seed),
+            "init_from": str(self.args.init_from) if getattr(self.args, "init_from", None) else None,
             "num_envs": int(self.plan["num_envs"]),
             "cells": [[g, int(b)] for g, b in self.pool.configs()],
             "heldout_slots": [],

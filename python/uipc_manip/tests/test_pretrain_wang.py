@@ -242,6 +242,7 @@ def stub_run(monkeypatch):
     class Agent:
         def __init__(self, spec, action_dim, cfg, device):
             self.cfg, self.updates, self.alpha, self.batches, self.teachers = cfg, 0, torch.zeros(()), [], {}
+            self.loaded = None
             agents.append(self)
 
         def set_teachers(self, teachers):
@@ -268,7 +269,8 @@ def stub_run(monkeypatch):
 
         def load(self, path, load_optimizers=True):
             payload = json.loads(Path(path).read_text())
-            assert load_optimizers and payload["sac_config"] == json.loads(json.dumps(self.cfg.to_dict()))
+            assert payload["sac_config"] == json.loads(json.dumps(self.cfg.to_dict()))
+            self.loaded = (str(path), bool(load_optimizers))
             return payload
 
     monkeypatch.setattr(pretrain_wang, "_ensure_genesis", lambda level: None)
@@ -377,3 +379,35 @@ def test_a_world_that_fails_to_build_is_drawn_again(stub_run, tmp_path):
     pretrain_wang.main(RUN_ARGV + ["--transitions", "8", "--work-dir", str(tmp_path), "--run-name", "retry"])
     state = json.loads((tmp_path / "retry" / "checkpoints" / "state.json").read_text())
     assert not FAIL_BUILDS and state["counters"]["build_failures"] == 1 and state["counters"]["rotations"] == 1
+
+
+def test_init_from_inherits_the_weights_without_the_optimizers_or_the_replay(stub_run, tmp_path):
+    """A resume continues a run; --init-from starts a new one from another run's weights.
+
+    Every arm of the critic ablation peaked and then fell, so the experiment that follows restarts
+    from the peak checkpoint under a different temperature floor and entropy target. That must not
+    carry the collapsed run's optimizer moments, replay or counters with it.
+    """
+    built, agents = stub_run
+    pretrain_wang.main(RUN_ARGV + ["--transitions", "24", "--work-dir", str(tmp_path), "--run-name", "source"])
+    source = tmp_path / "source" / "checkpoints" / "checkpoint_00000024.pt"
+    assert agents[-1].loaded is None                      # a fresh run reads no checkpoint
+
+    pretrain_wang.main(RUN_ARGV + ["--transitions", "8", "--work-dir", str(tmp_path), "--run-name", "child",
+                                   "--init-from", str(source)])
+    child = agents[-1]
+    assert child.loaded == (str(source), False)           # weights yes, optimizer moments no
+    assert child.updates <= 8                             # its own counter, not the source's
+    config = json.loads((tmp_path / "child" / "config.json").read_text())
+    assert config["init_from"] == str(source)
+    assert json.loads((tmp_path / "child" / "checkpoints" / "state.json").read_text())["transitions"] == 8
+
+    # Resuming the child continues the child: it reads the child's own checkpoint, with its optimizers.
+    pretrain_wang.main(["resume", str(tmp_path / "child"), "--transitions", "16"])
+    assert agents[-1].loaded == (str(tmp_path / "child" / "checkpoints" / "checkpoint_00000008.pt"), True)
+
+
+def test_a_fresh_run_records_no_init_from(stub_run, tmp_path):
+    built, agents = stub_run
+    pretrain_wang.main(RUN_ARGV + ["--transitions", "8", "--work-dir", str(tmp_path), "--run-name", "plain"])
+    assert json.loads((tmp_path / "plain" / "config.json").read_text())["init_from"] is None

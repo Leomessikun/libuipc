@@ -115,6 +115,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--point-jitter", type=float, default=0.0, help="Per-point jitter [m] applied to replay samples.")
     p.add_argument("--grad-clip-max-norm", type=float, default=0.0)
     p.add_argument("--min-alpha", type=float, default=0.0)
+    p.add_argument("--target-entropy-scale", type=float, default=1.0,
+                   help="Target entropy as a multiple of -action_dim. The reference uses 1.0, which drives a "
+                        "six-dimensional policy to -6 and so to near-determinism; a smaller scale leaves the "
+                        "temperature holding more exploration open.")
     p.add_argument("--init-temperature", type=float, default=0.1, help="Initial SAC temperature; the reference uses 0.1 at a 150-step horizon.")
     p.add_argument("--eval-freq", type=int, default=500, help="Vector steps between evaluations (0 disables).")
     p.add_argument("--num-eval-episodes", type=int, default=None, help="Episodes per evaluation round, rounded up to a whole number per slot; default one per slot, which is one deterministic episode per cell when every cell has its own slot.")
@@ -185,7 +189,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     saved.update({key: metadata[key] for key in ("task", "seed", "num_envs") if key in metadata})
     cfg = SACConfig.from_dict(payload["sac_config"])
     cfg_names = {"actor": "actor_type", "point_jitter": "point_jitter_scale", "grad_clip_max_norm": "grad_clip_max_norm"}
-    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v", "critic_input", "encoder_precision", "distill_weight"):
+    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "target_entropy_scale", "algo", "num_bins", "min_v", "max_v", "critic_input", "encoder_precision", "distill_weight"):
         cfg_names[key] = key
     saved.update({key: getattr(cfg, name) for key, name in cfg_names.items()})
     saved.update(encoder=cfg.encoder.kind, sa_neighbors=cfg.encoder.sa_neighbors)
@@ -253,6 +257,7 @@ def build_sac_config(args) -> SACConfig:
         batch_size=args.batch_size,
         grad_clip_max_norm=args.grad_clip_max_norm,
         min_alpha=args.min_alpha,
+        target_entropy_scale=args.target_entropy_scale,
         point_jitter_scale=args.point_jitter,
         actor_type=args.actor,
         algo=args.algo,
