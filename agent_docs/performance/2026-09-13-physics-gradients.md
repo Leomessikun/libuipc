@@ -709,7 +709,8 @@ scale: a 2 mm command moves vertices across voxel boundaries and in and out of v
 the point network is rough besides, so most of the measured change of `V` is not its derivative.
 (ii) What an actor needs is a direction that improves the state when followed. Twelve greedy
 decisions at the action box (8.66 mm, 5°), the direction recomputed at every step, five signals
-from the same restored state:
+from the same restored state — a walk at the box tests a direction's sign pattern, not the
+gradient's magnitude, and the proxy walk is the reference for what any up-arm direction achieves:
 
 | state | physics: `∂V/∂x'` through the adjoint | SAC's own `∂Q/∂a` | the checkpoint's policy `μ` | hand-written 5-D proxy | expert |
 |---|---|---|---|---|---|
@@ -721,8 +722,8 @@ from the same restored state:
 (coverage after twelve decisions; `V` the critic's value at the end; force the mean net normal
 force over the walk; one draw per walk, and a greedy walk recomputes a rough direction at every
 step, so the fixed-trajectory repeat spread of 0.001 does not apply to it.) The physics signal
-beats the critic's action derivative at the policy's action at three of four states — at the two
-elbows by 0.05 and 0.135, where SAC's direction stands still or retreats — and by 0.004 in one
+beats the critic's action derivative at the policy's action at three of four states — by 0.05 at
+cell 3's elbow and by 0.135 at cell 1's, where SAC's direction retreats — and by 0.004 in one
 draw at the passed state; it beats the checkpoint's policy and the expert everywhere, beats the
 hand-written proxy at cell 1's elbow, the state the proxy could not solve (0.135 against 0.076),
 and matches it at cell 3's elbow at half the force. After the elbow the proxy, which is the axis
@@ -746,7 +747,10 @@ At the three states at or before the elbow the critic's learned action dependenc
 same action, walks backwards, and the solver's Jacobian applied to the same critic walks over;
 after the elbow the learned one is the better of the two. That is the decisive reading for the
 split: the critic knows the direction in state space at the elbow and not, at that point, in
-action space, and the adjoint converts the one into the other.
+action space, and the adjoint converts the one into the other. One caveat: the hold action is
+one the critic was rarely trained on, so its `∂Q/∂a` there is an extrapolation; at cell 1's
+elbow the same conclusion holds at the policy's own action (0.000 against 0.135), so the reading
+does not rest on it.
 
 **Where the gap between `V`'s differences and its derivative comes from, measured.** The same
 differences taken through the observation with its discrete choices frozen at the unperturbed
@@ -756,16 +760,23 @@ the observation moves) raise the magnitude ratio of chain to difference from 0.0
 0.32–0.83 there; at cell 3 the plain and the frozen differences disagree with themselves between
 draws at the elbow (−0.74 to 0.65) and nothing is read. So the observation's voxel and visibility
 switches are a factor 2–7 of the 20–30× gap, and the rest is the critic network's own roughness
-over 2 mm (the chain reproduces a smooth objective at 0.64–0.85 of its magnitude, Level 2a).
+over 2 mm (the chain reproduces a smooth objective at 0.64–0.85 of its magnitude, Level 2a). The exception that stretches "poor precision, usable
+direction" furthest is cell 3's stall: there the 2 mm differences repeat (plain 0.99, frozen
+1.00) and the chain's direction is neither of them (cosine 0.01 and −0.04, magnitude ratio 0.015
+and 0.04, the smallest of all states), yet the greedy walk along the chain from that state gained
+coverage 0.007 → 0.172. At the action box a walk tests a direction's sign pattern, not the
+gradient's magnitude; the proxy walk is the reference for what any up-arm direction achieves.
 
 **The same experiment with a weaker critic.** The region's earlier teacher checkpoint (relaunch
 2 at 14k updates, latent critic — the reference's rejected architecture, which this loader
-accepts) inverts the picture: `|∂V/∂x'|` is 4–15 against 30–49, the physics walk retreats at both
-elbows (0.000 and 0.000) and reaches 0.089 and 0.115 at the two post-elbow states, while its
-`∂Q/∂a` walks 0.169 / 0.207 / 0.118 / 0.164 (at μ) and 0.141 / 0.181 (at hold, cell 1). One
-checkpoint at 14k updates against one at 125k is a critic-quality contrast, not a trend: the
-adjoint carries whatever the critic's state gradient holds, and a critic whose value barely moves
-with the cloth gives it nothing to carry. ~75 shared-GPU minutes for the three runs.
+accepts) inverts the picture: the physics walk retreats at both elbows (0.000 and 0.000) and
+reaches 0.089 and 0.115 at the two post-elbow states, while its `∂Q/∂a` walks 0.169 / 0.207 /
+0.118 / 0.164 (at μ) and 0.141 / 0.181 (at hold, cell 1). Along the physics walk this critic's
+own value *fell* (21.3 → 20.5 at cell 3's elbow) where the dense critic's rose (75 → 88): its
+`∂V/∂x'` is not a usable local ascent direction of its own value, so there is nothing for the
+adjoint to convert. One checkpoint at 14k updates against one at 125k is a critic-quality
+contrast, not a trend. ~1.3 shared-GPU hours for this section (same-state control, three actor
+runs, two failed attempts, the reproduction).
 
 **What this says about the actor.** The pieces of an SVG(1)-style update exist and work in the
 direction that counts: a TD-trained point-cloud critic supplies a `∂V/∂x'` that, pushed through

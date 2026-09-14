@@ -2079,14 +2079,19 @@ change: the critic is not smooth at that scale). Followed greedily for twelve de
 action box, it beats SAC's own `∂Q/∂a`, the checkpoint's policy and the expert at all four states
 (cell 3 elbow 0.168 vs 0.114 / 0.076 / 0.046; cell 1 elbow 0.135 vs 0.000 / 0.016 / 0.028; cell 3
 stall 0.172, cell 1 passed 0.151), beats the hand proxy at cell 1's elbow (0.076) and matches it at
-cell 3's (0.163) at half the force; after the elbow the proxy is better (0.214, 0.220); the
-`∂Q/∂a` there was read at the policy's action, the like-for-like reading at the hold action is
-the follow-up run. The checkpoint loader accepts pre-dense-critic checkpoints as latent. A backend
+cell 3's (0.163) at half the force; after the elbow the proxy is better (0.214, 0.220). The
+like-for-like reading, `∂Q/∂a` at the hold action (`--walks sac_hold`), retreats at the three
+elbow and stall states (0.000, 0.018 → 0.000, 0.000) and wins after the elbow (0.184 vs 0.151).
+Differences of `V` with the observation's visibility and voxel membership frozen close a factor
+2–7 of the 20–30× gap between `V`'s differences and its derivative; the rest is the network.
+The 14k-update latent teacher checkpoint inverts the picture (its own value falls along the
+physics walk), a critic-quality contrast. The checkpoint loader accepts pre-dense-critic
+checkpoints as latent. A backend
 assertion (`simplex_normal_contact.cu:439`, EE/energy size mismatch) aborted the first walk run;
 reproduced in one minute (`output/uipc_manip/physics_gradient_actor/dump_after_recover.log`):
 restore → decision → dump → restore → decision is fine, restore → dump straight away → restore that
 dump → decision aborts. A dump taken without an advance since the recover writes a state the
 contact system cannot recover from; the walk now dumps only after a decision. Worth an upstream
 issue on `World.dump()`/`recover()`.
-Tests: `test_physics_gradient_actor.py` (3). Record, README row and memory updated. ~1 shared-GPU
-hour; the other sessions' processes untouched.
+Tests: `test_physics_gradient_actor.py` (3). Record, README row and memory updated. ~1.3
+shared-GPU hours; the other sessions' processes untouched, their checkpoint read only.
