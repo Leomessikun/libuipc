@@ -2056,8 +2056,8 @@ or two, so beyond one decision the gradient is the static sensitivity of the end
 of the gripper path (right in direction at most lags, cosine 0.91–0.99 in translation where the
 differences repeat, wrong for the first decision of a fresh approach at cell 3, cosine −0.30); and
 the control — the one-step 5-D proxy direction driven at the action box with no gradient —
-already gets 0.162 / 0.094, so the optimiser's own contribution is +0.005 / +0.012 and 9 N less
-force at cell 3. Reading recorded: the useful physics horizon is one decision; the actor that fits
+already gets 0.162 / 0.094, so the optimiser's own contribution is at most +0.005 / +0.012 (and
+9 N less force at cell 3), within the 0.013 re-drive spread of the elbow, unresolved. Reading recorded: the useful physics horizon is one decision; the actor that fits
 is SVG(1)-like (one-decision solver Jacobian × TD critic), sized as minutes on the elbows first. Build: this tree's CUDA backend and pyuipc built in `build/`
 with the dedicated toolchain (memory `libuipc-build-toolchain`); the shared training venv keeps
 the 0.0.28 wheel. [Record](performance/2026-09-13-physics-gradients.md); ~3 shared-GPU hours over the

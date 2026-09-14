@@ -599,8 +599,8 @@ the coverage gradient. One rollout with export takes 12–20 s, one reverse pass
 Both elbows are walked over: 6× and 3.8× the expert's coverage after twelve decisions, at cell 1
 with less force than the expert (48 against 63 N) and at cell 3 with a little more (74 against
 68 N); every accepted step was the first trial, and the three final repeats agree to 0.002 of
-coverage, so the gains are established, not one draw. Cell 1, where the one-step 5-D walk stayed
-below the expert (+0.015 against +0.027), is the discriminating case and it passes.
+coverage, so the gains over the expert are established, not one draw. What part of them is the
+gradient's is the control below.
 
 **What the gradient actually is over twelve decisions.** The twelve rows of `∂L/∂a_t` came out
 identical to three digits at both elbows (norm 0.0048 at every decision at cell 3, 0.0025 at cell
@@ -652,11 +652,14 @@ fixed-active-set linearisation carries.
 
 Most of the gain over the expert is the scale: the one-step 5-D proxy direction of the rotation
 probe, driven at the action box instead of 4 mm and 2.5°, already beats the expert 3.4–5.8× in
-coverage at both elbows. The twelve-decision gradient adds a smaller, established amount on top
-— +0.005 coverage with 9 N less force at cell 3, +0.012 at cell 1 (6× the repeat spread, though
-across different re-drives of the elbow) — by tilting the rotation axis and the translation
-slightly. It does not find a *sequence*: with twelve equal rows it cannot, and the states where a
-sequence is needed (the lock) were kept out of this experiment on purpose.
+coverage at both elbows. The optimiser's own contribution is at most +0.005 coverage with 9 N
+less force at cell 3 and +0.012 at cell 1, and it is not resolved: the control ran from a fresh
+re-drive of each elbow (@94 against @93, @84 against @86), and two re-drives of cell 3's elbow gave
+the identical 4 mm walk 0.073 and 0.086 of coverage — a re-drive spread of 0.013 that the
+within-state repeat std of 0.002 does not measure. The honest control is the scaled proxy as a
+baseline inside the same run from the same restored state (three rollouts, about a minute); that
+is the next run, not this one. It certainly does not find a *sequence*: with twelve equal rows it
+cannot, and the states where a sequence is needed (the lock) were kept out on purpose.
 
 **What this says about the actor.** (i) The physics gradient's useful horizon at this time step is
 about one decision: beyond it the chain is the static sensitivity, which is right in direction
@@ -668,11 +671,12 @@ everything beyond one decision. (ii) The state sensitivity is there at the elbow
 sign at every decision but the first of a fresh approach, so an actor gradient through it is not
 signal-less where the reward is flat, which was the point of the line. (iii) Cost: a one-decision
 Jacobian is 1.5–2.2 s of export plus 1.7–3.7 s of host factorisation, or six refined device
-solves at 0.12–0.20 s, against 1.3 s of simulation per decision; at the training loop's 13,881
-transitions per hour that is a 1–4× slowdown if every transition carries a physics gradient, so
-the actor experiment should apply it to a subset of transitions (the ones that pass the
-repeatability gate, or one in four) and should be sized as minutes on the two elbows first, not as
-a training run. ~85 shared-GPU minutes for this section.
+solves at 0.12–0.20 s (0.7–1.2 s), against the training loop's 0.220 s of simulation per
+transition (13,881 transitions per hour): device solves on every transition are a 3–5×
+slowdown, the host path 14–27×. So the actor experiment uses the device solves, applies them to
+a subset of transitions (the ones that pass the repeatability gate, or one in four), and is
+sized as minutes on the two elbows first, not as a training run. ~85 shared-GPU minutes for
+this section.
 
 ## What this does not claim
 
