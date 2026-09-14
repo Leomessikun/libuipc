@@ -2048,8 +2048,17 @@ multi-decision chain's last decision equals the one-decision adjoint, command bo
 differences of the linearised aim model, refused substeps contribute nothing, coverage gradient on
 the hit triangle). `python -m uipc_manip.physics_gradient_trajopt` (Level 3's first experiment:
 open-loop trajectory optimisation of 12 decisions at an elbow with the 72-frame chain, rotation
-included, executed-command derivatives, first-decision check against differences) is written and
-running; results not yet recorded. Build: this tree's CUDA backend and pyuipc built in `build/`
+included, executed-command derivatives, checks against differences at chosen lags) ran on both
+quiet elbows: coverage after twelve decisions 0.073 → 0.167 ± 0.001 at cell 3 and 0.018 → 0.106 ±
+0.002 at cell 1 against the expert's 0.028, force not higher than the expert's. Two findings
+bound it: the chain's twelve rows are identical — the BDF1 inertia coupling decays within a frame
+or two, so beyond one decision the gradient is the static sensitivity of the end state to a shift
+of the gripper path (right in direction at most lags, cosine 0.91–0.99 in translation where the
+differences repeat, wrong for the first decision of a fresh approach at cell 3, cosine −0.30); and
+the control — the one-step 5-D proxy direction driven at the action box with no gradient —
+already gets 0.162 / 0.094, so the optimiser's own contribution is +0.005 / +0.012 and 9 N less
+force at cell 3. Reading recorded: the useful physics horizon is one decision; the actor that fits
+is SVG(1)-like (one-decision solver Jacobian × TD critic), sized as minutes on the elbows first. Build: this tree's CUDA backend and pyuipc built in `build/`
 with the dedicated toolchain (memory `libuipc-build-toolchain`); the shared training venv keeps
-the 0.0.28 wheel. [Record](performance/2026-09-13-physics-gradients.md); ~110 shared-GPU minutes
-over the day, nothing else launched, the other sessions' runs untouched.
+the 0.0.28 wheel. [Record](performance/2026-09-13-physics-gradients.md); ~3 shared-GPU hours over the
+day, nothing else launched, the other sessions' runs untouched.

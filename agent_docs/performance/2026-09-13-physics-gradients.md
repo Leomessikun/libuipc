@@ -501,8 +501,13 @@ measured in this directory depends on it, but it is the value to quote. (ii) **W
 the free cloth's response is reproduced in magnitude as well** (0.96–1.02 per axis in one draw at
 cell 3, 0.75–1.02 in the other): the 20–25 % shortfall the first pass attributed to the
 positive-semidefinite projection of the assembled Hessian was the halved inertia coupling in the
-chain. What the projection (28 `make_spd` sites) and friction's lagged tangent basis cost is, at
-cell 3, within the draw-to-draw spread; where the linear model does fail is the jam (below).
+chain. What remains short with the right masses is the *objective*: the axis reading's predicted
+magnitude is 0.64–0.85 of the measured one at every state while the bulk field is within a few
+percent of one, so the opening's vertices — the ones in contact with the arm — respond 15–35 %
+less than the linear model says and the free bulk does not. That is where the projection
+(28 `make_spd` sites) and friction's lagged tangent basis act, and it is the part of the cloth
+Level 3's gradient acts on; direction passes, the scale is the learner's to set. Where the linear
+model fails outright is the jam (below).
 
 The field check is noise-limited. A 1 mm command moves a free vertex by 0.2–0.3 mm RMS, while two
 identical decisions from the same restored state differ by 0.07–0.14 mm at cell 3 (measured in the
@@ -565,11 +570,119 @@ and block expansion), the host factorisation 0.3–0.6 s per frame, so a decisio
 cost 3–6 s to export and factorise. That sets the size of the first Level 3 experiment; a
 device-side ring of past frames' matrices would remove the export. ~33 shared-GPU minutes.
 
+## Level 3, first experiment: open-loop trajectory optimisation at the two quiet elbows (2026-09-14) [MI]
+
+Before an actor is trained, the question the advisor set: the one-step coverage gradient is zero
+at the elbow; is the multi-step gradient of the objective after `h` decisions not, and does
+walking it beat the 5-D proxy walk and the expert? `python -m uipc_manip.physics_gradient_trajopt`
+restores an elbow state, takes `h = 12` decisions (72 frames) exporting every frame's system
+through the Level 2b feature, and improves the 12 actions by projected gradient ascent (largest
+component moved by 0.15 action units per accepted step, halved on rejection, stop below 0.02) on a
+terminal objective in metres: the axis reading plus the reference's coverage distance (the
+shoulder→elbow ray's first sleeve triangle, with its exact hit-triangle gradient), so the objective
+is smooth before the sleeve reaches the upper arm and is the reward's own distance after. The
+gradient is the reverse pass of all 72 systems (host factorisation as each is reached, 21–42 s)
+with the commands entering through the held vertices' aims — translation through the anchor,
+rotation through the offsets (`δaim = δθ × offset`, carried to later frames by the rotations
+executed in between) — with respect to the executed command. Initial trajectory: the 5-D proxy
+walk of the rotation probe (4 mm and 2.5° per decision along its directions). Baselines from the
+same restored state: the closed-loop expert and hold. `tests/test_physics_gradient_trajopt.py`
+(4) checks the chain's last decision against the one-decision adjoint, its command bookkeeping
+against differences of the linearised aim model, that refused substeps contribute nothing, and
+the coverage gradient. One rollout with export takes 12–20 s, one reverse pass 21–42 s.
+
+| elbow | 5-D walk (it 0) | optimised, mean ± std of 3 repeats | expert (12 decisions) | iterations |
+|---|---|---|---|---|
+| cell 3 (`tshirt_26`/14049 @93) | L 0.046, coverage 0.073, 50 N, 48 mm | **L 0.100 ± 0.001, coverage 0.167 ± 0.001**, 74 N, 104 mm, 56° | L 0.014, coverage 0.028, 68 N, 88 mm | 9 accepted, 1 trial each, then no step |
+| cell 1 (`tshirt_392`/14046 @86) | L 0.027, coverage 0.018, 50 N, 48 mm | **L 0.077 ± 0.002, coverage 0.106 ± 0.002**, 48 N, 105 mm, 50° | L 0.014, coverage 0.028, 63 N, 88 mm | 8 accepted, 1 trial each, then no step |
+
+Both elbows are walked over: 6× and 3.8× the expert's coverage after twelve decisions, at cell 1
+with less force than the expert (48 against 63 N) and at cell 3 with a little more (74 against
+68 N); every accepted step was the first trial, and the three final repeats agree to 0.002 of
+coverage, so the gains are established, not one draw. Cell 1, where the one-step 5-D walk stayed
+below the expert (+0.015 against +0.027), is the discriminating case and it passes.
+
+**What the gradient actually is over twelve decisions.** The twelve rows of `∂L/∂a_t` came out
+identical to three digits at both elbows (norm 0.0048 at every decision at cell 3, 0.0025 at cell
+1). That is the structure of the chain, not a bug (the CPU tests cover the bookkeeping): the BDF1
+inertia coupling `2Mλ_{f+1} − Mλ_{f+2}` carries a vertex mass of 4·10⁻⁴ kg against constraint
+and elastic stiffnesses of order one, so `λ_f` decays within one or two frames of the end (the
+frames before the last add ~13 % at the objective level in Level 2a) and the derivative with
+respect to an early decision reduces to the *static* sensitivity of the final state to a rigid
+shift of the whole later gripper path. The cloth is quasi-static at this time step; what the
+linear chain cannot see is path dependence through contact and friction states. Central
+differences of `L` after twelve decisions with respect to single decisions (2 mm, 1°, one draw
+each, at the 5-D walk trajectory) show exactly that: at cell 1 the translation row agrees in
+direction at lags 11, 5 and 0 (cosine 0.96, 0.99, 0.70) at 0.44–0.67 of the measured magnitude,
+the rotation row at lag 11 only (0.89; 0.41 and 0.36 at lags 5 and 0); at cell 3 the first
+decision's difference points the other way (translation cosine −0.37, rotation 0.83 at 0.08 of
+the magnitude): moving the first decision alone changes what the sleeve catches on, which no
+fixed-active-set linearisation carries. So the optimiser, fed twelve equal rows, moved all twelve
+actions together: at both elbows it took the translation to the action box (8.7 mm per decision,
+from 4 mm) along nearly the proxy's direction and turned the rotation axis from (−0.3, 0.95) to
+(−0.47, 0.88) at 4.2–4.6° per decision (from 2.5°). Whether that gain is the scale or the direction
+is the control below.
+
+**Lag check at cell 3, two draws of every difference** (2 mm, 1°; the 5-D walk trajectory; "draws"
+is the cosine between the two difference draws, the noise floor of the reading itself):
+
+| decision (lag) | translation: cosine / magnitude ratio / draws | rotation: cosine / magnitude ratio / draws |
+|---|---|---|
+| 1 (11) | **−0.30** / 0.20 / 0.86 | 0.98 / 0.34 / 0.49 |
+| 4 (8) | 0.99 / 0.61 / 0.98 | 0.94 / 0.38 / 1.00 |
+| 8 (4) | 0.99 / 0.82 / 0.89 | 0.98 / 0.33 / 0.99 |
+| 10 (2) | 0.91 / 0.70 / 0.94 | 0.96 / 0.59 / 0.46 |
+| 12 (0) | 0.97 / 0.68 / 1.00 | 0.63 / 0.86 / 0.10 |
+
+The static row is the right direction for the translation of every decision but the first (0.91–0.99
+where the differences repeat, at 0.6–0.8 of the magnitude), and for the rotation wherever the
+difference itself repeats (lags 8 and 4: 0.94–0.98; at lags 11, 2 and 0 the two draws of the
+rotation difference disagree with each other, so nothing is read there). The first decision is the
+exception at cell 3 and not at cell 1: its difference is repeatable (0.86) and points against the
+chain — moving only the first 8 mm of the approach changes what the sleeve catches on, which no
+fixed-active-set linearisation carries.
+
+**Control: the proxy direction at the action box, no optimisation** (the 5-D walk's directions at
+8.66 mm and 5° per decision, three repeats; a fresh re-drive of each elbow, @94 and @84):
+
+| elbow | scaled proxy, no gradient | optimised (above) | expert |
+|---|---|---|---|
+| cell 3 | coverage 0.162 ± 0.001, 83 N | 0.167 ± 0.001, 74 N | 0.028, 68 N |
+| cell 1 | coverage 0.094 ± 0.000, 47 N | 0.106 ± 0.002, 48 N | 0.028, 63 N |
+
+Most of the gain over the expert is the scale: the one-step 5-D proxy direction of the rotation
+probe, driven at the action box instead of 4 mm and 2.5°, already beats the expert 3.4–5.8× in
+coverage at both elbows. The twelve-decision gradient adds a smaller, established amount on top
+— +0.005 coverage with 9 N less force at cell 3, +0.012 at cell 1 (6× the repeat spread, though
+across different re-drives of the elbow) — by tilting the rotation axis and the translation
+slightly. It does not find a *sequence*: with twelve equal rows it cannot, and the states where a
+sequence is needed (the lock) were kept out of this experiment on purpose.
+
+**What this says about the actor.** (i) The physics gradient's useful horizon at this time step is
+about one decision: beyond it the chain is the static sensitivity, which is right in direction
+at most lags but carries no path dependence. SHAC's premise — a long differentiable horizon —
+does not hold for quasi-static cloth in frictional contact; the split that fits the measurements
+is SVG(1)-like: the solver's one-decision Jacobian `∂x'/∂u` (six exported systems, or six device
+solves against them) times a learned `∂V/∂x'` from a TD critic, with the critic carrying
+everything beyond one decision. (ii) The state sensitivity is there at the elbow with the right
+sign at every decision but the first of a fresh approach, so an actor gradient through it is not
+signal-less where the reward is flat, which was the point of the line. (iii) Cost: a one-decision
+Jacobian is 1.5–2.2 s of export plus 1.7–3.7 s of host factorisation, or six refined device
+solves at 0.12–0.20 s, against 1.3 s of simulation per decision; at the training loop's 13,881
+transitions per hour that is a 1–4× slowdown if every transition carries a physics gradient, so
+the actor experiment should apply it to a subset of transitions (the ones that pass the
+repeatability gate, or one in four) and should be sized as minutes on the two elbows first, not as
+a training run. ~85 shared-GPU minutes for this section.
+
 ## What this does not claim
 
 No policy has been trained with a physics gradient. Level 1 asks only whether the quantity is
 well defined and locally informative at the states that matter; Level 2 (the adjoint through the
 solver's systems, and the export and solve inside the solver) is built and checked against
-differences at four states; Level 3 (the short-horizon actor with a terminal critic) is not built.
-The field-level agreement is bounded by the simulator's own run-to-run scatter, and the linear
-model is known to miss the free cloth's response at a jam.
+differences at four states; Level 3's first experiment is open-loop trajectory optimisation at
+two elbow states with the chain as its gradient, not a learner, and most of its gain over the
+expert is the proxy direction driven at the action box. The field-level agreement is bounded by
+the simulator's own run-to-run scatter, the linear model misses the free cloth's response at a
+jam, and over many decisions it reduces to a static sensitivity that carries no path dependence.
+Nothing here is a claim about a closed-loop policy, about states other than the seven probed, or
+about the real robot.

@@ -219,6 +219,50 @@ def chain_gradient(frames: list[dict], layout: dict, g_final: np.ndarray, action
             "frames": F, "decisions": h}
 
 
+# ------------------------------------------------------------------------ checks against differences
+def finite_difference_checks(env, snap: dict, actions: np.ndarray, layout: dict, chain_per_action: np.ndarray,
+                             decisions: list[int], eps_m: float, eps_rad: float, repeats: int = 1) -> list[dict]:
+    """Central differences of L after all h decisions with respect to the chosen decisions' five live
+    action components, against the chain's rows; with ``repeats`` > 1 the differences are drawn again
+    and their agreement with themselves is the noise floor."""
+    h = actions.shape[0]
+    max_t, max_r = float(env.cfg.max_translation), float(env.cfg.max_rotation)
+    out = []
+    for t in decisions:
+        draws = []
+        for _ in range(repeats):
+            fd = np.zeros(6)
+            for k in range(6):
+                if k == 3:
+                    continue
+                e = eps_m / max_t if k < 3 else eps_rad / max_r
+                sides = []
+                for sign in (1.0, -1.0):
+                    a = actions.copy()
+                    a[t, k] += sign * e
+                    sides.append(objective(env, rollout(env, snap, a)["positions"], layout)["value"])
+                fd[k] = (sides[0] - sides[1]) / (2.0 * e)
+            draws.append(fd)
+        fd = np.mean(draws, axis=0)
+        chain = np.asarray(chain_per_action[t])
+        row = {"decision": int(t), "lag": int(h - 1 - t), "chain": chain.tolist(), "finite_difference": fd.tolist(),
+               "draws": [d.tolist() for d in draws],
+               "cosine_translation": probe.cosine(chain[:3], fd[:3]), "cosine_rotation": probe.cosine(chain[4:], fd[4:]),
+               "cosine_all": probe.cosine(chain, fd),
+               "ratio_translation": float(np.linalg.norm(chain[:3]) / np.linalg.norm(fd[:3])) if np.linalg.norm(fd[:3]) > 0 else None,
+               "ratio_rotation": float(np.linalg.norm(chain[4:]) / np.linalg.norm(fd[4:])) if np.linalg.norm(fd[4:]) > 0 else None}
+        if repeats > 1:
+            row["draw_cosine_translation"] = probe.cosine(draws[0][:3], draws[1][:3])
+            row["draw_cosine_rotation"] = probe.cosine(draws[0][4:], draws[1][4:])
+        out.append(row)
+        print(f"[trajopt-check] decision {t + 1} of {h} (lag {h - 1 - t}): translation cos={row['cosine_translation']:.3f} "
+              f"ratio={row['ratio_translation'] if row['ratio_translation'] is None else round(row['ratio_translation'], 3)} "
+              f"rotation cos={row['cosine_rotation']:.3f} ratio={row['ratio_rotation'] if row['ratio_rotation'] is None else round(row['ratio_rotation'], 3)} "
+              f"all cos={row['cosine_all']:.3f} chain={np.round(chain, 4).tolist()} fd={np.round(fd, 4).tolist()}"
+              + (f" draws cos t={row['draw_cosine_translation']:.2f} r={row['draw_cosine_rotation']:.2f}" if repeats > 1 else ""), flush=True)
+    return out
+
+
 # ------------------------------------------------------------------------ initial trajectories
 def initial_actions(kind: str, h: int, env, probe_json: Path | None, step_m: float, step_rad: float) -> np.ndarray:
     """Constant actions: hold, the 5-D axis-proxy direction from a probe record, or its translation only."""
@@ -274,8 +318,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--step", type=float, default=0.15, help="largest action change per accepted iteration (action units)")
     p.add_argument("--min-step", type=float, default=0.02)
     p.add_argument("--check-first-decision", type=float, default=0.0,
-                   help="Compare the chain's ∂L/∂a_1 with central differences of L after h decisions, this many mm "
-                        "(and degrees, divided by two) on the first decision; 0 skips the check.")
+                   help="Compare the chain's rows with central differences of L after h decisions, this many mm "
+                        "(and degrees, divided by two), on the first, middle and last decision unless --check-decisions "
+                        "says which; 0 skips the check.")
+    p.add_argument("--check-decisions", type=int, nargs="*", default=None, help="0-based decisions to difference")
+    p.add_argument("--check-repeats", type=int, default=1, help="draw the differences this many times (noise floor)")
+    p.add_argument("--check-only", action="store_true", help="stop after the checks on the initial trajectory")
     p.add_argument("--baselines", nargs="*", default=("expert", "hold"))
     p.add_argument("--stall-window", type=int, default=15)
     p.add_argument("--max-steps", type=int, default=300)
@@ -333,30 +381,15 @@ def main(argv: list[str] | None = None) -> None:
               f"|g|={np.linalg.norm(grad['per_action']):.3g} (rollout {roll['seconds']:.0f}s, reverse {grad['reverse_s']:.0f}s)", flush=True)
 
         if args.check_first_decision > 0:
-            eps_m, eps_rad = args.check_first_decision * 1e-3, np.deg2rad(args.check_first_decision / 2.0)
-            fd = np.zeros(6)
-            for k in range(6):
-                if k == 3:
-                    continue
-                e = eps_m / float(env.cfg.max_translation) if k < 3 else eps_rad / float(env.cfg.max_rotation)
-                sides = []
-                for sign in (1.0, -1.0):
-                    a = actions.copy()
-                    a[0, k] += sign * e
-                    sides.append(objective(env, rollout(env, snap, a)["positions"], layout)["value"])
-                fd[k] = (sides[0] - sides[1]) / (2.0 * e)
-            chain = grad["per_action"][0]
-            record["first_decision_check"] = {
-                "epsilon_mm": args.check_first_decision, "epsilon_deg": args.check_first_decision / 2.0,
-                "chain": chain.tolist(), "finite_difference": fd.tolist(),
-                "cosine_translation": probe.cosine(chain[:3], fd[:3]), "cosine_rotation": probe.cosine(chain[4:], fd[4:]),
-                "cosine_all": probe.cosine(chain, fd),
-                "ratio_translation": float(np.linalg.norm(chain[:3]) / np.linalg.norm(fd[:3])) if np.linalg.norm(fd[:3]) > 0 else None,
-                "ratio_rotation": float(np.linalg.norm(chain[4:]) / np.linalg.norm(fd[4:])) if np.linalg.norm(fd[4:]) > 0 else None}
-            c = record["first_decision_check"]
-            print(f"[trajopt-check] first decision over {h}: translation cos={c['cosine_translation']:.3f} ratio={c['ratio_translation']} "
-                  f"rotation cos={c['cosine_rotation']:.3f} ratio={c['ratio_rotation']} all cos={c['cosine_all']:.3f} "
-                  f"chain={np.round(chain, 4).tolist()} fd={np.round(fd, 4).tolist()}", flush=True)
+            decisions = args.check_decisions if args.check_decisions else sorted({0, h // 2, h - 1})
+            record["decision_checks"] = {"epsilon_mm": args.check_first_decision, "epsilon_deg": args.check_first_decision / 2.0,
+                                         "repeats": args.check_repeats,
+                                         "rows": finite_difference_checks(env, snap, actions, layout, grad["per_action"], decisions,
+                                                                          args.check_first_decision * 1e-3,
+                                                                          np.deg2rad(args.check_first_decision / 2.0), args.check_repeats)}
+            if args.check_only:
+                record["final_actions"] = actions.tolist()
+                return
 
         # Projected gradient ascent with backtracking on the measured objective.
         step = args.step
