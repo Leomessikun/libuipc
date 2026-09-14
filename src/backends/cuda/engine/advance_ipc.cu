@@ -90,6 +90,7 @@ void SimEngine::advance()
     {
         using ExportMode = LinearSystemAdjoint::ExportMode;
         auto mode        = m_linear_system_adjoint->export_mode();
+        m_linear_system_adjoint->invalidate_coupling();
         if(mode == ExportMode::LastIterate)
             return;
         Timer timer{"Assemble At Accepted State"};
@@ -104,6 +105,7 @@ void SimEngine::advance()
         m_state = SimEngineState::SolveGlobalLinearSystem;
         m_global_linear_system->m_impl.build_linear_system(false);
         cuda_tool::wait_device();
+        m_linear_system_adjoint->after_reassembly();
     };
 
     auto cfl_condition = [&cfl_alpha, this](Float alpha)

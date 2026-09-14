@@ -77,3 +77,32 @@ def test_compare_fields_reports_held_and_free_separately():
             assert out[group][ax]["cosine"] == pytest.approx(1.0)
             assert out[group][ax]["magnitude_ratio"] == pytest.approx(2.0)
     assert out["held_follow"]["tangent"] == pytest.approx([2 * v for v in out["held_follow"]["fd"]])
+
+
+def test_tangent_pass_prev_coupling_matches_the_explicit_recurrence():
+    """With a lagged coupling block B on one vertex, the chain solves H X_f = −(B_in + B) X_{f−1} − C X_{f−2} − F_u."""
+    import scipy.sparse
+    import scipy.sparse.linalg
+    rng = np.random.default_rng(5)
+    n, frames = 4, 3
+    mass = rng.uniform(1, 2, n)
+    layout = dict(dof_offset=0, dof_count=3 * n, n=n, mass=mass, strength=10.0, anchor_idx=np.array([0]))
+    H = [scipy.sparse.csc_matrix(np.diag(np.repeat(mass, 3)) + 0.3 * np.eye(3 * n)) for _ in range(frames)]
+    lu = [scipy.sparse.linalg.splu(h) for h in H]
+    B = rng.normal(size=(3, 3))
+    coupling = [(np.array([2]), np.array([0]), B[None]) for _ in range(frames)]  # pulled by the held vertex
+    frames_out = adj.tangent_pass(lu, layout, return_frames=True, prev_coupling=coupling)
+    m3 = np.repeat(mass, 3)
+    for k in range(3):
+        x_prev, x_prev2 = np.zeros(3 * n), np.zeros(3 * n)
+        for f in range(frames):
+            rhs = 2 * m3 * x_prev - m3 * x_prev2
+            rhs[6:9] -= B @ x_prev[0:3]
+            aim = np.zeros(3 * n)
+            aim[3 * 0 + k] = (f + 1) / frames
+            rhs += layout["strength"] * m3 * aim
+            x = lu[f].solve(rhs)
+            np.testing.assert_allclose(frames_out[f, :, k], x, rtol=1e-12, atol=1e-14)
+            x_prev2, x_prev = x_prev, x
+    plain = adj.tangent_pass(lu, layout, return_frames=True)
+    assert not np.allclose(plain, frames_out)

@@ -1,6 +1,7 @@
 #include <sim_system.h>
 #include <linear_system/global_linear_system.h>
 #include <linear_system/linear_system_adjoint.h>
+#include <contact_system/vertex_half_plane_frictional_contact.h>
 #include <utils/make_spd.h>
 #include <uipc/diff_sim/linear_system_adjoint_feature.h>
 #include <uipc/common/log.h>
@@ -57,6 +58,41 @@ class LinearSystemAdjointFeatureOverrider final : public diff_sim::LinearSystemA
     diff_sim::LinearSystemExportMode do_export_mode() override
     {
         return m_owner.export_mode();
+    }
+
+    SizeT get_prev_coupling_count() override
+    {
+        auto* friction = m_owner.half_plane_friction();
+        if(!m_owner.coupling_valid() || !friction)
+            return 0;
+        return friction->prev_coupling().size();
+    }
+
+    void do_export_prev_coupling(span<IndexT> rows, span<IndexT> cols, span<Float> blocks) override
+    {
+        auto count = get_prev_coupling_count();
+        UIPC_ASSERT_THROW(rows.size() == count && cols.size() == count
+                              && blocks.size() == 9 * count,
+                          "LinearSystemAdjoint: {} coupling blocks requested, "
+                          "the frame has {}",
+                          rows.size(),
+                          count);
+        if(count == 0)
+            return;
+        auto*                  friction = m_owner.half_plane_friction();
+        std::vector<Vector2i>  pairs(count);
+        std::vector<Matrix3x3> values(count);
+        friction->PHs().copy_to(pairs.data());
+        friction->prev_coupling().copy_to(values.data());
+        cuda_tool::wait_device();
+        for(SizeT t = 0; t < count; ++t)
+        {
+            rows[t] = pairs[t](0);
+            cols[t] = pairs[t](0);
+            for(int i = 0; i < 3; ++i)
+                for(int j = 0; j < 3; ++j)
+                    blocks[9 * t + 3 * i + j] = values[t](i, j);
+        }
     }
 
     SizeT get_dof_count() override { return m_system.m_impl.x.size(); }
@@ -192,9 +228,22 @@ class LinearSystemAdjointFeatureOverrider final : public diff_sim::LinearSystemA
     cuda_tool::DeviceDenseVector<Float> m_y;
 };
 
+void LinearSystemAdjoint::after_reassembly()
+{
+    m_coupling_valid = false;
+    if(m_half_plane_friction)
+    {
+        m_half_plane_friction->compute_prev_coupling();
+        cuda_tool::wait_device();
+        m_coupling_valid = true;
+    }
+}
+
 void LinearSystemAdjoint::do_build()
 {
     auto& system = require<GlobalLinearSystem>();
+    // The registered model is a subclass; a compatible lookup finds it.
+    m_half_plane_friction = find<VertexHalfPlaneFrictionalContact>({.exact = false});
     auto overrider = std::make_shared<LinearSystemAdjointFeatureOverrider>(system, *this);
     auto feature = std::make_shared<diff_sim::LinearSystemAdjointFeature>(overrider);
     features().insert(feature);

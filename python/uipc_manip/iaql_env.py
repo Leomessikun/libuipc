@@ -33,6 +33,9 @@ class IAQLEnvConfig:
     state_scale: float = 0.1
     velocity_tolerance: float = 0.001
     export_mode: str = "last_iterate"
+    friction_chain: bool = False
+    """Add the friction gradient's lagged dependence on the previous substep (the backend's
+    ``export_prev_coupling`` blocks) to the tangent chain; needs a converged export mode."""
     """Which system the backend leaves for the tangent: the last Newton iterate's projected
     matrix, or a re-assembly at the accepted state, projected (``converged``) or not
     (``converged_raw``); see LinearSystemAdjointFeature.set_export_mode."""
@@ -107,7 +110,10 @@ class IAQLClothEnv:
         mass = np.asarray(uipc.view(geo.vertices().find(uipc.builtin.volume))).reshape(-1) * 200.0
         self.layout = dict(n=self.n, dof_offset=int(read(uipc.builtin.dof_offset)[0]),
                            dof_count=int(read(uipc.builtin.dof_count)[0]), mass=mass,
-                           strength=cfg.constraint_strength, anchor_idx=self.held)
+                           strength=cfg.constraint_strength, anchor_idx=self.held,
+                           vertex_offset=int(read(uipc.builtin.global_vertex_offset)[0]))
+        if cfg.friction_chain and not hasattr(self.feature, "export_prev_coupling"):
+            raise RuntimeError("This build's adjoint feature exports no lagged coupling; rebuild the tree")
         self.steps = 0
         self.initial = self.snapshot()
         self.reset(0)
@@ -180,7 +186,8 @@ class IAQLClothEnv:
         target = np.clip(start + cfg.max_translation*action, [0.25, -0.35, 0.004], [0.85, 0.35, 0.45])
         control_jac = np.diag(((start + cfg.max_translation*action > [0.25, -0.35, 0.004]) &
                                (start + cfg.max_translation*action < [0.85, 0.35, 0.45])).astype(float)) * cfg.max_translation
-        lus, residuals = [], []
+        lus, residuals, couplings = [], [], []
+        chain = cfg.friction_chain and self.cfg.export_mode != "last_iterate"
         t0 = time.monotonic()
         for k in range(cfg.action_repeat):
             self.anchor = start + (k+1)/cfg.action_repeat*(target-start)
@@ -194,6 +201,13 @@ class IAQLClothEnv:
                 mat = system_to_matrix(rows, cols, values, int(self.feature.dof_count()))
                 lus.append(scipy.sparse.linalg.splu(mat.tocsc()))
                 residuals.append(float(np.linalg.norm(gradient)))
+                if chain:
+                    # Friction's lagged blocks, global vertex ids -> this cloth's local ids.
+                    b_rows, b_cols, blocks = self.feature.export_prev_coupling()
+                    off = self.layout["vertex_offset"]
+                    b_rows, b_cols = np.asarray(b_rows), np.asarray(b_cols)
+                    keep = (b_rows >= off) & (b_rows < off+self.n)
+                    couplings.append((b_rows[keep]-off, b_cols[keep]-off, np.asarray(blocks)[keep]))
         forward_s = time.monotonic()-t0
         x = self.positions()
         distance = self.distance(x)
@@ -204,7 +218,8 @@ class IAQLClothEnv:
                    capture_forward_s=forward_s, newton_gradient_norms=residuals)
         if capture:
             t1 = time.monotonic()
-            frames = tangent_pass(lus, self.layout, return_frames=True) @ control_jac
+            frames = tangent_pass(lus, self.layout, return_frames=True,
+                                  prev_coupling=couplings if chain else None) @ control_jac
             dx = frames[-1]
             previous = frames[-2] if len(frames) > 1 else np.zeros_like(dx)
             dv = (dx-previous)/cfg.dt
@@ -214,7 +229,8 @@ class IAQLClothEnv:
             dr = -(delta/distance)@dc/cfg.max_translation - 2*cfg.action_cost*action
             if not np.isfinite(tangent).all() or not np.isfinite(dr).all():
                 raise RuntimeError("Nonfinite decision tangent")
-            out.update(tangent=tangent, reward_gradient=dr, tangent_s=time.monotonic()-t1)
+            out.update(tangent=tangent, reward_gradient=dr, tangent_s=time.monotonic()-t1,
+                       friction_chain=chain, coupling_blocks=int(sum(len(c[0]) for c in couplings)))
         return out
 
     def describe(self):

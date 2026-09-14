@@ -2211,3 +2211,27 @@ permutation among valid rows, everything else matched; test). The 100-state
 three-mode probe is running (about 1 min per state with the pair sharing the
 GPU); the 5k pair is at 1,500 steps, both arms still at zero success.
 [Record](performance/2026-09-14-iaql-benchmark.md).
+
+## 2026-09-14 — Friction's lagged coupling exported for the adjoint chain
+
+The owner's P2 diagnosis (the inertia-only chain lacks friction's dependence on
+the previous substep) implemented as an export, not a solve change: the
+re-assembly at the accepted state also computes `dG_f/dx_prev` for every
+half-plane friction pair (`IPCVertexHalfPlaneFrictionalContact::do_compute_prev_coupling`,
+central differences of the friction gradient in the previous position with a
+step of 1e-4 of `eps_v*dt`; the lagged normal force and the relative
+displacement both enter through it, the tangent basis of a fixed plane is
+constant, one lag per frame), reachable as
+`LinearSystemAdjointFeature.export_prev_coupling()` with global vertex ids.
+`tangent_pass(prev_coupling=...)` adds `-B_fric X_{k-1}` beside the inertia
+term (unit test against the explicit recurrence); `iaql_env(friction_chain=True)`
+and the probe's `--friction-chain` use it in the converged export modes.
+Simplex (cloth-body) friction coupling is not exported yet. Backend and test
+targets rebuilt in `build_raw/` without the Python copy step (the running
+100-state probe maps that copy); `uipc_test_diff_sim` passes. Queued
+(`scratchpad/run_friction_probes.sh`): after the 100-state probe exits, the
+Python copy is refreshed and the friction-0.6 gate runs on four states in
+all three export modes, without and with the chain
+(`output/iaql/fric06_modes{,_chain}`). Not yet measured.
+[Record](performance/2026-09-14-iaql-benchmark.md).
+

@@ -152,6 +152,21 @@ cuda_tool::BufferView<Float> VertexHalfPlaneFrictionalContact::EnergyInfo::energ
     return m_energies;
 }
 
+void VertexHalfPlaneFrictionalContact::compute_prev_coupling()
+{
+    auto count = m_impl.veretx_half_plane_trajectory_filter->friction_PHs().size();
+    m_impl.prev_coupling.resize_discard(count);
+    ContactInfo this_info{&m_impl};
+    this_info.m_prev_coupling = m_impl.prev_coupling.view();
+    if(count > 0)
+        do_compute_prev_coupling(this_info);
+}
+
+cuda_tool::CBufferView<Matrix3x3> VertexHalfPlaneFrictionalContact::prev_coupling() const noexcept
+{
+    return m_impl.prev_coupling.cview();
+}
+
 cuda_tool::CBufferView<Vector2i> VertexHalfPlaneFrictionalContact::PHs() const noexcept
 {
     return m_impl.veretx_half_plane_trajectory_filter->friction_PHs();

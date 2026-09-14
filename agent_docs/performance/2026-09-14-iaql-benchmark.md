@@ -47,6 +47,16 @@ The initial implementation runs from a modified working tree. It adds:
   Test: `uipc_test_diff_sim` "linear_system_adjoint_export_modes" (a shell
   triangle at rest: projected and raw agree; compressed to 60 %: they differ,
   same sparsity, projected curvature never below raw).
+- Friction's lagged block (after the export-mode smoke): the re-assembly at
+  the accepted state also computes `dG_f/dx_prev` per half-plane friction
+  pair (central differences of the friction gradient in the previous
+  position, step 1e-4 of the smoothing displacement `eps_v*dt`), exported by
+  `LinearSystemAdjointFeature.export_prev_coupling()`; `tangent_pass` takes
+  it as `prev_coupling` and adds `-B_fric X_{k-1}` to each substep's
+  right-hand side beside the inertia term (unit test against the explicit
+  recurrence); `iaql_env(friction_chain=True)` and the probe's
+  `--friction-chain` switch it on in the converged export modes. Simplex
+  (cloth-body) friction coupling is not exported yet.
 
 The first run's replay stored all transition/tangent fields in one bounded row
 of 1,024 and evicted them together; its `report.json` arguments lack the

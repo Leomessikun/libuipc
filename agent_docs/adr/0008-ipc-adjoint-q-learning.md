@@ -222,10 +222,16 @@ frame's own solve untouched (evaluation point and pair set isolated).
 `converged_raw` does the same with every `make_spd` site and the friction
 helper's 2x2 projection switched off, which is the residual Jacobian the
 implicit function theorem needs for the frictionless case (projection
-isolated); StableNeoHookean-3D's analytic projection is not covered, and the
-lagged friction terms are still absent from the chain. The raw system may be
-indefinite: the feature's `solve()` refuses it and the host factorises it.
-The measurements belong to the benchmark record, not to this design.
+isolated); StableNeoHookean-3D's analytic projection is not covered. The raw
+system may be indefinite: the feature's `solve()` refuses it and the host
+factorises it. For friction, the same re-assembly also computes
+`export_prev_coupling`: `dG_f/dx_prev` of every half-plane friction pair
+(central differences of the friction gradient in the previous position, step
+1e-4 of the smoothing displacement), which is the `F_{k,x_{k-1}}` block beyond
+inertia that the chain above needs when the tangent basis is fixed and the
+normal force is lagged once per frame; the simplex (cloth-body) friction's
+coupling is not exported yet. The measurements belong to the benchmark
+record, not to this design.
 
 For the full decision, if the true `A` is available and
 `r_adj = ell_X - A^T lambda_hat`, the local error with otherwise exact inputs is

@@ -113,6 +113,64 @@ namespace
             Hess(I).write(vI, vI, H);
         }
     }
+
+    // dG_friction/dx_prev of every friction pair by central differences of
+    // the gradient in the previous position: the lagged normal force and the
+    // relative displacement both enter through it. The step is a small
+    // fraction of the smoothing displacement eps_v*dt, far inside the C1
+    // clamp's scale, so the truncation error is negligible against the
+    // derivative it measures. For the adjoint chain, not for the solve.
+    __global__ void do_prev_coupling_kernel(cuda_tool::BufferView<Matrix3x3> blocks,
+                                            cuda_tool::CBufferView<Vector2i> PHs,
+                                            cuda_tool::CBufferView<Vector3> plane_positions,
+                                            cuda_tool::CBufferView<Vector3> plane_normals,
+                                            cuda_tool::CDense2D<ContactCoeff> table,
+                                            cuda_tool::CBufferView<IndexT> contact_ids,
+                                            cuda_tool::CBufferView<Vector3> Ps,
+                                            cuda_tool::CBufferView<Vector3> prev_Ps,
+                                            cuda_tool::CBufferView<Float> thicknesses,
+                                            Float                         eps_v,
+                                            cuda_tool::CBufferView<Float> d_hats,
+                                            IndexT half_plane_vertex_offset,
+                                            Float  dt,
+                                            int    n)
+    {
+        int I = blockIdx.x * blockDim.x + threadIdx.x;
+        if(I >= n)
+            return;
+
+        using namespace sym::ipc_vertex_half_contact;
+
+        Vector2i PH = PHs(I);
+        IndexT   vI = PH(0);
+        IndexT   HI = PH(1);
+
+        Vector3 v      = Ps(vI);
+        Vector3 prev_v = prev_Ps(vI);
+        Vector3 P      = plane_positions(HI);
+        Vector3 N      = plane_normals(HI);
+        Float   d_hat  = d_hats(vI);
+
+        ContactCoeff coeff =
+            table(contact_ids(vI), contact_ids(HI + half_plane_vertex_offset));
+        Float kt2       = coeff.kappa * dt * dt;
+        Float mu        = coeff.mu;
+        Float thickness = thicknesses(vI);
+        Float eps_vh    = eps_v * dt;
+        Float h         = 1e-4 * eps_vh;
+
+        Matrix3x3 B;
+        for(int j = 0; j < 3; ++j)
+        {
+            Vector3 e = Vector3::Zero();
+            e(j)      = h;
+            Vector3 Gp, Gm;
+            PH_friction_gradient(Gp, kt2, d_hat, thickness, mu, eps_vh, prev_v + e, v, P, N);
+            PH_friction_gradient(Gm, kt2, d_hat, thickness, mu, eps_vh, prev_v - e, v, P, N);
+            B.col(j) = (Gp - Gm) / (2.0 * h);
+        }
+        blocks(I) = B;
+    }
 }  // namespace
 
 class IPCVertexHalfPlaneFrictionalContact final : public VertexHalfPlaneFrictionalContact
@@ -180,6 +238,29 @@ class IPCVertexHalfPlaneFrictionalContact final : public VertexHalfPlaneFriction
                                             info.dt(),
                                             (int)info.friction_PHs().size());
         }
+    }
+
+    virtual void do_compute_prev_coupling(ContactInfo& info) override
+    {
+        using namespace cuda_tool;
+        auto n = (int)info.friction_PHs().size();
+        do_prev_coupling_kernel<<<cuda_tool::best_grid_dim(n, do_prev_coupling_kernel),
+                                  cuda_tool::best_block_dim(do_prev_coupling_kernel),
+                                  0,
+                                  nullptr>>>(info.prev_coupling().viewer(),
+                                             info.friction_PHs().viewer(),
+                                             half_plane->positions().viewer(),
+                                             half_plane->normals().viewer(),
+                                             info.contact_tabular().viewer(),
+                                             info.contact_element_ids().viewer(),
+                                             info.positions().viewer(),
+                                             info.prev_positions().viewer(),
+                                             info.thicknesses().viewer(),
+                                             info.eps_velocity(),
+                                             info.d_hats().viewer(),
+                                             info.half_plane_vertex_offset(),
+                                             info.dt(),
+                                             n);
     }
 
     HalfPlane* half_plane = nullptr;

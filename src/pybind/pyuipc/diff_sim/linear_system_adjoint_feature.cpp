@@ -76,6 +76,28 @@ Args:
         R"(The current export mode name.)");
 
     class_LinearSystemAdjointFeature.def(
+        "export_prev_coupling",
+        [](const LinearSystemAdjointFeature& self) -> py::tuple
+        {
+            auto                count = self.prev_coupling_count();
+            py::array_t<IndexT> rows{py::ssize_t(count)};
+            py::array_t<IndexT> cols{py::ssize_t(count)};
+            py::array_t<Float> blocks({py::ssize_t(count), py::ssize_t(3), py::ssize_t(3)});
+            self.export_prev_coupling(uipc::span<IndexT>{rows.mutable_data(), count},
+                                      uipc::span<IndexT>{cols.mutable_data(), count},
+                                      uipc::span<Float>{blocks.mutable_data(), 9 * count});
+            return py::make_tuple(rows, cols, blocks);
+        },
+        R"(The friction gradient's explicit dependence on the previous substep's positions,
+dG_f/dx_prev, one 3x3 block per friction pair (lagged normal force and relative
+displacement), computed by the 'converged' and 'converged_raw' modes' re-assembly at the
+accepted state; empty in 'last_iterate' mode or without friction.
+
+Returns:
+    tuple: (rows[int32, T], cols[int32, T], blocks[float64, (T, 3, 3)]) with global vertex
+    indices; a half-plane pair couples a vertex to its own previous position (row == col).)");
+
+    class_LinearSystemAdjointFeature.def(
         "export_system",
         [](const LinearSystemAdjointFeature& self) -> py::tuple
         {

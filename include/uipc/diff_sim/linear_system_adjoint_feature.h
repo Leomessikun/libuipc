@@ -39,6 +39,21 @@ class UIPC_CORE_API LinearSystemAdjointFeatureOverrider
     virtual void do_set_export_mode(LinearSystemExportMode mode) = 0;
     virtual LinearSystemExportMode do_export_mode()              = 0;
 
+    /// Number of lagged coupling blocks the last re-assembly computed (0 in
+    /// `LastIterate` mode or without friction).
+    virtual SizeT get_prev_coupling_count() = 0;
+    /**
+     * @param rows [out] `prev_coupling_count` global vertex indices
+     * @param cols [out] the same count: the previous-position vertex each
+     *        block differentiates against (the pair's own vertex for a
+     *        half-plane contact)
+     * @param blocks [out] `9 * count` scalars, row-major 3x3 blocks of
+     *        dG/dx_prev in the system's scaling
+     */
+    virtual void do_export_prev_coupling(span<IndexT> rows,
+                                         span<IndexT> cols,
+                                         span<Float>  blocks) = 0;
+
     /// Number of scalar degrees of freedom of the assembled system.
     virtual SizeT get_dof_count() = 0;
     /// Number of 3x3 blocks stored (the upper block triangle, diagonal
@@ -88,6 +103,16 @@ class UIPC_CORE_API LinearSystemAdjointFeature final : public core::Feature
      */
     void                   set_export_mode(LinearSystemExportMode mode);
     LinearSystemExportMode export_mode() const;
+
+    /**
+     * @brief The explicit dependence of the frame's friction gradient on the
+     * previous substep's positions, `dG_f/dx_prev`, one 3x3 block per
+     * friction pair, computed by the `Converged` and `ConvergedRaw` modes'
+     * re-assembly at the accepted state (friction's lagged normal force and
+     * relative displacement). Zero blocks in `LastIterate` mode.
+     */
+    SizeT prev_coupling_count() const;
+    void export_prev_coupling(span<IndexT> rows, span<IndexT> cols, span<Float> blocks) const;
 
     /**
      * @brief Copy the assembled system of the current frame to host memory.

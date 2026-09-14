@@ -112,7 +112,8 @@ def probe(env, agent, args):
                 state_errors[name] = [comparison(center["tangent"][sl, axis], fd_state[sl, axis]) for axis in range(3)]
             by_mode = {}
             for mode, c in captures.items():
-                by_mode[mode] = dict(bellman=comparison(others[mode].numpy(), fd),
+                by_mode[mode] = dict(friction_chain=bool(c.get("friction_chain", False)), coupling_blocks=int(c.get("coupling_blocks", 0)),
+                                     bellman=comparison(others[mode].numpy(), fd),
                                      reward=comparison(c["reward_gradient"], np.mean(rewards, 0)),
                                      state_errors={name: [comparison(c["tangent"][sl, axis], fd_state[sl, axis]) for axis in range(3)]
                                                    for name, sl in [("position", slice(0, 3*env.n)), ("velocity", slice(3*env.n, 6*env.n))]},
@@ -325,6 +326,8 @@ def main(argv=None):
     p.add_argument("--snapshots", type=int, default=4)
     p.add_argument("--guided-steps-min", type=int, default=0,
                    help="guided steps before every probe snapshot, on top of 4*(i mod 4); use 1 so no snapshot dumps straight after a recover")
+    p.add_argument("--friction-chain", action="store_true",
+                   help="add friction's lagged dG/dx_prev blocks to the tangent chain (converged export modes only)")
     p.add_argument("--export-modes", nargs="+", default=["last_iterate"],
                    choices=["last_iterate", "converged", "converged_raw"],
                    help="backend export modes to capture each probe decision with; the first is the run's mode")
@@ -356,7 +359,7 @@ def main(argv=None):
         return
     t0 = time.monotonic()
     env = IAQLClothEnv(args.out/"world", IAQLEnvConfig(friction=args.friction, velocity_tolerance=args.velocity_tolerance,
-                                                        export_mode=args.export_modes[0]))
+                                                        export_mode=args.export_modes[0], friction_chain=args.friction_chain))
     report = dict(environment=env.describe(), seed=args.seed, state_activation="silu",
                   arguments={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()})
     path = args.out/"report.json"

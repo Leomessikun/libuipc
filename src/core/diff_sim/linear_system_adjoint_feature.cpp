@@ -31,6 +31,27 @@ LinearSystemExportMode LinearSystemAdjointFeature::export_mode() const
     return m_impl->do_export_mode();
 }
 
+SizeT LinearSystemAdjointFeature::prev_coupling_count() const
+{
+    return m_impl->get_prev_coupling_count();
+}
+
+void LinearSystemAdjointFeature::export_prev_coupling(span<IndexT> rows,
+                                                      span<IndexT> cols,
+                                                      span<Float>  blocks) const
+{
+    auto count = prev_coupling_count();
+    UIPC_ASSERT_THROW(rows.size() == count && cols.size() == count
+                          && blocks.size() == 9 * count,
+                      "export_prev_coupling: spans have {}, {} and {} elements, "
+                      "the frame has {} coupling blocks",
+                      rows.size(),
+                      cols.size(),
+                      blocks.size(),
+                      count);
+    m_impl->do_export_prev_coupling(rows, cols, blocks);
+}
+
 void LinearSystemAdjointFeature::export_system(span<IndexT> block_rows,
                                                span<IndexT> block_cols,
                                                span<Float>  block_values,

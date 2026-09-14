@@ -54,12 +54,16 @@ class VertexHalfPlaneFrictionalContact : public ContactReporter
         auto gradients() const noexcept { return m_gradients; }
         auto hessians() const noexcept { return m_hessians; }
         bool gradient_only() const noexcept { return m_gradient_only; }
+        /// One 3x3 block per friction pair: dG/dx_prev of the pair's vertex,
+        /// filled by do_compute_prev_coupling() for the adjoint export.
+        auto prev_coupling() const noexcept { return m_prev_coupling; }
 
       private:
         friend class VertexHalfPlaneFrictionalContact;
 
         cuda_tool::DoubletVectorView<Float, 3> m_gradients;
         cuda_tool::TripletMatrixView<Float, 3> m_hessians;
+        cuda_tool::BufferView<Matrix3x3>       m_prev_coupling;
         bool                                   m_gradient_only = false;
     };
 
@@ -100,6 +104,7 @@ class VertexHalfPlaneFrictionalContact : public ContactReporter
         cuda_tool::CBufferView<Float>           energies;
         cuda_tool::CDoubletVectorView<Float, 3> gradients;
         cuda_tool::CTripletMatrixView<Float, 3> hessians;
+        cuda_tool::DeviceBuffer<Matrix3x3>      prev_coupling;
     };
 
     cuda_tool::CBufferView<Vector2i>        PHs() const noexcept;
@@ -107,10 +112,20 @@ class VertexHalfPlaneFrictionalContact : public ContactReporter
     cuda_tool::CDoubletVectorView<Float, 3> gradients() const noexcept;
     cuda_tool::CTripletMatrixView<Float, 3> hessians() const noexcept;
 
+    /**
+     * @brief Fill `prev_coupling()` with dG/dx_prev of every friction pair at
+     * the current positions and the frame's previous positions; the lagged
+     * normal force and the relative displacement both enter through x_prev.
+     * Called by the adjoint export after its re-assembly at the accepted state.
+     */
+    void                              compute_prev_coupling();
+    cuda_tool::CBufferView<Matrix3x3> prev_coupling() const noexcept;
+
   protected:
-    virtual void do_build(BuildInfo& info)           = 0;
-    virtual void do_compute_energy(EnergyInfo& info) = 0;
-    virtual void do_assemble(ContactInfo& info)      = 0;
+    virtual void do_build(BuildInfo& info)                     = 0;
+    virtual void do_compute_energy(EnergyInfo& info)           = 0;
+    virtual void do_assemble(ContactInfo& info)                = 0;
+    virtual void do_compute_prev_coupling(ContactInfo& info)   = 0;
 
   private:
     virtual void do_report_energy_extent(GlobalContactManager::EnergyExtentInfo& info) override final;

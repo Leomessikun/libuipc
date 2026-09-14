@@ -252,16 +252,23 @@ def reverse_pass(H: list, g_final: np.ndarray, layout: dict, chain: bool = True)
     return {"dL_dDelta": dL_dDelta, "contributions": contributions[::-1]}
 
 
-def tangent_pass(lu: list, layout: dict, chain: bool = True, *, return_frames: bool = False) -> np.ndarray:
+def tangent_pass(lu: list, layout: dict, chain: bool = True, *, return_frames: bool = False,
+                 prev_coupling: list | None = None) -> np.ndarray:
     """∂x_6/∂Δ for the three translation axes (3n × 3), propagated forward through the frames with
     the same inertia coupling the reverse pass uses; aim_f = anchor_0 + (f/6) Δ.
     ``return_frames`` retains each substep response, needed to differentiate final velocity.
+    ``prev_coupling``, one ``(rows, cols, blocks)`` per frame in local vertex indices, adds the
+    frame's explicit dependence on the previous substep's positions beyond inertia: friction's
+    lagged normal force and relative displacement, ``B_fric = ∂G_f/∂x_prev`` as 3×3 blocks, so
+    the recurrence is ``H_f X_f = −(B_inertia + B_fric) X_{f−1} − C X_{f−2} − F_u``.
     """
     off, cnt, n = layout["dof_offset"], layout["dof_count"], layout["n"]
     m3 = np.repeat(layout["mass"], 3)
     held = (3 * layout["anchor_idx"][:, None] + np.arange(3)[None, :]).reshape(-1)
     s_m = np.repeat(layout["strength"] * layout["mass"][layout["anchor_idx"]], 3)
     steps = len(lu)
+    if prev_coupling is not None and len(prev_coupling) != steps:
+        raise ValueError("prev_coupling needs one (rows, cols, blocks) entry per frame")
     out = np.zeros((steps, cnt, 3))
     for k in range(3):
         dx_prev = np.zeros(cnt)
@@ -271,6 +278,13 @@ def tangent_pass(lu: list, layout: dict, chain: bool = True, *, return_frames: b
             local = np.zeros(cnt)
             if chain:
                 local += 2.0 * m3 * dx_prev - m3 * dx_prev2
+                if prev_coupling is not None and prev_coupling[f] is not None:
+                    rows, cols, blocks = prev_coupling[f]
+                    if len(rows):
+                        rows, cols = np.asarray(rows, dtype=np.int64), np.asarray(cols, dtype=np.int64)
+                        blocks = np.asarray(blocks, dtype=np.float64).reshape(len(rows), 3, 3)
+                        pulled = np.einsum("tij,tj->ti", blocks, dx_prev.reshape(n, 3)[cols])
+                        np.add.at(local.reshape(n, 3), rows, -pulled)
             daim = np.zeros(cnt)
             daim[held[k::3]] = (f + 1) / steps  # the k-th component of every held vertex's aim
             local += np.repeat(layout["strength"] * layout["mass"], 3) * daim
