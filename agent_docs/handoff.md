@@ -2280,3 +2280,21 @@ curve; then paired seeds and the shuffled-label online control. Record,
 index and roadmap updated. All of today's runs are done; nothing is running
 from this session.
 
+## 2026-09-15 — One branch for both gradient consumers
+
+`research/physics-gradients` (the actor-side line: greedy walks, frozen-critic
+fine-tune, the SAC-loop `--physics-actor-weight` term) had no commit that
+`research/ipc-adjoint-q-learning` lacked, so it was fast-forwarded to this
+branch's tip; the two lines consume the same one-decision label
+`g = R_u + γ m Dᵀ∇V̄(s')`, the actor directly at the replay action and the
+critic through the Sobolev slope loss, and will be developed as one learner
+here. The actor-side arm `pg_phys_s1` finished at 21:35 on 2026-09-14:
+held-out success 0.000 → 0.240 and upper-arm ratio 0.146 → 0.309 after 24k
+transitions from the `abl_dense_s1` 125k checkpoint, whose own 14 held-out
+evaluations over 125k transitions never left 0.000 (one 0.040); its control
+arm `pg_ctrl_s1` (weight 0, same seed and start) is running and decides the
+attribution. Its Jacobian is still the last frame's projected last-iterate
+matrix without the friction coupling, i.e. the three errors this branch
+removed today; unifying it with `converged_raw` + `export_prev_coupling` +
+the full decision chain is the first step of the combined learner.
+
