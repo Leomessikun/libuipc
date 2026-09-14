@@ -494,3 +494,15 @@ is not an equivalent optimization of rolling H8; actor features cannot replace d
 Status, later on 2026-09-13: the offline trainer exists
 ([record](performance/2026-09-13-offline-pretraining.md)); the corpus does not — the first run with
 `--sequence-replay --record-privileged` is the first usable data.
+
+## IPC Adjoint Q-Learning proposal (2026-09-14)
+
+[ADR 0008](adr/0008-ipc-adjoint-q-learning.md) specifies an opt-in critic
+derivative loss, complete-decision implicit sensitivities, paired soft targets,
+replay refresh, and a `cloth_drag`-first evaluation sequence. MAGE and
+First-order Sobolev RL are direct precedents; the candidate research extension
+is calibrated contact/direction reliability. Current retained projected Newton
+matrices and last-frame physics actor signals do not implement the proposed
+Bellman derivative. Next work is the target/loss contract and complete-decision
+benchmark adapter, followed by frozen-critic and matched SAC experiments.
+Only a synthetic numerical identity check has run; IAQL training is pending.

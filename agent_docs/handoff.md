@@ -2137,3 +2137,16 @@ residual 4e-5, 87.5 % of rows counted, β 0.14), checkpoint saved and loads. Tes
 --transitions 24000 --eval-every 0 --init-from abl_dense_s1/checkpoint_00125016.pt`, held-out
 evaluation before and after, then the elbow yardstick (`physics_gradient_actor --walks policy`
 at both cells) on each final checkpoint. Expected ~2.5 h per arm. Not yet evaluated.
+
+## 2026-09-14 — IPC Adjoint Q-Learning design
+
+On `research/ipc-adjoint-q-learning`, the owner requested an algorithm design
+with simpler benchmarks before dressing. [ADR 0008](adr/0008-ipc-adjoint-q-learning.md)
+records the proposed target/loss contract, complete-substep adjoint, replay
+freshness, contact-conditioned directional trust, observation limitations, and
+`cloth_drag`-first experiment gates. Literature verification identified MAGE
+(2020) and First-order Sobolev RL (2025) as direct precedents, beyond JAVE.
+The existing physics actor signal remains a distinct experiment. A standalone
+NumPy check (`python3 scripts/verify_iaql_design.py`) passes 24 finite-difference
+cases and adjoint/tangent/error-bound identities; it exercises synthetic
+equations, not the production backend or learner. No IAQL training launched.
