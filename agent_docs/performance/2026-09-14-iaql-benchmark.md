@@ -272,7 +272,7 @@ advance before the gate grows to the ADR's hundred states. And the coded gate
 is per snapshot over all checks, stricter than the ADR's median form; report
 which one was applied.
 
-## Export modes: the projection is the whole tangent error (smoke, 2 states; 100-state run in progress)
+## Export modes: the projection is the whole tangent error (smoke, 2 states)
 
 Three modes of the same restored state and centre action, differences taken
 once. `last_iterate -> converged` isolates the evaluation point and the
@@ -296,5 +296,46 @@ host LU factorises the raw (possibly indefinite) matrix without trouble at
 1,200 degrees of freedom. `uipc_test_diff_sim` (3 cases, 563 assertions)
 passes on the new build: at rest the projected and raw re-assemblies agree
 to 1e-8, compressed to 60 % they differ and the projected curvature is never
-below the raw. The 100-state run (`output/iaql/modes100_s0`, one to thirteen
-guided steps, all three modes) is in progress; its statistics follow.
+below the raw.
+
+## Export modes on 100 states (`modes100_s0`, 6,060 s on the shared GPU)
+
+The ADR's gate size: 100 snapshots, seeds 100–199, one guided step plus
+`4·(i mod 4)` (so 1, 5, 9 or 13 guided drag steps before the centre action),
+friction 0, tolerance 1e-3, each centre decision captured in all three modes
+against one set of differences (ε 0.03; ε 0.1 agrees to three digits, repeat
+scatter ≤ 1e-5). Per-axis tangent errors pool the three axes of every state.
+
+| Mode | Position tangent rel. error median / p10 / p90 / max | Velocity tangent rel. error median / p90 / max | Bellman-gradient rel. error median / p90 / max | Bellman cosine median / p10 / min | Reward-gradient rel. error median / p90 | Gate (per state, all checks) | Forward per captured decision (median) |
+|---|---|---|---|---|---|---|---|
+| last_iterate | 0.043 / 0.013 / 0.109 / 0.239 | 0.061 / 0.130 / 0.285 | 0.033 / 0.083 / 0.151 | 0.99985 / 0.99918 / 0.98856 | 0.029 / 0.068 | 99/100 | 2.69 s |
+| converged | 0.043 / 0.013 / 0.108 / 0.239 | 0.061 / 0.130 / 0.285 | 0.033 / 0.083 / 0.150 | 0.99985 / 0.99918 / 0.98868 | 0.029 / 0.068 | 99/100 | 2.89 s |
+| converged_raw | 0.0020 / 0.0005 / 0.0065 / 0.023 | 0.0028 / 0.0102 / 0.031 | 0.0017 / 0.0075 / 0.145 | 1.00000 / 0.99999 / 0.99026 | 0.0011 / 0.0064 | 99/100 | 2.86 s |
+
+Position tangent error, median by guided steps 1 / 5 / 9 / 13:
+
+| Mode | 1 | 5 | 9 | 13 |
+|---|---|---|---|---|
+| last_iterate | 0.016 | 0.042 | 0.064 | 0.081 |
+| converged | 0.016 | 0.042 | 0.064 | 0.081 |
+| converged_raw | 0.0025 | 0.0016 | 0.0017 | 0.0025 |
+
+Reading. Re-assembling at the accepted state reproduces the last-iterate
+numbers to three digits on all 100 states, so the evaluation point and the
+contact pair set contribute nothing. Switching the projection off divides
+the median position tangent error by 22 (4.3 % to 0.20 %), the p90 by 17 and
+the Bellman-gradient error by 19, and the growth with drag disappears: the
+raw error is 0.16–0.25 % at every drag depth where the projected one climbs
+from 1.6 % to 8.1 %. That is the ADR's approximate-mode error identified: the
+solver's PSD curvature is the right matrix for the Newton step and the wrong
+one for the implicit derivative, and nothing else in the frictionless
+decision map is missing at this tolerance. The projected matrix's remaining
+spread (max 24 %) is the same states that bunch the cloth most. The one state
+every mode rejects (snapshot 44, one guided step) is rejected by the critic,
+not the mechanics: its raw reward-gradient error is 0.7 % and its position
+tangent 0.1–0.7 %, while its Bellman-gradient error is 14.5 % with cosine
+0.990, i.e. the SiLU critic's state gradient still bends within a 0.03 action
+unit there. Cost: the re-assembly adds one detection and assembly per frame,
+0.2 s per five-substep decision on the shared GPU (2.69 → 2.86–2.89 s);
+the raw factorisation costs the host nothing extra at 1,200 degrees of
+freedom (tangent pass 2.4–2.8 ms).

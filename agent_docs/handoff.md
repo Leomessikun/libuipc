@@ -2235,3 +2235,18 @@ all three export modes, without and with the chain
 (`output/iaql/fric06_modes{,_chain}`). Not yet measured.
 [Record](performance/2026-09-14-iaql-benchmark.md).
 
+## 2026-09-14 — Export modes on 100 states: the projection was the whole frictionless error
+
+`modes100_s0` (101 shared-GPU minutes): 100 snapshots with 1/5/9/13 guided
+drag steps, every centre decision captured in all three export modes against
+one set of differences. Re-assembling at the accepted state with projection
+reproduces the last-iterate numbers to three digits; the raw re-assembly
+divides the median position tangent error by 22 (4.3 % → 0.20 %), the p90 by
+17 (10.9 % → 0.65 %) and the Bellman-gradient error by 19 (3.3 % → 0.17 %),
+and the growth with drag (1.6 → 8.1 %) disappears (0.16–0.25 % at every
+depth). 99/100 pass the gate in every mode; the one rejected state is the
+critic's (raw reward-gradient error 0.7 %, Bellman 14.5 %). Cost 0.2 s per
+decision. Record, performance index and roadmap updated. The 5k pair is at
+3,000 steps with both arms at zero success; the friction gate with and
+without the lagged coupling is running.
+

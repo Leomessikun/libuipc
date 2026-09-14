@@ -510,9 +510,14 @@ paired target refresh, mixed-derivative critic regression, native full-state
 cloth collection, a bounded mechanics sidecar over a full TD replay and a CPU
 refit phase. Measured: the gate passes at friction 0 (4/4), the derivative
 loss raises the held-out slope cosine 0.38 → 0.84 while shuffled labels do
-not, the remaining 5–21 % tangent error is the SPD-projected retained matrix
-(not Newton tolerance), and friction 0.6 fails the gate (1/4) because the
-inertia-only chain lacks the lagged friction terms. A matched 5,000-step
-SAC/IAQL pair at friction 0 is running. Open: an exact-mode (unprojected,
-friction-complete) export, calibrated contact trust, the learning result at
-scale, and visual transfer.
+not; on 100 frictionless states the raw Hessian re-assembled at the accepted
+state (`set_export_mode('converged_raw')`) cuts the median tangent error from
+4.3 % to 0.20 % and removes its growth with drag, while re-assembling with
+projection changes nothing, so the SPD projection was the whole error;
+friction 0.6 failed the gate (1/4) for want of the lagged friction terms,
+which the same re-assembly now exports (`export_prev_coupling`, half-plane
+only). A matched 5,000-step SAC/IAQL pair at friction 0 is running and both
+arms are at zero success past 3,000 steps. Open: the friction gate with the
+lagged coupling, simplex friction coupling, a learnable version of the
+benchmark (vanilla SAC must show a curve before any comparison), calibrated
+directional contact trust, and visual transfer.
