@@ -517,9 +517,10 @@ projection changes nothing, so the SPD projection was the whole error;
 friction 0.6 failed the gate (1/4) for want of the lagged friction terms;
 with the raw Hessian and the lagged coupling the same re-assembly now
 exports (`export_prev_coupling`, half-plane only) the frictional tangent is
-0.14 % median and the gate passes on every mechanically resolved state. A
-matched 5,000-step SAC/IAQL pair at friction 0 is running and both arms are
-at zero success past 3,000 steps. Open: simplex (cloth-body) friction
+0.14 % median and the gate passes on every mechanically resolved state. The
+matched 5,000-step SAC/IAQL pair at friction 0 is inconclusive: neither arm
+learns the task at that budget (final mean distance 0.078 / 0.077, no
+success), so the derivative loss has no learning result yet. Open: simplex (cloth-body) friction
 coupling, a stick-slip-switching state, a learnable version of the
 benchmark (vanilla SAC must show a curve before any comparison), calibrated
 directional contact trust, and visual transfer.

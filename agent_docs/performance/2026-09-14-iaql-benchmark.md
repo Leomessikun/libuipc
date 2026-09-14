@@ -378,3 +378,42 @@ what remains untested is the simplex (cloth-body) friction, whose coupling
 is not exported, and states that actually switch stick/slip within a
 difference step, of which these four contain none.
 
+## The matched 5,000-step pair: inconclusive, the benchmark is not yet learnable at this budget
+
+`online5k_s0_sac` and `online5k_s0_iaql` (two processes in parallel, friction
+0, tolerance 1e-3, `last_iterate` export, β 0.1, two updates per step, batch
+32, 64 random warm-up steps, unbounded TD replay, 1,024-row mechanics
+sidecar, same seeds; three 50-step evaluation episodes every 500 steps).
+Pure training time 13,135 s (SAC) and 13,288 s (IAQL), 2.63 and 2.66 s per
+step with both arms, the 100-state probe and two other sessions' jobs on the
+GPU. At the end the sidecar covered 22 % of the sampled rows
+(`adjoint_valid_fraction` 0.219), derivative loss 0.077, critic loss 0.36
+(IAQL) against 0.54 (SAC).
+
+| Steps | SAC mean return | SAC mean distance | SAC successes | IAQL mean return | IAQL mean distance | IAQL successes |
+|---|---|---|---|---|---|---|
+| 500 | −0.41 | 0.096 | 0 | −0.24 | 0.095 | 0 |
+| 1000 | 0.21 | 0.093 | 0 | 0.22 | 0.092 | 0 |
+| 1500 | 0.17 | 0.093 | 0 | 0.25 | 0.092 | 0 |
+| 2000 | 0.19 | 0.093 | 0 | 0.05 | 0.093 | 0 |
+| 2500 | 0.12 | 0.093 | 0 | 0.43 | 0.091 | 0 |
+| 3000 | 0.30 | 0.092 | 0 | 0.17 | 0.092 | 0 |
+| 3500 | 0.62 | 0.090 | 0 | 0.64 | 0.089 | 0 |
+| 4000 | −2.70 | 0.109 | 1 | −1.69 | 0.103 | 0 |
+| 4500 | −1.91 | 0.105 | 0 | −0.21 | 0.094 | 0 |
+| 5000 | 2.54 | 0.078 | 0 | 2.62 | 0.077 | 0 |
+
+Reading. For 3,500 steps both policies barely move the marker (per-episode
+returns within ±5, distances at the start values); from 4,000 steps both
+start taking large actions with returns of ±10 in single episodes, one SAC
+success at 4,000, and the last evaluation of both arms is the best so far
+(mean distance 0.078 / 0.077) with no success. The two arms are
+indistinguishable at every point against a three-episode evaluation whose
+per-episode spread is ±5. This is the outcome the design anticipated for an
+underpowered budget: it is not evidence for or against the derivative loss.
+Before any SAC/IAQL comparison the benchmark has to become learnable, which
+means a per-decision cost far below 2.6 s (a vectorised world with several
+cloths, or a smaller cloth) and a budget at which vanilla SAC shows a curve;
+only then do paired seeds and the shuffled-label online control mean
+anything. Checkpoints: `output/iaql/online5k_s0_{sac,iaql}/online_beta_*.pt`.
+

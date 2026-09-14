@@ -2266,3 +2266,17 @@ stick-slip-switching state, and the learning benchmark itself (the 5k pair
 is past 3,000 steps with both arms at zero success). Record, index and
 roadmap updated.
 
+## 2026-09-14 — The 5,000-step SAC/IAQL pair: inconclusive
+
+Both arms finished (13,135 and 13,288 s of training, 2.6 s per step on the
+shared GPU). Neither learns the task in 5,000 steps: returns within ±5 per
+episode until 3,500 steps, large actions from 4,000, one SAC success at
+4,000, final mean distance 0.078 (SAC) and 0.077 (IAQL) with no success;
+the arms are indistinguishable against a three-episode evaluation. Not
+evidence either way. The next learning experiment needs a learnable benchmark
+first: a vectorised world (several cloths per solve) or a smaller cloth to
+bring the decision far below 2.6 s, and a budget at which vanilla SAC shows a
+curve; then paired seeds and the shuffled-label online control. Record,
+index and roadmap updated. All of today's runs are done; nothing is running
+from this session.
+
