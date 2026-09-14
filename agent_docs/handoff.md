@@ -2250,3 +2250,19 @@ decision. Record, performance index and roadmap updated. The 5k pair is at
 3,000 steps with both arms at zero success; the friction gate with and
 without the lagged coupling is running.
 
+## 2026-09-14 — Friction 0.6 passes the gate with the raw Hessian and the lagged coupling
+
+`fric06_modes` and `fric06_modes_chain` (four states, ~4 shared-GPU minutes
+each): without the lagged block every export mode fails (0/4, position
+tangent error 24–26 % median, Bellman error 0.25–0.74); the chain with the
+projected Hessian gets 8.5 % and 3/4; the chain with the raw Hessian gets
+0.14 % median position error, reward-gradient error ≤ 0.18 % on all four
+states and 3/4, the rejected state being the critic's (Bellman 19 % against
+0.1 % mechanics). The state that had looked like a stick-slip switch was the
+missing lagged block. So P1 and P2 are closed for the half-plane contact:
+`converged_raw` plus `export_prev_coupling` is the complete frictional
+tangent of this decision map. Open: simplex friction coupling, a
+stick-slip-switching state, and the learning benchmark itself (the 5k pair
+is past 3,000 steps with both arms at zero success). Record, index and
+roadmap updated.
+

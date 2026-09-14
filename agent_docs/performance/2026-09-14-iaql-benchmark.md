@@ -339,3 +339,42 @@ unit there. Cost: the re-assembly adds one detection and assembly per frame,
 0.2 s per five-substep decision on the shared GPU (2.69 → 2.86–2.89 s);
 the raw factorisation costs the host nothing extra at 1,200 degrees of
 freedom (tangent pass 2.4–2.8 ms).
+
+## Friction 0.6 with the raw Hessian and the lagged coupling: the gate passes (`fric06_modes`, `fric06_modes_chain`)
+
+Four states (seeds 100–103, 1/5/9/13 guided steps, one more than the earlier
+friction probe, so its numbers are not the same states), friction 0.6,
+tolerance 1e-3, differences taken once per run. The first run captures the
+three export modes without the lagged coupling, the second with it in the
+converged modes (`--friction-chain`; `last_iterate` cannot carry it and
+reproduces the first run exactly, which checks the two runs against each
+other). 880–1,480 coupling blocks per captured decision (five substeps of
+180–300 friction pairs).
+
+| Variant | Position tangent rel. error median / p90 / max | Velocity tangent rel. error median / max | Reward-gradient rel. error median / max | Bellman-gradient rel. error per state | Gate |
+|---|---|---|---|---|---|
+| last_iterate, no chain | 0.247 / 0.352 / 0.429 | 0.218 / 1.303 | 0.310 / 0.536 | 0.260, 0.385, 0.741, 0.274 | 0/4 |
+| converged, no chain | 0.243 / 0.352 / 0.426 | 0.218 / 1.288 | 0.310 / 0.533 | 0.260, 0.385, 0.737, 0.274 | 0/4 |
+| converged_raw, no chain | 0.256 / 0.385 / 0.446 | 0.251 / 1.332 | 0.350 / 0.544 | 0.251, 0.310, 0.676, 0.309 | 0/4 |
+| converged + chain | 0.085 / 0.194 / 0.228 | 0.172 / 0.352 | 0.035 / 0.110 | 0.029, 0.063, 0.038, 0.265 | 3/4 |
+| converged_raw + chain | 0.0014 / 0.0044 / 0.0058 | 0.0033 / 0.022 | 0.0011 / 0.0018 | 0.001, 0.001, 0.000, 0.191 | 3/4 |
+
+Reading. With friction the projection alone repairs nothing (raw without the
+chain is as wrong as the rest) and the chain alone repairs most of the
+mechanics but not all (8.5 % median with the projected friction Hessian):
+both are needed, and together they bring the frictional tangent to the
+frictionless raw level, 0.14 % median position error and reward-gradient
+error at most 0.18 % on every state. The state whose three axes were all
+wrong in the first friction probe (the 9-guided-step state, 0.53 / 0.46 /
+0.31 position error there and 0.39 / 0.45 / 0.28 here without the chain) is
+0.1 % with the chain: it was the missing lagged block, not a stick-slip
+switch. The one rejected state (13 guided steps) is again the critic's:
+reward-gradient error 0.1 %, position tangent 0.1–0.6 %, Bellman error 19 %
+with cosine 0.993. The lagged block costs nothing measurable (forward per
+captured decision 2.09–2.33 s either way; the coupling kernel is six
+gradient evaluations per pair). Consequence: the frictional regime is now a
+mechanics-validated regime for derivative labels on the half-plane contact;
+what remains untested is the simplex (cloth-body) friction, whose coupling
+is not exported, and states that actually switch stick/slip within a
+difference step, of which these four contain none.
+
