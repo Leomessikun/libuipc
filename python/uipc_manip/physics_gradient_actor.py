@@ -157,14 +157,17 @@ def value(agent, flat_obs: np.ndarray) -> float:
         return float(torch.min(q1, q2).item())
 
 
-def sac_action_gradient(agent, flat_obs: np.ndarray) -> dict:
-    """SAC's own actor signal: ``∂ min Q(s, a)/∂a`` at the policy's mean action ``μ(s)``."""
+def sac_action_gradient(agent, flat_obs: np.ndarray, action: np.ndarray | None = None) -> dict:
+    """SAC's own actor signal ``∂ min Q(s, a)/∂a``, at the policy's mean action ``μ(s)`` or at ``action``
+    (at the hold action it estimates the same quantity as the adjoint, from the learned action
+    dependence instead of the solver's Jacobian)."""
     import torch
 
     batch = agent._unpack(torch.as_tensor(np.asarray(flat_obs, dtype=np.float32).reshape(1, -1), device=agent.device))
     with torch.no_grad():
         mu, _, _, _ = agent.actor(batch, compute_pi=False, compute_log_pi=False)
-    a = mu.clone().requires_grad_(True)
+    a = mu.clone() if action is None else torch.as_tensor(np.asarray(action, dtype=np.float32).reshape(1, -1), device=agent.device)
+    a = a.requires_grad_(True)
     q1, q2 = agent.critic(batch, a)
     torch.min(q1, q2).sum().backward()
     return {"mu": mu.cpu().numpy().reshape(-1), "dQ_da": a.grad.cpu().numpy().astype(np.float64).reshape(-1), "q": float(torch.min(q1, q2).item())}
@@ -193,6 +196,7 @@ def physics_gradient(env, snap: dict, u: np.ndarray, feature, layout: dict, agen
     """One decision ``u`` from the restored state with its six systems; ``V`` at the result and
     ``∂V/∂u`` by the chain (host) and by the last frame alone (device)."""
     roll = trajopt.rollout(env, snap, u[None, :], feature)
+    cap = capture.capture(roll["positions"])
     vg = value_and_gradient(agent, capture, roll["positions"])
     t0 = time.time()
     chain = trajopt.chain_gradient(roll["frames"], layout, vg["gradient"], u[None, :], env)
@@ -201,25 +205,46 @@ def physics_gradient(env, snap: dict, u: np.ndarray, feature, layout: dict, agen
     return {"value": vg["value"], "chain": chain["per_action"][0], "last_frame": last, "device_residual": residual,
             "chain_s": chain_s, "device_s": last_s, "rollout_s": roll["seconds"], "positions": roll["positions"],
             "measure": roll["measure"], "visible": vg["visible"], "voxels": vg["voxels"],
-            "gradient_norm": float(np.linalg.norm(vg["gradient"])), "executed_m": roll["decisions"][0]["executed_m"]}
+            "gradient_norm": float(np.linalg.norm(vg["gradient"])), "executed_m": roll["decisions"][0]["executed_m"], "cap": cap}
 
 
-def finite_difference(env, snap: dict, u: np.ndarray, agent, eps_m: float, eps_rad: float) -> np.ndarray:
-    """Central differences of ``V(x'(u))`` on the five live action components."""
+def frozen_value(agent, capture: ObservationCapture, cap: dict, positions: np.ndarray) -> float:
+    """``V`` at ``positions`` seen through the visibility and voxel membership captured at another
+    state: the differentiable part of the observation alone."""
+    import torch
+
+    with torch.no_grad():
+        x = torch.as_tensor(positions, device=agent.device, dtype=torch.float32)
+        obs = capture.torch_observation(cap, x, agent)
+        mu, _, _, _ = agent.actor(obs, compute_pi=False, compute_log_pi=False)
+        q1, q2 = agent.critic(obs, mu)
+        return float(torch.min(q1, q2).item())
+
+
+def finite_difference(env, snap: dict, u: np.ndarray, agent, eps_m: float, eps_rad: float,
+                      capture: ObservationCapture | None = None, cap: dict | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Central differences of ``V(x'(u))`` on the five live action components, through the full
+    observation and, when a capture is given, through the observation with its discrete choices
+    frozen at ``cap`` (visibility and voxel membership of the unperturbed decision)."""
     max_t, max_r = float(env.cfg.max_translation), float(env.cfg.max_rotation)
     fd = np.zeros(6)
+    fd_frozen = np.zeros(6)
     for k in range(6):
         if k == 3:
             continue
         e = eps_m / max_t if k < 3 else eps_rad / max_r
-        sides = []
+        sides, frozen = [], []
         for sign in (1.0, -1.0):
             a = u.copy()
             a[k] += sign * e
             roll = trajopt.rollout(env, snap, a[None, :])
             sides.append(value(agent, env.observation([roll["positions"]])[0]))
+            if capture is not None and cap is not None:
+                frozen.append(frozen_value(agent, capture, cap, roll["positions"]))
         fd[k] = (sides[0] - sides[1]) / (2.0 * e)
-    return fd
+        if frozen:
+            fd_frozen[k] = (frozen[0] - frozen[1]) / (2.0 * e)
+    return fd, fd_frozen
 
 
 # ------------------------------------------------------------------------ walks
@@ -277,7 +302,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--eps-deg", type=float, default=1.0)
     p.add_argument("--fd-draws", type=int, default=2)
     p.add_argument("--walk-steps", type=int, default=12)
-    p.add_argument("--walks", nargs="*", default=("physics", "sac", "policy", "proxy", "expert"))
+    p.add_argument("--walks", nargs="*", default=("physics", "sac", "sac_hold", "policy", "proxy", "expert"))
+    p.add_argument("--skip-at", action="store_true", help="skip the gradient comparisons, walk only")
     p.add_argument("--stall-window", type=int, default=15)
     p.add_argument("--max-steps", type=int, default=300)
     args = p.parse_args(argv)
@@ -331,13 +357,24 @@ def main(argv: list[str] | None = None) -> None:
 
             # The physics gradient at hold and at the policy's own action, the differences beside it.
             entry["at"] = {}
-            for label, u in (("hold", np.zeros(6)), ("policy", sac["mu"].astype(np.float64))):
+            for label, u in (() if args.skip_at else (("hold", np.zeros(6)), ("policy", sac["mu"].astype(np.float64)))):
                 pg = physics_gradient(env, snap, u, feature, layout, agent, capture)
-                draws = [finite_difference(env, snap, u, agent, args.eps_mm * 1e-3, np.deg2rad(args.eps_deg)) for _ in range(args.fd_draws)]
+                sac_at = sac_action_gradient(agent, obs0, u)  # the learned action dependence at the same action
+                pairs = [finite_difference(env, snap, u, agent, args.eps_mm * 1e-3, np.deg2rad(args.eps_deg), capture, pg["cap"])
+                         for _ in range(args.fd_draws)]
+                draws = [pr[0] for pr in pairs]
+                frozen_draws = [pr[1] for pr in pairs]
                 fd = np.mean(draws, axis=0)
+                fd_frozen = np.mean(frozen_draws, axis=0)
                 row = {"value_after": pg["value"], "dV_dx_norm": pg["gradient_norm"], "visible_vertices": pg["visible"], "voxels": pg["voxels"],
                        "chain": pg["chain"].tolist(), "last_frame": pg["last_frame"].tolist(), "finite_difference": fd.tolist(),
                        "fd_draws": [d.tolist() for d in draws], "device_residual": pg["device_residual"],
+                       "finite_difference_frozen": fd_frozen.tolist(), "fd_frozen_draws": [d.tolist() for d in frozen_draws],
+                       "cos_chain_fd_frozen": probe.cosine(pg["chain"], fd_frozen),
+                       "ratio_chain_fd_frozen": float(np.linalg.norm(pg["chain"]) / np.linalg.norm(fd_frozen)) if np.linalg.norm(fd_frozen) > 0 else None,
+                       "fd_frozen_draw_cosine": probe.cosine(frozen_draws[0], frozen_draws[1]) if len(frozen_draws) > 1 else None,
+                       "sac_dQ_da_at": sac_at["dQ_da"].tolist(), "cos_sac_at_fd": probe.cosine(sac_at["dQ_da"], fd),
+                       "cos_sac_at_chain": probe.cosine(sac_at["dQ_da"], pg["chain"]),
                        "chain_s": pg["chain_s"], "device_s": pg["device_s"], "rollout_s": pg["rollout_s"], "executed_m": pg["executed_m"],
                        "cos_chain_fd": probe.cosine(pg["chain"], fd), "cos_last_fd": probe.cosine(pg["last_frame"], fd),
                        "cos_chain_fd_translation": probe.cosine(pg["chain"][:3], fd[:3]), "cos_chain_fd_rotation": probe.cosine(pg["chain"][4:], fd[4:]),
@@ -354,7 +391,9 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"[actor] {args.garment}/{args.body} {name}@{snap['episode_step']} at {label}: V={pg['value']:.3f} "
                       f"|dV/dx|={pg['gradient_norm']:.3g} over {pg['visible']} visible vertices in {pg['voxels']} voxels; "
                       f"chain vs fd cos={row['cos_chain_fd']:.3f} (t {row['cos_chain_fd_translation']:.3f}, r {row['cos_chain_fd_rotation']:.3f}) "
-                      f"ratio={row['ratio_chain_fd']}; last-frame vs fd cos={row['cos_last_fd']:.3f}; SAC dQ/da vs fd cos={row['cos_sac_fd']:.3f}; "
+                      f"ratio={row['ratio_chain_fd']}; frozen-observation fd: cos={row['cos_chain_fd_frozen']:.3f} ratio={row['ratio_chain_fd_frozen']} "
+                      f"draws={row['fd_frozen_draw_cosine']}; last-frame vs fd cos={row['cos_last_fd']:.3f}; SAC dQ/da at mu vs fd cos={row['cos_sac_fd']:.3f}, "
+                      f"at this action vs fd cos={row['cos_sac_at_fd']:.3f} vs chain cos={row['cos_sac_at_chain']:.3f}; "
                       f"fd draws cos={row['fd_draw_cosine']}; "
                       + (f"proxy: chain {row['cos_chain_proxy']:.2f} fd {row['cos_fd_proxy']:.2f} sac {row['cos_sac_proxy']:.2f}; " if proxy_dir is not None else "")
                       + f"chain {pg['chain_s']:.1f}s device {pg['device_s']*1e3:.0f}ms residual {pg['device_residual']:.1e}", flush=True)
@@ -370,6 +409,11 @@ def main(argv: list[str] | None = None) -> None:
                 probe.restore(env, current)
                 return unit_action(sac_action_gradient(agent, env.observation()[0])["dQ_da"], env, box_m, box_rad)
 
+            def sac_hold_chooser(step, current):
+                # ∂Q/∂a at the hold action: the learned counterpart of the adjoint at u = 0.
+                probe.restore(env, current)
+                return unit_action(sac_action_gradient(agent, env.observation()[0], np.zeros(6))["dQ_da"], env, box_m, box_rad)
+
             def policy_chooser(step, current):
                 probe.restore(env, current)
                 return sac_action_gradient(agent, env.observation()[0])["mu"]
@@ -378,7 +422,7 @@ def main(argv: list[str] | None = None) -> None:
                 probe.restore(env, current)
                 return np.asarray(probe.heuristic(env).actions()[0], dtype=np.float64)
 
-            choosers = {"physics": physics_chooser, "sac": sac_chooser, "policy": policy_chooser, "expert": expert_chooser}
+            choosers = {"physics": physics_chooser, "sac": sac_chooser, "sac_hold": sac_hold_chooser, "policy": policy_chooser, "expert": expert_chooser}
             if proxy_dir is not None:
                 choosers["proxy"] = lambda step, current: unit_action(proxy_dir, env, box_m, box_rad)
             for wname in args.walks:

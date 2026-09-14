@@ -719,24 +719,63 @@ from the same restored state:
 | cell 1 passed @125 | 0.151, V 73→79, 59 N | 0.147, 29 N | 0.054 (−21 mm), 28 N | **0.220**, 41 N | 0.146, 257 N |
 
 (coverage after twelve decisions; `V` the critic's value at the end; force the mean net normal
-force over the walk; one draw per walk.) The physics signal beats the critic's own action
-derivative at all four states — at the two elbows by 0.05 and 0.135, where SAC's direction stands
-still or retreats — beats the checkpoint's policy and the expert everywhere, beats the
+force over the walk; one draw per walk, and a greedy walk recomputes a rough direction at every
+step, so the fixed-trajectory repeat spread of 0.001 does not apply to it.) The physics signal
+beats the critic's action derivative at the policy's action at three of four states — at the two
+elbows by 0.05 and 0.135, where SAC's direction stands still or retreats — and by 0.004 in one
+draw at the passed state; it beats the checkpoint's policy and the expert everywhere, beats the
 hand-written proxy at cell 1's elbow, the state the proxy could not solve (0.135 against 0.076),
 and matches it at cell 3's elbow at half the force. After the elbow the proxy, which is the axis
 reading's own gradient, is the better greedy signal (0.214 and 0.220 against 0.172 and 0.151).
-The critic's value rises most along the physics walk, as it must (it is `V`'s ascent direction),
-and the coverage rises with it: the critic ranks elbow states in the right order where the reward
-is flat, which is the half of the split Level 1 could not test. ~50 shared-GPU minutes.
+What is measured is that `V`'s ascent direction, taken through the physics, also raises the
+coverage at the elbow where the reward is flat; the proxy walk reached the same coverage at cell 3
+with `V` at 79 against 88, so `V` is not a ranking of elbow states, only a usable direction. That
+`∂Q/∂a` was read at the policy's action, where a converged actor's action derivative is small and
+its direction noisy; the like-for-like comparison is `∂Q/∂a` at the hold action, the learned
+estimate of the same quantity the adjoint computes at the hold decision. Followed greedily the
+same way (`--walks sac_hold`, a fresh re-drive of each state):
+
+| state | adjoint at hold (above) | `∂Q/∂a` at the hold action |
+|---|---|---|
+| cell 3 elbow | **0.168** | 0.000 (retreats 15 mm) |
+| cell 3 stall | **0.172** | 0.018 → 0.000 (retreats 13 mm) |
+| cell 1 elbow | **0.135** | 0.000 (retreats 3 mm) |
+| cell 1 passed | 0.151 | **0.184** |
+
+At the three states at or before the elbow the critic's learned action dependence, read at the
+same action, walks backwards, and the solver's Jacobian applied to the same critic walks over;
+after the elbow the learned one is the better of the two. That is the decisive reading for the
+split: the critic knows the direction in state space at the elbow and not, at that point, in
+action space, and the adjoint converts the one into the other.
+
+**Where the gap between `V`'s differences and its derivative comes from, measured.** The same
+differences taken through the observation with its discrete choices frozen at the unperturbed
+decision (the visibility and voxel membership of that state, so only the differentiable part of
+the observation moves) raise the magnitude ratio of chain to difference from 0.03–0.05 to
+0.09–0.34 at cell 1 (draw-to-draw cosine 0.76–1.00) and agree with the chain in direction at
+0.32–0.83 there; at cell 3 the plain and the frozen differences disagree with themselves between
+draws at the elbow (−0.74 to 0.65) and nothing is read. So the observation's voxel and visibility
+switches are a factor 2–7 of the 20–30× gap, and the rest is the critic network's own roughness
+over 2 mm (the chain reproduces a smooth objective at 0.64–0.85 of its magnitude, Level 2a).
+
+**The same experiment with a weaker critic.** The region's earlier teacher checkpoint (relaunch
+2 at 14k updates, latent critic — the reference's rejected architecture, which this loader
+accepts) inverts the picture: `|∂V/∂x'|` is 4–15 against 30–49, the physics walk retreats at both
+elbows (0.000 and 0.000) and reaches 0.089 and 0.115 at the two post-elbow states, while its
+`∂Q/∂a` walks 0.169 / 0.207 / 0.118 / 0.164 (at μ) and 0.141 / 0.181 (at hold, cell 1). One
+checkpoint at 14k updates against one at 125k is a critic-quality contrast, not a trend: the
+adjoint carries whatever the critic's state gradient holds, and a critic whose value barely moves
+with the cloth gives it nothing to carry. ~75 shared-GPU minutes for the three runs.
 
 **What this says about the actor.** The pieces of an SVG(1)-style update exist and work in the
 direction that counts: a TD-trained point-cloud critic supplies a `∂V/∂x'` that, pushed through
-the solver's one-decision Jacobian, walks both elbows over where the critic's own `∂Q/∂a`, the
-policy it trained and the scripted expert do not. What is missing is the smoothness the update
-would assume: `V`'s differences over 2 mm are mostly not its derivative, so a learner should treat
+the solver's one-decision Jacobian, walks both elbows over where the same critic's `∂Q/∂a` at
+the same action, the policy it trained and the scripted expert do not — with the dense critic at
+125k updates, and not with the 14k latent one. What is missing is the smoothness the update would
+assume: `V`'s differences over 2 mm are mostly not its derivative, a factor 2–7 of that being the
+observation's voxel and visibility switches and the rest the network, so a learner should treat
 `∂V/∂u` as a stochastic direction (small steps, averaged over decisions, behind the repeatability
-gate), not as a Newton step; the voxel and visibility switches are a cost of this observation
-model, not of the physics. The actor update proper — `μ_θ` moved along `∂V/∂u · ∂μ/∂θ` on gated
+gate), not as a Newton step. The actor update proper — `μ_θ` moved along `∂V/∂u · ∂μ/∂θ` on gated
 transitions inside the SAC loop — is a training run, not a probe, and is not started.
 
 ## What this does not claim
