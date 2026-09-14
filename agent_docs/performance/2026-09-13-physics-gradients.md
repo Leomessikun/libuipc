@@ -789,6 +789,53 @@ observation's voxel and visibility switches and the rest the network, so a learn
 gate), not as a Newton step. The actor update proper — `μ_θ` moved along `∂V/∂u · ∂μ/∂θ` on gated
 transitions inside the SAC loop — is a training run, not a probe, and is not started.
 
+## Level 3, third experiment: the physics direction as a training signal, critic frozen (2026-09-14) [MI]
+
+Owner's go for the step past the probes. `python -m uipc_manip.physics_gradient_finetune` asks
+whether a parametric policy absorbs the direction from a few hundred transitions. From the
+restored elbow state of a cell it collects 288 transitions (twelve 12-decision episodes of the
+checkpoint's stochastic policy and twelve of the proxy direction at the box with Gaussian action
+noise of 0.3), storing for each the physics direction `g_u = ∂V(x')/∂u` at the action taken (the
+dense critic differentiated through the observation, the last frame's device solve: 0.13–0.21 s
+per transition on top of the 1.3 s decision). It then fine-tunes three copies of the actor from
+the same weights on the same 600 batches of 64 (Adam at the checkpoint's actor learning rate,
+its gradient clip) with the critic frozen: `sac`, SAC's own actor loss `α log π − min Q(s, π(s))`
+through the frozen critic; `phys`, `−β · unit(g_u) · μ(s)`, the stored direction on the policy's
+mean action, a deterministic-policy-gradient surrogate with the solver's Jacobian in place of the
+critic's action derivative, `β` set once so its first gradient matches the SAC loss's in norm
+(1.2 at cell 3, 0.31 at cell 1); `both`, their sum. Every transition passed the executed-fraction
+gate. Each actor then runs deterministically for twelve decisions, twice, from the elbow it was
+tuned at and from a second state of the cell it never saw. `tests/test_physics_gradient_finetune.py`
+(2) checks the two losses' gradients on a linear actor.
+
+| evaluation (12 decisions, mean of 2) | untouched actor | `sac` | `phys` | `both` |
+|---|---|---|---|---|
+| cell 3 elbow @92 (tuned here) | 0.084, 38 N | **0.196**, 53 N | 0.158, 28 N | 0.128, 31 N |
+| cell 3 stall @116 (unseen) | 0.041, 27 N | 0.168, **318 N** | **0.222**, 18 N | 0.158, 24 N |
+| cell 1 elbow @85 (tuned here) | 0.011, 53 N | 0.000 (−24 mm), 40 N | **0.128**, 37 N | 0.075, 36 N |
+| cell 1 passed @125 (unseen) | 0.056 (−20 mm), 22 N | 0.116 (−17 mm), 49 N | **0.189**, 56 N | 0.165, 37 N |
+
+(coverage after twelve decisions and mean net normal force; repeat spread ≤ 0.007.) Both signals
+move the policy: the untouched actor barely passes cell 3's elbow (0.084) and not cell 1's
+(0.011). SAC's own loss through the frozen critic is the stronger signal at cell 3's elbow, the
+state it was tuned at (0.196 against 0.158), at twice the force; it turns cell 1's elbow into a
+retreat (0.000, the greedy-walk finding again, now in a trained policy) and, at the unseen stall of
+cell 3, gets its coverage by jamming the arm at 318 N. The physics direction trains a policy that
+passes both elbows (0.158 and 0.128), is the gentlest everywhere but one state, and is the better
+of the two at both unseen states (0.222 against 0.168, 0.189 against 0.116). The sum is between
+the two at every state, never the best. 288 transitions and 600 updates per cell; ~25 shared-GPU
+minutes for both cells, 0.13–0.21 s of physics gradient per transition.
+
+**Reading.** With a critic good enough to have a state gradient at the elbow (the dense one at
+125k updates), the solver's Jacobian turns it into an actor signal that a policy absorbs from a
+few hundred transitions and that carries to states it was not tuned on, with less force than the
+critic's own action derivative gives. That is the split working as a training signal, one cell at
+a time and with the critic frozen; what it is not is a training run — no critic learning, no
+replay, no held-out cells — and the numbers are two draws of a deterministic policy from one
+restored state each. The actor experiment inside the SAC loop now has its recipe: the `phys`
+term on gated transitions beside the SAC loss (not summed blindly: the sum was never the best),
+the device solve as the Jacobian, and evaluation on elbow states the policy was not tuned at.
+
 ## What this does not claim
 
 No policy has been trained with a physics gradient. Level 1 asks only whether the quantity is
@@ -798,7 +845,9 @@ differences at four states; Level 3's first experiment is open-loop trajectory o
 two elbow states with the chain as its gradient, not a learner, and most of its gain over the
 expert is the proxy direction driven at the action box; its second experiment follows a trained
 critic's gradient through the one-decision adjoint greedily for twelve decisions, which is a
-controller, not a learner, and reads one draw per walk. The field-level agreement is bounded by
+controller, not a learner, and reads one draw per walk; its third fine-tunes an actor on 288
+transitions from one elbow state with the critic frozen, two draws per evaluation, no critic
+learning, no replay, no held-out cells. The field-level agreement is bounded by
 the simulator's own run-to-run scatter, the linear model misses the free cloth's response at a
 jam, and over many decisions it reduces to a static sensitivity that carries no path dependence.
 Nothing here is a claim about a closed-loop policy, about states other than the seven probed, or

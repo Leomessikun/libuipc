@@ -2095,3 +2095,19 @@ contact system cannot recover from; the walk now dumps only after a decision. Wo
 issue on `World.dump()`/`recover()`.
 Tests: `test_physics_gradient_actor.py` (3). Record, README row and memory updated. ~1.3
 shared-GPU hours; the other sessions' processes untouched, their checkpoint read only.
+
+## 2026-09-14 — Physics gradients: the direction as a training signal, critic frozen
+
+Owner's "ok" for the step past the probes, kept to ~25 shared-GPU minutes.
+`python -m uipc_manip.physics_gradient_finetune` collects 288 transitions from one elbow state
+(stochastic policy and noisy proxy episodes) with the physics direction `∂V(x')/∂u` stored per
+transition (dense critic through the observation, last-frame device solve, 0.13–0.21 s each),
+then fine-tunes three actor copies on the same batches with the critic frozen — SAC's own actor
+loss, the physics direction on the mean action (`β` matched to the SAC gradient's norm once), and
+their sum — and evaluates each deterministically for twelve decisions at the tuned elbow and at
+an unseen state of the cell. Physics: passes both elbows (0.158, 0.128) and is the better and
+gentler signal at both unseen states (0.222 at 18 N vs 0.168 at 318 N; 0.189 vs 0.116). SAC's loss:
+stronger at cell 3's elbow (0.196 at 53 N), a retreat at cell 1's (0.000), a jam at cell 3's
+stall. The sum never best. `tests/test_physics_gradient_finetune.py` (2). Record section, README
+row, memory updated. Not a training run: critic frozen, one cell at a time, two draws per
+evaluation. The other sessions' processes untouched.
