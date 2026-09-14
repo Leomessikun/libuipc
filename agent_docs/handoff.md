@@ -2017,3 +2017,39 @@ forward-up direction and more than any single gradient, the expert (0 mm execute
 per-state random directions. Reading: the jam needs a policy that sequences release and advance,
 not a longer sensitivity; a short-horizon physics gradient with h ≥ 4 decisions carries that.
 [Record](performance/2026-09-13-physics-gradients.md), ~4 shared-GPU minutes, nothing else launched.
+
+## 2026-09-14 — Physics gradients: rotation at the elbows, the adjoint validated, the export inside the solver
+
+Owner's go for the whole line ("do them all"). (1) The two quiet elbows re-probed with the two
+rotation axes the environment executes (0.5°, 1°, 2.5°) and every walk three times: coverage is
+flat in all five dimensions at both, decisions scatter 1–1.5 mm but walk outcomes do not; the 5-D
+axis-proxy gradient (translation + rotation) walks cell 3's elbow over with +0.077 coverage (3× the
+expert at half its travel) and stays below the expert at cell 1 (+0.015 vs +0.027), so the elbow
+needs the critic for generality and the 5-D walk is Level 3's baseline. (2) Level 2a, no backend
+change: `python -m uipc_manip.physics_gradient_adjoint` reads the engine's `dump_linear_system`
+files (or the Level 2b export), chains a decision's six Hessians through the BDF1 inertia term and
+the soft position constraint's cross term, and compares the reverse pass with 1–2 mm central
+differences of the objective and the tangent pass with differences of every vertex: smooth
+objective cosine 0.989–0.995 at four states (both stalls, the jam, a passed state), free-cloth field
+within 25 % in magnitude where contact is light, not at the jam (cosines 0.14–0.23 on two axes).
+The first pass had halved the cloth's mass — `thickness` is a half-thickness in libuipc
+(`compute_vertex_volume`: `h = 2 r`) — and had blamed a doubled constraint stiffness; the script now
+uses the backend's `volume` attribute, `uipc_test_diff_sim` measures the constraint's block as
+exactly `s·m·I`, and the environment's cloth is twice as heavy as `cloth_thickness` reads. (3)
+Level 2b: `LinearSystemAdjointFeature` (`diff_sim/linear_system_adjoint`, core + CUDA + pybind)
+exports the frame's assembled `bcoo_A` and `b` after every advance and solves `H x = rhs` by
+iterative refinement over the frame's own PCG (the env's `tol_rate` 1e-2 gives residual 3.6 unrefined,
+2e-7 refined, 0.15 s); one-process check on the dressing scene: exported and dumped systems are
+bit-identical, a solve between decisions leaves the next one within the run-to-run scatter.
+`apps/tests/diff_sim` is a new module-loading test target (`backend_cuda` cannot host a `World`:
+duplicate kernels). Tests: `test_physics_gradient_probe.py` (4), `test_physics_gradient_adjoint.py`
+(3, readers agree, reverse = transpose of tangent), `test_physics_gradient_trajopt.py` (4, the
+multi-decision chain's last decision equals the one-decision adjoint, command bookkeeping against
+differences of the linearised aim model, refused substeps contribute nothing, coverage gradient on
+the hit triangle). `python -m uipc_manip.physics_gradient_trajopt` (Level 3's first experiment:
+open-loop trajectory optimisation of 12 decisions at an elbow with the 72-frame chain, rotation
+included, executed-command derivatives, first-decision check against differences) is written and
+running; results not yet recorded. Build: this tree's CUDA backend and pyuipc built in `build/`
+with the dedicated toolchain (memory `libuipc-build-toolchain`); the shared training venv keeps
+the 0.0.28 wheel. [Record](performance/2026-09-13-physics-gradients.md); ~110 shared-GPU minutes
+over the day, nothing else launched, the other sessions' runs untouched.

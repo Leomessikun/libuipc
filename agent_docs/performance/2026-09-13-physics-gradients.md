@@ -471,59 +471,105 @@ hold decision, reads the six frames' last Hessians back (11,679 DOFs: a 12-DOF f
 and 3,889 cloth vertices; 452k nonzeros; 3.6 MB each; scipy LU 0.3 s each), and runs
 
 - the reverse pass `H_f λ_f = ĝ_f`, `ĝ_6 = ∂L/∂x_6`, `ĝ_f = 2Mλ_{f+1} − Mλ_{f+2}` (BDF1 inertia,
-  `x̃_f = 2x_{f−1} − x_{f−2} + g dt²`, lumped masses from the rest mesh), with the gripper entering
+  `x̃_f = 2x_{f−1} − x_{f−2} + g dt²`, lumped masses density × the backend's vertex volumes), with the gripper entering
   through the soft position constraint on the 48 held vertices, `∂L/∂Δ = Σ_f (f/6) Σ_I K_I λ_{f,I}`;
 - the tangent pass, the same linear algebra forward, giving the full response `∂x_6/∂Δ` of every
   cloth vertex to each translation axis, compared with central differences of every vertex position.
 
-Cell 3's stall (the expert's `align_yaw` stall, 23 N, two Newton iterations per frame), 1 mm and
-2 mm differences:
+Cell 3's stall (the expert's `align_yaw` stall, 26 N, two Newton iterations per frame), two draws
+of the state (the expert's re-drive lands within 0.2 mm of itself), 1 mm and 2 mm differences:
 
 | quantity | reverse pass vs differences (cosine / magnitude ratio) | note |
 |---|---|---|
-| held vertices' own response to their aim | **1.000 / 0.996** (measured 0.999 per metre) | after the constraint-stiffness correction below |
-| free cloth response field (all other vertices) | 0.87–0.93 / 0.72–0.80 per axis | the six-frame chain beats the last frame alone by 0.03–0.06 in cosine |
-| upper-arm axis reading (linear objective) | **0.988 at 1 mm, 1.000 at 2 mm** / 0.77, 0.71 | passes the 0.95 gate on direction |
-| contact energy | 0.74 at 1 mm, 0.13 at 2 mm | its own differences disagree between 1 and 2 mm by 6×: not a smooth function of the command at this scale |
+| held vertices' own response to their aim | **1.000 / 0.997–1.000** (they follow 0.999 of a commanded metre, predicted 0.995–0.998) | with the backend's own vertex volumes (the correction below) |
+| free cloth response field (all other vertices) | 0.88–0.97 / 0.96–1.02 per axis in one draw, 0.71–0.97 / 0.75–1.02 in the other | the six-frame chain beats the last frame alone by 0.01–0.17 in cosine |
+| upper-arm axis reading (linear objective) | **0.989–0.993 at 1 mm, 0.987–0.997 at 2 mm** / 0.83–0.85, 0.73–0.95 | passes the 0.95 gate on direction |
+| contact energy | 0.65–0.76 at 1 mm, 0.56–0.75 at 2 mm | its own differences disagree between 1 and 2 mm by up to 6×: not a smooth function of the command at this scale |
 
-Two things the check settled that the source reading had not. (i) **The constraint's assembled
-stiffness is `2·s·m`, not `s·m`**: with the source's `½ s m ‖x − aim‖²` the predicted response of
-the held vertices was exactly half the measured one (0.498 against 0.999, cosine 1.000); with the
-factor 2 it is 0.996. Either the wheel's energy carries no one-half or the block is counted twice
-in assembly; the probe's `--constraint-factor` (default 2) carries it, and the same check on the
-tree's own build is below. (ii) **The 20–25 % magnitude shortfall on the free cloth is the price of
-the assembled Hessian**: every element and contact block is projected to positive semidefinite
-before assembly (28 `make_spd` sites), which makes `H` stiffer than the true `∂²E/∂x²` and its
-inverse response smaller; friction's lagged tangent basis, which the chain ignores, is the other
-candidate. Direction survives it, magnitude does not, which is what the reverse pass is for in a
-learner (the critic sets the scale) and what a greedy gradient controller would have to live with.
+Two things the check settled that the source reading had not, one of them wrongly at first.
+(i) **`thickness` is a half-thickness in libuipc.** The first pass lumped the cloth's mass as
+density × thickness × area / 3 and found the held vertices responding to exactly twice the
+predicted amount (0.498 against 0.999 per commanded metre); it blamed a doubled constraint
+stiffness. The backend's own vertex volume is twice that (`src/geometry/compute_vertex_volume.cpp`
+takes `h = 2 r` for a shell), so the mass is twice that, and the constraint's assembled block is
+exactly `s·m·I` with the backend's `m`: `uipc_test_diff_sim` differences the held vertex's exported
+diagonal block between strengths 100 and 200 on a tetrahedron at rest and gets `100 · m · I` to
+1e-6, no time-step factor, no double count. The script now reads the `volume` attribute the
+constitution wrote instead of recomputing it (`--constraint-factor` is 1). The same convention makes
+the environment's cloth (`cloth_thickness` 0.15 mm) twice as heavy as the parameter reads; nothing
+measured in this directory depends on it, but it is the value to quote. (ii) **With the right masses
+the free cloth's response is reproduced in magnitude as well** (0.96–1.02 per axis in one draw at
+cell 3, 0.75–1.02 in the other): the 20–25 % shortfall the first pass attributed to the
+positive-semidefinite projection of the assembled Hessian was the halved inertia coupling in the
+chain. What the projection (28 `make_spd` sites) and friction's lagged tangent basis cost is, at
+cell 3, within the draw-to-draw spread; where the linear model does fail is the jam (below).
 
-Cost on this mesh: six dumps and six factorisations per decision took under 3 s on the host; the
-same solves on the device with the engine's PCG are milliseconds, and a stored matrix is 3.6 MB,
-so a device-side ring of the last 24–48 frames (a four-to-eight-decision horizon) is 100–200 MB.
+The field check is noise-limited. A 1 mm command moves a free vertex by 0.2–0.3 mm RMS, while two
+identical decisions from the same restored state differ by 0.07–0.14 mm at cell 3 (measured in the
+Level 2b check below), so a field cosine near 0.9 is close to the ceiling this simulator allows;
+the objective-level readings sum the opening's vertices and are less exposed.
 
-**Two more states, and the tree's own build.** The same check at cell 2's stall (the jam at
-49 N, 20,523 DOFs, three Newton iterations per frame) and cell 1's passed state (27 N, three
-iterations), plus cell 3's stall again on this tree's CUDA build instead of the 0.0.28 wheel:
+Cost on this mesh: six exports (1.5–2.2 s) and six host factorisations (1.7–3.7 s) per decision;
+the backend's own solve reaches 1e-6 in 0.12–0.20 s (Level 2b), and a stored matrix is 3.6–7 MB,
+so a device-side ring of the last 24–72 frames (a four-to-twelve-decision horizon) is 100–500 MB.
 
-| state | axis reading: cosine at 1 / 2 mm | contact energy: cosine at 1 / 2 mm | free cloth field: cosine / magnitude | held vertices |
+**Two more states.** The same check at cell 2's stall (the jam at 51 N, 20,523 DOFs, three
+Newton iterations per frame) and cell 1's passed state (25 N), all on this tree's CUDA build
+through the Level 2b export (the exported systems are the dumped ones, below; the wheel's dump
+path had given the same objective cosines within 0.01 before the mass correction):
+
+| state | axis reading: cosine at 1 / 2 mm (magnitude at 1 mm) | contact energy: cosine at 1 / 2 mm | free cloth field: cosine / magnitude per axis | held vertices |
 |---|---|---|---|---|
-| cell 3 stall (wheel) | **0.988 / 1.000** | 0.74 / 0.13 | 0.87–0.93 / 0.72–0.80 | 1.000 / 0.996 |
-| cell 3 stall (tree build) | **0.986 / 0.987** | 0.70 / 0.67 | 0.87–0.93 / 0.72–0.79 | 1.000 / 0.995 |
-| cell 2 stall (jammed, 49 N) | **0.977** / 0.931 | 0.94 / 0.76 | 0.51–0.70 / 0.40–0.65 | 1.000 / 0.995 |
-| cell 1 passed | **0.987 / 0.994** | **0.97 / 0.97** | 0.75–0.85 / 0.62–0.72 | 1.000 / 0.995 |
+| cell 3 stall, two draws (26 N) | **0.989–0.993 / 0.987–0.997** (0.83–0.85) | 0.65–0.76 / 0.56–0.75 | 0.71–0.97 / 0.75–1.02 | 1.000 / 0.997–1.000 |
+| cell 2 stall, the jam (51 N) | **0.992** / 0.935 (0.72) | **0.97** / 0.72 | x 0.14, y 0.23, z 0.92 / 0.61, 0.40, 0.90 | 1.000 / 0.99–1.00 |
+| cell 1 passed (25 N) | **0.995 / 0.997** (0.64) | 0.89 / **0.99** | 0.84–0.94 / 0.91–1.11 | 1.000 / 0.99–1.00 |
 
-The smooth objective's direction passes the gate at every state at 1 mm (0.977–0.988) and at
-two of three at 2 mm; the contact energy passes only where it is itself smooth (cell 1's passed
-state). The free cloth's response is reproduced best where contact is light (cell 3, 23 N) and
-worst at the jam (cell 2), which is where the projected contact blocks dominate the Hessian: the
-approximation's cost is state-dependent and largest exactly where the load is. The tree's build
-reproduces the wheel's numbers, including the factor 2 on the constraint stiffness — so the
-double count is in the shared source, not a wheel-specific difference; the Level 2b feature
-below reads the same matrices.
+The smooth objective's direction passes the gate at every state at 1 mm (0.989–0.995) and in
+three of four draws at 2 mm; its magnitude is 15–35 % short, most at cell 1's passed state. The
+contact energy passes only where it is itself smooth. The free cloth's full response is
+reproduced where contact is light (cells 3 and 1: cosines 0.71–0.97, magnitudes within 25 % of
+one) and not at the jam, where two of three axes come back at 0.14 and 0.23: there the measured
+1 mm response of the free cloth is contact rearrangement, partly noise (the state repeats within
+0.2 mm) and partly what the projected Hessian does not carry, while the objective's direction
+still is. The linear model's cost is state-dependent and largest exactly where the load is, which
+is what the per-state repeatability gate is for.
+
+## Level 2b: the export and the solve inside the solver (2026-09-14) [MI]
+
+`LinearSystemAdjointFeature` (`diff_sim/linear_system_adjoint`; header
+`include/uipc/diff_sim/linear_system_adjoint_feature.h`, CUDA side
+`src/backends/cuda/linear_system/linear_system_adjoint.cu`, Python
+`uipc.diff_sim.LinearSystemAdjointFeature`) exposes, after every `World.advance()`, the system the
+frame's last Newton iteration assembled: `export_system()` copies `GlobalLinearSystem`'s
+block-sparse `bcoo_A` (the upper block triangle after symmetric compression, 3×3 blocks) and its
+gradient `b` to host arrays, and `solve(rhs, rel_tol, max_rounds)` runs the frame's own PCG with
+its preconditioner on a caller's right-hand side by iterative refinement (`x += solve(rhs − H x)`
+with the backend's own sparse product) until the relative residual reaches `rel_tol`, then puts
+the frame's `b` and `x` back. Refinement is not optional: the environment runs the frame solver at
+`linear_system/tol_rate` 1e-2 (an inexact Newton step), and a single solve on a random right-hand
+side of the dressing system came back with relative residual 3.6; refined, it reaches 2–3e-7 in
+0.12–0.20 s on the 11.7k- and 20.5k-DOF systems and agrees with the host factorisation to 2–3e-8.
+`apps/tests/diff_sim/linear_system_adjoint.cpp` (`uipc_test_diff_sim`, 174 assertions) checks the
+export's symmetry and finiteness, the refined solve against the exported matrix, that the frame's
+gradient is restored and a second solve repeats the first, the size checks, that the world still
+advances, and the constraint-stiffness differential above. It is a module-loading test target
+(like `sim_case`) because `backend_cuda`, which links the backend's objects into the binary, cannot
+host a `World`: every kernel exists twice and launches fail with "invalid resource handle".
+
+Checked on the dressing scene in one process (`--source feature --compare-dump`, twice at cell 3's
+stall): the six exported systems are the six dumped ones to the bit (same block pattern, 452–453k
+nonzeros, zero difference in every value and in the gradient), and a solve between two decisions
+leaves the second within the run-to-run scatter (0.14 mm against 0.07–0.09 mm between two plain
+repeats; one sample each). Export costs 0.25–0.37 s per frame (1.5–2.2 s per decision: host copy
+and block expansion), the host factorisation 0.3–0.6 s per frame, so a decision's six systems
+cost 3–6 s to export and factorise. That sets the size of the first Level 3 experiment; a
+device-side ring of past frames' matrices would remove the export. ~33 shared-GPU minutes.
 
 ## What this does not claim
 
 No policy has been trained with a physics gradient. Level 1 asks only whether the quantity is
-well defined and locally informative at the states that matter; Level 2 (the adjoint in the
-backend) and Level 3 (the short-horizon actor with a terminal critic) are not built.
+well defined and locally informative at the states that matter; Level 2 (the adjoint through the
+solver's systems, and the export and solve inside the solver) is built and checked against
+differences at four states; Level 3 (the short-horizon actor with a terminal critic) is not built.
+The field-level agreement is bounded by the simulator's own run-to-run scatter, and the linear
+model is known to miss the free cloth's response at a jam.

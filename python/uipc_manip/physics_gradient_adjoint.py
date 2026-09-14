@@ -167,12 +167,26 @@ def cloth_layout(env, constraint_factor: float = 1.0) -> dict:
     cell = env.cells[0]
     x0, faces = np.asarray(cell.cloth, dtype=np.float64), np.asarray(cell.faces)
     n = x0.shape[0]
-    area = 0.5 * np.linalg.norm(np.cross(x0[faces[:, 1]] - x0[faces[:, 0]], x0[faces[:, 2]] - x0[faces[:, 0]]), axis=1)
-    mass = np.zeros(n)
-    for k in range(3):
-        np.add.at(mass, faces[:, k], area / 3.0)
-    mass *= float(env.cfg.cloth_density) * float(env.cfg.cloth_thickness)
-    return {"dof_offset": dof_offset, "dof_count": dof_count, "vertex_offset": vertex_offset, "n": n, "mass": mass,
+    # The backend lumps density × the vertex volume it computed at apply_to; for a shell that volume is
+    # area × 2 × thickness / 3 per incident triangle, `thickness` being a half-thickness in libuipc
+    # (src/geometry/compute_vertex_volume.cpp). Read the attribute; recompute it only when it is missing.
+    volume = None
+    try:
+        attr = geo.vertices().find(builtin.volume)
+        if attr is not None:
+            volume = np.asarray(uipc.view(attr), dtype=np.float64).reshape(-1)
+    except Exception:  # noqa: BLE001 - an older wheel without the attribute name
+        volume = None
+    if volume is not None and volume.shape[0] == n:
+        mass_source = "density x backend vertex volume"
+    else:
+        area = 0.5 * np.linalg.norm(np.cross(x0[faces[:, 1]] - x0[faces[:, 0]], x0[faces[:, 2]] - x0[faces[:, 0]]), axis=1)
+        volume = np.zeros(n)
+        for k in range(3):
+            np.add.at(volume, faces[:, k], area * 2.0 * float(env.cfg.cloth_thickness) / 3.0)
+        mass_source = "density x area x 2 thickness / 3 (attribute missing)"
+    mass = float(env.cfg.cloth_density) * volume
+    return {"dof_offset": dof_offset, "dof_count": dof_count, "vertex_offset": vertex_offset, "n": n, "mass": mass, "mass_source": mass_source,
             "strength": float(env.cfg.constraint_strength) * constraint_factor, "anchor_idx": np.asarray(env._pickers[0]["anchor_idx"]),
             "opening_idx": np.asarray(cell.opening_idx), "axis": (cell.shoulder - cell.elbow) / np.linalg.norm(cell.shoulder - cell.elbow)}
 
@@ -315,23 +329,34 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--stall-window", type=int, default=15)
     p.add_argument("--max-steps", type=int, default=300)
     p.add_argument("--check-only", action="store_true", help="Build, take one decision, report where the dump landed.")
-    p.add_argument("--constraint-factor", type=float, default=2.0,
-                   help="The soft position constraint's assembled stiffness as a multiple of strength × mass "
-                        "(2 for an energy without the one-half; the held vertices' measured response settles it).")
+    p.add_argument("--constraint-factor", type=float, default=1.0,
+                   help="The soft position constraint's assembled stiffness as a multiple of strength × the backend's "
+                        "lumped mass (1: the kernel writes s·m·I; the held vertices' measured response confirms it).")
     p.add_argument("--keep-last-matrix", action="store_true", help="Copy the last frame's A file next to the record.")
     p.add_argument("--source", choices=("dump", "feature"), default="dump",
                    help="Where the Hessians come from: the engine's debug dump (any build) or the "
                         "LinearSystemAdjointFeature export (this tree's build).")
+    p.add_argument("--compare-dump", action="store_true",
+                   help="With --source feature: switch the engine's dump on as well, compare every exported system "
+                        "with the file the engine wrote for the same frame, and check that a solve between two "
+                        "decisions leaves the second one alone.")
     args = p.parse_args(argv)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    if args.source == "dump":
+    if args.source == "dump" or args.compare_dump:
         enable_linear_system_dump()
     t0 = time.time()
     env = probe.build_env(args.garment, args.body, args.region, out / "work")
     record = {"garment": args.garment, "body": args.body, "state": args.state, "build_s": time.time() - t0,
               "dt": float(env.cfg.dt), "action_repeat": int(env.cfg.action_repeat), "workspace": str(workspace_of(env))}
+    # Drive with the dump on, discarding the files after every decision.
+    original_decision = probe.decision
+
+    def decision_discarding(env_, action):
+        out_ = original_decision(env_, action)
+        clear_dumps(env_)
+        return out_
     try:
         if args.check_only:
             env.reset([0])
@@ -340,13 +365,6 @@ def main(argv: list[str] | None = None) -> None:
             print(f"[adjoint-check] switch={dump_switch_value(env)} workspace={workspace_of(env)} "
                   f"files={len(files)} first={[str(f) for f in files[:3]]} frame={env._world.frame()}", flush=True)
             return
-        # Drive with the dump on, discarding the files after every decision.
-        original_decision = probe.decision
-
-        def decision_discarding(env_, action):
-            out_ = original_decision(env_, action)
-            clear_dumps(env_)
-            return out_
         probe.decision = decision_discarding
         snaps, trace = probe.drive_to_snapshots(env, args.stall_window, 0.01, args.max_steps)
         probe.decision = original_decision
@@ -375,6 +393,25 @@ def main(argv: list[str] | None = None) -> None:
             for rows, cols, values, gradient in systems:
                 H.append(system_to_matrix(rows, cols, values, dofs))
             record["frames"] = [{"frame": frame_before + 1 + k, "triplets": int(len(s[0]))} for k, s in enumerate(systems)]
+            if args.compare_dump:
+                frames = dumped_frames(env)
+                wanted = [f for f in sorted(frames) if frame_before < f <= frame_before + int(env.cfg.action_repeat)]
+                if len(wanted) != len(systems):
+                    raise RuntimeError(f"expected {len(systems)} dumped frames after {frame_before}, found {sorted(frames)}")
+                record["dump_vs_feature"] = []
+                for k, (f, (rows, cols, values, gradient)) in enumerate(zip(wanted, systems, strict=True)):
+                    a_path = frames[f][max(frames[f])]
+                    h_dump, _ = read_symmetric(a_path)
+                    b_dump = np.asarray(scipy.io.mmread(a_path.with_name(a_path.name.replace("A.", "b.", 1))), dtype=np.float64).reshape(-1)
+                    diff = (H[k] - h_dump).tocoo()
+                    record["dump_vs_feature"].append({
+                        "frame": int(f), "newton_iterations": int(max(frames[f]) + 1),
+                        "matrix_max_abs_diff": float(np.abs(diff.data).max()) if diff.nnz else 0.0, "matrix_max_abs": float(np.abs(h_dump.data).max()),
+                        "nnz_export": int(H[k].nnz), "nnz_dump": int(h_dump.nnz),
+                        "gradient_max_abs_diff": float(np.abs(np.asarray(gradient, dtype=np.float64) - b_dump).max()),
+                        "gradient_max_abs": float(np.abs(b_dump).max())})
+                clear_dumps(env)
+                probe.decision = decision_discarding  # keep the remaining decisions from filling the workspace
             # The backend's own solve against the last frame, checked against the host factorisation below.
             g_probe = np.zeros(dofs)
             rng = np.random.default_rng(0)
@@ -384,6 +421,20 @@ def main(argv: list[str] | None = None) -> None:
             x_backend = np.asarray(x_backend)
             record["feature_solve_s"] = time.time() - t1
             record["feature_solve_check"] = {"g": g_probe, "x": x_backend, "reached": float(reached)}
+            if args.compare_dump:
+                # A solve between two decisions must not change the second one beyond the run-to-run
+                # noise. (After this the backend holds another frame's system, so the solve above is
+                # the one checked against the exported matrix.)
+                def two_holds(solve_between: bool) -> np.ndarray:
+                    probe.restore(env, snap)
+                    probe.decision(env, np.zeros(6))
+                    if solve_between:
+                        feature.solve(np.random.default_rng(1).standard_normal(dofs), 1e-6, 32)
+                    probe.decision(env, np.zeros(6))
+                    return env.positions()[0].reshape(-1)
+                p_plain, p_solved, p_again = two_holds(False), two_holds(True), two_holds(False)
+                record["solve_perturbation"] = {"with_solve_vs_without_m": float(np.abs(p_solved - p_plain).max()),
+                                                "repeat_vs_repeat_m": float(np.abs(p_again - p_plain).max())}
         else:
             clear_dumps(env)
             hold = probe.decision(env, np.zeros(6))
@@ -457,6 +508,15 @@ def main(argv: list[str] | None = None) -> None:
             record["comparison"][name] = row
         record["accepted"] = all(record["comparison"][n][f"adjoint_chain_vs_fd_{args.epsilons_mm[0]:g}mm"]["cosine"] >= ACCEPT_COSINE
                                  for n in objectives)
+        if "dump_vs_feature" in record:
+            worst = max(record["dump_vs_feature"], key=lambda r: r["matrix_max_abs_diff"] / r["matrix_max_abs"])
+            print(f"[adjoint-dump-vs-feature] frames={[r['frame'] for r in record['dump_vs_feature']]} "
+                  f"nnz export/dump={[(r['nnz_export'], r['nnz_dump']) for r in record['dump_vs_feature']]} "
+                  f"worst matrix diff={worst['matrix_max_abs_diff']:.2e} of {worst['matrix_max_abs']:.2e} "
+                  f"gradient diff={max(r['gradient_max_abs_diff'] for r in record['dump_vs_feature']):.2e} of "
+                  f"{max(r['gradient_max_abs'] for r in record['dump_vs_feature']):.2e}; second decision moved by "
+                  f"{record['solve_perturbation']['with_solve_vs_without_m']:.2e} m with a solve in between, "
+                  f"{record['solve_perturbation']['repeat_vs_repeat_m']:.2e} m between two plain repeats", flush=True)
         if "feature_solve_check" in record:
             print(f"[adjoint-feature] export {record['export_s']:.2f}s for {len(H)} frames; backend solve vs host LU: "
                   f"cos={record['feature_solve_check']['cosine_vs_host_lu']:.6f} rel_err={record['feature_solve_check']['relative_error_vs_host_lu']:.2e} "
@@ -474,7 +534,8 @@ def main(argv: list[str] | None = None) -> None:
               f"held={[round(fc['held'][a]['magnitude_ratio'], 3) for a in 'xyz']} free={[round(fc['free'][a]['magnitude_ratio'], 3) for a in 'xyz']} "
               f"| held follow fd={np.round(fc['held_follow']['fd'], 3).tolist()} tangent={np.round(fc['held_follow']['tangent'], 3).tolist()}", flush=True)
     finally:
-        if args.source == "dump":
+        probe.decision = original_decision
+        if args.source == "dump" or args.compare_dump:
             clear_dumps(env)
         suffix = "" if args.source == "dump" else ".feature"
         (out / f"{args.garment}_{args.body}.{args.state}{suffix}.json").write_text(json.dumps(record, indent=1, default=float) + "\n")
