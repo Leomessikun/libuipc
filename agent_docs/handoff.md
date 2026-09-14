@@ -2150,3 +2150,35 @@ The existing physics actor signal remains a distinct experiment. A standalone
 NumPy check (`python3 scripts/verify_iaql_design.py`) passes 24 finite-difference
 cases and adjoint/tangent/error-bound identities; it exercises synthetic
 equations, not the production backend or learner. No IAQL training launched.
+
+## 2026-09-14 — IAQL benchmark prototype: gate, fixed-teacher fit, refit control, tolerance and friction probes; pair launched
+
+Takeover of the Codex session's uncommitted implementation of ADR 0008. Its
+work: `iaql_env` (a direct-picker `cloth_drag` variant with x/v state read
+through `FiniteElementStateAccessorFeature`), `iaql.soft_targets` /
+`derivative_loss`, `SACAgent.update_state_batch` with the `state` actor and
+matched SiLU networks, `tangent_pass(return_frames=True)`, `iaql_benchmark`
+and its tests; it had diagnosed a stale-velocity adapter and a ReLU kink in
+the gate, switched both arms to SiLU and launched `silu_friction0_s0`, which
+finished at 16:05: gate 4/4 at friction 0 (Bellman cosine ≥ 0.9987, relative
+error 0.011–0.19 rising with the number of guided drag steps), fixed-teacher
+fit held-out slope cosine 0.38 → 0.84 at β = 0.1 with unchanged value error,
+256-step online smoke inconclusive (no success in either arm). Added here:
+`--phase refit` (CPU, on the saved dataset) — shuffled labels never help and
+at β = 1 destroy slopes and values, the train-mean slope has zero cosine,
+paired labels reach 0.84 at β ≥ 0.1, so the gain is the physics; strict Newton
+tolerance (1e-5) changes nothing at the three dragged states (errors identical
+to three digits, forward 1.6–2.2× slower), so the residual 5–21 % tangent
+error is the SPD-projected retained matrix, not convergence; friction 0.6
+fails the gate (1/4: Bellman error 0.11 / 0.37 / 0.77 / 0.26, reward-gradient
+error up to 0.68, hence the mechanics — the inertia-only chain lacks the
+lagged friction terms), so no frictional learning run without those terms or
+a trust weight. The online loop now keeps every TD transition with a bounded
+mechanics sidecar (`--tangent-rows`), evaluates periodically from a snapshot
+and runs one arm per process. Full CPU suite 376 passed, 14 CUDA-marked
+deselected. Launched 16:24 (`scratchpad/run_iaql_pair_now.sh`, logs
+`output/iaql/online5k_s0_{sac,iaql}.log`): the matched pair at friction 0,
+5,000 steps per arm in parallel, two updates per step, β 0.1, evaluation of
+3 × 50 steps every 500; about 1.7 s per step on the shared GPU, so 2.5–3 h per
+arm. Not yet evaluated. The other sessions' jobs untouched.
+[Record](performance/2026-09-14-iaql-benchmark.md).

@@ -254,6 +254,26 @@ def _sample_head(mu: torch.Tensor, log_std: torch.Tensor, compute_pi: bool, comp
     return mu, pi, log_pi, log_std
 
 
+class StateActor(nn.Module):
+    """Full-state diagnostic actor; shares the existing squashed Gaussian head."""
+
+    history = None
+    encoder = None
+
+    def __init__(self, state_dim, action_dim, hidden_dim, log_std_min=-10.0, log_std_max=2.0):
+        super().__init__()
+        self.trunk = mlp([state_dim, hidden_dim, hidden_dim, 2 * action_dim])
+        self.log_std_min, self.log_std_max = log_std_min, log_std_max
+        self.apply(_weight_init)
+
+    def head(self, obs, detach_encoder=False):
+        mu, log_std = self.trunk(obs).chunk(2, dim=-1)
+        return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
+
+    def forward(self, obs, compute_pi=True, compute_log_pi=True, detach_encoder=False):
+        return _sample_head(*self.head(obs), compute_pi, compute_log_pi)
+
+
 class Actor(nn.Module):
     """Squashed Gaussian policy on ``[encoder(points), extra]``."""
 

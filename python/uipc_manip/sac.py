@@ -23,7 +23,7 @@ import torch
 import torch.nn.functional as F
 
 from .history import RolloutHistory
-from .models import Actor, CategoricalCritic, Critic, EncoderConfig, PrivilegedCritic, WangFlowActor, _sample_head, reuse_neighbourhoods
+from .models import Actor, CategoricalCritic, Critic, EncoderConfig, PrivilegedCritic, StateActor, WangFlowActor, _sample_head, reuse_neighbourhoods
 from .obs import FLAG_TOOL, ObsSpec
 from .rlt import RLTConfig
 
@@ -92,6 +92,8 @@ class SACConfig:
     # fraction of a transition's command for its direction to count.
     physics_actor_weight: float = 0.0
     physics_actor_gate: float = 0.5
+    adjoint_weight: float = 0.0
+    adjoint_gradient_scale: float = 1.0
     grad_clip_max_norm: float = 0.0
     random_shift_scale: float = 0.0
     point_jitter_scale: float = 0.0
@@ -99,7 +101,9 @@ class SACConfig:
     actor_log_std_max: float = 2.0
     use_extra: bool = True
     actor_type: str = "wang-flow"
-    """``wang-flow`` reads the tool point of a segmentation encoder (the reference); ``flat`` pools globally."""
+    """``wang-flow`` reads the tool point, ``flat`` pools globally, ``state`` is the IAQL diagnostic MLP."""
+    state_activation: str = "relu"
+    """State benchmark only: relu or silu, matched across scalar and adjoint runs."""
     algo: str = "sac"
     """``sac`` is the scalar reference critic; ``flashsac`` is the bounded categorical critic."""
     num_bins: int = 51
@@ -243,17 +247,29 @@ class SACAgent:
             if cfg.random_shift_scale > 0.0 or cfg.point_jitter_scale > 0.0:
                 raise ValueError("Stochastic observation augmentation is not temporally consistent across a window; "
                                  "disable it for a frame history")
-        if cfg.actor_type == "wang-flow":
+        if cfg.actor_type == "state":
+            if cfg.critic_input != "privileged" or cfg.privileged_dim <= 0 or history != 1 or cfg.algo != "sac":
+                raise ValueError("State actor requires a scalar privileged critic and history_length=1")
+            if cfg.encoder_precision != "fp32" or cfg.random_shift_scale or cfg.point_jitter_scale:
+                raise ValueError("State benchmark requires fp32 without point augmentation")
+            self.actor = StateActor(cfg.privileged_dim, action_dim, cfg.hidden_dim,
+                                    cfg.actor_log_std_min, cfg.actor_log_std_max).to(self.device)
+        elif cfg.actor_type == "wang-flow":
             actor_cls = WangFlowActor
         elif cfg.actor_type == "flat":
             actor_cls = Actor
         else:
             raise ValueError(f"Unknown actor_type {cfg.actor_type!r}")
-        self.actor = actor_cls(
-            spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.actor_log_std_min,
-            cfg.actor_log_std_max, cfg.trunk_style, cfg.trunk_blocks, history_length=history,
-            history_kind=cfg.history_kind, rlt=cfg.rlt,
-        ).to(self.device)
+        if cfg.actor_type != "state":
+            self.actor = actor_cls(
+                spec, action_dim, cfg.hidden_dim, cfg.encoder, cfg.use_extra, cfg.actor_log_std_min,
+                cfg.actor_log_std_max, cfg.trunk_style, cfg.trunk_blocks, history_length=history,
+                history_kind=cfg.history_kind, rlt=cfg.rlt,
+            ).to(self.device)
+        if not np.isfinite([cfg.adjoint_weight, cfg.adjoint_gradient_scale]).all() or cfg.adjoint_weight < 0 or cfg.adjoint_gradient_scale <= 0:
+            raise ValueError("Adjoint weight must be nonnegative and gradient scale positive")
+        if cfg.adjoint_weight and cfg.actor_type != "state":
+            raise ValueError("IAQL target refresh currently supports the full-state benchmark only")
         if cfg.critic_input == "privileged":
             if cfg.algo != "sac" or int(cfg.privileged_dim) <= 0:
                 raise ValueError("The privileged critic is the scalar 'sac' critic and needs privileged_dim > 0")
@@ -277,6 +293,18 @@ class SACAgent:
         self.critic = make_critic().to(self.device)
         self.critic_target = make_critic().to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
+        if cfg.actor_type == "state":
+            if cfg.state_activation not in ("relu", "silu"):
+                raise ValueError("Unknown state activation")
+            if cfg.state_activation == "silu":
+                def smooth(module):
+                    for name, child in list(module.named_children()):
+                        if isinstance(child, torch.nn.ReLU):
+                            setattr(module, name, torch.nn.SiLU())
+                        else:
+                            smooth(child)
+                for module in (self.actor, self.critic, self.critic_target):
+                    smooth(module)
         if cfg.encoder_precision == "bf16":
             # Q values here run near 90 where bfloat16 resolves about 0.5, so only the point work is lowered.
             for module in (self.actor, self.critic, self.critic_target):
@@ -341,6 +369,8 @@ class SACAgent:
 
     # ------------------------------------------------------------------
     def _unpack(self, flat: torch.Tensor, augment: bool = False):
+        if self.cfg.actor_type == "state":
+            return flat
         pos, feat, valid, extra = self.spec.unpack_torch(flat)
         if self._cut_padding:
             used = valid.any(dim=0).nonzero()
@@ -375,7 +405,8 @@ class SACAgent:
     def act(self, obs: np.ndarray, deterministic: bool, history: RolloutHistory | None = None) -> np.ndarray:
         """Act on one observation per stream. A history-aware policy reads ``history`` and records the
         decision into it; the caller resets the streams whose physics ended."""
-        obs = np.asarray(obs, dtype=np.float32).reshape(-1, self.spec.dim)
+        obs_dim = self.cfg.privileged_dim if self.cfg.actor_type == "state" else self.spec.dim
+        obs = np.asarray(obs, dtype=np.float32).reshape(-1, obs_dim)
         to = lambda value: torch.as_tensor(value, device=self.device)  # noqa: E731
         with torch.no_grad():
             if self.actor.history is None:
@@ -396,23 +427,38 @@ class SACAgent:
         return action
 
     # ------------------------------------------------------------------
-    def _update_critic(self, obs, action, reward, next_obs, not_done, state=None, next_state=None, index: int = 0) -> dict:
+    def _update_critic(self, obs, action, reward, next_obs, not_done, state=None, next_state=None, index: int = 0, paired_targets=None) -> dict:
         """``state`` and ``next_state``, when given, are what the critic reads; the actor always reads observations.
         ``index`` is the replay buffer the batch came from, whose temperature the soft target uses."""
-        with torch.no_grad():
-            _, next_pi, next_log_pi, _ = self.actor(next_obs)
-            target_q1, target_q2 = self.critic_target(next_obs if next_state is None else next_state, next_pi)
-            target_v = torch.min(target_q1, target_q2) - self._alpha_at(index).detach() * next_log_pi
-            target_q = reward + not_done * self.cfg.discount * target_v
-            bound = float(self.cfg.reward_abs_bound) / max(1.0 - float(self.cfg.discount), 1e-6)
-            target_q = target_q.clamp(-bound, bound)
+        if paired_targets is None:
+            if self.cfg.adjoint_weight:
+                raise ValueError("IAQL requires paired fresh targets; use update_state_batch")
+            with torch.no_grad():
+                _, next_pi, next_log_pi, _ = self.actor(next_obs)
+                target_q1, target_q2 = self.critic_target(next_obs if next_state is None else next_state, next_pi)
+                target_v = torch.min(target_q1, target_q2) - self._alpha_at(index).detach() * next_log_pi
+                target_q = reward + not_done * self.cfg.discount * target_v
+                bound = float(self.cfg.reward_abs_bound) / max(1.0 - float(self.cfg.discount), 1e-6)
+                target_q = target_q.clamp(-bound, bound)
+        else:
+            target_q = paired_targets[0].detach()
+        use_adjoint = paired_targets is not None and self.cfg.adjoint_weight > 0
+        if use_adjoint:
+            action = action.detach().requires_grad_(True)
         current_q1, current_q2 = self.critic(obs if state is None else state, action)
         critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
+        adjoint_stats = {}
+        if use_adjoint:
+            from .iaql import derivative_loss
+            adj_loss = derivative_loss((current_q1, current_q2), action, paired_targets[1], paired_targets[2],
+                                       self.cfg.adjoint_gradient_scale)
+            critic_loss = critic_loss + self.cfg.adjoint_weight * adj_loss
+            adjoint_stats = {"adjoint_loss": float(adj_loss.detach()), "adjoint_valid_fraction": float(paired_targets[2].float().mean())}
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         grad_norm = self._clip(self.critic)
         self.critic_optimizer.step()
-        return {"critic_loss": float(critic_loss.item()), "q1_mean": float(current_q1.mean().item()), "critic_grad_norm": grad_norm}
+        return {"critic_loss": float(critic_loss.item()), "q1_mean": float(current_q1.mean().item()), "critic_grad_norm": grad_norm, **adjoint_stats}
 
     def _critic_scalar(self, obs, action, detach_encoder: bool = False):
         """Scalar ``(Q1, Q2)`` for either critic form."""
@@ -673,6 +719,26 @@ class SACAgent:
             stats = self._update_critic(obs, action, reward, next_obs, not_done, state, next_state, index)
         stats["batch_reward"] = float(reward.mean().item())
         stats["learning_positions"] = int(action.shape[0])
+        return self._finish_update(stats, obs, state, label, index, physics)
+
+    def update_state_batch(self, obs, action, reward, next_obs, mask, *, tangent=None, reward_gradient=None, valid=None):
+        """Bounded diagnostic replay supplies mechanics, never stale value-dependent slopes."""
+        if self.cfg.actor_type != "state":
+            raise ValueError("update_state_batch requires the full-state actor")
+        paired = None
+        if self.cfg.adjoint_weight:
+            from .iaql import soft_targets
+            if tangent is None or reward_gradient is None or valid is None:
+                raise ValueError("IAQL batch needs mechanics and validity")
+            y, g = soft_targets(self.actor, self.critic_target, next_obs, reward, mask, tangent, reward_gradient,
+                                self.alpha.detach(), self.cfg.discount,
+                                self.cfg.reward_abs_bound / max(1-self.cfg.discount, 1e-6))
+            paired = (y, g, valid)
+        stats = self._update_critic(obs, action, reward, next_obs, mask, state=obs, next_state=next_obs, paired_targets=paired)
+        return self._finish_update(stats, obs, obs)
+
+    def _finish_update(self, stats, obs, state=None, label=None, index=0, physics=None):
+        """Shared SAC actor, temperature and target schedule for flat/state batches."""
         self.updates += 1
         if self.updates % self.cfg.actor_update_freq == 0:
             stats.update(self._update_actor_and_alpha(obs, state, label, index, physics))
@@ -690,7 +756,7 @@ class SACAgent:
         """Settings a checkpoint must agree on before its weights can be reused."""
         protocol = {
             "point_budget": int(self.spec.point_budget),
-            "obs_dim": int(self.spec.dim),
+            "obs_dim": int(self.cfg.privileged_dim if self.cfg.actor_type == "state" else self.spec.dim),
             "action_dim": int(self.action_dim),
             "hidden_dim": int(self.cfg.hidden_dim),
             "use_extra": bool(self.cfg.use_extra),
@@ -704,6 +770,8 @@ class SACAgent:
         if self.cfg.critic_input != "points":
             # Only a privileged critic adds these keys, so point-critic checkpoints saved before them still load.
             protocol.update(critic_input=str(self.cfg.critic_input), privileged_dim=int(self.cfg.privileged_dim))
+        if self.cfg.actor_type == "state":
+            protocol["state_activation"] = self.cfg.state_activation
         if self.cfg.trunk_style != "plain":
             # Absent, the key means the plain trunk, so earlier checkpoints still load.
             protocol.update(trunk_style=str(self.cfg.trunk_style), trunk_blocks=int(self.cfg.trunk_blocks))

@@ -63,6 +63,9 @@ def test_reverse_pass_is_the_transpose_of_the_tangent_pass():
     reverse_last = adj.reverse_pass(lu, g, layout, chain=False)["dL_dDelta"]
     assert np.allclose(g @ tangent_last, reverse_last, rtol=1e-10, atol=1e-12)
     assert not np.allclose(reverse, reverse_last)
+    frames_out = adj.tangent_pass(lu, layout, return_frames=True)
+    np.testing.assert_allclose(frames_out[-1], tangent)
+    assert frames_out.shape == (frames, 3*n, 3)
 
 
 def test_compare_fields_reports_held_and_free_separately():

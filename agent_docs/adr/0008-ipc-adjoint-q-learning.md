@@ -1,9 +1,9 @@
 # ADR 0008 — IPC action-gradient supervision for off-policy critics
 
-- Status: Proposed
+- Status: Accepted for the benchmark prototype; contact-conditioned extension remains proposed
 - Date: 2026-09-14
 - Owners: deformable manipulation research
-- Implements: design only; no learner or simulator behavior change
+- Implements: opt-in full-state SAC derivative loss and native direct-picker benchmark; see the implementation record
 - Branch: `research/ipc-adjoint-q-learning`
 - Supersedes: N/A; the existing physics actor experiment remains a separate baseline
 
@@ -538,9 +538,10 @@ this design alone.
 
 ## Validation status
 
-This change records a proposal and a source/related-work audit. No IAQL training
-has run and no success-rate or speedup claim has been established. Existing
-physics-actor experiments are not IAQL results.
+The initial change recorded a proposal and source/related-work audit. The
+subsequent owner-authorized implementation and experiments are tracked in the
+[benchmark record](../performance/2026-09-14-iaql-benchmark.md). Existing
+physics-actor experiments remain separate from IAQL results.
 
 Run the independent numerical check with NumPy installed:
 

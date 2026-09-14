@@ -125,6 +125,27 @@ used as a terminal condition, following the reference MDP.
 
 ## Commands
 
+IAQL full-state diagnostic (native IPC direct picker; no robot/camera). It runs
+a complete-decision Bellman-gradient finite-difference gate, fixed-teacher critic
+regression, and a matched short SAC/IAQL online smoke. The original training
+defaults are unchanged. Use the tree build for the adjoint export feature:
+
+```bash
+PYTHONPATH=build/python/src:python OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  $GENESIS_PY -m uipc_manip.iaql_benchmark --out output/iaql/silu_friction0_s0
+```
+
+`--phase probe --friction 0.6` measures the frictional regime before trusting
+its approximate gradients. `--phase refit` re-fits critics on a finished run's
+saved fixed dataset on the CPU (weight sweep, shuffled-label control, constant
+mean slope). `--phase online --online-weights 0.1 --eval-every 500` runs one
+online arm with periodic evaluation; one process per arm runs the SAC/IAQL
+pair in parallel. See the [design](../../agent_docs/adr/0008-ipc-adjoint-q-learning.md)
+and [experiment record](../../agent_docs/performance/2026-09-14-iaql-benchmark.md).
+This prototype keeps every TD transition and bounds only the mechanics
+sidecar (`--tangent-rows`), uses full x/v state and matching SiLU MLPs for
+both algorithms; it is not an IAQL dressing implementation.
+
 Scripted reachability check. Run this before training a task; if the scripted
 policy cannot do it, SAC will not either.
 

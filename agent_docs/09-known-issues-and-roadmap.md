@@ -505,4 +505,14 @@ is calibrated contact/direction reliability. Current retained projected Newton
 matrices and last-frame physics actor signals do not implement the proposed
 Bellman derivative. Next work is the target/loss contract and complete-decision
 benchmark adapter, followed by frozen-critic and matched SAC experiments.
-Only a synthetic numerical identity check has run; IAQL training is pending.
+The [benchmark prototype](performance/2026-09-14-iaql-benchmark.md) has
+paired target refresh, mixed-derivative critic regression, native full-state
+cloth collection, a bounded mechanics sidecar over a full TD replay and a CPU
+refit phase. Measured: the gate passes at friction 0 (4/4), the derivative
+loss raises the held-out slope cosine 0.38 → 0.84 while shuffled labels do
+not, the remaining 5–21 % tangent error is the SPD-projected retained matrix
+(not Newton tolerance), and friction 0.6 fails the gate (1/4) because the
+inertia-only chain lacks the lagged friction terms. A matched 5,000-step
+SAC/IAQL pair at friction 0 is running. Open: an exact-mode (unprojected,
+friction-complete) export, calibrated contact trust, the learning result at
+scale, and visual transfer.

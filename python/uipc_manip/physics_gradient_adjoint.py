@@ -252,15 +252,17 @@ def reverse_pass(H: list, g_final: np.ndarray, layout: dict, chain: bool = True)
     return {"dL_dDelta": dL_dDelta, "contributions": contributions[::-1]}
 
 
-def tangent_pass(lu: list, layout: dict, chain: bool = True) -> np.ndarray:
+def tangent_pass(lu: list, layout: dict, chain: bool = True, *, return_frames: bool = False) -> np.ndarray:
     """∂x_6/∂Δ for the three translation axes (3n × 3), propagated forward through the frames with
-    the same inertia coupling the reverse pass uses; aim_f = anchor_0 + (f/6) Δ."""
+    the same inertia coupling the reverse pass uses; aim_f = anchor_0 + (f/6) Δ.
+    ``return_frames`` retains each substep response, needed to differentiate final velocity.
+    """
     off, cnt, n = layout["dof_offset"], layout["dof_count"], layout["n"]
     m3 = np.repeat(layout["mass"], 3)
     held = (3 * layout["anchor_idx"][:, None] + np.arange(3)[None, :]).reshape(-1)
     s_m = np.repeat(layout["strength"] * layout["mass"][layout["anchor_idx"]], 3)
     steps = len(lu)
-    out = np.zeros((cnt, 3))
+    out = np.zeros((steps, cnt, 3))
     for k in range(3):
         dx_prev = np.zeros(cnt)
         dx_prev2 = np.zeros(cnt)
@@ -274,9 +276,9 @@ def tangent_pass(lu: list, layout: dict, chain: bool = True) -> np.ndarray:
             local += np.repeat(layout["strength"] * layout["mass"], 3) * daim
             rhs[off:off + cnt] = local
             dx = lu[f].solve(rhs)[off:off + cnt]
+            out[f, :, k] = dx
             dx_prev2, dx_prev = dx_prev, dx
-        out[:, k] = dx_prev
-    return out
+    return out if return_frames else out[-1]
 
 
 def position_differences(env, snap: dict, eps_m: float) -> np.ndarray:
