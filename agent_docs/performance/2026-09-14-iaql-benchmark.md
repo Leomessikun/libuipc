@@ -226,9 +226,9 @@ have accepted every one of them.
 
 ## Matched online pair launched (2026-09-14 16:24)
 
-`run_iaql_pair_now.sh` (session scratchpad, after `run_iaql_pair.sh`'s 70-step smoke of the new
+`run_iaql_pair_now.sh` (session scratchpad), after a 70-step smoke of the new
 online path (sidecar eviction at 8 rows, mid-run evaluation from a snapshot,
-`adjoint_valid_fraction` 0.06 at step 64, exit 0), two processes in parallel
+`adjoint_valid_fraction` 0.06 at step 64, exit 0): two processes in parallel
 with `--phase online --online-steps 5000 --eval-every 500 --eval-episodes 3
 --eval-steps 50 --updates-per-step 2 --beta 0.1 --seed 0`, arms
 `--online-weights 0` (`output/iaql/online5k_s0_sac`) and `0.1`
