@@ -2056,9 +2056,32 @@ or two, so beyond one decision the gradient is the static sensitivity of the end
 of the gripper path (right in direction at most lags, cosine 0.91–0.99 in translation where the
 differences repeat, wrong for the first decision of a fresh approach at cell 3, cosine −0.30); and
 the control — the one-step 5-D proxy direction driven at the action box with no gradient —
-already gets 0.162 / 0.094, so the optimiser's own contribution is at most +0.005 / +0.012 (and
-9 N less force at cell 3), within the 0.013 re-drive spread of the elbow, unresolved. Reading recorded: the useful physics horizon is one decision; the actor that fits
+already gets 0.163 / 0.107 from the same restored state (three rollouts each), so the optimiser's
+own contribution is +0.007 coverage and −12 N at cell 3 and nothing at cell 1 (−0.002, +10 N);
+the +0.012 a first control from a fresh re-drive had suggested was re-drive spread (0.013). Reading recorded: the useful physics horizon is one decision; the actor that fits
 is SVG(1)-like (one-decision solver Jacobian × TD critic), sized as minutes on the elbows first. Build: this tree's CUDA backend and pyuipc built in `build/`
 with the dedicated toolchain (memory `libuipc-build-toolchain`); the shared training venv keeps
 the 0.0.28 wheel. [Record](performance/2026-09-13-physics-gradients.md); ~3 shared-GPU hours over the
 day, nothing else launched, the other sessions' runs untouched.
+
+## 2026-09-14 — Physics gradients: the critic through the adjoint, and the same-state control
+
+Owner's "ok" to the plan. (1) The trajectory optimiser's own contribution, measured from the
+same restored state (`--init actions-json --baselines expert scaled_proxy`): +0.007 coverage and
+−12 N at cell 3, nothing at cell 1 (−0.002, +10 N); the +0.012 a fresh-re-drive control had
+suggested was re-drive spread. (2) `python -m uipc_manip.physics_gradient_actor`: a trained
+checkpoint's critic (`abl_dense_s1` at 125k updates, dense critic, the other session's ablation,
+read only) as `V(x') = min Q(s', μ(s'))`, differentiated exactly through the observation function
+(visibility, 6.25 cm voxel centroids, tool-relative packing rebuilt in torch from the environment's
+own discrete choices) and pushed through the one-decision adjoint. Against 2 mm differences of `V`
+the analytic direction agrees loosely at hold (cosine 0.6–0.7, magnitude 0.05–0.19 of the measured
+change: the critic is not smooth at that scale). Followed greedily for twelve decisions at the
+action box, it beats SAC's own `∂Q/∂a`, the checkpoint's policy and the expert at all four states
+(cell 3 elbow 0.168 vs 0.114 / 0.076 / 0.046; cell 1 elbow 0.135 vs 0.000 / 0.016 / 0.028; cell 3
+stall 0.172, cell 1 passed 0.151), beats the hand proxy at cell 1's elbow (0.076) and matches it at
+cell 3's (0.163) at half the force; after the elbow the proxy is better (0.214, 0.220). The
+checkpoint loader accepts pre-dense-critic checkpoints as latent. A backend assertion
+(`simplex_normal_contact.cu:439`, EE/energy size mismatch) fires when a `World.dump()` is taken
+straight after a `recover()` and recovered again; the walk now dumps only after a decision.
+Tests: `test_physics_gradient_actor.py` (3). Record, README row and memory updated. ~1 shared-GPU
+hour; the other sessions' processes untouched.

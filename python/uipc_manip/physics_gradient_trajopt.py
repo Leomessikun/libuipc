@@ -311,8 +311,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--out", required=True)
     p.add_argument("--horizon", type=int, default=12, help="decisions per trajectory")
     p.add_argument("--iterations", type=int, default=20)
-    p.add_argument("--init", choices=("hold", "axis5d", "axis3d", "expert"), default="axis5d")
+    p.add_argument("--init", choices=("hold", "axis5d", "axis3d", "expert", "actions-json"), default="axis5d")
     p.add_argument("--probe-json", default=None, help="Level 1 record of this state, for the axis5d/axis3d initial direction")
+    p.add_argument("--actions-json", default=None, help="a record of this script whose final_actions are the initial trajectory")
     p.add_argument("--init-step-mm", type=float, default=4.0)
     p.add_argument("--init-step-deg", type=float, default=2.5)
     p.add_argument("--step", type=float, default=0.15, help="largest action change per accepted iteration (action units)")
@@ -324,7 +325,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--check-decisions", type=int, nargs="*", default=None, help="0-based decisions to difference")
     p.add_argument("--check-repeats", type=int, default=1, help="draw the differences this many times (noise floor)")
     p.add_argument("--check-only", action="store_true", help="stop after the checks on the initial trajectory")
-    p.add_argument("--baselines", nargs="*", default=("expert", "hold"))
+    p.add_argument("--baselines", nargs="*", default=("expert", "hold"),
+                   help="expert, hold, scaled_proxy (the axis5d directions at the action box, --final-repeats rollouts)")
     p.add_argument("--stall-window", type=int, default=15)
     p.add_argument("--max-steps", type=int, default=300)
     p.add_argument("--constraint-factor", type=float, default=1.0)
@@ -352,6 +354,10 @@ def main(argv: list[str] | None = None) -> None:
         h = args.horizon
         if args.init == "expert":
             actions, _ = expert_rollout(env, snap, h)
+        elif args.init == "actions-json":
+            actions = np.asarray(json.loads(Path(args.actions_json).read_text())["final_actions"], dtype=np.float64)
+            if actions.shape != (h, 6):
+                raise ValueError(f"{args.actions_json} holds {actions.shape} actions, the horizon is {h}")
         else:
             actions = initial_actions(args.init, h, env, Path(args.probe_json) if args.probe_json else None,
                                       args.init_step_mm * 1e-3, np.deg2rad(args.init_step_deg))
@@ -364,6 +370,14 @@ def main(argv: list[str] | None = None) -> None:
             record["baselines"]["expert"]["actions"] = a_exp.tolist()
         if "hold" in args.baselines:
             record["baselines"]["hold"] = summarise(env, rollout(env, snap, np.zeros((h, 6))), layout)
+        if "scaled_proxy" in args.baselines:
+            a_box = initial_actions("axis5d", h, env, Path(args.probe_json) if args.probe_json else None,
+                                    float(env.cfg.max_translation), float(env.cfg.max_rotation))
+            reps = [summarise(env, rollout(env, snap, a_box), layout) for _ in range(args.final_repeats)]
+            keys = ("objective_m", "axis_m", "coverage_m", "upperarm_ratio", "mean_net_normal_n", "executed_m")
+            record["baselines"]["scaled_proxy"] = {**{k: float(np.mean([r[k] for r in reps])) for k in keys},
+                                                   "std": {k: float(np.std([r[k] for r in reps])) for k in keys},
+                                                   "repeats": reps, "actions": a_box.tolist()}
         for name, base in record["baselines"].items():
             print(f"[trajopt] baseline {name}: L={base['objective_m']:.4f} axis={base['axis_m']:.4f} cov={base['coverage_m']:.4f} "
                   f"up={base['upperarm_ratio']:.3f} F={base['mean_net_normal_n']:.0f}N exec={base['executed_m']*1e3:.1f}mm", flush=True)

@@ -652,14 +652,21 @@ fixed-active-set linearisation carries.
 
 Most of the gain over the expert is the scale: the one-step 5-D proxy direction of the rotation
 probe, driven at the action box instead of 4 mm and 2.5°, already beats the expert 3.4–5.8× in
-coverage at both elbows. The optimiser's own contribution is at most +0.005 coverage with 9 N
-less force at cell 3 and +0.012 at cell 1, and it is not resolved: the control ran from a fresh
-re-drive of each elbow (@94 against @93, @84 against @86), and two re-drives of cell 3's elbow gave
-the identical 4 mm walk 0.073 and 0.086 of coverage — a re-drive spread of 0.013 that the
-within-state repeat std of 0.002 does not measure. The honest control is the scaled proxy as a
-baseline inside the same run from the same restored state (three rollouts, about a minute); that
-is the next run, not this one. It certainly does not find a *sequence*: with twelve equal rows it
-cannot, and the states where a sequence is needed (the lock) were kept out on purpose.
+coverage at both elbows. The optimiser's own contribution had to be measured from the *same*
+restored state, because two re-drives of cell 3's elbow gave the identical 4 mm walk 0.073 and
+0.086 of coverage — a re-drive spread of 0.013 that the within-state repeat std of 0.002 does
+not see. Same state, three rollouts each (`--init actions-json --baselines expert scaled_proxy`):
+
+| elbow (same restored state) | scaled proxy, no gradient | optimised trajectory | expert |
+|---|---|---|---|
+| cell 3 @93 | 0.163 ± 0.001, 73 ± 4 N | **0.170 ± 0.001, 61 ± 6 N** | 0.031, 76 N |
+| cell 1 @86 | **0.107 ± 0.001, 42 N** | 0.105 ± 0.001, 52 ± 3 N | 0.028, 63 N |
+
+So the twelve-decision gradient adds +0.007 of coverage and takes 12 N off the force at cell 3,
+and adds nothing at cell 1 (−0.002, inside the spread) while costing 10 N; the +0.012 the first
+control suggested there was re-drive spread. It certainly does not find a *sequence*: with twelve
+equal rows it cannot, and the states where a sequence is needed (the lock) were kept out on
+purpose.
 
 **What this says about the actor.** (i) The physics gradient's useful horizon at this time step is
 about one decision: beyond it the chain is the static sensitivity, which is right in direction
@@ -678,6 +685,60 @@ a subset of transitions (the ones that pass the repeatability gate, or one in fo
 sized as minutes on the two elbows first, not as a training run. ~85 shared-GPU minutes for
 this section.
 
+## Level 3, second experiment: the critic says where, the adjoint says how (2026-09-14) [MI]
+
+`python -m uipc_manip.physics_gradient_actor` takes a trained checkpoint's critic as the value
+of the next state, `V(x') = min(Q1, Q2)(s', μ(s'))`, differentiates it exactly through the
+environment's observation function (camera visibility, 6.25 cm voxel centroids, tool-relative
+packing — rebuilt in torch from the discrete choices the environment made at `x'`: 1,300–2,300
+visible vertices in 130–180 voxels), and multiplies by the one-decision adjoint:
+`∂V/∂u = (∂V/∂x')ᵀ ∂x'/∂u`, from the six exported systems on the host (1.8–3.9 s) or the last
+frame's device solve (0.10–0.21 s). Checkpoint: the dense-critic ablation `abl_dense_s1` at
+125k updates (Wang flow actor, trained on the region's 45 bodies × 5 garments; the probed bodies
+14046 and 14049 are its evaluation cells). Four states: cell 3's elbow and stall, cell 1's elbow
+and passed state. `tests/test_physics_gradient_actor.py` (3) covers the torch observation (it
+reproduces the centroids and spreads a centroid's gradient over its visible members), the
+last-frame command mapping and the action scaling.
+
+Two readings. (i) Against 2 mm / 1° central differences of `V` after one decision, the analytic
+`∂V/∂u` agrees only loosely: cosine 0.60–0.71 at a hold decision where the differences repeat
+(draw-to-draw cosine 0.86–1.00), negative where they do not (at the policy's own action the two
+draws of the difference agree with each other at −0.14 to 0.61), and its magnitude is 0.05–0.19
+of the measured change. The critic is not a smooth function of the cloth at the millimetre
+scale: a 2 mm command moves vertices across voxel boundaries and in and out of visibility, and
+the point network is rough besides, so most of the measured change of `V` is not its derivative.
+(ii) What an actor needs is a direction that improves the state when followed. Twelve greedy
+decisions at the action box (8.66 mm, 5°), the direction recomputed at every step, five signals
+from the same restored state:
+
+| state | physics: `∂V/∂x'` through the adjoint | SAC's own `∂Q/∂a` | the checkpoint's policy `μ` | hand-written 5-D proxy | expert |
+|---|---|---|---|---|---|
+| cell 3 elbow @94 | **0.168**, V 75→88, 47 N | 0.114, V→86, 46 N | 0.076, 41 N | 0.163, V→79, 90 N | 0.046, 66 N |
+| cell 3 stall @116 | 0.172, V 80→87, 33 N | 0.047, 50 N | 0.040, 22 N | **0.214**, 36 N | 0.051, 33 N |
+| cell 1 elbow @84 | **0.135**, V 73→80, 34 N | 0.000 (−11 mm), 34 N | 0.016, 44 N | 0.076, 46 N | 0.028, 57 N |
+| cell 1 passed @125 | 0.151, V 73→79, 59 N | 0.147, 29 N | 0.054 (−21 mm), 28 N | **0.220**, 41 N | 0.146, 257 N |
+
+(coverage after twelve decisions; `V` the critic's value at the end; force the mean net normal
+force over the walk; one draw per walk.) The physics signal beats the critic's own action
+derivative at all four states — at the two elbows by 0.05 and 0.135, where SAC's direction stands
+still or retreats — beats the checkpoint's policy and the expert everywhere, beats the
+hand-written proxy at cell 1's elbow, the state the proxy could not solve (0.135 against 0.076),
+and matches it at cell 3's elbow at half the force. After the elbow the proxy, which is the axis
+reading's own gradient, is the better greedy signal (0.214 and 0.220 against 0.172 and 0.151).
+The critic's value rises most along the physics walk, as it must (it is `V`'s ascent direction),
+and the coverage rises with it: the critic ranks elbow states in the right order where the reward
+is flat, which is the half of the split Level 1 could not test. ~50 shared-GPU minutes.
+
+**What this says about the actor.** The pieces of an SVG(1)-style update exist and work in the
+direction that counts: a TD-trained point-cloud critic supplies a `∂V/∂x'` that, pushed through
+the solver's one-decision Jacobian, walks both elbows over where the critic's own `∂Q/∂a`, the
+policy it trained and the scripted expert do not. What is missing is the smoothness the update
+would assume: `V`'s differences over 2 mm are mostly not its derivative, so a learner should treat
+`∂V/∂u` as a stochastic direction (small steps, averaged over decisions, behind the repeatability
+gate), not as a Newton step; the voxel and visibility switches are a cost of this observation
+model, not of the physics. The actor update proper — `μ_θ` moved along `∂V/∂u · ∂μ/∂θ` on gated
+transitions inside the SAC loop — is a training run, not a probe, and is not started.
+
 ## What this does not claim
 
 No policy has been trained with a physics gradient. Level 1 asks only whether the quantity is
@@ -685,7 +746,9 @@ well defined and locally informative at the states that matter; Level 2 (the adj
 solver's systems, and the export and solve inside the solver) is built and checked against
 differences at four states; Level 3's first experiment is open-loop trajectory optimisation at
 two elbow states with the chain as its gradient, not a learner, and most of its gain over the
-expert is the proxy direction driven at the action box. The field-level agreement is bounded by
+expert is the proxy direction driven at the action box; its second experiment follows a trained
+critic's gradient through the one-decision adjoint greedily for twelve decisions, which is a
+controller, not a learner, and reads one draw per walk. The field-level agreement is bounded by
 the simulator's own run-to-run scatter, the linear model misses the free cloth's response at a
 jam, and over many decisions it reduces to a static sensitivity that carries no path dependence.
 Nothing here is a claim about a closed-loop policy, about states other than the seven probed, or
