@@ -2105,9 +2105,11 @@ transition (dense critic through the observation, last-frame device solve, 0.13�
 then fine-tunes three actor copies on the same batches with the critic frozen — SAC's own actor
 loss, the physics direction on the mean action (`β` matched to the SAC gradient's norm once), and
 their sum — and evaluates each deterministically for twelve decisions at the tuned elbow and at
-an unseen state of the cell. Physics: passes both elbows (0.158, 0.128) and is the better and
-gentler signal at both unseen states (0.222 at 18 N vs 0.168 at 318 N; 0.189 vs 0.116). SAC's loss:
-stronger at cell 3's elbow (0.196 at 53 N), a retreat at cell 1's (0.000), a jam at cell 3's
-stall. The sum never best. `tests/test_physics_gradient_finetune.py` (2). Record section, README
+a state of the cell that was not a tuning start state. The tuned actors sit on the action box
+(the loss is linear in μ; 174–179 mm and 85° executed everywhere), so what was learned is a sign
+pattern. Physics: passes both elbows (0.158, 0.128) and is the gentler and better one at both
+non-start states (0.222 at 18 N vs 0.168 at 318 N; 0.189 vs 0.116). SAC's loss: stronger at cell
+3's elbow (0.196 at 53 N), a retreat at cell 1's (0.000), a jam at cell 3's stall. The sum, at the
+β used, never best. `tests/test_physics_gradient_finetune.py` (2). Record section, README
 row, memory updated. Not a training run: critic frozen, one cell at a time, two draws per
 evaluation. The other sessions' processes untouched.

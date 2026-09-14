@@ -802,39 +802,50 @@ the same weights on the same 600 batches of 64 (Adam at the checkpoint's actor l
 its gradient clip) with the critic frozen: `sac`, SAC's own actor loss `α log π − min Q(s, π(s))`
 through the frozen critic; `phys`, `−β · unit(g_u) · μ(s)`, the stored direction on the policy's
 mean action, a deterministic-policy-gradient surrogate with the solver's Jacobian in place of the
-critic's action derivative, `β` set once so its first gradient matches the SAC loss's in norm
-(1.2 at cell 3, 0.31 at cell 1); `both`, their sum. Every transition passed the executed-fraction
-gate. Each actor then runs deterministically for twelve decisions, twice, from the elbow it was
-tuned at and from a second state of the cell it never saw. `tests/test_physics_gradient_finetune.py`
+critic's action derivative — evaluated at the action *taken*, which for the proxy episodes sits at
+the box far from the untouched actor's `μ` — `β` set once so its first gradient matches the SAC
+loss's in norm (1.2 at cell 3, 0.31 at cell 1); `both`, their sum. Every transition passed the
+executed-fraction gate. Each actor then runs deterministically for twelve decisions, twice, from
+the elbow it was tuned at and from a second state of the cell that was not a start state of the
+tuning data (the proxy episodes at the box traverse the neighbourhood of both). `tests/test_physics_gradient_finetune.py`
 (2) checks the two losses' gradients on a linear actor.
 
 | evaluation (12 decisions, mean of 2) | untouched actor | `sac` | `phys` | `both` |
 |---|---|---|---|---|
 | cell 3 elbow @92 (tuned here) | 0.084, 38 N | **0.196**, 53 N | 0.158, 28 N | 0.128, 31 N |
-| cell 3 stall @116 (unseen) | 0.041, 27 N | 0.168, **318 N** | **0.222**, 18 N | 0.158, 24 N |
+| cell 3 stall @116 (not a tuning start state) | 0.041, 27 N | 0.168, **318 N** | **0.222**, 18 N | 0.158, 24 N |
 | cell 1 elbow @85 (tuned here) | 0.011, 53 N | 0.000 (−24 mm), 40 N | **0.128**, 37 N | 0.075, 36 N |
-| cell 1 passed @125 (unseen) | 0.056 (−20 mm), 22 N | 0.116 (−17 mm), 49 N | **0.189**, 56 N | 0.165, 37 N |
+| cell 1 passed @125 (not a tuning start state) | 0.056 (−20 mm), 22 N | 0.116 (−17 mm), 49 N | **0.189**, 56 N | 0.165, 37 N |
 
-(coverage after twelve decisions and mean net normal force; repeat spread ≤ 0.007.) Both signals
-move the policy: the untouched actor barely passes cell 3's elbow (0.084) and not cell 1's
-(0.011). SAC's own loss through the frozen critic is the stronger signal at cell 3's elbow, the
-state it was tuned at (0.196 against 0.158), at twice the force; it turns cell 1's elbow into a
-retreat (0.000, the greedy-walk finding again, now in a trained policy) and, at the unseen stall of
-cell 3, gets its coverage by jamming the arm at 318 N. The physics direction trains a policy that
-passes both elbows (0.158 and 0.128), is the gentlest everywhere but one state, and is the better
-of the two at both unseen states (0.222 against 0.168, 0.189 against 0.116). The sum is between
-the two at every state, never the best. 288 transitions and 600 updates per cell; ~25 shared-GPU
-minutes for both cells, 0.13–0.21 s of physics gradient per transition.
+(coverage after twelve decisions and mean net normal force; repeat spread ≤ 0.007.) First the
+caveat that bounds every row: the tuned actors sit on the action box. Twelve decisions at full
+translation on all three axes is 180 mm and at full rotation on both live axes 85°; the `phys`
+actor executed 174–179 mm and 85° at every evaluated state, `sac` 135–165 mm and 56–69°. The
+`phys` loss is linear in `μ`, so any consistent direction drives the mean to a box corner by
+design, and what the fine-tune learned is a sign pattern over the six components; whether that
+pattern changes with the state was not measured (the evaluation keeps no per-step actions and the
+tuned weights were not saved), so a policy that "carries" to another state may simply be the same
+corner. What survives is this: the sign pattern the physics signal taught passes both elbows
+(0.158, about the scaled proxy's 0.163 at cell 3; 0.128 against the proxy's 0.107 at cell 1), and
+the one SAC's own loss through the same frozen critic taught is stronger at cell 3's elbow (0.196
+at twice the force), turns cell 1's elbow into a retreat (0.000, the greedy-walk finding again,
+now in a trained policy) and gets its coverage at cell 3's stall by jamming the arm at 318 N. The
+physics-taught policy is the gentler one at three of four states and ahead at both states that
+were not tuning start states (0.222 against 0.168, 0.189 against 0.116); the sum, at the `β`
+used, is between the two everywhere and never the best. 288 transitions and 600 updates per
+cell; ~25 shared-GPU minutes for both cells, 0.13–0.21 s of physics gradient per transition.
 
 **Reading.** With a critic good enough to have a state gradient at the elbow (the dense one at
 125k updates), the solver's Jacobian turns it into an actor signal that a policy absorbs from a
-few hundred transitions and that carries to states it was not tuned on, with less force than the
-critic's own action derivative gives. That is the split working as a training signal, one cell at
-a time and with the critic frozen; what it is not is a training run — no critic learning, no
-replay, no held-out cells — and the numbers are two draws of a deterministic policy from one
-restored state each. The actor experiment inside the SAC loop now has its recipe: the `phys`
-term on gated transitions beside the SAC loss (not summed blindly: the sum was never the best),
-the device solve as the Jacobian, and evaluation on elbow states the policy was not tuned at.
+few hundred transitions, and the sign pattern it teaches is the right one at both elbows where
+the critic's own action derivative teaches the wrong one at cell 1. That is the split working as
+a training signal, one cell at a time, critic frozen, at the box; what it is not is a training
+run — no critic learning, no replay, no held-out cells — and the numbers are two draws of a
+deterministic policy from one restored state each. The actor experiment inside the SAC loop now
+has its recipe: the `phys` term on gated transitions beside the SAC loss, whose Q term is what
+keeps the mean off the box (the plain sum at one `β` was never the best, so the weighting is the
+thing to tune), the device solve as the Jacobian, evaluation at elbow states that were not
+tuning start states with the per-step actions kept.
 
 ## What this does not claim
 
