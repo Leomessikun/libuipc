@@ -252,6 +252,33 @@ def reverse_pass(H: list, g_final: np.ndarray, layout: dict, chain: bool = True)
     return {"dL_dDelta": dL_dDelta, "contributions": contributions[::-1]}
 
 
+def slot_factorizations_from_triplets(rows, cols, values, layouts: list, workers: int = 8) -> list:
+    """Per-slot LUs straight from the exported block triplets, without assembling the whole system:
+    every triplet is assigned to the slot owning its block row (slots occupy contiguous, disjoint
+    dof ranges), a triplet whose column lies in another slot is an error (the slots would be
+    coupled), and the per-slot factorisations run on a thread pool (SuperLU releases the GIL).
+    Returns per-slot ``(lu, layout)`` with the layout's ``dof_offset`` rebased to 0."""
+    from concurrent.futures import ThreadPoolExecutor
+    rows = np.asarray(rows, dtype=np.int64)
+    cols = np.asarray(cols, dtype=np.int64)
+    values = np.asarray(values, dtype=np.float64).reshape(-1, 3, 3)
+    starts = np.array([lay["dof_offset"] // 3 for lay in layouts], dtype=np.int64)
+    order = np.argsort(starts)
+    starts_sorted = starts[order]
+    slot_of_row = order[np.searchsorted(starts_sorted, rows, side="right") - 1]
+    slot_of_col = order[np.searchsorted(starts_sorted, cols, side="right") - 1]
+    if not np.array_equal(slot_of_row, slot_of_col):
+        raise ValueError("A block couples two slots; the system is not block-diagonal per slot")
+    mats = []
+    for j, lay in enumerate(layouts):
+        keep = slot_of_row == j
+        base = lay["dof_offset"] // 3
+        mats.append(system_to_matrix(rows[keep] - base, cols[keep] - base, values[keep], lay["dof_count"]).tocsc())
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(layouts)))) as pool:
+        lus = list(pool.map(scipy.sparse.linalg.splu, mats))
+    return [(lu, dict(lay, dof_offset=0)) for lu, lay in zip(lus, layouts)]
+
+
 def slot_factorizations(mat, layouts: list) -> list:
     """One LU per slot of a block-diagonal system: slots that never touch (lockstep cloths a metre
     apart) occupy disjoint dof ranges and their blocks factorise independently, so the tangent

@@ -16,7 +16,7 @@ import scipy.sparse.linalg
 
 from .assets import build_cloth
 from .tasks import get_task
-from .physics_gradient_adjoint import slot_factorizations, system_to_matrix, tangent_pass
+from .physics_gradient_adjoint import slot_factorizations_from_triplets, system_to_matrix, tangent_pass
 
 
 @dataclass
@@ -277,12 +277,13 @@ class IAQLClothEnv:
                 if velocity_error > 1e-7:
                     raise RuntimeError(f"BDF1 velocity/state accessor mismatch: {velocity_error}")
                 rows, cols, values, gradient = self.feature.export_system()
-                mat = system_to_matrix(rows, cols, values, int(self.feature.dof_count()))
                 if self.N == 1:
+                    mat = system_to_matrix(rows, cols, values, int(self.feature.dof_count()))
                     lus.append([(scipy.sparse.linalg.splu(mat.tocsc()), self.layouts[0])])
                 else:
-                    # Slots never touch: one factorisation per slot block, not one of the whole system.
-                    lus.append(slot_factorizations(mat, self.layouts))
+                    # Slots never touch: one factorisation per slot block straight from the triplets,
+                    # on a thread pool, never the whole system.
+                    lus.append(slot_factorizations_from_triplets(rows, cols, values, self.layouts))
                 residuals.append(float(np.linalg.norm(gradient)))
                 if chain:
                     b_rows, b_cols, blocks = self.feature.export_prev_coupling()

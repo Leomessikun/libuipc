@@ -22,14 +22,16 @@ from .sac import SACAgent, SACConfig
 
 AGENT_OPTIONS = {}
 """Extra SACConfig fields for every agent the driver builds (set from the command line in main)."""
+AGENT_DEVICE = "cpu"
+"""Where the online phase's learner lives; the probe, fit and fidelity phases stay on the CPU."""
 
 
-def agent_for(state_dim, seed=0, weight=0.0, actor_weight=0.0):
+def agent_for(state_dim, seed=0, weight=0.0, actor_weight=0.0, device=None):
     torch.manual_seed(seed)
     return SACAgent(ObsSpec(3), 3, SACConfig(actor_type="state", critic_input="privileged",
         privileged_dim=int(state_dim), hidden_dim=128, batch_size=32, actor_lr=3e-4, critic_lr=3e-4,
         actor_log_std_min=-5, actor_log_std_max=1, adjoint_weight=weight, physics_actor_weight=actor_weight,
-        state_activation="silu", **AGENT_OPTIONS), "cpu")
+        state_activation="silu", **AGENT_OPTIONS), device or "cpu")
 
 
 def tensor(x):
@@ -281,7 +283,8 @@ def online(env, args):
     env_steps = -(-args.online_steps // N)
     warmup_steps = -(-64 // N)
     for weight in ([0.0, args.beta] if args.online_weights is None else args.online_weights):
-        agent = agent_for(env.obs_dim, args.seed+50, weight, args.actor_weight)
+        agent = agent_for(env.obs_dim, args.seed+50, weight, args.actor_weight, AGENT_DEVICE)
+        dev = agent.device
         mechanics = weight > 0 or args.actor_weight > 0
         rng = np.random.default_rng(args.seed+60)
         shuffle_rng = np.random.default_rng(args.seed+70)
@@ -314,8 +317,9 @@ def online(env, args):
                 for _ in range(int(round(args.updates_per_step * N))):
                     batch = [replay[k] for k in rng.integers(0, len(replay), 32)]
                     kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if mechanics else {}
-                    last_stats = agent.update_state_batch(tensor([r["obs"] for r in batch]), tensor([r["action"] for r in batch]),
-                        tensor([[r["reward"]] for r in batch]), tensor([r["next_obs"] for r in batch]), torch.ones(32, 1), **kw)
+                    kw = {k: v.to(dev) for k, v in kw.items()}
+                    last_stats = agent.update_state_batch(tensor([r["obs"] for r in batch]).to(dev), tensor([r["action"] for r in batch]).to(dev),
+                        tensor([[r["reward"]] for r in batch]).to(dev), tensor([r["next_obs"] for r in batch]).to(dev), torch.ones(32, 1, device=dev), **kw)
             if transitions // 64 != (transitions - N) // 64:
                 print(json.dumps({"online_weight": weight, "steps": transitions, "stats": last_stats}), flush=True)
             if args.eval_every and transitions // args.eval_every != (transitions - N) // args.eval_every and transitions < args.online_steps:
@@ -455,6 +459,7 @@ def main(argv=None):
     p.add_argument("--continuation-trust", type=float, default=0.0, help="kappa of exp(-kappa d^2) on the label's continuation part")
     p.add_argument("--reward-mode", choices=["dense", "terminal"], default="dense")
     p.add_argument("--num-slots", type=int, default=1, help="identical cloths stepping in lockstep in one World (online phase)")
+    p.add_argument("--device", default="cpu", help="learner device for the online phase (cpu or cuda)")
     p.add_argument("--shuffle-labels", action="store_true",
                    help="online control: permute each batch's mechanics among its valid rows (everything else matched)")
     p.add_argument("--online-weights", type=float, nargs="+", default=None,
@@ -474,6 +479,8 @@ def main(argv=None):
     torch.set_num_threads(1)
     AGENT_OPTIONS.update(physics_actor_mode=args.actor_mode, physics_actor_rho=args.actor_rho,
                          physics_actor_sigma=args.actor_sigma, continuation_trust_kappa=args.continuation_trust)
+    global AGENT_DEVICE
+    AGENT_DEVICE = args.device if args.phase == "online" else "cpu"
     if args.phase == "refit":
         refit(args)
         return

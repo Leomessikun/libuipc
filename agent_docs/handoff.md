@@ -2413,3 +2413,23 @@ and tangent are then linear in the slot count. Parallel arms are the other
 lever: five single-slot arms in parallel gave 3.1 transitions per second
 aggregate against 1 for one arm under the same contention.
 
+## 2026-09-15 — Throughput: 64 slots, per-slot factorisations from triplets, learner on the GPU
+
+The owner stopped the other job and asked for the training pipeline to use
+the GPU and CPU properly now. Measured on the idle GPU: the forward step
+costs 0.43 s for 8 slots, 1.0 s for 32, 1.46 s for 64 (54 → 31 → 23 ms per
+transition; the backend's launches amortise), while the capture path grew to
+1.3 s per step at 64 slots: assembling the 77k-dof global matrix (48 ms) and
+64 block factorisations (4.4 ms each) per substep. `slot_factorizations_from_triplets`
+now assigns every exported block triplet to its slot and factorises the slot
+blocks on a thread pool (SuperLU releases the GIL: 8 threads give 4×), never
+assembling the whole system; the learner moves to CUDA with `--device cuda`
+(inputs and sidecar tensors follow). A 64-slot online step with the mix
+actor term, the continuation trust and 128 GPU updates: 3.0 s, i.e. 47 ms
+per transition against 221 ms for yesterday's 8-slot SAC arm. Launched at
+15:40, five 64-slot arms in parallel (`scratchpad/run_arms_vec4.sh`,
+`output/iaql/vec20k_s0_{sac64,actor_trust,critic_trust,both_trust,shuffled_trust}`,
+20k transitions each, κ = 2, σ = 0.5, evaluation of 64 episodes every 2,000);
+the 8-slot κ = 0 hard-gate mix arm finishes alongside as an ablation. Tests:
+per-slot factorisations against the global solve, the cross-slot refusal.
+

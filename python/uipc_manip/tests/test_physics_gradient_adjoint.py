@@ -128,3 +128,36 @@ def test_slot_factorizations_match_the_global_solve():
         got = adj.tangent_pass([f[j][0] for f in per_slot], per_slot[0][j][1], return_frames=True)
         np.testing.assert_allclose(got, expected, rtol=1e-10, atol=1e-13)
         assert per_slot[0][j][1]["dof_offset"] == 0 and per_slot[0][j][0].shape == (3 * n, 3 * n)
+
+
+def test_slot_factorizations_from_triplets_match_the_global_solve():
+    """Per-slot LUs built straight from block triplets agree with the whole-system tangent, and a
+    cross-slot block is refused."""
+    import scipy.sparse
+    import scipy.sparse.linalg
+    rng = np.random.default_rng(8)
+    n, frames = 4, 2
+    layouts, dense_blocks = [], []
+    for j in range(3):
+        mass = rng.uniform(1, 2, n)
+        a = rng.normal(size=(3 * n, 3 * n)) * 0.1
+        dense_blocks.append(np.diag(np.repeat(mass, 3)) + a @ a.T)
+        layouts.append(dict(dof_offset=3 * n * j, dof_count=3 * n, n=n, mass=mass, strength=10.0, anchor_idx=np.array([j])))
+    full = scipy.linalg.block_diag(*dense_blocks)
+    # exported form: upper block triangle of 3x3 blocks (row <= col)
+    rows, cols, values = [], [], []
+    nb = full.shape[0] // 3
+    for r in range(nb):
+        for c in range(r, nb):
+            blk = full[3*r:3*r+3, 3*c:3*c+3]
+            if np.any(blk):
+                rows.append(r); cols.append(c); values.append(blk)
+    rows, cols, values = np.array(rows), np.array(cols), np.array(values)
+    global_lu = [scipy.sparse.linalg.splu(scipy.sparse.csc_matrix(full)) for _ in range(frames)]
+    per_slot = [adj.slot_factorizations_from_triplets(rows, cols, values, layouts, workers=2) for _ in range(frames)]
+    for j in range(3):
+        expected = adj.tangent_pass(global_lu, layouts[j], return_frames=True)
+        got = adj.tangent_pass([f[j][0] for f in per_slot], per_slot[0][j][1], return_frames=True)
+        np.testing.assert_allclose(got, expected, rtol=1e-10, atol=1e-13)
+    with pytest.raises(ValueError, match="couples"):
+        adj.slot_factorizations_from_triplets(np.append(rows, 0), np.append(cols, n), np.concatenate([values, np.eye(3)[None]]), layouts)
