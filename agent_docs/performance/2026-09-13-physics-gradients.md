@@ -671,7 +671,8 @@ purpose.
 **What this says about the actor.** (i) The physics gradient's useful horizon at this time step is
 about one decision: beyond it the chain is the static sensitivity, which is right in direction
 at most lags but carries no path dependence. SHAC's premise — a long differentiable horizon —
-does not hold for quasi-static cloth in frictional contact; the split that fits the measurements
+does not hold here, in this linearisation (fixed contact set, projected Hessian, BDF1 chain) on
+quasi-static cloth in frictional contact; the split that fits the measurements
 is SVG(1)-like: the solver's one-decision Jacobian `∂x'/∂u` (six exported systems, or six device
 solves against them) times a learned `∂V/∂x'` from a TD critic, with the critic carrying
 everything beyond one decision. (ii) The state sensitivity is there at the elbow with the right
@@ -847,6 +848,58 @@ keeps the mean off the box (the plain sum at one `β` was never the best, so the
 thing to tune), the device solve as the Jacobian, evaluation at elbow states that were not
 tuning start states with the per-step actions kept.
 
+## Level 3, fourth experiment: the direction inside the SAC update, seed-matched pair (2026-09-14/15) [MI]
+
+Owner's go for a training run. The physics direction became an opt-in term of the actor update
+(`--physics-actor-weight`, default off; `physics_actor_signal.py`; replay fields; `--init-from`),
+and two runs were started from the same checkpoint — the dense-critic ablation `abl_dense_s1` at
+125k updates, held-out upper-arm ratio 0.15, no success — with the same seed and the same
+budget: `pg_phys_s1` with the term at weight 0.5 of the SAC gradient (β matched once at 0.155)
+and `pg_ctrl_s1` with the term off. Everything else is the teacher protocol of region 13: 24
+environments, 24,000 new transitions, fresh Adam and empty replay, a full 25-cell held-out
+evaluation before and after. The physics signal cost 1.5–2.2 s per vector step of 24 slots (one
+refined global solve, residual 5–8e-5), 85 % of transitions passed the executed-fraction gate over
+the run. Both arms tripped the decision watchdog four times (the source run never did in 125k:
+the fine-tune setting, not the term, is what drives into slow solves), and both finished exactly
+one complete episode. The control was cut by its time limit 72 transitions short and resumed
+from its 18,360 checkpoint to the paired budget.
+
+| held-out, 25 cells, 300 decisions | before | after 24,000 transitions | evaluation time |
+|---|---|---|---|
+| `pg_phys_s1` (physics term) | 0.146, 0/25 | **0.309, 6/25** (tshirt_4 on 4 of 5 bodies, tshirt_26/14046, tshirt_392/14045; 0.82–0.86 on five cells) | 2,515 s |
+| `pg_ctrl_s1` (plain SAC) | 0.160, 0/25 | **0.043, 0/25**, forearm 0.64 → 0.33 | 12,562 s (the solver stalls under it) |
+
+Two evaluations of the same starting weights differ by 0.014, the noise floor of this reading.
+The twelve-decision yardstick from the probe's restored states (deterministic policy, one draw):
+
+| state | starting policy (earlier draw) | `pg_phys_s1` | `pg_ctrl_s1` |
+|---|---|---|---|
+| cell 3 elbow | 0.076 | 0.036 | 0.000 (−17 mm) |
+| cell 3 stall | 0.040 | **0.135** | 0.000 (−37 mm) |
+| cell 1 elbow | 0.016 | 0.000 (+21 mm on the axis) | 0.000 (−6 mm) |
+| cell 1 passed | 0.054 | **0.159** | 0.046 (−28 mm) |
+
+Diagnostics on 3,000 states of each arm's own replay (`pair_diagnostics.json`): both policies
+moved far from the start (per-state cosine to it 0.30 for the physics arm, 0.33–0.47 for the
+control), so the drift is the fine-tune setting; the physics arm sits closer to the action box
+(‖μ‖∞ 0.95 against 0.90–0.96, 39–49 % of x-translation components saturated against 3–27 %,
+which is where its higher force and refused commands come from); its mean action is mildly
+aligned with the stored direction where the control's is anti-aligned (+0.06 against −0.11, the
+start −0.08); and each policy is more state-dependent on the states it visited than on the
+other's, so the pairwise-cosine reading is not a property of a policy alone.
+
+**Reading.** On this seed the plain fine-tune from the checkpoint collapsed the policy
+(0.16 → 0.04, retreating from every probed state, and stalling the solver at evaluation), while
+the same procedure with the physics term produced the best held-out policy this project has
+recorded (0.309 and six successes against 0.283 and one, or three at 174k, for the teacher
+chain). That is a paired difference of 0.27 on a reading whose noise is 0.014, in one seed. What
+it establishes is that the direction is a usable training signal inside an off-policy update,
+not yet that it beats a *healthy* SAC: the control's collapse says the baseline setting (fresh
+optimizer, empty replay, 24k transitions on a 125k policy) is itself unstable, and the term may
+be working partly as a stabiliser of the actor. The next runs decide that: two more seeds of the
+same pair; a control that keeps the checkpoint's optimizer state or halves the actor learning
+rate; and the weight at 0.25 and 1.0. ~13 shared-GPU hours for the pair, evaluations included.
+
 ## What this does not claim
 
 No policy has been trained with a physics gradient. Level 1 asks only whether the quantity is
@@ -858,7 +911,9 @@ expert is the proxy direction driven at the action box; its second experiment fo
 critic's gradient through the one-decision adjoint greedily for twelve decisions, which is a
 controller, not a learner, and reads one draw per walk; its third fine-tunes an actor on 288
 transitions from one elbow state with the critic frozen, two draws per evaluation, no critic
-learning, no replay, no held-out cells. The field-level agreement is bounded by
+learning, no replay, no held-out cells; its fourth is one seed of a paired fine-tune whose plain
+arm collapsed, so it shows a usable signal, not a beaten healthy baseline. The field-level
+agreement is bounded by
 the simulator's own run-to-run scatter, the linear model misses the free cloth's response at a
 jam, and over many decisions it reduces to a static sensitivity that carries no path dependence.
 Nothing here is a claim about a closed-loop policy, about states other than the seven probed, or

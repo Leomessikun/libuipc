@@ -2298,3 +2298,19 @@ matrix without the friction coupling, i.e. the three errors this branch
 removed today; unifying it with `converged_raw` + `export_prev_coupling` +
 the full decision chain is the first step of the combined learner.
 
+## 2026-09-15 — Physics gradients: the seed-matched pair reports
+
+`pg_phys_s1` (physics term, weight 0.5, β 0.155) and `pg_ctrl_s1` (plain SAC), both from
+`abl_dense_s1` at 125k with seed 1 and 24,000 new transitions: held-out 0.146 → **0.309 with 6/25
+successes** against 0.160 → **0.043 with 0/25**; the control's evaluation took 3.5 h because the
+solver stalls under its policy. Both arms tripped the watchdog 4 times and finished one complete
+episode; 85 % of the physics arm's transitions carried a direction. Yardstick (12 deterministic
+decisions from the probe's states): physics 0.036 / 0.135 / 0.000 / 0.159, control 0 / 0 / 0 /
+0.046 (retreating). Diagnostics: both drifted far from the start (cosine 0.30–0.47); the physics
+arm sits closer to the action box (x saturated 39–49 %) and mildly aligned with its direction
+(+0.06 vs −0.11). Reading recorded: a usable training signal inside an off-policy update, the best
+held-out policy so far, but one seed and a collapsed plain arm, so not yet a beaten healthy
+baseline. The control's 6 h limit cut it 72 transitions short; `pretrain_wang resume <run>
+--transitions N` finished it (and is the way to add a final evaluation to any run). ~13
+shared-GPU hours. Next: two more seeds, a control that keeps the optimizer state or halves the
+actor learning rate, weights 0.25 and 1.0. Record section "fourth experiment"; README row updated.
