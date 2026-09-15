@@ -1,9 +1,9 @@
 """Native direct-picker cloth_drag diagnostic, reusing task/assets and adjoint utilities.
 
 This explicitly removes robot contacts/IK. Every decision has the same five
-substeps as cloth_drag. Sensitivities use retained projected matrices and the
-inertia chain; friction history derivatives are not included and must be gated
-by measured finite differences. State is cloth x/v, commanded tool, and goal.
+substeps as cloth_drag. Sensitivities use the configured retained or accepted-state system and the
+inertia chain, optionally including exported half-plane friction history
+couplings. Every variant must be checked against measured finite differences. State is cloth x/v, commanded tool, and goal.
 """
 from __future__ import annotations
 
@@ -364,4 +364,5 @@ class IAQLClothEnv:
 
     def describe(self):
         return dict(config=asdict(self.cfg), variant="cloth_drag_direct_picker", state_dim=self.obs_dim,
-                    vertices=self.n, slots=self.N, derivative=f"{self.cfg.export_mode} Hessian with inertia-only history")
+                    vertices=self.n, slots=self.N, derivative=f"{self.cfg.export_mode} Hessian with " +
+                    ("inertia and exported friction history" if self.cfg.friction_chain else "inertia-only history"))

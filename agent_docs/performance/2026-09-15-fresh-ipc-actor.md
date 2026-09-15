@@ -57,3 +57,18 @@ visual/history actor integration; real-contact metric tests; counterfactual
 response pretraining and its finite-radius validity. Existing replay snapshots
 lack IPC derivatives and tracked response vertices, so those cannot be
 silently reused as differential datasets.
+
+## Additional saved training seeds discovered during this work
+
+The original replay-based runs also completed seeds 1 and 2. These are not new
+fresh-actor runs:
+
+| Seed | SAC return / success | Actor physics return / success |
+|---|---|---|
+| 0 | 6.776 / 9 of 64 | 13.308 / 29 of 64 |
+| 1 | 10.121 / 21 of 64 | 14.101 / 47 of 64 |
+| 2 | 9.378 / 18 of 64 | 8.527 / 6 of 64 |
+
+Actor physics wins two seeds and loses one. This strengthens the need to measure
+training stability; it does not establish reliable dominance or prove replay
+dilution caused the failure. Sources: `output/iaql/vec20k_s{0,1,2}_{sac64,actor_trust}.log`.

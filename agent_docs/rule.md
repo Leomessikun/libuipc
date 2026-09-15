@@ -117,3 +117,9 @@ record it here in the same commit.**
 - During CI watch duty: "you confirm all operations yourself" — scoped to
   that autonomous monitoring task; normal confirmation rules apply
   elsewhere.
+
+- IPC/dressing pretraining experiments use **dense action-conditioned Q plus
+  a normalized residual trunk** as the chosen baseline. Keep dense Q's dressing
+  paper provenance separate from residual/normalization design; preserve saved
+  architectures on resume and retain latent/plain as explicit ablations.
+  (Set 2026-09-15.)

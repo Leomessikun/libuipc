@@ -2491,3 +2491,16 @@ and checkpoint-aware dense/residual dressing defaults. See
 [protocol and evidence](performance/2026-09-15-fresh-ipc-actor.md).
 Native CUDA smoke passes at rho=.5 and rho=1; no new learning claim yet.
 Next: solver-derived counterfactual response experiments requested by owner.
+
+## 2026-09-15 — Counterfactual response pilots
+
+Implemented `counterfactual.response_objective` and `response_experiment` native
+collection/offline comparisons. See [results and limitations](performance/2026-09-15-counterfactual-response.md).
+Collected 640 transitions each at friction 0 and .6, checked finite-radius true
+rollouts and nominal repeatability, and ran three-seed objective/history/Q
+probes and cross-friction evaluation. Literal CF barely differs from response
+training; radius-normalized differences improve decoder derivatives. Frozen
+representation/value advantages remain unproven. A constant tangent is a strong
+baseline (.988 no-friction cosine); do not read high cosine as encoder success.
+Diagnostic checkpoints are fixed-mesh models, not production dressing weights.
+Also found old replay actor seed 2 loses to SAC: seed-level instability remains.

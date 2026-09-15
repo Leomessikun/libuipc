@@ -534,3 +534,12 @@ matched controls. Native smoke passes; multi-seed learning validation remains.
 Dressing launchers now default to dense/residual with legacy resume preservation.
 Next pretraining experiment: observed responses versus IPC-derived symmetric
 counterfactuals versus explicit Jacobian supervision, on episode-held-out data.
+
+The [counterfactual response pilot](performance/2026-09-15-counterfactual-response.md)
+is implemented and evaluated on real IPC cloth_drag data, including friction
+shift. Normalized differences improve learned response slopes, but frozen
+encoder and value probes have not passed the gate for dressing RL. Remaining:
+real visual/history data with tracked response correspondence, varied contact
+regimes and garment/human holdouts. Constant-tangent and command-history baselines
+must accompany future representation claims. The old replay actor also loses
+seed 2 despite winning seeds 0/1; fresh-protocol learning curves are still needed.

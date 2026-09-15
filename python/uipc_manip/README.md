@@ -506,3 +506,50 @@ points is dense, cheap, and has no radius to tune against the scene scale.
   keeps force out of simulation pretraining.
 * **This is pretraining only.** There is no rollout filter, behaviour-cloning
   distillation, or sim-to-real stage.
+
+### IPC response pretraining experiments
+
+`response_experiment` tests the new differential objectives on a **fixed-mesh
+cloth_drag diagnostic**, before expensive dressing RL. It does not produce a
+checkpoint compatible with `--init-representation`; production trajectory
+pretraining remains `pretrain_offline`. The diagnostic reuses PointNet++ and
+normalized residual heads, with a GRU over partial point observations and past
+commands. Material-coordinate decoder queries require known vertex identity.
+
+```bash
+# Use the native IPC Python/library environment used by iaql_benchmark.
+python -m uipc_manip.response_experiment collect --out output/response_data \
+  --episodes 8 --length 20 --slots 4 --friction 0 --device cuda
+python -m uipc_manip.response_experiment run --data output/response_data \
+  --out output/response_comparison --steps 500 --seeds 0 1 2 --device cuda
+```
+
+The default arms are random encoder, response-only, explicit Jacobian matching,
+literal symmetric counterfactual regression, radius-normalized central
+difference, and normalized difference without history. Select
+`--variants counterfactual_no_history` for the literal objective without history.
+All arms additionally fit matched dense value probes with/without predicted
+per-point response. Those targets are finite-horizon random-policy Monte Carlo
+returns, **not SAC training or dressing success**.
+
+Collection measures real perturbed rollouts at multiple radii and nominal replay
+noise. Response and tangent labels are in meters and meters per normalized
+action, respectively. Six of eight episode groups train; two validate. All slots
+of a reset episode stay together. Response normalization uses training rows
+only. The second corpus can be passed via `--ood-data` for evaluation only; its
+mesh queries and visible vertex IDs must match. Synthetic partial point subsets
+and further point removal are not a rendered occlusion benchmark.
+
+`counterfactual.response_objective` is reusable independently of this harness.
+For squared error, literal endpoint regression weights slope errors by
+`epsilon**2`; `difference` divides the central difference by `2*epsilon` before
+comparing against `D v`. It uses ordinary backward and retains encoder gradients.
+The explicit Jacobian arm intentionally retains the mixed-derivative graph.
+Perturbations shrink symmetrically at action bounds; they are never clipped
+without adjusting the target. Zero-radius rows keep nominal supervision only.
+
+`--target-sampling dense|uniform|sensitivity|task` controls training vertices.
+Sensitivity sampling mixes sensitive and uniform vertices; task sampling adds
+recorded grasp vertices (not sleeve/contact annotations). Validation always
+covers all vertices. Constant-tangent and commands-only probes are essential:
+a good learned JVP score alone does not establish a useful representation.
