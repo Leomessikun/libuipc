@@ -240,15 +240,19 @@ def refit(args):
 
 
 def evaluate(env, agent, seeds, horizon):
+    """Deterministic episodes; a multi-slot world runs one round of ``N`` episodes per seed."""
+    N = getattr(env, "N", 1)
     episodes = []
     for seed in seeds:
-        obs = env.reset(seed)
-        total = 0.0
+        obs = np.asarray(env.reset(seed)).reshape(N, -1)
+        total = np.zeros(N)
         for _ in range(horizon):
-            out = env.step(agent.act(obs[None], deterministic=True)[0])
-            obs = out["obs"]
-            total += out["reward"]
-        episodes.append(dict(seed=seed, return_=total, distance=out["distance"], success=out["success"]))
+            out = env.step(agent.act(obs, deterministic=True).reshape(N, 3))
+            obs = np.asarray(out["obs"]).reshape(N, -1)
+            total += np.asarray(out["reward"]).reshape(N)
+        distance, success = np.asarray(out["distance"]).reshape(N), np.asarray(out["success"]).reshape(N)
+        for j in range(N):
+            episodes.append(dict(seed=seed, slot=j, return_=float(total[j]), distance=float(distance[j]), success=bool(success[j])))
     return episodes
 
 
@@ -268,8 +272,14 @@ def sidecar_batch(batch, state_dim, action_dim=3, shuffle=None):
 
 
 def online(env, args):
+    """Transitions are counted per slot: a world of ``N`` slots takes ``online_steps / N`` lockstep
+    steps, appends ``N`` rows per step and makes ``updates_per_step`` updates per transition."""
     results = []
-    eval_seeds = [9000+k for k in range(args.eval_episodes)]
+    N = getattr(env, "N", 1)
+    rounds = max(1, -(-args.eval_episodes // N))
+    eval_seeds = [9000+k for k in range(rounds)]
+    env_steps = -(-args.online_steps // N)
+    warmup_steps = -(-64 // N)
     for weight in ([0.0, args.beta] if args.online_weights is None else args.online_weights):
         agent = agent_for(env.obs_dim, args.seed+50, weight, args.actor_weight)
         mechanics = weight > 0 or args.actor_weight > 0
@@ -279,42 +289,48 @@ def online(env, args):
         # so an old row keeps learning values after its tangent is gone (design: replay and target freshness).
         replay, sidecar = [], collections.deque()
         t0, eval_s = time.monotonic(), 0.0
-        obs = env.reset(args.seed)
+        obs = np.asarray(env.reset(args.seed)).reshape(N, -1)
         last_stats, progress = {}, []
-        for i in range(args.online_steps):
-            action = rng.uniform(-1, 1, 3) if i < 64 else agent.act(obs[None], deterministic=False)[0]
-            out = env.step(action, capture=mechanics)
-            row = dict(obs=obs, action=action, reward=out["reward"], next_obs=out["obs"])
-            if mechanics:
-                row.update(tangent=out["tangent"].astype(np.float32), reward_gradient=out["reward_gradient"])
-                sidecar.append(row)
-                while len(sidecar) > args.tangent_rows:
-                    old = sidecar.popleft()
-                    del old["tangent"], old["reward_gradient"]
-            replay.append(row)
+        transitions = 0
+        for i in range(env_steps):
+            actions = rng.uniform(-1, 1, (N, 3)) if i < warmup_steps else agent.act(obs, deterministic=False).reshape(N, 3)
+            out = env.step(actions if N > 1 else actions[0], capture=mechanics)
+            next_obs = np.asarray(out["obs"]).reshape(N, -1)
+            rewards = np.asarray(out["reward"]).reshape(N)
+            for j in range(N):
+                row = dict(obs=obs[j], action=actions[j], reward=float(rewards[j]), next_obs=next_obs[j])
+                if mechanics:
+                    tangent = np.asarray(out["tangent"]).reshape(N, env.obs_dim, 3)[j]
+                    row.update(tangent=tangent.astype(np.float32), reward_gradient=np.asarray(out["reward_gradient"]).reshape(N, 3)[j])
+                    sidecar.append(row)
+                    while len(sidecar) > args.tangent_rows:
+                        old = sidecar.popleft()
+                        del old["tangent"], old["reward_gradient"]
+                replay.append(row)
+            transitions += N
             if args.replay_rows and len(replay) > args.replay_rows:
                 del replay[:len(replay)-args.replay_rows]
             if len(replay) >= 64:
-                for _ in range(args.updates_per_step):
+                for _ in range(int(round(args.updates_per_step * N))):
                     batch = [replay[k] for k in rng.integers(0, len(replay), 32)]
                     kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if mechanics else {}
                     last_stats = agent.update_state_batch(tensor([r["obs"] for r in batch]), tensor([r["action"] for r in batch]),
                         tensor([[r["reward"]] for r in batch]), tensor([r["next_obs"] for r in batch]), torch.ones(32, 1), **kw)
-            if (i+1) % 64 == 0:
-                print(json.dumps({"online_weight": weight, "steps": i+1, "stats": last_stats}), flush=True)
-            if args.eval_every and (i+1) % args.eval_every == 0 and i+1 < args.online_steps:
+            if transitions // 64 != (transitions - N) // 64:
+                print(json.dumps({"online_weight": weight, "steps": transitions, "stats": last_stats}), flush=True)
+            if args.eval_every and transitions // args.eval_every != (transitions - N) // args.eval_every and transitions < args.online_steps:
                 # The snapshot follows this decision's advance (a dump straight after a recover is not restorable).
                 t1 = time.monotonic()
                 snap = env.snapshot()
                 episodes = evaluate(env, agent, eval_seeds, args.eval_steps)
                 env.restore(snap)
                 eval_s += time.monotonic()-t1
-                progress.append(dict(steps=i+1, training_s=time.monotonic()-t0-eval_s, evaluation=episodes))
-                print(json.dumps({"online_weight": weight, "steps": i+1, "evaluation": episodes}), flush=True)
-            obs = env.reset(args.seed+i+1) if out["done"] else out["obs"]
+                progress.append(dict(steps=transitions, training_s=time.monotonic()-t0-eval_s, evaluation=episodes))
+                print(json.dumps({"online_weight": weight, "steps": transitions, "evaluation": episodes}), flush=True)
+            obs = np.asarray(env.reset(args.seed+i+1)).reshape(N, -1) if out["done"] else next_obs
         duration = time.monotonic()-t0-eval_s
         evaluation = evaluate(env, agent, eval_seeds, args.eval_steps)
-        result = dict(weight=weight, actor_weight=args.actor_weight, steps=args.online_steps, training_s=duration,
+        result = dict(weight=weight, actor_weight=args.actor_weight, steps=transitions, slots=N, training_s=duration,
                       evaluation=evaluation, progress=progress, stats=last_stats, replay_rows=len(replay),
                       sidecar_rows=len(sidecar), labels="shuffled" if args.shuffle_labels and mechanics else "paired")
         agent.save(args.out/f"online_beta_{weight}.pt", step=args.online_steps, metadata=result)
@@ -438,6 +454,7 @@ def main(argv=None):
     p.add_argument("--actor-sigma", type=float, default=0.0, help="Gaussian action-locality weight (0: hard distance gate)")
     p.add_argument("--continuation-trust", type=float, default=0.0, help="kappa of exp(-kappa d^2) on the label's continuation part")
     p.add_argument("--reward-mode", choices=["dense", "terminal"], default="dense")
+    p.add_argument("--num-slots", type=int, default=1, help="identical cloths stepping in lockstep in one World (online phase)")
     p.add_argument("--shuffle-labels", action="store_true",
                    help="online control: permute each batch's mechanics among its valid rows (everything else matched)")
     p.add_argument("--online-weights", type=float, nargs="+", default=None,
@@ -463,7 +480,9 @@ def main(argv=None):
     t0 = time.monotonic()
     env = IAQLClothEnv(args.out/"world", IAQLEnvConfig(friction=args.friction, velocity_tolerance=args.velocity_tolerance,
                                                         export_mode=args.export_modes[0], friction_chain=args.friction_chain,
-                                                        reward_mode=args.reward_mode))
+                                                        reward_mode=args.reward_mode, num_slots=args.num_slots))
+    if args.num_slots > 1 and args.phase != "online":
+        raise SystemExit("--num-slots > 1 is for --phase online; the probe, fit and fidelity phases use one slot")
     report = dict(environment=env.describe(), seed=args.seed, state_activation="silu",
                   arguments={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()})
     path = args.out/"report.json"

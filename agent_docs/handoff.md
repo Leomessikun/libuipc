@@ -2375,3 +2375,22 @@ arms now run one after another (`scratchpad/run_arms_seq.sh`,
 about an hour each): SAC; mix ρ 0.5; the direction term 0.5; critic slope
 0.1; mix + critic; mix + critic with shuffled labels. Not yet read.
 
+## 2026-09-15 — Lockstep slots: several cloths per World
+
+Another session's `pretrain_wang resume` job took the GPU back at 12:10, the
+single-slot SAC arm fell to 1 s per step, and six sequential 20k arms would
+have taken 30 hours. `IAQLEnvConfig.num_slots` now builds N identical cloths
+one metre apart in one World (never touching), stepping in lockstep with
+per-slot anchors, goals, rewards and tangents; one exported system and one
+factorisation per substep serve every slot, each slot's tangent being its own
+block of the solution (`tangent_pass` with the slot's dof offset), the friction
+coupling rows filtered per slot, velocities sliced by `backend_fem_vertex_offset`.
+The single-slot interface is unchanged (scalars), the online loop counts
+transitions per slot and makes `updates_per_step` updates per transition,
+evaluation runs N episodes per seed. Four-slot smoke with the mix actor term:
+0.44 s per transition against about 1 s single-slot under the same
+contention. The single-slot sequential arms were stopped at 2,000 steps and
+relaunched with eight slots (`scratchpad/run_arms_vec.sh`,
+`output/iaql/vec20k_s0_{sac,actor_mix,critic,both,shuffled,actor_dir}`, 20k
+transitions each, evaluation of 8 episodes every 2,000). Not yet read.
+

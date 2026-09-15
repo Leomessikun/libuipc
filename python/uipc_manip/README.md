@@ -156,7 +156,12 @@ estimator replacement `(1−ρc)·dQ/da + ρc·g` at the policy's own action
 pays the distance only at the episode's last decision, so only the
 continuation channel carries the task. Every update logs the label's
 continuation-to-reward ratio, its trust and disagreement, and the critic's
-cosine with the label at the replayed action. `--phase refit` re-fits critics on a finished run's
+cosine with the label at the replayed action. `--num-slots N` puts N
+identical cloths one metre apart in one World for the online phase: one
+Newton solve, one exported system and one factorisation per substep serve
+every slot, transitions are counted per slot, and evaluation runs N episodes
+at once (under GPU contention four slots cost 1.8 s per lockstep step against
+1 s for one). `--phase refit` re-fits critics on a finished run's
 saved fixed dataset on the CPU (weight sweep, shuffled-label control, constant
 mean slope). `--phase online --online-weights 0.1 --eval-every 500` runs one
 online arm with periodic evaluation; one process per arm runs the SAC/IAQL
