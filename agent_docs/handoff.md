@@ -2467,3 +2467,18 @@ mechanics arms were relaunched at 16:00 with 64 slots on the GPU tangent
 `--updates-per-step` is a float now, so a larger batch can keep the sample
 rate. The 8-slot κ = 0 hard-gate mix arm finished: see the record.
 
+## 2026-09-15 — First round on the throughput rebuild: the actor label doubles SAC's return
+
+`vec20k_s0_*`, 64 slots, 20k transitions, κ = 2, σ = 0.5, four mechanics
+arms in parallel on the GPU tangent (109–116 ms per transition) beside the
+SAC arm (68 ms): SAC 6.78 return / 0.062 m / 9 of 64 successes; critic slope
+alone 6.58 / 0.063 / 5; actor direction (mix ρ 0.5) 13.31 / 0.022 / 29;
+actor + critic 12.33 / 0.028 / 18; both with permuted labels 9.05 / 0.048 /
+9. Direct label > Sobolev critic ≈ SAC; the permuted control keeps a third
+of the gain. Record section written. Launched 16:40 the second round, six
+64-slot arms in parallel (`scratchpad/run_arms_vec6.sh`,
+`output/iaql/vec20k_s{1,2}_{sac64,actor_trust}`, `vec20k_s0_actor_shuffled`,
+`vec20k_s0_actor_rho1`): two more seeds of SAC and the actor arm, an
+actor-only permuted-label control, and ρ = 1. The 15:48 relaunch is the one
+the previous entry calls 16:00.
+

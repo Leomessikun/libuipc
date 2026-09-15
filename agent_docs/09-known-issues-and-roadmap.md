@@ -518,9 +518,12 @@ friction 0.6 failed the gate (1/4) for want of the lagged friction terms;
 with the raw Hessian and the lagged coupling the same re-assembly now
 exports (`export_prev_coupling`, half-plane only) the frictional tangent is
 0.14 % median and the gate passes on every mechanically resolved state. The
-matched 5,000-step SAC/IAQL pair at friction 0 is inconclusive: neither arm
-learns the task at that budget (final mean distance 0.078 / 0.077, no
-success), so the derivative loss has no learning result yet. Open: simplex (cloth-body) friction
+benchmark became learnable once the GPU was free and the world held 64
+lockstep cloths with the tangent on the GPU: at 20k transitions the actor's
+direct use of the exact label (estimator replacement, ρ 0.5, continuation
+trust) reaches 13.3 return / 0.022 m / 29 of 64 successes against SAC's
+6.8 / 0.062 / 9, the critic slope loss alone adds nothing, and a permuted
+label keeps a third of the gain (one seed). Open: simplex (cloth-body) friction
 coupling, a stick-slip-switching state, a learnable version of the
 benchmark (vanilla SAC must show a curve before any comparison), calibrated
 directional contact trust, and visual transfer.

@@ -453,3 +453,47 @@ continuation destroys the direction (`ipc_sac` 0.09 where `ipc_sobolev` is
 already said. The ranking direct label > Sobolev critic > SAC critic is the
 one the combined learner's arms test online next.
 
+## Five matched arms at 20k transitions, 64 lockstep slots (`vec20k_s0_*`, 2026-09-15)
+
+The first round on the throughput rebuild (64 cloths per World, batched GPU
+tangent, GPU learner). All arms: seed 0, 64 slots, 20k transitions (313
+lockstep steps, one random warm-up step), two updates of batch 32 per
+transition, `converged_raw` label, continuation trust κ = 2, Gaussian action
+locality σ = 0.5, evaluation of 64 deterministic 50-step episodes every 2,000
+transitions and at the end. The mechanics arms ran four in parallel on the
+GPU tangent (109–116 ms per transition each); the SAC arm ran alongside
+five processes (68 ms). An 8-slot round earlier the same day (SAC 12.85 /
+0.024 m / 3 of 8; the κ = 0 hard-gate mix arm 11.80 / 0.030 / 1 of 8) learns
+faster per transition than the 64-slot round (one random warm-up step, 64
+correlated streams), so arms are compared only within a round.
+
+| Arm | Actor term | Critic slope loss | 4k | 8k | 12k | 16k | 20k: mean return / mean distance / successes |
+|---|---|---|---|---|---|---|---|
+| SAC64 | – | – | 2.72 / 0.086 / 1 | 5.80 / 0.068 / 4 | 6.45 / 0.064 / 4 | 7.29 / 0.059 / 7 | **6.78 / 0.062 / 9 of 64** |
+| critic_trust | – | β 0.1 | 3.37 / 0.082 / 1 | 6.13 / 0.066 / 4 | 6.35 / 0.065 / 8 | 6.72 / 0.062 / 10 | **6.58 / 0.063 / 5 of 64** |
+| actor_trust | mix ρ 0.5 | – | 4.88 / 0.073 / 6 | 8.53 / 0.051 / 14 | 11.15 / 0.035 / 14 | 13.19 / 0.023 / 33 | **13.31 / 0.022 / 29 of 64** |
+| both_trust | mix ρ 0.5 | β 0.1 | 9.22 / 0.047 / 5 | 9.51 / 0.045 / 3 | 9.90 / 0.043 / 3 | 11.62 / 0.033 / 15 | **12.33 / 0.028 / 18 of 64** |
+| shuffled_trust | mix ρ 0.5, labels permuted | β 0.1, labels permuted | −5.38 / 0.135 / 3 | 7.22 / 0.059 / 9 | 1.62 / 0.092 / 10 | 8.65 / 0.051 / 5 | **9.05 / 0.048 / 9 of 64** |
+
+Final learner statistics: the actor arm's critic loss 0.14 and Q mean 11.6
+against SAC's 0.46 and 6.0; its label's continuation-to-reward ratio 1.05
+with continuation trust 0.74 and twin disagreement 0.39 (SAC-side critics
+never learned enough for the trust to rise: the critic arm's ratio 0.35);
+the sidecar covered 6 % of the sampled rows (1,024 rows over 16k), so the
+critic slope loss acted on few rows and its `adjoint_loss` was 0.000–0.004.
+
+Reading. (1) The direct actor use of the exact one-decision label doubles
+the return over SAC (13.3 against 6.8), cuts the final distance from
+0.062 m to 0.022 m and lifts the success count from 9 to 29 of 64, monotone
+from 4k transitions on; this is the actor-side line's claim in a benchmark
+with a healthy baseline, one seed. (2) The critic slope loss adds nothing on
+its own at this sidecar coverage and slightly reduces the actor arm's gain
+when combined (12.3 against 13.3): direct label > Sobolev critic, as the
+fidelity probe predicted, and the Sobolev term is not the core. (3) The
+shuffled control lands between SAC and the actor arm (9.05): a third of the
+actor-side gain does not need the label's semantics (a permuted label still
+replaces part of the critic's gradient by a reward-shaped direction and adds
+exploration noise), two thirds do. An actor-only shuffled control and more
+seeds are the next round. (4) Both mix arms' Q means are twice SAC's with
+lower critic loss: the policy improvement feeds back into the value.
+
