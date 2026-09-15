@@ -92,6 +92,9 @@ class SACConfig:
     # fraction of a transition's command for its direction to count.
     physics_actor_weight: float = 0.0
     physics_actor_gate: float = 0.5
+    physics_actor_action_distance: float = 0.5
+    """State benchmark: a row's label counts for the actor term only while the policy's mean is within
+    this normalised distance of the replayed action the label was computed at."""
     adjoint_weight: float = 0.0
     adjoint_gradient_scale: float = 1.0
     grad_clip_max_norm: float = 0.0
@@ -722,20 +725,33 @@ class SACAgent:
         return self._finish_update(stats, obs, state, label, index, physics)
 
     def update_state_batch(self, obs, action, reward, next_obs, mask, *, tangent=None, reward_gradient=None, valid=None):
-        """Bounded diagnostic replay supplies mechanics, never stale value-dependent slopes."""
+        """Bounded diagnostic replay supplies mechanics, never stale value-dependent slopes.
+
+        One refreshed label ``g = dR/du + γ m Dᵀ∇V̄(s')`` at the replayed action feeds two consumers:
+        the critic's slope loss (``adjoint_weight``) and the actor's direction term
+        (``physics_actor_weight``, the physics-gradient line's ``−β·unit(g)·μ(s)``), the latter only on
+        rows whose replayed action is still close to the policy's mean."""
         if self.cfg.actor_type != "state":
             raise ValueError("update_state_batch requires the full-state actor")
-        paired = None
-        if self.cfg.adjoint_weight:
+        paired = physics = None
+        if self.cfg.adjoint_weight or self.cfg.physics_actor_weight:
             from .iaql import soft_targets
             if tangent is None or reward_gradient is None or valid is None:
                 raise ValueError("IAQL batch needs mechanics and validity")
             y, g = soft_targets(self.actor, self.critic_target, next_obs, reward, mask, tangent, reward_gradient,
                                 self.alpha.detach(), self.cfg.discount,
                                 self.cfg.reward_abs_bound / max(1-self.cfg.discount, 1e-6))
-            paired = (y, g, valid)
+            if self.cfg.adjoint_weight:
+                paired = (y, g, valid)
+            if self.cfg.physics_actor_weight:
+                with torch.no_grad():
+                    mu, _ = self.actor.head(obs)
+                    near = (mu - action).norm(dim=-1) <= float(self.cfg.physics_actor_action_distance)
+                physics = (g, (valid.reshape(-1) > 0.5) & near)
         stats = self._update_critic(obs, action, reward, next_obs, mask, state=obs, next_state=next_obs, paired_targets=paired)
-        return self._finish_update(stats, obs, obs)
+        if physics is not None:
+            stats["physics_actor_fraction"] = float(physics[1].float().mean())
+        return self._finish_update(stats, obs, obs, physics=physics)
 
     def _finish_update(self, stats, obs, state=None, label=None, index=0, physics=None):
         """Shared SAC actor, temperature and target schedule for flat/state batches."""

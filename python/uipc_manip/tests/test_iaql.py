@@ -135,3 +135,21 @@ def test_sidecar_batch_shuffle_permutes_only_valid_rows():
     assert sorted(float(t[0, 0]) for t in kw["tangent"][:3]) == [1., 2., 3.]
     assert all(float(kw["tangent"][i, 0, 0]) == float(kw["reward_gradient"][i, 0]) for i in range(3))
     assert float(kw["tangent"][3].abs().sum()) == 0
+
+
+def test_state_batch_feeds_the_actor_term_from_the_same_label():
+    torch.manual_seed(9)
+    agent = SACAgent(ObsSpec(3), 2, SACConfig(actor_type="state", critic_input="privileged", privileged_dim=4,
+        hidden_dim=16, batch_size=8, adjoint_weight=0.0, physics_actor_weight=0.5, actor_update_freq=1,
+        physics_actor_action_distance=10.0, state_activation="silu"), "cpu")
+    state, action = torch.randn(8, 4), torch.rand(8, 2)*2-1
+    tangent = torch.randn(8, 4, 2)*.1
+    nxt = state+torch.einsum("bsa,ba->bs", tangent, action)
+    stats = agent.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1),
+                                     tangent=tangent, reward_gradient=torch.zeros(8, 2), valid=torch.ones(8))
+    assert "physics_loss" in stats and stats["physics_rows"] == 8 and stats["physics_actor_fraction"] == 1.0
+    assert "adjoint_loss" not in stats and agent.physics_beta is not None
+    agent.cfg.physics_actor_action_distance = 0.0
+    stats = agent.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1),
+                                     tangent=tangent, reward_gradient=torch.zeros(8, 2), valid=torch.ones(8))
+    assert stats["physics_actor_fraction"] == 0.0 and "physics_loss" not in stats

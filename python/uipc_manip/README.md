@@ -140,7 +140,14 @@ its approximate gradients. `--export-modes last_iterate converged converged_raw`
 captures every probe decision with each backend export mode (the last Newton
 iterate's projected matrix, or a re-assembly at the accepted state, projected
 or raw) against one set of differences; `--shuffle-labels` is the matched
-online control. `--phase refit` re-fits critics on a finished run's
+online control. One refreshed label feeds two consumers: `--online-weights`
+(the critic's slope loss) and `--actor-weight` (the physics-gradient line's
+direction term on the actor, gated by the policy's distance to the replayed
+action), so one process runs any of SAC / critic / actor / both / shuffled.
+`--phase fidelity --fidelity-sac A.pt --fidelity-iaql B.pt` compares each
+critic's `dQ/da`, the exact one-decision label with each critic's
+continuation, and the reward gradient against finite differences of the
+frozen policy's `H`-decision return. `--phase refit` re-fits critics on a finished run's
 saved fixed dataset on the CPU (weight sweep, shuffled-label control, constant
 mean slope). `--phase online --online-weights 0.1 --eval-every 500` runs one
 online arm with periodic evaluation; one process per arm runs the SAC/IAQL

@@ -2314,3 +2314,23 @@ baseline. The control's 6 h limit cut it 72 transitions short; `pretrain_wang re
 --transitions N` finished it (and is the way to add a final evaluation to any run). ~13
 shared-GPU hours. Next: two more seeds, a control that keeps the optimizer state or halves the
 actor learning rate, weights 0.25 and 1.0. Record section "fourth experiment"; README row updated.
+
+## 2026-09-15 — The combined learner and the actor-gradient fidelity probe
+
+In the state benchmark's `update_state_batch` the refreshed label
+`g = dR/du + γ m Dᵀ∇V̄(s')` now feeds two consumers: the critic's slope loss
+(`adjoint_weight`) and the actor's direction term (`physics_actor_weight`,
+the physics-gradient line's `−β·unit(g)·μ(s)` through the existing
+`_update_actor_and_alpha` path, counted only on sidecar rows whose replayed
+action is within `physics_actor_action_distance` of the policy's mean;
+`physics_actor_fraction` reports the share). `iaql_benchmark --actor-weight`
+sets it, so one process runs any of the five arms (SAC, critic, actor, both,
+shuffled). `--phase fidelity` is the ADR's counterfactual-action check: at
+states of a frozen policy it compares each loaded critic's `dQ/da`, the exact
+one-decision label with that critic's continuation, and the reward gradient
+against the finite-difference gradient of the frozen policy's `H`-decision
+return, and rolls every candidate out along `±η·unit(g)` for its own
+improvement. Launched 00:10 on the two 5k checkpoints (10 states, H = 8,
+η = 0.1, `output/iaql/fidelity_s0`), about an hour on the shared GPU. Tests:
+`test_iaql` (9), agent and physics-signal suites pass (51).
+

@@ -20,11 +20,12 @@ from .obs import ObsSpec
 from .sac import SACAgent, SACConfig
 
 
-def agent_for(state_dim, seed=0, weight=0.0):
+def agent_for(state_dim, seed=0, weight=0.0, actor_weight=0.0):
     torch.manual_seed(seed)
     return SACAgent(ObsSpec(3), 3, SACConfig(actor_type="state", critic_input="privileged",
         privileged_dim=int(state_dim), hidden_dim=128, batch_size=32, actor_lr=3e-4, critic_lr=3e-4,
-        actor_log_std_min=-5, actor_log_std_max=1, adjoint_weight=weight, state_activation="silu"), "cpu")
+        actor_log_std_min=-5, actor_log_std_max=1, adjoint_weight=weight, physics_actor_weight=actor_weight,
+        state_activation="silu"), "cpu")
 
 
 def tensor(x):
@@ -266,7 +267,8 @@ def online(env, args):
     results = []
     eval_seeds = [9000+k for k in range(args.eval_episodes)]
     for weight in ([0.0, args.beta] if args.online_weights is None else args.online_weights):
-        agent = agent_for(env.obs_dim, args.seed+50, weight)
+        agent = agent_for(env.obs_dim, args.seed+50, weight, args.actor_weight)
+        mechanics = weight > 0 or args.actor_weight > 0
         rng = np.random.default_rng(args.seed+60)
         shuffle_rng = np.random.default_rng(args.seed+70)
         # The TD replay keeps every transition; the mechanics sidecar is bounded and evicts on its own,
@@ -277,9 +279,9 @@ def online(env, args):
         last_stats, progress = {}, []
         for i in range(args.online_steps):
             action = rng.uniform(-1, 1, 3) if i < 64 else agent.act(obs[None], deterministic=False)[0]
-            out = env.step(action, capture=weight > 0)
+            out = env.step(action, capture=mechanics)
             row = dict(obs=obs, action=action, reward=out["reward"], next_obs=out["obs"])
-            if weight:
+            if mechanics:
                 row.update(tangent=out["tangent"].astype(np.float32), reward_gradient=out["reward_gradient"])
                 sidecar.append(row)
                 while len(sidecar) > args.tangent_rows:
@@ -291,7 +293,7 @@ def online(env, args):
             if len(replay) >= 64:
                 for _ in range(args.updates_per_step):
                     batch = [replay[k] for k in rng.integers(0, len(replay), 32)]
-                    kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if weight else {}
+                    kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if mechanics else {}
                     last_stats = agent.update_state_batch(tensor([r["obs"] for r in batch]), tensor([r["action"] for r in batch]),
                         tensor([[r["reward"]] for r in batch]), tensor([r["next_obs"] for r in batch]), torch.ones(32, 1), **kw)
             if (i+1) % 64 == 0:
@@ -308,13 +310,89 @@ def online(env, args):
             obs = env.reset(args.seed+i+1) if out["done"] else out["obs"]
         duration = time.monotonic()-t0-eval_s
         evaluation = evaluate(env, agent, eval_seeds, args.eval_steps)
-        result = dict(weight=weight, steps=args.online_steps, training_s=duration, evaluation=evaluation, progress=progress,
-                      stats=last_stats, replay_rows=len(replay), sidecar_rows=len(sidecar),
-                      labels="shuffled" if args.shuffle_labels and weight else "paired")
+        result = dict(weight=weight, actor_weight=args.actor_weight, steps=args.online_steps, training_s=duration,
+                      evaluation=evaluation, progress=progress, stats=last_stats, replay_rows=len(replay),
+                      sidecar_rows=len(sidecar), labels="shuffled" if args.shuffle_labels and mechanics else "paired")
         agent.save(args.out/f"online_beta_{weight}.pt", step=args.online_steps, metadata=result)
         results.append(result)
         print(json.dumps({"online_result": result}), flush=True)
     return results
+
+
+def fidelity(env, args):
+    """Actor-gradient fidelity at states of a frozen policy (the ADR's counterfactual-action check).
+
+    At each state the policy's mean action ``a0`` is the centre. Candidate directions: each loaded
+    critic's own ``∂Q/∂a`` at ``a0`` (``dq_*``), the exact one-decision label ``dR/du + γ Dᵀ∇V̄(s')``
+    built with each critic's continuation (``ipc_*``), and the immediate reward gradient alone. The
+    reference is the finite-difference gradient of the ``H``-decision return under the frozen policy
+    (first action perturbed, then the policy, terminal value from the policy's own target critic),
+    taken along the three axes; every candidate is also rolled out along ``±η·unit(g)`` so its own
+    return improvement is measured directly, not through the axis gradient."""
+    gamma = None
+    agents = {}
+    for name, path in (("sac", args.fidelity_sac), ("sobolev", args.fidelity_iaql)):
+        if path is None:
+            continue
+        agent = agent_for(env.obs_dim, args.seed)
+        agent.load(path, load_optimizers=False)
+        agents[name] = agent
+        gamma = agent.cfg.discount
+    if not agents:
+        raise ValueError("fidelity needs at least one checkpoint (--fidelity-sac / --fidelity-iaql)")
+    policy = agents[args.fidelity_policy if args.fidelity_policy in agents else next(iter(agents))]
+    rng = np.random.default_rng(args.seed)
+    H, eta = args.fidelity_horizon, args.fidelity_eta
+    zero_noise = torch.zeros(1, 3)
+
+    def rollout(snap, first_action):
+        env.restore(snap)
+        out = env.step(first_action)
+        total, o = out["reward"], out["obs"]
+        for h in range(1, H):
+            out = env.step(policy.act(o[None], deterministic=True)[0])
+            total += gamma**h * out["reward"]
+            o = out["obs"]
+        with torch.no_grad():
+            s = tensor(o)[None]
+            mu, _ = policy.actor.head(s)
+            v = float(torch.minimum(*policy.critic_target(s, torch.tanh(mu))))
+        return total + gamma**H * v, float(out["distance"])
+
+    records = []
+    for i in range(args.fidelity_states):
+        obs = env.reset(300+i)
+        for _ in range(int(rng.integers(args.guided_steps_min, args.guided_steps_min + 13))):
+            obs = env.step(policy.act(obs[None], deterministic=True)[0])["obs"]
+        snap = env.snapshot()
+        a0 = np.clip(policy.act(obs[None], deterministic=True)[0], -1 + eta, 1 - eta)
+        env.restore(snap)
+        center = env.step(a0, capture=True)
+        row = dict(center, next_obs=center["obs"])
+        directions = {"reward": np.asarray(center["reward_gradient"], dtype=np.float64)}
+        for name, agent in agents.items():
+            _, g = labels(agent, [row], zero_noise)
+            directions[f"ipc_{name}"] = g[0].numpy().astype(np.float64)
+            a = tensor(a0)[None].requires_grad_(True)
+            q1, q2 = agent.critic(tensor(obs)[None], a)
+            directions[f"dq_{name}"] = torch.autograd.grad(torch.minimum(q1, q2).sum(), a)[0][0].numpy().astype(np.float64)
+        axis_gradient = np.array([(rollout(snap, a0 + eta*e)[0] - rollout(snap, a0 - eta*e)[0]) / (2*eta) for e in np.eye(3)])
+        results = {"fd": dict(gradient=axis_gradient.tolist(), norm=float(np.linalg.norm(axis_gradient)))}
+        for name, g in directions.items():
+            u = g / max(float(np.linalg.norm(g)), 1e-12)
+            jp, dp = rollout(snap, a0 + eta*u)
+            jm, dm = rollout(snap, a0 - eta*u)
+            results[name] = dict(gradient=g.tolist(), cosine=comparison(u, axis_gradient)["cosine"],
+                                 improvement=float(jp - jm), distance_gain=float(dm - dp))
+        records.append(dict(state=i, action=a0.tolist(), capture_forward_s=center["capture_forward_s"], results=results))
+        print(json.dumps({"fidelity": records[-1]}), flush=True)
+    names = [k for k in records[0]["results"] if k != "fd"]
+    summary = {n: dict(mean_cosine=float(np.mean([r["results"][n]["cosine"] or 0.0 for r in records])),
+                       improvement_rate=float(np.mean([r["results"][n]["improvement"] > 0 for r in records])),
+                       mean_improvement=float(np.mean([r["results"][n]["improvement"] for r in records])),
+                       mean_distance_gain=float(np.mean([r["results"][n]["distance_gain"] for r in records]))) for n in names}
+    print(json.dumps({"fidelity_summary": summary}), flush=True)
+    return dict(records=records, summary=summary, horizon=H, eta=eta, policy=args.fidelity_policy, states=len(records))
 
 
 def main(argv=None):
@@ -344,13 +422,22 @@ def main(argv=None):
     p.add_argument("--tangent-rows", type=int, default=1024, help="bounded mechanics sidecar; older rows learn values only")
     p.add_argument("--beta", type=float, default=.1)
     p.add_argument("--refit-weights", type=float, nargs="+", default=[0.0, 0.01, 0.1, 1.0])
+    p.add_argument("--actor-weight", type=float, default=0.0,
+                   help="physics_actor_weight: the same refreshed label as a direction term of the actor update")
     p.add_argument("--shuffle-labels", action="store_true",
                    help="online control: permute each batch's mechanics among its valid rows (everything else matched)")
     p.add_argument("--online-weights", type=float, nargs="+", default=None,
                    help="online arms to run in this process (default: 0 and --beta); one arm per process runs the pair in parallel")
-    p.add_argument("--phase", choices=["probe", "all", "refit", "online"], default="all",
+    p.add_argument("--fidelity-sac", type=Path, default=None, help="SAC-arm checkpoint for --phase fidelity")
+    p.add_argument("--fidelity-iaql", type=Path, default=None, help="IAQL-arm checkpoint for --phase fidelity")
+    p.add_argument("--fidelity-policy", choices=["sac", "sobolev"], default="sac", help="whose actor is the frozen continuation policy")
+    p.add_argument("--fidelity-states", type=int, default=10)
+    p.add_argument("--fidelity-horizon", type=int, default=8)
+    p.add_argument("--fidelity-eta", type=float, default=0.1, help="perturbation of the first action in normalised units")
+    p.add_argument("--phase", choices=["probe", "all", "refit", "online", "fidelity"], default="all",
                    help="refit re-fits critics on --out's saved fixed dataset without a simulator; "
-                        "online skips the gate and fixed-teacher fit already recorded for these arguments")
+                        "online skips the gate and fixed-teacher fit already recorded for these arguments; "
+                        "fidelity compares actor-gradient candidates against finite differences of the frozen policy's return")
     args = p.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(1)
@@ -366,6 +453,10 @@ def main(argv=None):
     def save():
         report["elapsed_s"] = time.monotonic()-t0
         path.write_text(json.dumps(report, indent=2))
+    if args.phase == "fidelity":
+        report["fidelity"] = fidelity(env, args)
+        save()
+        return
     if args.phase != "online":
         report["probe"] = probe(env, agent_for(env.obs_dim, args.seed), args)
         save()
