@@ -2451,3 +2451,19 @@ keeps no factorisation. Reproduces `tangent_pass` with the coupling to 1e-10
 fewer, larger updates at a matched sample rate. Measured batched LU of 256
 dense 1200-dof blocks in double: 0.41 s; timings of the whole step follow.
 
+## 2026-09-15 — Host memory: the thread-pooled factorisations grew to 40 GB per arm
+
+At 15:36 the kernel OOM-killed one of the five parallel 64-slot arms (host
+RAM 99 of 123 GB): the two arms with host-side per-slot factorisations had
+reached 40 GB RSS each while the SAC arm sat at 1.3 GB. Per step they
+allocate 320 SuperLU factorisations on eight threads and glibc's arenas do
+not return that memory, so RSS grows without bound; the desktop may have
+stalled at that moment. The two survivors were stopped, the smoke that timed
+the 64-slot step gave 134 ms per transition on the host path against 78 ms
+on the GPU tangent under the same five-way contention, and a 256-slot world
+did not finish its settle and first steps within four minutes, so the four
+mechanics arms were relaunched at 16:00 with 64 slots on the GPU tangent
+(`scratchpad/run_arms_vec5.sh`, same names), no host factorisation at all.
+`--updates-per-step` is a float now, so a larger batch can keep the sample
+rate. The 8-slot κ = 0 hard-gate mix arm finished: see the record.
+

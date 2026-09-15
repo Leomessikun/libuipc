@@ -446,7 +446,7 @@ def main(argv=None):
     p.add_argument("--eval-steps", type=int, default=50)
     p.add_argument("--eval-episodes", type=int, default=2)
     p.add_argument("--eval-every", type=int, default=0, help="evaluate every N online steps from a snapshot (0: only at the end)")
-    p.add_argument("--updates-per-step", type=int, default=1)
+    p.add_argument("--updates-per-step", type=float, default=1.0, help="learner updates per transition (a fraction with a larger batch keeps the sample rate)")
     p.add_argument("--replay-rows", type=int, default=0, help="TD replay bound (0: keep every transition)")
     p.add_argument("--tangent-rows", type=int, default=1024, help="bounded mechanics sidecar; older rows learn values only")
     p.add_argument("--beta", type=float, default=.1)
