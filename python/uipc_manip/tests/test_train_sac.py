@@ -52,6 +52,18 @@ def test_resume_recovers_timing_reward_camera_and_temperature():
     assert env_cfg.cache.cache_path.exists()
 
 
+def test_new_run_uses_dense_residual_but_resume_keeps_saved_architecture():
+    args = build_parser().parse_args([])
+    assert (args.critic_action_mode, args.trunk_style) == ("dense", "residual")
+    saved = _checkpoint()
+    saved["sac_config"].update(critic_action_mode="latent", trunk_style="plain")
+    restore_resume_args(args, [], saved)
+    assert (args.critic_action_mode, args.trunk_style) == ("latent", "plain")
+    argv = ["--eval-only", "--trunk-style", "residual"]
+    with pytest.raises(ValueError, match="trunk-style"):
+        restore_resume_args(build_parser().parse_args(argv), argv, saved)
+
+
 def test_sequence_replay_setting_restores_from_checkpoint():
     payload = _checkpoint()
     payload["metadata"]["training_args"]["sequence_replay"] = True

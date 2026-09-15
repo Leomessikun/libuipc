@@ -2482,3 +2482,12 @@ of the gain. Record section written. Launched 16:40 the second round, six
 actor-only permuted-label control, and ρ = 1. The 15:48 relaunch is the one
 the previous entry calls 16:00.
 
+
+## 2026-09-15 — Fresh IPC actor and dense/residual defaults
+
+Implemented same-noise, same-action fresh actor updates independent of TD
+replay, post-tanh locality, semantic controls, terminal horizon correctness,
+and checkpoint-aware dense/residual dressing defaults. See
+[protocol and evidence](performance/2026-09-15-fresh-ipc-actor.md).
+Native CUDA smoke passes at rho=.5 and rho=1; no new learning claim yet.
+Next: solver-derived counterfactual response experiments requested by owner.

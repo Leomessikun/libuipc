@@ -527,3 +527,10 @@ label keeps a third of the gain (one seed). Open: simplex (cloth-body) friction
 coupling, a stick-slip-switching state, a learnable version of the
 benchmark (vanilla SAC must show a curve before any comparison), calibrated
 directional contact trust, and visual transfer.
+
+Update 2026-09-15: the [fresh actor implementation](performance/2026-09-15-fresh-ipc-actor.md)
+separates actor mechanics from TD replay, fixes action coordinates, and adds
+matched controls. Native smoke passes; multi-seed learning validation remains.
+Dressing launchers now default to dense/residual with legacy resume preservation.
+Next pretraining experiment: observed responses versus IPC-derived symmetric
+counterfactuals versus explicit Jacobian supervision, on episode-held-out data.

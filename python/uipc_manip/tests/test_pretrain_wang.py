@@ -74,6 +74,7 @@ def test_stage_command_lines_generate_the_trainer_settings():
     assert (targs.replay_capacity, targs.batch_size, targs.updates_per_step, targs.num_envs) == (400_000, 64, 0, 24)
     assert targs.settle_steps is None and targs.teacher_checkpoints is None
     assert (targs.hidden_dim, targs.encoder_precision, targs.run_name) == (32, "bf16", "wang_teacher_r13_s1")
+    assert (targs.critic_action_mode, targs.trunk_style) == ("dense", "residual")
     assert (plan["replay_split"], plan["buffer_keys"], plan["temperatures"], plan["temperature_count"]) == ("none", [0], "shared", 1)
     _, targs, _ = prepare(["teacher", "--region", "4", "--dt", repr(1.0 / 30.0)])
     assert (targs.action_repeat, targs.cuff_strength, targs.settle_steps) == (3, pytest.approx(4.0e4), 15)
@@ -90,6 +91,21 @@ def test_stage_command_lines_generate_the_trainer_settings():
     for flag in ("--num-eval-episodes", "--total-transitions", "--body-seeds", "--eval-freq"):
         with pytest.raises(ValueError, match="sets"):
             prepare(["teacher", "--region", "13", flag, "5"])
+
+
+def test_architecture_defaults_are_pinned_and_legacy_resume_is_not_migrated():
+    from uipc_manip.pretrain_wang import pin_architecture_argv
+    command = ["teacher", "--region", "13"]
+    pinned = pin_architecture_argv(command)
+    assert pin_architecture_argv(pinned) == pinned
+    _, args, _ = prepare(pinned)
+    assert (args.critic_action_mode, args.trunk_style) == ("dense", "residual")
+    for saved in ({}, {"sac_config": {"critic_action_mode": "dense", "trunk_style": "plain"}}):
+        _, args, _ = prepare(pin_architecture_argv(command, saved))
+        assert args.trunk_style == "plain"
+        assert args.critic_action_mode == ("dense" if saved else "latent")
+    _, args, _ = prepare(pin_architecture_argv(command + ["--trunk-style=plain"]))
+    assert args.trunk_style == "plain"
 
 
 def test_replay_set_routes_splits_capacity_and_reports_the_buffer(tmp_path):
@@ -292,6 +308,10 @@ def stub_run(monkeypatch):
             payload = json.loads(Path(path).read_text())
             assert load_optimizers and payload["sac_config"] == json.loads(json.dumps(self.cfg.to_dict()))
             return payload
+
+        @staticmethod
+        def read_checkpoint(path):
+            return json.loads(Path(path).read_text())
 
     monkeypatch.setattr(pretrain_wang, "_ensure_genesis", lambda level: None)
     monkeypatch.setattr(pretrain_wang, "available_garments", lambda cfg: list(GARMENTS))

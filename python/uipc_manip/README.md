@@ -125,10 +125,57 @@ used as a terminal condition, following the reference MDP.
 
 ## Commands
 
+New dressing runs through `train_sac`, `pretrain_wang`, and `pretrain_offline`
+use `--critic-action-mode dense --trunk-style residual`. Dense action features
+before point encoding follow Wang et al. (RSS 2023); normalized residual heads
+are a separate architecture choice inspired by SimBa/BroNet, not a claim about
+Wang's paper or FMVP. `--critic-action-mode latent --trunk-style plain` remains
+an explicit ablation. Resumes retain the checkpoint's architecture; they never
+silently migrate a plain/latent checkpoint. The full-state IPC diagnostic has
+no point encoder and keeps a separately controlled `--trunk-style plain` default;
+`--trunk-style residual` now applies to both its actor and critic.
+
+The fresh IPC actor uses the latest vector step, saves its Gaussian sampling
+noise, reconstructs the identical squashed action, and makes **one** actor/alpha
+update before TD updates. The complete actor loss (including SAC and entropy)
+uses those fresh states. TD batches still sample the large replay independently.
+Actor-only tangents never enter that replay, so actor coverage does not decay
+as `1024/replay_size`. `--online-weights 0` selects the ordinary TD critic.
+
+```bash
+PYTHONPATH=build_raw/python/src:python OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  $GENESIS_PY -m uipc_manip.iaql_benchmark --phase online \
+  --out output/iaql/fresh_s0_rho05 --seed 0 --num-slots 64 \
+  --device cuda --tangent-device cuda --online-steps 20000 --eval-every 2000 \
+  --eval-episodes 64 --warmup-transitions 1024 --updates-per-step 2 \
+  --actor-batch fresh --actor-mode mix --actor-weight 1 --actor-rho 0.5 \
+  --online-weights 0 --continuation-trust 2 --actor-sigma 0.5
+```
+
+Use the same settings and different output directories/seeds for `--actor-rho 0`
+(matched fresh-state SAC), `0.5`, and `1`. The nominal rho is the replacement
+coefficient, not `--actor-weight` (which enables the channel). `--physics-signal reward`
+isolates the immediate reward derivative. `--physics-control random` preserves
+teacher norms while randomizing directions; `zero` controls for attenuating the
+critic gradient; `negative` negates the teacher. These controls do not preserve
+the norm of the correction or Adam's statistics. Random controls and continuation
+samples use independent RNG streams. For frictional half-plane tests also pass
+`--friction 0.6 --friction-chain`; cloth-body friction is not validated by these tests.
+
+For the earlier replay protocol use `--actor-batch replay --warmup-transitions 64`
+and explicitly retain its actor mode, slot count, architecture, and update rate.
+The locality coordinate bug is fixed on that path too, so exact historical
+reproduction requires the old revision. Compare actor update counts as well as
+transitions: fresh uses one actor step per post-warmup vector step, whereas
+replay uses the SAC actor frequency during TD updates. Logs include
+`physics_effective_rho`, tangent coverage, pre-update action mismatch, post-update
+action movement, and separate actor/critic update counts. This is a protocol
+change, not a performance result; the 20k curves belong to the old protocol.
+
 IAQL full-state diagnostic (native IPC direct picker; no robot/camera). It runs
 a complete-decision Bellman-gradient finite-difference gate, fixed-teacher critic
-regression, and a matched short SAC/IAQL online smoke. The original training
-defaults are unchanged. Use the tree build for the adjoint export feature:
+regression, and online training. New online runs default to a fresh same-action
+actor batch and the accepted-state raw Hessian. Use the tree build for the adjoint export feature:
 
 ```bash
 PYTHONPATH=build/python/src:python OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
@@ -139,8 +186,9 @@ PYTHONPATH=build/python/src:python OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
 its approximate gradients. `--export-modes last_iterate converged converged_raw`
 captures every probe decision with each backend export mode (the last Newton
 iterate's projected matrix, or a re-assembly at the accepted state, projected
-or raw) against one set of differences; `--shuffle-labels` is the matched
-online control. One refreshed label feeds two consumers: `--online-weights`
+or raw) against one set of differences. The historical `--actor-batch replay`
+path supports `--shuffle-labels`; this minibatch permutation is a weak control
+when few rows still have tangents. On that path one refreshed label feeds two consumers: `--online-weights`
 (the critic's slope loss) and `--actor-weight` (the physics-gradient line's
 direction term on the actor, gated by the policy's distance to the replayed
 action), so one process runs any of SAC / critic / actor / both / shuffled.
@@ -154,7 +202,9 @@ estimator replacement `(1−ρc)·dQ/da + ρc·g` at the policy's own action
 `--continuation-trust κ` discounts the label's continuation part by
 `exp(−κ d²)` with `d` the twin critics' disagreement; `--reward-mode terminal`
 pays the distance only at the episode's last decision, so only the
-continuation channel carries the task. Every update logs the label's
+continuation channel carries the nonterminal task signal. Terminal mode includes
+remaining time in the state, masks the terminal bootstrap, and evaluates exactly
+`--horizon` decisions (150 by default). Every update logs the label's
 continuation-to-reward ratio, its trust and disagreement, and the critic's
 cosine with the label at the replayed action. `--num-slots N` puts N
 identical cloths one metre apart in one World for the online phase: one

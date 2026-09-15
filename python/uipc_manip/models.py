@@ -242,10 +242,13 @@ def _bounded_log_std(log_std: torch.Tensor, low: float, high: float) -> torch.Te
     return low + 0.5 * (high - low) * (log_std + 1)
 
 
-def _sample_head(mu: torch.Tensor, log_std: torch.Tensor, compute_pi: bool, compute_log_pi: bool):
+def _sample_head(mu: torch.Tensor, log_std: torch.Tensor, compute_pi: bool, compute_log_pi: bool,
+                 noise: torch.Tensor | None = None):
     if compute_pi:
         std = log_std.exp()
-        noise = torch.randn_like(mu)
+        noise = torch.randn_like(mu) if noise is None else noise.detach()
+        if noise.shape != mu.shape:
+            raise ValueError("Action noise must have the same shape as the policy mean")
         pi = mu + noise * std
     else:
         pi, noise = None, None
@@ -260,9 +263,10 @@ class StateActor(nn.Module):
     history = None
     encoder = None
 
-    def __init__(self, state_dim, action_dim, hidden_dim, log_std_min=-10.0, log_std_max=2.0):
+    def __init__(self, state_dim, action_dim, hidden_dim, log_std_min=-10.0, log_std_max=2.0,
+                 trunk_style="plain", trunk_blocks=2):
         super().__init__()
-        self.trunk = mlp([state_dim, hidden_dim, hidden_dim, 2 * action_dim])
+        self.trunk = trunk_layers(state_dim, hidden_dim, 2 * action_dim, trunk_style, trunk_blocks)
         self.log_std_min, self.log_std_max = log_std_min, log_std_max
         self.apply(_weight_init)
 
@@ -270,8 +274,8 @@ class StateActor(nn.Module):
         mu, log_std = self.trunk(obs).chunk(2, dim=-1)
         return mu, _bounded_log_std(log_std, self.log_std_min, self.log_std_max)
 
-    def forward(self, obs, compute_pi=True, compute_log_pi=True, detach_encoder=False):
-        return _sample_head(*self.head(obs), compute_pi, compute_log_pi)
+    def forward(self, obs, compute_pi=True, compute_log_pi=True, detach_encoder=False, noise=None):
+        return _sample_head(*self.head(obs), compute_pi, compute_log_pi, noise=noise)
 
 
 class Actor(nn.Module):
@@ -344,9 +348,10 @@ class ResidualBlock(nn.Module):
         self.norm = nn.LayerNorm(width)
         self.fc1 = nn.Linear(width, width)
         self.fc2 = nn.Linear(width, width)
+        self.activation = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x + self.fc2(F.relu(self.fc1(self.norm(x))))
+        return x + self.fc2(self.activation(self.fc1(self.norm(x))))
 
 
 def trunk_layers(in_dim: int, hidden_dim: int, out_dim: int, style: str, blocks: int = 2) -> nn.Sequential:

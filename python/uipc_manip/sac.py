@@ -93,10 +93,10 @@ class SACConfig:
     physics_actor_weight: float = 0.0
     physics_actor_gate: float = 0.5
     physics_actor_action_distance: float = 0.5
-    """State benchmark: a row's label counts for the actor term only while the policy's mean is within
-    this normalised distance of the replayed action the label was computed at."""
+    """State benchmark: distance in squashed environment-action coordinates to the teacher action.
+    Mix uses the sampled action; the historical direction term uses the squashed mean."""
     physics_actor_sigma: float = 0.0
-    """State benchmark: when positive, the hard distance gate becomes the weight exp(−|μ−a|²/2σ²)."""
+    """Positive values replace the hard gate by exp(−|a_query−a_teacher|²/2σ²)."""
     physics_actor_mode: str = "direction"
     """``direction``: ``−β·unit(g)·μ`` with β matched once to the SAC term (the physics-gradient line);
     ``mix``: the estimator replacement ``−ρ·sg[c·(g − ∇_a Q(s, a_θ))]·a_θ`` at the policy's sampled
@@ -265,7 +265,8 @@ class SACAgent:
             if cfg.encoder_precision != "fp32" or cfg.random_shift_scale or cfg.point_jitter_scale:
                 raise ValueError("State benchmark requires fp32 without point augmentation")
             self.actor = StateActor(cfg.privileged_dim, action_dim, cfg.hidden_dim,
-                                    cfg.actor_log_std_min, cfg.actor_log_std_max).to(self.device)
+                                    cfg.actor_log_std_min, cfg.actor_log_std_max,
+                                    cfg.trunk_style, cfg.trunk_blocks).to(self.device)
         elif cfg.actor_type == "wang-flow":
             actor_cls = WangFlowActor
         elif cfg.actor_type == "flat":
@@ -280,6 +281,8 @@ class SACAgent:
             ).to(self.device)
         if not np.isfinite([cfg.adjoint_weight, cfg.adjoint_gradient_scale]).all() or cfg.adjoint_weight < 0 or cfg.adjoint_gradient_scale <= 0:
             raise ValueError("Adjoint weight must be nonnegative and gradient scale positive")
+        if not np.isfinite(cfg.physics_actor_rho) or not 0 <= cfg.physics_actor_rho <= 1:
+            raise ValueError("Physics actor rho must be in [0, 1]")
         if cfg.adjoint_weight and cfg.actor_type != "state":
             raise ValueError("IAQL target refresh currently supports the full-state benchmark only")
         if cfg.critic_input == "privileged":
@@ -519,8 +522,17 @@ class SACAgent:
         norm_phys = norm_of(physics_actor_loss(mu, direction, 1.0))
         return float(self.cfg.physics_actor_weight) * norm_sac / max(norm_phys, 1e-12)
 
-    def _update_actor_and_alpha(self, obs, state=None, label=None, index: int = 0, physics=None) -> dict:
-        mu, pi, log_pi, log_std = self.actor(obs)
+    def _update_actor_and_alpha(self, obs, state=None, label=None, index: int = 0, physics=None,
+                                action_noise=None, action_anchor=None, require_same_action=False) -> dict:
+        if action_noise is not None:
+            if self.cfg.actor_type != "state":
+                raise ValueError("Saved action noise currently requires the full-state actor")
+            mu, pi, log_pi, log_std = self.actor(obs, noise=action_noise)
+        else:
+            mu, pi, log_pi, log_std = self.actor(obs)
+        if require_same_action and (action_anchor is None or not torch.allclose(
+                pi.detach(), action_anchor.detach(), atol=1e-6, rtol=1e-5)):
+            raise ValueError("Fresh actor action differs from its anchor; update once with the saved behavior noise")
         with frozen_parameters(self.critic):
             # Detaching the critic's encoder saves a backward pass through it, but only the latent
             # critic can afford it: under the reference's dense critic the action is a feature of
@@ -545,24 +557,43 @@ class SACAgent:
                 distill = distill + wang_distill_loss(mu[rows], log_std[rows], teacher_mu, teacher_log_std)
             actor_loss = actor_loss + self.cfg.distill_weight * distill
         physics_stats = {}
+        if action_anchor is not None:
+            distance = (pi.detach() - action_anchor.detach()).norm(dim=-1)
+            physics_stats.update(actor_action_distance_mean=float(distance.mean()),
+                                 actor_action_distance_max=float(distance.max()))
+        if physics is not None and action_anchor is not None:
+            g, valid = physics
+            # Mix acts on the sampled environment action; direction acts on the squashed mean.
+            query = pi if self.cfg.physics_actor_mode == "mix" else mu
+            distance = (query.detach() - action_anchor.detach()).norm(dim=-1)
+            if self.cfg.physics_actor_sigma > 0:
+                local = torch.exp(-distance.square() / (2 * self.cfg.physics_actor_sigma ** 2))
+            else:
+                local = (distance <= self.cfg.physics_actor_action_distance).to(g.dtype)
+            weight = valid.reshape(-1).detach().to(g.dtype) * local
+            physics = (g, weight if self.cfg.physics_actor_mode == "mix" else weight > 0.5)
+            physics_stats.update(physics_actor_fraction=float((physics[1] > 0).float().mean()),
+                                 physics_valid_fraction=float((valid > 0).float().mean()))
         if physics is not None and self.cfg.physics_actor_weight > 0.0 and self.cfg.physics_actor_mode == "mix":
             g, weight = physics
-            weight = weight.reshape(-1, 1).to(g.dtype)
+            weight = weight.detach().reshape(-1, 1).to(g.dtype)
+            physics_stats.update(physics_mix_weight=float(weight.mean()),
+                                 physics_effective_rho=float(self.cfg.physics_actor_rho * weight.mean()))
             rows = int((weight > 0).sum().item())
             if rows > 0:
                 # The critic's own action gradient at the policy's sampled action, detached: the
                 # correction replaces the fraction ρ·c of it by the label, nothing else.
-                a = pi.detach().requires_grad_(True)
-                with frozen_parameters(self.critic):
-                    qa1, qa2 = self._critic_scalar(obs if state is None else state, a, detach_encoder=detach)
-                g_q = torch.autograd.grad(torch.min(qa1, qa2).sum(), a)[0].detach()
-                delta = float(self.cfg.physics_actor_rho) * weight * (g.detach() - g_q)
-                physics_loss = -(delta * pi).sum(dim=-1).mean()
+                g_q = torch.autograd.grad(torch.min(q1, q2).sum(), pi, retain_graph=True)[0].detach()
+                difference = torch.where(weight > 0, g.detach() - g_q, torch.zeros_like(g_q))
+                delta = (float(self.cfg.physics_actor_rho) * weight * difference).detach()
+                centered = pi if action_anchor is None else pi - action_anchor.detach()
+                physics_loss = -(delta * centered).sum(dim=-1).mean()
                 actor_loss = actor_loss + physics_loss
                 keep = weight.reshape(-1) > 0
                 cosine = F.cosine_similarity(g_q[keep], g.detach()[keep], dim=-1).mean()
-                physics_stats = {"physics_loss": float(physics_loss.item()), "physics_rows": rows,
-                                 "physics_mix_cosine": float(cosine.item()), "physics_mix_weight": float(weight.mean().item())}
+                physics_stats.update(physics_loss=float(physics_loss.item()), physics_rows=rows,
+                                     physics_mix_cosine=float(cosine.item()),
+                                     physics_correction_norm=float(delta.norm(dim=-1).mean()))
         elif physics is not None and self.cfg.physics_actor_weight > 0.0:
             g, valid = physics
             rows = int((valid.reshape(-1) > 0.5).sum().item())
@@ -572,7 +603,7 @@ class SACAgent:
                     self.physics_beta = self._match_physics_beta(actor_loss, mu, direction)
                 physics_loss = physics_actor_loss(mu, direction, self.physics_beta)
                 actor_loss = actor_loss + physics_loss
-                physics_stats = {"physics_loss": float(physics_loss.item()), "physics_rows": rows, "physics_beta": float(self.physics_beta)}
+                physics_stats.update(physics_loss=float(physics_loss.item()), physics_rows=rows, physics_beta=float(self.physics_beta))
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         grad_norm = self._clip(self.actor)
@@ -751,18 +782,77 @@ class SACAgent:
         stats["learning_positions"] = int(action.shape[0])
         return self._finish_update(stats, obs, state, label, index, physics)
 
-    def update_state_batch(self, obs, action, reward, next_obs, mask, *, tangent=None, reward_gradient=None, valid=None):
-        """Bounded diagnostic replay supplies mechanics, never stale value-dependent slopes.
+    @torch.no_grad()
+    def sample_state_action(self, obs):
+        """Collect a squashed action and its exogenous noise for one same-action actor update."""
+        if self.cfg.actor_type != "state":
+            raise ValueError("Fresh IPC collection currently requires the full-state actor")
+        noise = torch.randn((len(obs), self.action_dim), dtype=obs.dtype, device=obs.device)
+        _, action, _, _ = self.actor(obs, compute_log_pi=False, noise=noise)
+        return action.detach(), noise.detach()
 
-        One refreshed label ``g = dR/du + γ m Dᵀ∇V̄(s')`` at the replayed action feeds two consumers:
-        the critic's slope loss (``adjoint_weight``) and the actor's direction term
-        (``physics_actor_weight``, the physics-gradient line's ``−β·unit(g)·μ(s)``), the latter only on
-        rows whose replayed action is still close to the policy's mean."""
+    def update_fresh_state_actor(self, obs, action, action_noise, reward, next_obs, mask, *,
+                                 tangent=None, reward_gradient=None, label_noise=None,
+                                 signal="bellman", control="paired", control_generator=None):
+        """One actor/temperature step on the complete fresh batch, independently of TD replay.
+
+        Reconstruct the collected action before any actor update. The whole SAC actor loss and
+        its detached correction use these same states/noise. Critic parameters are never updated
+        here. A rho=0 arm uses this identical actor protocol without requiring mechanics.
+        """
+        if self.cfg.actor_type != "state" or self.cfg.physics_actor_mode != "mix":
+            raise ValueError("Fresh IPC updates require a state actor and physics_actor_mode='mix'")
+        if signal not in ("bellman", "reward") or control not in ("paired", "random", "zero", "negative"):
+            raise ValueError("Unknown fresh physics signal or control")
+        physics, stats = None, {"physics_effective_rho": 0.0}
+        if self.cfg.physics_actor_weight > 0 and self.cfg.physics_actor_rho > 0:
+            if reward_gradient is None or (signal == "bellman" and tangent is None):
+                raise ValueError("Fresh physics actor needs mechanics on every collected row")
+            if signal == "bellman":
+                from .iaql import soft_targets_detailed
+                _, g, info = soft_targets_detailed(
+                    self.actor, self.critic_target, next_obs, reward, mask, tangent, reward_gradient,
+                    self.alpha.detach(), self.cfg.discount,
+                    self.cfg.reward_abs_bound / max(1-self.cfg.discount, 1e-6), noise=label_noise,
+                    continuation_trust_kappa=self.cfg.continuation_trust_kappa)
+                stats.update(label_continuation_ratio=float((info["continuation_norm"] /
+                             info["reward_norm"].clamp_min(1e-12)).median()),
+                             label_continuation_trust=float(info["trust"].mean()),
+                             label_twin_disagreement=float(info["disagreement"].mean()))
+            else:
+                g = reward_gradient.detach()
+            if g.shape != action.shape or not torch.isfinite(g).all():
+                raise ValueError("Fresh physics label must be finite and match the action shape")
+            if control == "random":
+                direction = torch.randn(g.shape, device=g.device, dtype=g.dtype, generator=control_generator)
+                g = g.norm(dim=-1, keepdim=True) * F.normalize(direction, dim=-1)
+            elif control == "zero":
+                g = torch.zeros_like(g)
+            elif control == "negative":
+                g = -g
+            physics = (g.detach(), torch.ones(len(obs), dtype=g.dtype, device=g.device))
+        stats.update(self._update_actor_and_alpha(
+            obs, state=obs, physics=physics, action_noise=action_noise,
+            action_anchor=action, require_same_action=True))
+        with torch.no_grad():
+            _, updated_action, _, _ = self.actor(obs, compute_log_pi=False, noise=action_noise)
+            step = (updated_action - action.detach()).norm(dim=-1)
+            stats.update(fresh_actor_action_step_mean=float(step.mean()), fresh_actor_action_step_max=float(step.max()))
+        stats["fresh_actor_rows"] = len(obs)
+        return stats
+
+    def update_state_batch(self, obs, action, reward, next_obs, mask, *, tangent=None, reward_gradient=None,
+                           valid=None, update_actor=True):
+        """TD replay update, optionally with the historical sidecar actor/critic supervision.
+
+        Fresh actors call this with update_actor=False: only critic/target clocks advance.
+        Otherwise locality is measured at the actor term's actual squashed query action.
+        """
         if self.cfg.actor_type != "state":
             raise ValueError("update_state_batch requires the full-state actor")
         paired = physics = None
         label_stats = {}
-        if self.cfg.adjoint_weight or self.cfg.physics_actor_weight:
+        if self.cfg.adjoint_weight or (self.cfg.physics_actor_weight and update_actor):
             from .iaql import soft_targets_detailed
             if tangent is None or reward_gradient is None or valid is None:
                 raise ValueError("IAQL batch needs mechanics and validity")
@@ -783,27 +873,18 @@ class SACAgent:
                 label_stats["label_critic_cosine"] = float(F.cosine_similarity(g_q[live], g[live], dim=-1).mean())
             if self.cfg.adjoint_weight:
                 paired = (y, g, valid)
-            if self.cfg.physics_actor_weight:
-                with torch.no_grad():
-                    mu, _ = self.actor.head(obs)
-                    distance = (mu - action).norm(dim=-1)
-                    if self.cfg.physics_actor_sigma > 0:
-                        local = torch.exp(-distance.square() / (2 * float(self.cfg.physics_actor_sigma) ** 2))
-                    else:
-                        local = (distance <= float(self.cfg.physics_actor_action_distance)).to(g.dtype)
-                    weight = live.to(g.dtype) * local
-                physics = (g, weight if self.cfg.physics_actor_mode == "mix" else (weight > 0.5))
+            if self.cfg.physics_actor_weight and update_actor:
+                physics = (g, live.to(g.dtype))
         stats = self._update_critic(obs, action, reward, next_obs, mask, state=obs, next_state=next_obs, paired_targets=paired)
         stats.update(label_stats)
-        if physics is not None:
-            stats["physics_actor_fraction"] = float((physics[1] > 0).float().mean())
-        return self._finish_update(stats, obs, obs, physics=physics)
+        return self._finish_update(stats, obs, obs, physics=physics, update_actor=update_actor, action_anchor=action)
 
-    def _finish_update(self, stats, obs, state=None, label=None, index=0, physics=None):
+    def _finish_update(self, stats, obs, state=None, label=None, index=0, physics=None,
+                       update_actor=True, action_anchor=None):
         """Shared SAC actor, temperature and target schedule for flat/state batches."""
         self.updates += 1
-        if self.updates % self.cfg.actor_update_freq == 0:
-            stats.update(self._update_actor_and_alpha(obs, state, label, index, physics))
+        if update_actor and self.updates % self.cfg.actor_update_freq == 0:
+            stats.update(self._update_actor_and_alpha(obs, state, label, index, physics, action_anchor=action_anchor))
         if self.updates % self.cfg.critic_target_update_freq == 0:
             soft_update(self.critic.Q1, self.critic_target.Q1, self.cfg.critic_tau)
             soft_update(self.critic.Q2, self.critic_target.Q2, self.cfg.critic_tau)

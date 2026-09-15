@@ -114,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", choices=("wang-flow", "flat"), default="wang-flow", help="wang-flow is the reference tool-point actor.")
     p.add_argument("--algo", choices=("sac", "flashsac"), default="sac", help="Scalar reference critic or bounded categorical critic.")
     p.add_argument("--critic-input", choices=("points", "privileged"), default="points", help="dressing: the critic encodes the point cloud (reference) or reads the simulator's privileged state.")
-    p.add_argument("--trunk-style", choices=("plain", "residual"), default="plain", help="Shape of every head's body: 'plain' is Linear-ReLU-Linear-ReLU-Linear, what this port has always used; 'residual' is the pre-normalised residual arrangement value networks are reported to need before they benefit from scale.")
+    p.add_argument("--trunk-style", choices=("plain", "residual"), default="residual", help="Head architecture: pre-normalised residual is the new-run baseline; plain reproduces the earlier MLP. This is a separate architectural choice from Wang's dense action-per-point critic.")
     p.add_argument("--trunk-blocks", type=int, default=2, help="Residual blocks per head under --trunk-style residual.")
     p.add_argument("--critic-action-mode", choices=("dense", "latent"), default="dense", help="dressing: where the action enters the point-cloud critic. 'dense' is the reference's Q function, the action as a feature of every point before the encoder; 'latent' concatenates it to the encoded vector, which the reference measures about 0.11 lower and which this port used until 2026-09-13.")
     p.add_argument("--encoder-precision", choices=("fp32", "bf16"), default="fp32", help="Run the point encoders under bfloat16 autocast; heads, targets and losses stay fp32.")
@@ -221,12 +221,12 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     saved.update({key: metadata[key] for key in ("task", "seed", "num_envs") if key in metadata})
     cfg = SACConfig.from_dict(payload["sac_config"])
     cfg_names = {"actor": "actor_type", "point_jitter": "point_jitter_scale", "grad_clip_max_norm": "grad_clip_max_norm"}
-    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v", "critic_input", "encoder_precision", "distill_weight"):
+    for key in ("discount", "alpha_lr", "init_temperature", "actor_lr", "critic_lr", "hidden_dim", "batch_size", "min_alpha", "algo", "num_bins", "min_v", "max_v", "critic_input", "encoder_precision", "distill_weight", "trunk_style", "trunk_blocks", "critic_action_mode"):
         cfg_names[key] = key
     saved.update({key: getattr(cfg, name) for key, name in cfg_names.items()})
     saved.update(encoder=cfg.encoder.kind, sa_neighbors=cfg.encoder.sa_neighbors)
     saved["rlt_learning_mode"] = cfg.rlt_learning_mode
-    network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "sa_neighbors", "algo", "num_bins", "min_v", "max_v", "critic_input"}
+    network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "sa_neighbors", "algo", "num_bins", "min_v", "max_v", "critic_input", "trunk_style", "trunk_blocks", "critic_action_mode"}
     for key, value in saved.items():
         if not hasattr(args, key):
             continue

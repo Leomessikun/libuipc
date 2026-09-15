@@ -29,7 +29,7 @@ def _obs():
             torch.ones(BATCH, POINTS, dtype=torch.bool), torch.randn(BATCH, EXTRA_DIM))
 
 
-def test_plain_is_still_the_default():
+def test_low_level_plain_default_preserves_legacy_configs():
     assert SACConfig().trunk_style == "plain"
     assert not any(isinstance(m, torch.nn.LayerNorm) for m in QHead(8, 16).modules())
 

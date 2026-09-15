@@ -828,18 +828,46 @@ def prepare(argv: list[str]):
     return args, targs, stage_plan(args)
 
 
+def pin_architecture_argv(argv: list[str], checkpoint: dict | None = None) -> list[str]:
+    """Persist new-run architecture defaults; recover historical ones from the actual checkpoint.
+
+    Dense action conditioning is Wang's design. Residual heads are our separate normalized
+    residual baseline, not a claim about the dressing paper's architecture.
+    """
+    if checkpoint is None:
+        values = dict(critic_action_mode="dense", trunk_style="residual", trunk_blocks=2)
+    else:
+        saved = checkpoint.get("sac_config", {})
+        protocol = checkpoint.get("protocol", {})
+        values = {key: saved.get(key, protocol.get(key, fallback)) for key, fallback in
+                  dict(critic_action_mode="latent", trunk_style="plain", trunk_blocks=2).items()}
+    flags = {token.split("=", 1)[0] for token in argv}
+    result = list(argv)
+    for key, value in values.items():
+        flag = "--" + key.replace("_", "-")
+        if flag not in flags:
+            result += [flag, str(value)]
+    return result
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else list(argv)
     parsed, _ = build_parser().parse_known_args(argv)
     resume = None
+    architecture_checkpoint = None
     if parsed.stage == "resume":
         run_dir = Path(parsed.run_dir)
         resume = json.loads((run_dir / "checkpoints" / "state.json").read_text())
+        from .sac import SACAgent
+        payload = SACAgent.read_checkpoint(resume["checkpoint"])
+        architecture_checkpoint = {key: payload.get(key, {}) for key in ("sac_config", "protocol")}
+        del payload
         argv = list(resume["argv"])
         if parsed.transitions is not None:
             argv += ["--transitions", str(parsed.transitions)]
         # The run continues where it was saved, whatever its directory is called now.
         argv += ["--work-dir", str(run_dir.parent), "--run-name", run_dir.name]
+    argv = pin_architecture_argv(argv, architecture_checkpoint)
     args, targs, plan = prepare(argv)
     if targs.history_kind == "rlt" and not any(token.split("=", 1)[0] == "--rlt-learning-mode" for token in argv):
         # Old saved commands predate the mode flag and always used prefix losses.

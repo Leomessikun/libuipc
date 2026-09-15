@@ -278,16 +278,21 @@ def online(env, args):
     steps, appends ``N`` rows per step and makes ``updates_per_step`` updates per transition."""
     results = []
     N = getattr(env, "N", 1)
+    fresh = args.actor_batch == "fresh"
     rounds = max(1, -(-args.eval_episodes // N))
     eval_seeds = [9000+k for k in range(rounds)]
     env_steps = -(-args.online_steps // N)
-    warmup_steps = -(-64 // N)
-    for weight in ([0.0, args.beta] if args.online_weights is None else args.online_weights):
+    warmup_steps = -(-args.warmup_transitions // N)
+    weights = ([0.0] if fresh else [0.0, args.beta]) if args.online_weights is None else args.online_weights
+    for weight in weights:
         agent = agent_for(env.obs_dim, args.seed+50, weight, args.actor_weight, AGENT_DEVICE)
         dev = agent.device
-        mechanics = weight > 0 or args.actor_weight > 0
+        actor_mechanics = args.actor_weight > 0 and (not fresh or args.actor_rho > 0)
+        mechanics = weight > 0 or actor_mechanics
         rng = np.random.default_rng(args.seed+60)
         shuffle_rng = np.random.default_rng(args.seed+70)
+        label_rng = torch.Generator(device=dev).manual_seed(args.seed+80)
+        control_rng = torch.Generator(device=dev).manual_seed(args.seed+90)
         # The TD replay keeps every transition; the mechanics sidecar is bounded and evicts on its own,
         # so an old row keeps learning values after its tangent is gone (design: replay and target freshness).
         replay, sidecar = [], collections.deque()
@@ -295,14 +300,24 @@ def online(env, args):
         obs = np.asarray(env.reset(args.seed)).reshape(N, -1)
         last_stats, progress = {}, []
         transitions = 0
+        actor_updates = 0
         for i in range(env_steps):
-            actions = rng.uniform(-1, 1, (N, 3)) if i < warmup_steps else agent.act(obs, deterministic=False).reshape(N, 3)
+            action_noise = None
+            if i < warmup_steps:
+                actions = rng.uniform(-1, 1, (N, 3))
+            elif fresh:
+                sampled_action, action_noise = agent.sample_state_action(tensor(obs).to(dev))
+                actions = sampled_action.cpu().numpy()
+            else:
+                actions = agent.act(obs, deterministic=False).reshape(N, 3)
             out = env.step(actions if N > 1 else actions[0], capture=mechanics)
             next_obs = np.asarray(out["obs"]).reshape(N, -1)
             rewards = np.asarray(out["reward"]).reshape(N)
             for j in range(N):
-                row = dict(obs=obs[j], action=actions[j], reward=float(rewards[j]), next_obs=next_obs[j])
-                if mechanics:
+                # Dense episodes are time-limit truncations; terminal-reward episodes truly end.
+                mask = 0.0 if out["done"] and args.reward_mode == "terminal" else 1.0
+                row = dict(obs=obs[j], action=actions[j], reward=float(rewards[j]), next_obs=next_obs[j], mask=mask)
+                if mechanics and (not fresh or weight > 0):
                     tangent = np.asarray(out["tangent"]).reshape(N, env.obs_dim, 3)[j]
                     row.update(tangent=tangent.astype(np.float32), reward_gradient=np.asarray(out["reward_gradient"]).reshape(N, 3)[j])
                     sidecar.append(row)
@@ -313,14 +328,32 @@ def online(env, args):
             transitions += N
             if args.replay_rows and len(replay) > args.replay_rows:
                 del replay[:len(replay)-args.replay_rows]
+            fresh_stats = {}
+            if fresh and action_noise is not None:
+                kw = {}
+                if actor_mechanics:
+                    kw = dict(tangent=tensor(np.asarray(out["tangent"]).reshape(N, env.obs_dim, 3)).to(dev),
+                              reward_gradient=tensor(np.asarray(out["reward_gradient"]).reshape(N, 3)).to(dev))
+                # One update, before any other actor step, on exactly the collected states/actions.
+                # Label/control RNG streams never consume the policy's sampling stream.
+                fresh_stats = agent.update_fresh_state_actor(
+                    tensor(obs).to(dev), sampled_action, action_noise,
+                    tensor(rewards[:, None]).to(dev), tensor(next_obs).to(dev), torch.full((N, 1), mask, device=dev),
+                    label_noise=torch.randn((N, 3), device=dev, generator=label_rng),
+                    signal=args.physics_signal, control=args.physics_control, control_generator=control_rng, **kw)
+                actor_updates += 1
             if len(replay) >= max(64, agent.cfg.batch_size):
                 for _ in range(max(1, int(round(args.updates_per_step * N)))):
                     bs = agent.cfg.batch_size
                     batch = [replay[k] for k in rng.integers(0, len(replay), bs)]
-                    kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if mechanics else {}
+                    kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if mechanics and (not fresh or weight > 0) else {}
                     kw = {k: v.to(dev) for k, v in kw.items()}
                     last_stats = agent.update_state_batch(tensor([r["obs"] for r in batch]).to(dev), tensor([r["action"] for r in batch]).to(dev),
-                        tensor([[r["reward"]] for r in batch]).to(dev), tensor([r["next_obs"] for r in batch]).to(dev), torch.ones(bs, 1, device=dev), **kw)
+                        tensor([[r["reward"]] for r in batch]).to(dev), tensor([r["next_obs"] for r in batch]).to(dev),
+                        tensor([[r["mask"]] for r in batch]).to(dev), update_actor=not fresh, **kw)
+                    actor_updates += int("actor_loss" in last_stats)
+            last_stats.update(fresh_stats)
+            last_stats.update(actor_updates=actor_updates, critic_updates=agent.updates)
             if transitions // 64 != (transitions - N) // 64:
                 print(json.dumps({"online_weight": weight, "steps": transitions, "stats": last_stats}), flush=True)
             if args.eval_every and transitions // args.eval_every != (transitions - N) // args.eval_every and transitions < args.online_steps:
@@ -337,7 +370,9 @@ def online(env, args):
         evaluation = evaluate(env, agent, eval_seeds, args.eval_steps)
         result = dict(weight=weight, actor_weight=args.actor_weight, steps=transitions, slots=N, training_s=duration,
                       evaluation=evaluation, progress=progress, stats=last_stats, replay_rows=len(replay),
-                      sidecar_rows=len(sidecar), labels="shuffled" if args.shuffle_labels and mechanics else "paired")
+                      sidecar_rows=len(sidecar), labels=args.physics_control if fresh else ("shuffled" if args.shuffle_labels and mechanics else "paired"),
+                      actor_batch=args.actor_batch, actor_updates=actor_updates, critic_updates=agent.updates,
+                      warmup_transitions=warmup_steps*N)
         agent.save(args.out/f"online_beta_{weight}.pt", step=args.online_steps, metadata=result)
         results.append(result)
         print(json.dumps({"online_result": result}), flush=True)
@@ -435,7 +470,7 @@ def main(argv=None):
                    help="guided steps before every probe snapshot, on top of 4*(i mod 4); use 1 so no snapshot dumps straight after a recover")
     p.add_argument("--friction-chain", action="store_true",
                    help="add friction's lagged dG/dx_prev blocks to the tangent chain (converged export modes only)")
-    p.add_argument("--export-modes", nargs="+", default=["last_iterate"],
+    p.add_argument("--export-modes", nargs="+", default=["converged_raw"],
                    choices=["last_iterate", "converged", "converged_raw"],
                    help="backend export modes to capture each probe decision with; the first is the run's mode")
     p.add_argument("--eps", type=float, nargs="+", default=[.03, .1])
@@ -443,17 +478,27 @@ def main(argv=None):
     p.add_argument("--collect", type=int, default=128)
     p.add_argument("--fit-updates", type=int, default=1000)
     p.add_argument("--online-steps", type=int, default=256)
-    p.add_argument("--eval-steps", type=int, default=50)
+    p.add_argument("--horizon", type=int, default=150, help="Decisions per episode; terminal evaluation must match this")
+    p.add_argument("--eval-steps", type=int, default=None, help="Default: 50 for dense reward, full horizon for terminal reward")
     p.add_argument("--eval-episodes", type=int, default=2)
     p.add_argument("--eval-every", type=int, default=0, help="evaluate every N online steps from a snapshot (0: only at the end)")
     p.add_argument("--updates-per-step", type=float, default=1.0, help="learner updates per transition (a fraction with a larger batch keeps the sample rate)")
     p.add_argument("--replay-rows", type=int, default=0, help="TD replay bound (0: keep every transition)")
     p.add_argument("--tangent-rows", type=int, default=1024, help="bounded mechanics sidecar; older rows learn values only")
+    p.add_argument("--actor-batch", choices=["fresh", "replay"], default="fresh",
+                   help="fresh: one same-action actor update per post-warmup vector step; replay: historical diluted actor protocol")
+    p.add_argument("--warmup-transitions", type=int, default=1024, help="Uniform random collection before policy actions (historical runs used 64)")
+    p.add_argument("--physics-signal", choices=["bellman", "reward"], default="bellman")
+    p.add_argument("--physics-control", choices=["paired", "random", "zero", "negative"], default="paired",
+                   help="Fresh actor teacher: original, norm-matched random direction, zero, or negated")
+    p.add_argument("--trunk-style", choices=["plain", "residual"], default="plain",
+                   help="Full-state benchmark trunk; hold fixed across arms. Dressing pretraining defaults to residual.")
+    p.add_argument("--trunk-blocks", type=int, default=2)
     p.add_argument("--beta", type=float, default=.1)
     p.add_argument("--refit-weights", type=float, nargs="+", default=[0.0, 0.01, 0.1, 1.0])
     p.add_argument("--actor-weight", type=float, default=0.0,
                    help="physics_actor_weight: the same refreshed label as a direction term of the actor update")
-    p.add_argument("--actor-mode", choices=["direction", "mix"], default="direction",
+    p.add_argument("--actor-mode", choices=["direction", "mix"], default="mix",
                    help="direction: -beta*unit(g)*mu (beta matched once); mix: estimator replacement (1-rho c) dQ/da + rho c g")
     p.add_argument("--actor-rho", type=float, default=0.5)
     p.add_argument("--actor-sigma", type=float, default=0.0, help="Gaussian action-locality weight (0: hard distance gate)")
@@ -478,11 +523,25 @@ def main(argv=None):
                         "online skips the gate and fixed-teacher fit already recorded for these arguments; "
                         "fidelity compares actor-gradient candidates against finite differences of the frozen policy's return")
     args = p.parse_args(argv)
+    if (args.warmup_transitions < 0 or args.tangent_rows < 1 or not np.isfinite(args.updates_per_step)
+            or args.updates_per_step <= 0 or args.horizon < 1 or args.online_steps < 1
+            or args.batch_size < 1 or args.num_slots < 1 or args.eval_episodes < 1):
+        p.error("warmup must be nonnegative; tangent rows and update rate must be positive")
+    if args.actor_batch == "fresh" and (args.actor_mode != "mix" or args.shuffle_labels):
+        p.error("fresh actor batches require --actor-mode mix; use --physics-control instead of --shuffle-labels")
+    if args.actor_batch == "replay" and (args.physics_signal != "bellman" or args.physics_control != "paired"):
+        p.error("--physics-signal and --physics-control apply to fresh actor batches")
+    if args.eval_steps is None:
+        args.eval_steps = args.horizon if args.reward_mode == "terminal" else min(50, args.horizon)
+    if args.eval_steps < 1 or args.eval_steps > args.horizon:
+        p.error("evaluation length must be between 1 and the episode horizon")
+    if args.reward_mode == "terminal" and args.eval_steps != args.horizon:
+        p.error("terminal reward must be evaluated over exactly the full episode horizon")
     args.out.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(1)
     AGENT_OPTIONS.update(physics_actor_mode=args.actor_mode, physics_actor_rho=args.actor_rho,
                          physics_actor_sigma=args.actor_sigma, continuation_trust_kappa=args.continuation_trust,
-                         batch_size=args.batch_size)
+                         batch_size=args.batch_size, trunk_style=args.trunk_style, trunk_blocks=args.trunk_blocks)
     global AGENT_DEVICE
     AGENT_DEVICE = args.device if args.phase == "online" else "cpu"
     if args.phase == "refit":
@@ -492,7 +551,7 @@ def main(argv=None):
     env = IAQLClothEnv(args.out/"world", IAQLEnvConfig(friction=args.friction, velocity_tolerance=args.velocity_tolerance,
                                                         export_mode=args.export_modes[0], friction_chain=args.friction_chain,
                                                         reward_mode=args.reward_mode, num_slots=args.num_slots,
-                                                        tangent_device=args.tangent_device))
+                                                        tangent_device=args.tangent_device, horizon=args.horizon))
     if args.num_slots > 1 and args.phase != "online":
         raise SystemExit("--num-slots > 1 is for --phase online; the probe, fit and fidelity phases use one slot")
     report = dict(environment=env.describe(), seed=args.seed, state_activation="silu",

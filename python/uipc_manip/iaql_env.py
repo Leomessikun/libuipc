@@ -73,8 +73,8 @@ class IAQLClothEnv:
         self.uipc, self.cfg = uipc, cfg
         if cfg.action_repeat < 1 or min(cfg.dt, cfg.state_scale, cfg.max_translation) <= 0:
             raise ValueError("Positive integration/scaling parameters are required")
-        if cfg.num_slots < 1:
-            raise ValueError("num_slots must be at least 1")
+        if cfg.num_slots < 1 or cfg.horizon < 1:
+            raise ValueError("num_slots and horizon must be at least 1")
         self.N = int(cfg.num_slots)
         workspace.mkdir(parents=True, exist_ok=True)
         uipc.Logger.set_level(uipc.Logger.Level.Warn)
@@ -98,7 +98,7 @@ class IAQLClothEnv:
         self.held = self.task.grasp_vertices(rest0)
         self.marker = self.task.marker_vertices(rest0)
         self.n = len(rest0)
-        self.obs_dim = 6 * self.n + 6
+        self.obs_dim = 6 * self.n + 6 + int(cfg.reward_mode == "terminal")
         self.rests = np.stack([a.rest for a in self.assets])
         self.anchors = self.rests[:, self.held].mean(1)
         self.offsets = rest0[self.held] - self.anchors[0]
@@ -216,7 +216,10 @@ class IAQLClothEnv:
         rows = [np.concatenate(((x[j] - self.rests[j]).ravel(), v[j].ravel(),
                                 self.anchors[j] - self.origins[j], self.goals[j] - self.origins[j]))
                 for j in range(self.N)]
-        return np.stack(rows) / scale
+        obs = np.stack(rows) / scale
+        if self.cfg.reward_mode == "terminal":
+            obs = np.concatenate((obs, np.full((self.N, 1), 1 - self.steps / self.cfg.horizon)), axis=1)
+        return obs
 
     def observation(self):
         return self._squeeze(self.all_observations())
@@ -341,6 +344,9 @@ class IAQLClothEnv:
                     dx_all.append(dx)
                     tangents.append(np.concatenate((dx, dv, control_jacs[j], np.zeros((3, 3)))) / cfg.state_scale)
                 tangent = np.stack(tangents)
+            if cfg.reward_mode == "terminal":
+                # Remaining time is part of the finite-horizon state, independent of the action.
+                tangent = np.concatenate((tangent, np.zeros((self.N, 1, 3))), axis=1)
             reward_gradients = []
             for j in range(self.N):
                 delta = x[j][self.marker].mean(0) - self.goals[j]
