@@ -252,6 +252,20 @@ def reverse_pass(H: list, g_final: np.ndarray, layout: dict, chain: bool = True)
     return {"dL_dDelta": dL_dDelta, "contributions": contributions[::-1]}
 
 
+def slot_factorizations(mat, layouts: list) -> list:
+    """One LU per slot of a block-diagonal system: slots that never touch (lockstep cloths a metre
+    apart) occupy disjoint dof ranges and their blocks factorise independently, so the tangent
+    cost is linear in the slot count instead of a solve of the whole system per right-hand side.
+    Returns per-slot ``(lu, layout)`` with the layout's ``dof_offset`` rebased to 0."""
+    csc = mat.tocsc()
+    out = []
+    for lay in layouts:
+        off, cnt = lay["dof_offset"], lay["dof_count"]
+        block = csc[off:off + cnt, off:off + cnt]
+        out.append((scipy.sparse.linalg.splu(block.tocsc()), dict(lay, dof_offset=0)))
+    return out
+
+
 def tangent_pass(lu: list, layout: dict, chain: bool = True, *, return_frames: bool = False,
                  prev_coupling: list | None = None) -> np.ndarray:
     """∂x_6/∂Δ for the three translation axes (3n × 3), propagated forward through the frames with

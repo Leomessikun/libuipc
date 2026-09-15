@@ -106,3 +106,25 @@ def test_tangent_pass_prev_coupling_matches_the_explicit_recurrence():
             x_prev2, x_prev = x_prev, x
     plain = adj.tangent_pass(lu, layout, return_frames=True)
     assert not np.allclose(plain, frames_out)
+
+
+def test_slot_factorizations_match_the_global_solve():
+    """Two non-interacting slots: per-block LUs reproduce the whole-system tangent of each slot."""
+    import scipy.sparse
+    import scipy.sparse.linalg
+    rng = np.random.default_rng(7)
+    n, frames = 5, 2
+    blocks, layouts, masses = [], [], []
+    for j in range(2):
+        mass = rng.uniform(1, 2, n)
+        a = rng.normal(size=(3 * n, 3 * n)) * 0.1
+        blocks.append(np.diag(np.repeat(mass, 3)) + a @ a.T)
+        layouts.append(dict(dof_offset=3 * n * j, dof_count=3 * n, n=n, mass=mass, strength=10.0, anchor_idx=np.array([j])))
+    mat = scipy.sparse.csr_matrix(scipy.linalg.block_diag(*blocks))
+    global_lu = [scipy.sparse.linalg.splu(mat.tocsc()) for _ in range(frames)]
+    per_slot = [adj.slot_factorizations(mat, layouts) for _ in range(frames)]
+    for j in range(2):
+        expected = adj.tangent_pass(global_lu, layouts[j], return_frames=True)
+        got = adj.tangent_pass([f[j][0] for f in per_slot], per_slot[0][j][1], return_frames=True)
+        np.testing.assert_allclose(got, expected, rtol=1e-10, atol=1e-13)
+        assert per_slot[0][j][1]["dof_offset"] == 0 and per_slot[0][j][0].shape == (3 * n, 3 * n)

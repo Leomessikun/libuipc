@@ -2394,3 +2394,22 @@ relaunched with eight slots (`scratchpad/run_arms_vec.sh`,
 `output/iaql/vec20k_s0_{sac,actor_mix,critic,both,shuffled,actor_dir}`, 20k
 transitions each, evaluation of 8 episodes every 2,000). Not yet read.
 
+## 2026-09-15 — Where the time goes, and per-slot factorisations
+
+Owner asked why the GPU looks cold. Profile of one eight-slot online step
+under the other session's job (GPU shared, 30 GB): 2.52 s, of which the
+backend's five substeps 2.1 s (0.42 s per substep for 3,200 vertices,
+against 24 ms per substep for 400 vertices on the idle GPU yesterday: the
+contention, plus hundreds of small launches per substep that cannot fill a
+Blackwell), export and factorisation 0.16 s, tangent passes 0.25 s, sixteen
+learner updates 0.17 s on the CPU. The process is one Python thread blocked
+in synchronous backend calls; it cannot use more of the GPU on its own.
+Scaling under the same contention: 1 slot 1.37 s per step, 8 slots 2.40 s
+(0.30 s per transition), 32 slots 4.41 s forward (0.14 s per transition) but
+a 9.9 s captured step because the tangent solved one 38k-dof factorisation
+480 times. Slots never touch, so `slot_factorizations` now factorises each
+slot's own 1,200-dof block (test against the global solve); the per-slot LU
+and tangent are then linear in the slot count. Parallel arms are the other
+lever: five single-slot arms in parallel gave 3.1 transitions per second
+aggregate against 1 for one arm under the same contention.
+
