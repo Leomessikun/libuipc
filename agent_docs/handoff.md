@@ -2433,3 +2433,21 @@ per transition against 221 ms for yesterday's 8-slot SAC arm. Launched at
 the 8-slot κ = 0 hard-gate mix arm finishes alongside as an ablation. Tests:
 per-slot factorisations against the global solve, the cross-slot refusal.
 
+## 2026-09-15 — The decision tangent on the GPU as batched dense block algebra
+
+Under the five parallel 64-slot arms the GPU reads 99 % busy but 240–280 W
+of 600 and 12–20 % memory bus: kernels on 25k-vertex scenes fill a fraction
+of the SMs and every arm process sits at 100 % CPU between them. Aggregate
+throughput of the five arms: 27.6 ms per transition (87 ms for the SAC arm,
+162 ms for each mechanics arm), eight times one 8-slot arm.
+`iaql_tangent.BatchedTangent` takes the whole capture path off the host: the
+exported triplets are scattered into dense `(N, 3n, 3n)` slot blocks, one
+batched `lu_factor` per substep (single precision, two rounds of
+double-precision residual refinement), the inertia chain, the aim term and
+friction's lagged blocks as batched tensor ops, three axes at once; the host
+keeps no factorisation. Reproduces `tangent_pass` with the coupling to 1e-10
+(double) and 1e-6 (refined single) in the test. `IAQLEnvConfig.tangent_device`
+/ `--tangent-device cuda` select it; `--batch-size` lets the learner make
+fewer, larger updates at a matched sample rate. Measured batched LU of 256
+dense 1200-dof blocks in double: 0.41 s; timings of the whole step follow.
+

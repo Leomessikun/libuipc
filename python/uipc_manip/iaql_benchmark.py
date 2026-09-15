@@ -29,9 +29,9 @@ AGENT_DEVICE = "cpu"
 def agent_for(state_dim, seed=0, weight=0.0, actor_weight=0.0, device=None):
     torch.manual_seed(seed)
     return SACAgent(ObsSpec(3), 3, SACConfig(actor_type="state", critic_input="privileged",
-        privileged_dim=int(state_dim), hidden_dim=128, batch_size=32, actor_lr=3e-4, critic_lr=3e-4,
+        privileged_dim=int(state_dim), hidden_dim=128, actor_lr=3e-4, critic_lr=3e-4,
         actor_log_std_min=-5, actor_log_std_max=1, adjoint_weight=weight, physics_actor_weight=actor_weight,
-        state_activation="silu", **AGENT_OPTIONS), device or "cpu")
+        state_activation="silu", **{"batch_size": 32, **AGENT_OPTIONS}), device or "cpu")
 
 
 def tensor(x):
@@ -313,13 +313,14 @@ def online(env, args):
             transitions += N
             if args.replay_rows and len(replay) > args.replay_rows:
                 del replay[:len(replay)-args.replay_rows]
-            if len(replay) >= 64:
-                for _ in range(int(round(args.updates_per_step * N))):
-                    batch = [replay[k] for k in rng.integers(0, len(replay), 32)]
+            if len(replay) >= max(64, agent.cfg.batch_size):
+                for _ in range(max(1, int(round(args.updates_per_step * N)))):
+                    bs = agent.cfg.batch_size
+                    batch = [replay[k] for k in rng.integers(0, len(replay), bs)]
                     kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if mechanics else {}
                     kw = {k: v.to(dev) for k, v in kw.items()}
                     last_stats = agent.update_state_batch(tensor([r["obs"] for r in batch]).to(dev), tensor([r["action"] for r in batch]).to(dev),
-                        tensor([[r["reward"]] for r in batch]).to(dev), tensor([r["next_obs"] for r in batch]).to(dev), torch.ones(32, 1, device=dev), **kw)
+                        tensor([[r["reward"]] for r in batch]).to(dev), tensor([r["next_obs"] for r in batch]).to(dev), torch.ones(bs, 1, device=dev), **kw)
             if transitions // 64 != (transitions - N) // 64:
                 print(json.dumps({"online_weight": weight, "steps": transitions, "stats": last_stats}), flush=True)
             if args.eval_every and transitions // args.eval_every != (transitions - N) // args.eval_every and transitions < args.online_steps:
@@ -460,6 +461,8 @@ def main(argv=None):
     p.add_argument("--reward-mode", choices=["dense", "terminal"], default="dense")
     p.add_argument("--num-slots", type=int, default=1, help="identical cloths stepping in lockstep in one World (online phase)")
     p.add_argument("--device", default="cpu", help="learner device for the online phase (cpu or cuda)")
+    p.add_argument("--tangent-device", default="cpu", help="cpu: per-slot SuperLU on the host; cuda: batched dense block LU on the GPU")
+    p.add_argument("--batch-size", type=int, default=32, help="learner batch; keep updates-per-step x batch-size matched across arms")
     p.add_argument("--shuffle-labels", action="store_true",
                    help="online control: permute each batch's mechanics among its valid rows (everything else matched)")
     p.add_argument("--online-weights", type=float, nargs="+", default=None,
@@ -478,7 +481,8 @@ def main(argv=None):
     args.out.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(1)
     AGENT_OPTIONS.update(physics_actor_mode=args.actor_mode, physics_actor_rho=args.actor_rho,
-                         physics_actor_sigma=args.actor_sigma, continuation_trust_kappa=args.continuation_trust)
+                         physics_actor_sigma=args.actor_sigma, continuation_trust_kappa=args.continuation_trust,
+                         batch_size=args.batch_size)
     global AGENT_DEVICE
     AGENT_DEVICE = args.device if args.phase == "online" else "cpu"
     if args.phase == "refit":
@@ -487,7 +491,8 @@ def main(argv=None):
     t0 = time.monotonic()
     env = IAQLClothEnv(args.out/"world", IAQLEnvConfig(friction=args.friction, velocity_tolerance=args.velocity_tolerance,
                                                         export_mode=args.export_modes[0], friction_chain=args.friction_chain,
-                                                        reward_mode=args.reward_mode, num_slots=args.num_slots))
+                                                        reward_mode=args.reward_mode, num_slots=args.num_slots,
+                                                        tangent_device=args.tangent_device))
     if args.num_slots > 1 and args.phase != "online":
         raise SystemExit("--num-slots > 1 is for --phase online; the probe, fit and fidelity phases use one slot")
     report = dict(environment=env.describe(), seed=args.seed, state_activation="silu",

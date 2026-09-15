@@ -17,6 +17,7 @@ import scipy.sparse.linalg
 from .assets import build_cloth
 from .tasks import get_task
 from .physics_gradient_adjoint import slot_factorizations_from_triplets, system_to_matrix, tangent_pass
+from .iaql_tangent import BatchedTangent
 
 
 @dataclass
@@ -35,6 +36,9 @@ class IAQLEnvConfig:
     export_mode: str = "last_iterate"
     reward_mode: str = "dense"
     num_slots: int = 1
+    tangent_device: str = "cpu"
+    """``cpu``: per-slot SuperLU factorisations on the host; ``cuda``: the whole decision tangent as
+    batched dense block algebra on the GPU (``iaql_tangent.BatchedTangent``)."""
     """Identical cloths stepping in lockstep in one World, one metre apart; the observation, action,
     reward and tangent gain a leading slot axis when more than one."""
     """``dense``: progress toward the goal every decision; ``terminal``: the distance term only at the
@@ -144,6 +148,7 @@ class IAQLClothEnv:
         self.layout = self.layouts[0]
         if cfg.friction_chain and not hasattr(self.feature, "export_prev_coupling"):
             raise RuntimeError("This build's adjoint feature exports no lagged coupling; rebuild the tree")
+        self.batched = BatchedTangent(self.layouts, cfg.action_repeat, cfg.tangent_device) if cfg.tangent_device != "cpu" else None
         self.steps = 0
         self.initial = self.snapshot()
         self.reset(0)
@@ -267,7 +272,11 @@ class IAQLClothEnv:
         control_jacs = np.stack([np.diag(inside[j]) * cfg.max_translation for j in range(self.N)])
         lus, residuals, couplings = [], [], []
         chain = cfg.friction_chain and self.cfg.export_mode != "last_iterate"
+        batched = self.batched if capture else None
+        if batched is not None:
+            batched.begin()
         t0 = time.monotonic()
+        tangent_gpu_s = 0.0
         for k in range(cfg.action_repeat):
             self.anchors = starts + (k + 1) / cfg.action_repeat * (targets - starts)
             previous_positions = self.all_positions() if capture else None
@@ -277,17 +286,23 @@ class IAQLClothEnv:
                 if velocity_error > 1e-7:
                     raise RuntimeError(f"BDF1 velocity/state accessor mismatch: {velocity_error}")
                 rows, cols, values, gradient = self.feature.export_system()
-                if self.N == 1:
+                residuals.append(float(np.linalg.norm(gradient)))
+                coupling = None
+                if chain:
+                    b_rows, b_cols, blocks = self.feature.export_prev_coupling()
+                    coupling = (np.asarray(b_rows), np.asarray(b_cols), np.asarray(blocks))
+                    couplings.append(coupling)
+                if batched is not None:
+                    t2 = time.monotonic()
+                    batched.substep(rows, cols, values, coupling)
+                    tangent_gpu_s += time.monotonic() - t2
+                elif self.N == 1:
                     mat = system_to_matrix(rows, cols, values, int(self.feature.dof_count()))
                     lus.append([(scipy.sparse.linalg.splu(mat.tocsc()), self.layouts[0])])
                 else:
                     # Slots never touch: one factorisation per slot block straight from the triplets,
                     # on a thread pool, never the whole system.
                     lus.append(slot_factorizations_from_triplets(rows, cols, values, self.layouts))
-                residuals.append(float(np.linalg.norm(gradient)))
-                if chain:
-                    b_rows, b_cols, blocks = self.feature.export_prev_coupling()
-                    couplings.append((np.asarray(b_rows), np.asarray(b_cols), np.asarray(blocks)))
         forward_s = time.monotonic() - t0
         x = self.all_positions()
         distances = self.all_distances(x)
@@ -306,31 +321,38 @@ class IAQLClothEnv:
                    capture_forward_s=forward_s, newton_gradient_norms=residuals)
         if capture:
             t1 = time.monotonic()
-            tangents, reward_gradients = [], []
-            for j, lay in enumerate(self.layouts):
-                slot_couplings = None
-                if chain:
-                    off = lay["vertex_offset"]
-                    slot_couplings = []
-                    for b_rows, b_cols, blocks in couplings:
-                        keep = (b_rows >= off) & (b_rows < off + self.n)
-                        slot_couplings.append((b_rows[keep] - off, b_cols[keep] - off, blocks[keep]))
-                slot_lus = [frame[j][0] for frame in lus]
-                frames = tangent_pass(slot_lus, lus[0][j][1], return_frames=True, prev_coupling=slot_couplings) @ control_jacs[j]
-                dx = frames[-1]
-                previous = frames[-2] if len(frames) > 1 else np.zeros_like(dx)
-                dv = (dx - previous) / cfg.dt
-                tangents.append(np.concatenate((dx, dv, control_jacs[j], np.zeros((3, 3)))) / cfg.state_scale)
+            if batched is not None:
+                dx_all, _, tangent = batched.finish(control_jacs, cfg.dt, cfg.state_scale)
+            else:
+                dx_all, tangents = [], []
+                for j, lay in enumerate(self.layouts):
+                    slot_couplings = None
+                    if chain:
+                        off = lay["vertex_offset"]
+                        slot_couplings = []
+                        for b_rows, b_cols, blocks in couplings:
+                            keep = (b_rows >= off) & (b_rows < off + self.n)
+                            slot_couplings.append((b_rows[keep] - off, b_cols[keep] - off, blocks[keep]))
+                    slot_lus = [frame[j][0] for frame in lus]
+                    frames = tangent_pass(slot_lus, lus[0][j][1], return_frames=True, prev_coupling=slot_couplings) @ control_jacs[j]
+                    dx = frames[-1]
+                    previous = frames[-2] if len(frames) > 1 else np.zeros_like(dx)
+                    dv = (dx - previous) / cfg.dt
+                    dx_all.append(dx)
+                    tangents.append(np.concatenate((dx, dv, control_jacs[j], np.zeros((3, 3)))) / cfg.state_scale)
+                tangent = np.stack(tangents)
+            reward_gradients = []
+            for j in range(self.N):
                 delta = x[j][self.marker].mean(0) - self.goals[j]
-                dc = dx.reshape(self.n, 3, 3)[self.marker].mean(0)
+                dc = np.asarray(dx_all[j]).reshape(self.n, 3, 3)[self.marker].mean(0)
                 task_term = -(delta / distances[j]) @ dc / cfg.max_translation
                 if cfg.reward_mode == "terminal" and not done:
                     task_term = np.zeros(3)
                 reward_gradients.append(task_term - 2 * cfg.action_cost * actions[j])
-            tangent, dr = np.stack(tangents), np.stack(reward_gradients)
+            dr = np.stack(reward_gradients)
             if not np.isfinite(tangent).all() or not np.isfinite(dr).all():
                 raise RuntimeError("Nonfinite decision tangent")
-            out.update(tangent=self._squeeze(tangent), reward_gradient=self._squeeze(dr), tangent_s=time.monotonic() - t1,
+            out.update(tangent=self._squeeze(tangent), reward_gradient=self._squeeze(dr), tangent_s=time.monotonic() - t1 + tangent_gpu_s,
                        friction_chain=chain, coupling_blocks=int(sum(len(c[0]) for c in couplings)))
         return out
 

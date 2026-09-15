@@ -161,3 +161,49 @@ def test_slot_factorizations_from_triplets_match_the_global_solve():
         np.testing.assert_allclose(got, expected, rtol=1e-10, atol=1e-13)
     with pytest.raises(ValueError, match="couples"):
         adj.slot_factorizations_from_triplets(np.append(rows, 0), np.append(cols, n), np.concatenate([values, np.eye(3)[None]]), layouts)
+
+
+def test_batched_tangent_matches_the_scalar_chain_with_coupling():
+    """Two slots, three substeps, a lagged coupling block on one vertex: the batched dense path (single
+    precision plus refinement) reproduces tangent_pass to 1e-6 and the double path to 1e-10."""
+    import torch
+    import scipy.sparse
+    import scipy.sparse.linalg
+    from uipc_manip.iaql_tangent import BatchedTangent
+    rng = np.random.default_rng(9)
+    n, N, frames = 4, 2, 3
+    layouts, dense = [], []
+    for j in range(N):
+        mass = rng.uniform(1, 2, n)
+        a = rng.normal(size=(3 * n, 3 * n)) * 0.1
+        dense.append(np.diag(np.repeat(mass, 3)) + a @ a.T)
+        layouts.append(dict(dof_offset=3 * n * j, dof_count=3 * n, n=n, mass=mass, strength=10.0,
+                            anchor_idx=np.array([0, 2]), vertex_offset=n * j))
+    full = scipy.linalg.block_diag(*dense)
+    rows, cols, values = [], [], []
+    nb = full.shape[0] // 3
+    for r in range(nb):
+        for c in range(r, nb):
+            blk = full[3*r:3*r+3, 3*c:3*c+3]
+            if np.any(blk):
+                rows.append(r); cols.append(c); values.append(blk)
+    rows, cols, values = np.array(rows), np.array(cols), np.array(values)
+    B = rng.normal(size=(3, 3))
+    coupling = (np.array([n + 1]), np.array([n + 1]), B[None])   # slot 1, vertex 1, global vertex id n + 1
+    control = np.stack([np.eye(3) * 0.006, np.diag([0.006, 0.0, 0.006])])
+    lu = [scipy.sparse.linalg.splu(scipy.sparse.csc_matrix(full)) for _ in range(frames)]
+    expected = []
+    for j in range(N):
+        pc = [(np.array([1]), np.array([1]), B[None]) if j == 1 else (np.array([], int), np.array([], int), np.zeros((0, 3, 3))) for _ in range(frames)]
+        fr = adj.tangent_pass(lu, layouts[j], return_frames=True, prev_coupling=pc) @ control[j]
+        expected.append(fr)
+    for dtype, tol in ((torch.float64, 1e-10), (torch.float32, 1e-6)):
+        bt = BatchedTangent(layouts, frames, device="cpu", factor_dtype=dtype, refine=0 if dtype is torch.float64 else 3)
+        for f in range(frames):
+            bt.substep(rows, cols, values, coupling)
+        dx, dv, tangent = bt.finish(control, 0.01, 0.1)
+        for j in range(N):
+            np.testing.assert_allclose(dx[j], expected[j][-1], rtol=tol, atol=1e-12)
+            np.testing.assert_allclose(dv[j], (expected[j][-1] - expected[j][-2]) / 0.01, rtol=tol, atol=1e-10)
+            np.testing.assert_allclose(tangent[j, :3 * n], expected[j][-1] / 0.1, rtol=tol, atol=1e-12)
+            np.testing.assert_allclose(tangent[j, 6 * n:6 * n + 3], control[j] / 0.1)
