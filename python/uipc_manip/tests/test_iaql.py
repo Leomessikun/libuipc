@@ -153,3 +153,60 @@ def test_state_batch_feeds_the_actor_term_from_the_same_label():
     stats = agent.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1),
                                      tangent=tangent, reward_gradient=torch.zeros(8, 2), valid=torch.ones(8))
     assert stats["physics_actor_fraction"] == 0.0 and "physics_loss" not in stats
+
+
+def test_detailed_targets_split_and_trust():
+    from uipc_manip.iaql import soft_targets_detailed
+    torch.manual_seed(11)
+    actor = StateActor(4, 2, 16, -3, 1).double()
+    critic = PrivilegedCritic(4, 2, 16).double()
+    ns = torch.randn(3, 4, dtype=torch.double)
+    tangent = torch.randn(3, 4, 2, dtype=torch.double)*.3
+    reward, mask = torch.randn(3, 1, dtype=torch.double), torch.ones(3, 1, dtype=torch.double)
+    g_r = torch.randn(3, 2, dtype=torch.double)
+    noise = torch.randn(3, 2, dtype=torch.double)
+    y, g = soft_targets(actor, critic, ns, reward, mask, tangent, g_r, .2, .9, 100, noise)
+    y2, g2, info = soft_targets_detailed(actor, critic, ns, reward, mask, tangent, g_r, .2, .9, 100, noise)
+    torch.testing.assert_close(y, y2)
+    torch.testing.assert_close(g, g2)
+    torch.testing.assert_close(info["reward_norm"], g_r.norm(dim=-1))
+    assert (info["trust"] == 1).all() and (info["disagreement"] >= 0).all()
+    # the continuation is the label minus the reward part
+    torch.testing.assert_close(info["continuation_norm"], (g - g_r).norm(dim=-1))
+    # identical heads: no disagreement, full trust at any kappa
+    critic.Q2.load_state_dict(critic.Q1.state_dict())
+    _, g_same, info_same = soft_targets_detailed(actor, critic, ns, reward, mask, tangent, g_r, .2, .9, 100, noise, continuation_trust_kappa=5.0)
+    torch.testing.assert_close(info_same["disagreement"], torch.zeros(3, dtype=torch.double), atol=1e-10, rtol=0)
+    torch.testing.assert_close(info_same["trust"], torch.ones(3, dtype=torch.double))
+    # distinct heads with a large kappa: the continuation is discounted, the reward part stays
+    torch.manual_seed(12)
+    critic2 = PrivilegedCritic(4, 2, 16).double()
+    _, g_full, _ = soft_targets_detailed(actor, critic2, ns, reward, mask, tangent, g_r, .2, .9, 100, noise)
+    _, g_trust, info_t = soft_targets_detailed(actor, critic2, ns, reward, mask, tangent, g_r, .2, .9, 100, noise, continuation_trust_kappa=50.0)
+    assert (info_t["trust"] < 1).any()
+    torch.testing.assert_close(g_trust, g_r + info_t["trust"][:, None]*(g_full - g_r), atol=1e-12, rtol=0)
+
+
+def test_mix_mode_replaces_the_fraction_rho_of_the_critic_gradient():
+    torch.manual_seed(13)
+    cfg = dict(actor_type="state", critic_input="privileged", privileged_dim=4, hidden_dim=16, batch_size=8,
+               actor_update_freq=1, state_activation="silu", physics_actor_weight=1.0, physics_actor_mode="mix",
+               physics_actor_rho=1.0, physics_actor_action_distance=100.0, actor_log_std_min=-20, actor_log_std_max=-19)
+    agent = SACAgent(ObsSpec(3), 2, SACConfig(**cfg), "cpu")
+    state, action = torch.randn(8, 4), torch.rand(8, 2)*2-1
+    tangent = torch.randn(8, 4, 2)*.1
+    nxt = state+torch.einsum("bsa,ba->bs", tangent, action)
+    stats = agent.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1),
+                                     tangent=tangent, reward_gradient=torch.zeros(8, 2), valid=torch.ones(8))
+    assert "physics_mix_cosine" in stats and stats["physics_rows"] == 8 and agent.physics_beta is None
+    assert "label_critic_cosine" in stats and "label_continuation_ratio" in stats
+    # with rho = 0 the update is the plain SAC update
+    torch.manual_seed(13)
+    plain = SACAgent(ObsSpec(3), 2, SACConfig(**{**cfg, "physics_actor_rho": 0.0}), "cpu")
+    torch.manual_seed(13)
+    ref = SACAgent(ObsSpec(3), 2, SACConfig(**{**cfg, "physics_actor_weight": 0.0}), "cpu")
+    torch.manual_seed(5); plain.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1),
+                                                   tangent=tangent, reward_gradient=torch.zeros(8, 2), valid=torch.ones(8))
+    torch.manual_seed(5); ref.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1))
+    for a, b in zip(plain.actor.parameters(), ref.actor.parameters()):
+        torch.testing.assert_close(a, b, rtol=0, atol=1e-6)

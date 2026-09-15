@@ -33,6 +33,10 @@ class IAQLEnvConfig:
     state_scale: float = 0.1
     velocity_tolerance: float = 0.001
     export_mode: str = "last_iterate"
+    reward_mode: str = "dense"
+    """``dense``: progress toward the goal every decision; ``terminal``: the distance term only at the
+    episode's last decision (the action cost stays), so the immediate reward gradient carries nothing
+    about the task and only the continuation channel can."""
     friction_chain: bool = False
     """Add the friction gradient's lagged dependence on the previous substep (the backend's
     ``export_prev_coupling`` blocks) to the tangent chain; needs a converged export mode."""
@@ -211,9 +215,16 @@ class IAQLClothEnv:
         forward_s = time.monotonic()-t0
         x = self.positions()
         distance = self.distance(x)
-        reward = (old_distance-distance)/cfg.max_translation - cfg.action_cost*float(action@action)
         self.steps += 1
-        out = dict(obs=self.observation(), reward=reward, done=self.steps >= cfg.horizon,
+        done = self.steps >= cfg.horizon
+        if cfg.reward_mode == "terminal":
+            progress = -distance/cfg.max_translation if done else 0.0
+        elif cfg.reward_mode == "dense":
+            progress = (old_distance-distance)/cfg.max_translation
+        else:
+            raise ValueError(f"Unknown reward_mode {cfg.reward_mode!r}")
+        reward = progress - cfg.action_cost*float(action@action)
+        out = dict(obs=self.observation(), reward=reward, done=done,
                    distance=distance, success=distance < self.task.success_tolerance,
                    capture_forward_s=forward_s, newton_gradient_norms=residuals)
         if capture:
@@ -226,7 +237,10 @@ class IAQLClothEnv:
             tangent = np.concatenate((dx, dv, control_jac, np.zeros((3, 3)))) / cfg.state_scale
             delta = x[self.marker].mean(0)-self.goal
             dc = dx.reshape(self.n, 3, 3)[self.marker].mean(0)
-            dr = -(delta/distance)@dc/cfg.max_translation - 2*cfg.action_cost*action
+            task_term = -(delta/distance)@dc/cfg.max_translation
+            if cfg.reward_mode == "terminal" and not done:
+                task_term = np.zeros(3)
+            dr = task_term - 2*cfg.action_cost*action
             if not np.isfinite(tangent).all() or not np.isfinite(dr).all():
                 raise RuntimeError("Nonfinite decision tangent")
             out.update(tangent=tangent, reward_gradient=dr, tangent_s=time.monotonic()-t1,

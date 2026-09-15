@@ -146,8 +146,17 @@ direction term on the actor, gated by the policy's distance to the replayed
 action), so one process runs any of SAC / critic / actor / both / shuffled.
 `--phase fidelity --fidelity-sac A.pt --fidelity-iaql B.pt` compares each
 critic's `dQ/da`, the exact one-decision label with each critic's
-continuation, and the reward gradient against finite differences of the
-frozen policy's `H`-decision return. `--phase refit` re-fits critics on a finished run's
+continuation, its continuation part alone, and the reward gradient against
+finite differences of the frozen policy's `H`-decision return.
+`--actor-mode mix --actor-rho ρ` replaces the additive direction term by the
+estimator replacement `(1−ρc)·dQ/da + ρc·g` at the policy's own action
+(`--actor-sigma` makes the locality `c` a Gaussian of the action distance);
+`--continuation-trust κ` discounts the label's continuation part by
+`exp(−κ d²)` with `d` the twin critics' disagreement; `--reward-mode terminal`
+pays the distance only at the episode's last decision, so only the
+continuation channel carries the task. Every update logs the label's
+continuation-to-reward ratio, its trust and disagreement, and the critic's
+cosine with the label at the replayed action. `--phase refit` re-fits critics on a finished run's
 saved fixed dataset on the CPU (weight sweep, shuffled-label control, constant
 mean slope). `--phase online --online-weights 0.1 --eval-every 500` runs one
 online arm with periodic evaluation; one process per arm runs the SAC/IAQL

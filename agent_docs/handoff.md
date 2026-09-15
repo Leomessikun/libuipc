@@ -2350,3 +2350,28 @@ arms in parallel with the raw-Hessian label (`scratchpad/run_five_arms.sh`,
 actor direction 0.5, both, both with shuffled labels; evaluation every
 2,000 steps). Not yet read. Record updated.
 
+## 2026-09-15 — Estimator replacement, continuation trust, terminal reward; the arms rerun one at a time
+
+Owner's reading of the fidelity probe: the direct label is the actor's best
+gradient and the continuation term adds nothing yet, so (1) the actor term
+should replace a fraction of the critic's gradient rather than add a
+fixed-norm direction: `physics_actor_mode="mix"` applies
+`−ρ·sg[c·(g − ∇_a Q(s, a_θ))]·a_θ` at the policy's sampled action, whose action
+gradient is `(1−ρc)∇_a Q + ρc·g` (ρ = 0 is SAC, ρ = 1 the label alone); the
+locality `c` is the hard action-distance gate or, with `physics_actor_sigma`,
+a Gaussian of it; (2) the label splits into reward and continuation parts and
+`continuation_trust_kappa` discounts the continuation by `exp(−κ d²)` with `d`
+the twin critics' disagreement (`iaql.soft_targets_detailed`, one reverse
+pass per head); (3) `iaql_env(reward_mode="terminal")` pays the distance only
+at the last decision, the benchmark on which the reward gradient alone
+cannot work; (4) every update logs the continuation-to-reward ratio, the
+trust, the disagreement and the critic's cosine with the label at the
+replayed action, and the fidelity probe reports each continuation's cosine
+with the return gradient's residual beyond the reward part. Tests: 49 pass.
+Five 30k arms launched in parallel at 12:08 contended to 1.6 s per step (five
+processes on one GPU through MPS) and were stopped at 600 steps; six 20k
+arms now run one after another (`scratchpad/run_arms_seq.sh`,
+`output/iaql/arms20k_s0_{sac,actor_mix,actor_dir,critic,both,shuffled}`,
+about an hour each): SAC; mix ρ 0.5; the direction term 0.5; critic slope
+0.1; mix + critic; mix + critic with shuffled labels. Not yet read.
+

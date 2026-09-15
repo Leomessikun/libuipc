@@ -95,6 +95,15 @@ class SACConfig:
     physics_actor_action_distance: float = 0.5
     """State benchmark: a row's label counts for the actor term only while the policy's mean is within
     this normalised distance of the replayed action the label was computed at."""
+    physics_actor_sigma: float = 0.0
+    """State benchmark: when positive, the hard distance gate becomes the weight exp(−|μ−a|²/2σ²)."""
+    physics_actor_mode: str = "direction"
+    """``direction``: ``−β·unit(g)·μ`` with β matched once to the SAC term (the physics-gradient line);
+    ``mix``: the estimator replacement ``−ρ·sg[c·(g − ∇_a Q(s, a_θ))]·a_θ`` at the policy's sampled
+    action, whose action gradient is ``(1−ρc)∇_a Q + ρc·g``: ρ = 0 is SAC, ρ = 1 the label alone."""
+    physics_actor_rho: float = 0.5
+    continuation_trust_kappa: float = 0.0
+    """State benchmark: κ of the label's continuation trust exp(−κ d²) from the twin critics' disagreement."""
     adjoint_weight: float = 0.0
     adjoint_gradient_scale: float = 1.0
     grad_clip_max_norm: float = 0.0
@@ -536,7 +545,25 @@ class SACAgent:
                 distill = distill + wang_distill_loss(mu[rows], log_std[rows], teacher_mu, teacher_log_std)
             actor_loss = actor_loss + self.cfg.distill_weight * distill
         physics_stats = {}
-        if physics is not None and self.cfg.physics_actor_weight > 0.0:
+        if physics is not None and self.cfg.physics_actor_weight > 0.0 and self.cfg.physics_actor_mode == "mix":
+            g, weight = physics
+            weight = weight.reshape(-1, 1).to(g.dtype)
+            rows = int((weight > 0).sum().item())
+            if rows > 0:
+                # The critic's own action gradient at the policy's sampled action, detached: the
+                # correction replaces the fraction ρ·c of it by the label, nothing else.
+                a = pi.detach().requires_grad_(True)
+                with frozen_parameters(self.critic):
+                    qa1, qa2 = self._critic_scalar(obs if state is None else state, a, detach_encoder=detach)
+                g_q = torch.autograd.grad(torch.min(qa1, qa2).sum(), a)[0].detach()
+                delta = float(self.cfg.physics_actor_rho) * weight * (g.detach() - g_q)
+                physics_loss = -(delta * pi).sum(dim=-1).mean()
+                actor_loss = actor_loss + physics_loss
+                keep = weight.reshape(-1) > 0
+                cosine = F.cosine_similarity(g_q[keep], g.detach()[keep], dim=-1).mean()
+                physics_stats = {"physics_loss": float(physics_loss.item()), "physics_rows": rows,
+                                 "physics_mix_cosine": float(cosine.item()), "physics_mix_weight": float(weight.mean().item())}
+        elif physics is not None and self.cfg.physics_actor_weight > 0.0:
             g, valid = physics
             rows = int((valid.reshape(-1) > 0.5).sum().item())
             if rows > 0:
@@ -734,23 +761,42 @@ class SACAgent:
         if self.cfg.actor_type != "state":
             raise ValueError("update_state_batch requires the full-state actor")
         paired = physics = None
+        label_stats = {}
         if self.cfg.adjoint_weight or self.cfg.physics_actor_weight:
-            from .iaql import soft_targets
+            from .iaql import soft_targets_detailed
             if tangent is None or reward_gradient is None or valid is None:
                 raise ValueError("IAQL batch needs mechanics and validity")
-            y, g = soft_targets(self.actor, self.critic_target, next_obs, reward, mask, tangent, reward_gradient,
-                                self.alpha.detach(), self.cfg.discount,
-                                self.cfg.reward_abs_bound / max(1-self.cfg.discount, 1e-6))
+            y, g, info = soft_targets_detailed(self.actor, self.critic_target, next_obs, reward, mask, tangent, reward_gradient,
+                                               self.alpha.detach(), self.cfg.discount,
+                                               self.cfg.reward_abs_bound / max(1-self.cfg.discount, 1e-6),
+                                               continuation_trust_kappa=self.cfg.continuation_trust_kappa)
+            live = valid.reshape(-1) > 0.5
+            if live.any():
+                ratio = info["continuation_norm"][live] / info["reward_norm"][live].clamp_min(1e-12)
+                label_stats = {"label_continuation_ratio": float(ratio.median()), "label_continuation_trust": float(info["trust"][live].mean()),
+                               "label_twin_disagreement": float(info["disagreement"][live].mean())}
+                # The critic's own slope at the replayed action against the label: the distillation gap.
+                a_rep = action.detach().requires_grad_(True)
+                with frozen_parameters(self.critic):
+                    q1, q2 = self.critic(obs, a_rep)
+                g_q = torch.autograd.grad(torch.min(q1, q2).sum(), a_rep)[0].detach()
+                label_stats["label_critic_cosine"] = float(F.cosine_similarity(g_q[live], g[live], dim=-1).mean())
             if self.cfg.adjoint_weight:
                 paired = (y, g, valid)
             if self.cfg.physics_actor_weight:
                 with torch.no_grad():
                     mu, _ = self.actor.head(obs)
-                    near = (mu - action).norm(dim=-1) <= float(self.cfg.physics_actor_action_distance)
-                physics = (g, (valid.reshape(-1) > 0.5) & near)
+                    distance = (mu - action).norm(dim=-1)
+                    if self.cfg.physics_actor_sigma > 0:
+                        local = torch.exp(-distance.square() / (2 * float(self.cfg.physics_actor_sigma) ** 2))
+                    else:
+                        local = (distance <= float(self.cfg.physics_actor_action_distance)).to(g.dtype)
+                    weight = live.to(g.dtype) * local
+                physics = (g, weight if self.cfg.physics_actor_mode == "mix" else (weight > 0.5))
         stats = self._update_critic(obs, action, reward, next_obs, mask, state=obs, next_state=next_obs, paired_targets=paired)
+        stats.update(label_stats)
         if physics is not None:
-            stats["physics_actor_fraction"] = float(physics[1].float().mean())
+            stats["physics_actor_fraction"] = float((physics[1] > 0).float().mean())
         return self._finish_update(stats, obs, obs, physics=physics)
 
     def _finish_update(self, stats, obs, state=None, label=None, index=0, physics=None):

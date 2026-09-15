@@ -20,12 +20,16 @@ from .obs import ObsSpec
 from .sac import SACAgent, SACConfig
 
 
+AGENT_OPTIONS = {}
+"""Extra SACConfig fields for every agent the driver builds (set from the command line in main)."""
+
+
 def agent_for(state_dim, seed=0, weight=0.0, actor_weight=0.0):
     torch.manual_seed(seed)
     return SACAgent(ObsSpec(3), 3, SACConfig(actor_type="state", critic_input="privileged",
         privileged_dim=int(state_dim), hidden_dim=128, batch_size=32, actor_lr=3e-4, critic_lr=3e-4,
         actor_log_std_min=-5, actor_log_std_max=1, adjoint_weight=weight, physics_actor_weight=actor_weight,
-        state_activation="silu"), "cpu")
+        state_activation="silu", **AGENT_OPTIONS), "cpu")
 
 
 def tensor(x):
@@ -373,16 +377,20 @@ def fidelity(env, args):
         for name, agent in agents.items():
             _, g = labels(agent, [row], zero_noise)
             directions[f"ipc_{name}"] = g[0].numpy().astype(np.float64)
+            directions[f"cont_{name}"] = directions[f"ipc_{name}"] - directions["reward"]
             a = tensor(a0)[None].requires_grad_(True)
             q1, q2 = agent.critic(tensor(obs)[None], a)
             directions[f"dq_{name}"] = torch.autograd.grad(torch.minimum(q1, q2).sum(), a)[0][0].numpy().astype(np.float64)
         axis_gradient = np.array([(rollout(snap, a0 + eta*e)[0] - rollout(snap, a0 - eta*e)[0]) / (2*eta) for e in np.eye(3)])
-        results = {"fd": dict(gradient=axis_gradient.tolist(), norm=float(np.linalg.norm(axis_gradient)))}
+        residual = axis_gradient - directions["reward"]  # what the return gradient holds beyond the immediate reward
+        results = {"fd": dict(gradient=axis_gradient.tolist(), norm=float(np.linalg.norm(axis_gradient)),
+                              residual_norm=float(np.linalg.norm(residual)))}
         for name, g in directions.items():
             u = g / max(float(np.linalg.norm(g)), 1e-12)
             jp, dp = rollout(snap, a0 + eta*u)
             jm, dm = rollout(snap, a0 - eta*u)
             results[name] = dict(gradient=g.tolist(), cosine=comparison(u, axis_gradient)["cosine"],
+                                 residual_cosine=comparison(u, residual)["cosine"],
                                  improvement=float(jp - jm), distance_gain=float(dm - dp))
         records.append(dict(state=i, action=a0.tolist(), capture_forward_s=center["capture_forward_s"], results=results))
         print(json.dumps({"fidelity": records[-1]}), flush=True)
@@ -424,6 +432,12 @@ def main(argv=None):
     p.add_argument("--refit-weights", type=float, nargs="+", default=[0.0, 0.01, 0.1, 1.0])
     p.add_argument("--actor-weight", type=float, default=0.0,
                    help="physics_actor_weight: the same refreshed label as a direction term of the actor update")
+    p.add_argument("--actor-mode", choices=["direction", "mix"], default="direction",
+                   help="direction: -beta*unit(g)*mu (beta matched once); mix: estimator replacement (1-rho c) dQ/da + rho c g")
+    p.add_argument("--actor-rho", type=float, default=0.5)
+    p.add_argument("--actor-sigma", type=float, default=0.0, help="Gaussian action-locality weight (0: hard distance gate)")
+    p.add_argument("--continuation-trust", type=float, default=0.0, help="kappa of exp(-kappa d^2) on the label's continuation part")
+    p.add_argument("--reward-mode", choices=["dense", "terminal"], default="dense")
     p.add_argument("--shuffle-labels", action="store_true",
                    help="online control: permute each batch's mechanics among its valid rows (everything else matched)")
     p.add_argument("--online-weights", type=float, nargs="+", default=None,
@@ -441,12 +455,15 @@ def main(argv=None):
     args = p.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(1)
+    AGENT_OPTIONS.update(physics_actor_mode=args.actor_mode, physics_actor_rho=args.actor_rho,
+                         physics_actor_sigma=args.actor_sigma, continuation_trust_kappa=args.continuation_trust)
     if args.phase == "refit":
         refit(args)
         return
     t0 = time.monotonic()
     env = IAQLClothEnv(args.out/"world", IAQLEnvConfig(friction=args.friction, velocity_tolerance=args.velocity_tolerance,
-                                                        export_mode=args.export_modes[0], friction_chain=args.friction_chain))
+                                                        export_mode=args.export_modes[0], friction_chain=args.friction_chain,
+                                                        reward_mode=args.reward_mode))
     report = dict(environment=env.describe(), seed=args.seed, state_activation="silu",
                   arguments={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()})
     path = args.out/"report.json"

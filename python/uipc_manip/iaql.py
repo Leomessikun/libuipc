@@ -14,6 +14,19 @@ def soft_targets(actor, critic, next_state, reward, mask, tangent, reward_gradie
     same units as ``next_state``. Reward derivatives are total, per normalized
     current action. Teacher input derivatives remain live until labels detach.
     """
+    value, gradient, _ = soft_targets_detailed(actor, critic, next_state, reward, mask, tangent,
+                                               reward_gradient, alpha, discount, bound, noise)
+    return value, gradient
+
+
+def soft_targets_detailed(actor, critic, next_state, reward, mask, tangent, reward_gradient,
+                          alpha, discount, bound, noise=None, continuation_trust_kappa=0.0):
+    """``soft_targets`` with the label split into its reward part ``g_R`` and its continuation
+    part ``g_C = γ m Dᵀ∇V̄(s')``, and a continuation trust ``c = exp(−κ d²)`` from the twin
+    critics' disagreement ``d = |g_C1 − g_C2| / mean(|g_C1|, |g_C2|)`` (each head's own
+    continuation through the same next action): the label is ``g_R + c·g_C``. ``κ = 0`` trusts
+    the continuation fully and reproduces ``soft_targets``. Returns ``(value, gradient, info)``
+    with per-row ``reward_norm``, ``continuation_norm``, ``trust`` and ``disagreement``."""
     from .sac import frozen_parameters
 
     b, s = next_state.shape
@@ -28,13 +41,27 @@ def soft_targets(actor, critic, next_state, reward, mask, tangent, reward_gradie
         noise = torch.randn_like(mu) if noise is None else noise.detach()
         _, action, log_prob = squash(mu, mu + log_std.exp()*noise, gaussian_logprob(noise, log_std))
         q1, q2 = critic(ns, action)
-        raw = reward.detach() + discount*mask.detach()*(torch.minimum(q1, q2)-torch.as_tensor(alpha).detach()*log_prob)
-        state_gradient = torch.autograd.grad(raw.sum(), ns)[0]
-        gradient = reward_gradient.detach() + torch.einsum("bsa,bs->ba", tangent.detach(), state_gradient)
+        entropy = torch.as_tensor(alpha).detach()*log_prob
+        scale = discount*mask.detach()
+        raw = reward.detach() + scale*(torch.minimum(q1, q2)-entropy)
+        # Three separate reverse passes: one grad call over several outputs would return the
+        # gradient of their sum, not one gradient per head.
+        state_gradient = torch.autograd.grad(raw.sum(), ns, retain_graph=True)[0]
+        grad1 = torch.autograd.grad((scale*(q1-entropy)).sum(), ns, retain_graph=True)[0]
+        grad2 = torch.autograd.grad((scale*(q2-entropy)).sum(), ns)[0]
+        pull = lambda grad: torch.einsum("bsa,bs->ba", tangent.detach(), grad)  # noqa: E731
+        continuation = pull(state_gradient)
+        c1, c2 = pull(grad1), pull(grad2)
+        disagreement = (c1-c2).norm(dim=-1, keepdim=True) / (0.5*(c1.norm(dim=-1, keepdim=True)+c2.norm(dim=-1, keepdim=True))+1e-12)
+        trust = torch.exp(-float(continuation_trust_kappa)*disagreement.square()) if continuation_trust_kappa > 0 else torch.ones_like(disagreement)
+        g_reward = reward_gradient.detach()
+        gradient = g_reward + trust*continuation
         inside = (raw.abs() < bound).to(gradient.dtype)
         gradient = gradient * inside
         value = raw.clamp(-bound, bound)
-    return value.detach(), gradient.detach()
+    info = dict(reward_norm=g_reward.norm(dim=-1).detach(), continuation_norm=continuation.norm(dim=-1).detach(),
+                trust=trust.reshape(-1).detach(), disagreement=disagreement.reshape(-1).detach())
+    return value.detach(), gradient.detach(), info
 
 
 def derivative_loss(qs, action, target_gradient, valid, scale=1.0):
