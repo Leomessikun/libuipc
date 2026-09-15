@@ -2334,3 +2334,19 @@ improvement. Launched 00:10 on the two 5k checkpoints (10 states, H = 8,
 η = 0.1, `output/iaql/fidelity_s0`), about an hour on the shared GPU. Tests:
 `test_iaql` (9), agent and physics-signal suites pass (51).
 
+## 2026-09-15 — Fidelity probe: direct label > Sobolev critic > SAC critic; the GPU was the bottleneck
+
+With the other sessions' jobs finished the direct-picker decision costs
+0.12 s, not the 2.6 s of yesterday's pair, so the 5k-step budget verdict was
+contention, not the benchmark. The fidelity probe (ten states, 8-decision
+return, 2 GPU minutes): the exact one-decision label improves the frozen
+policy's return at every state (mean cosine 0.84–0.86 with the return
+gradient, +0.149) against the SAC critic's own action gradient (0.33, +0.038,
+wrong sign twice) and the Sobolev critic's (0.60, +0.087, wrong sign once);
+the reward gradient alone is as good as the label, so the continuation term
+adds nothing with 5k-step critics. Launched 12:10, five matched 30k-step
+arms in parallel with the raw-Hessian label (`scratchpad/run_five_arms.sh`,
+`output/iaql/arms30k_s0_{sac,critic,actor,both,shuffled}`; critic slope 0.1,
+actor direction 0.5, both, both with shuffled labels; evaluation every
+2,000 steps). Not yet read. Record updated.
+

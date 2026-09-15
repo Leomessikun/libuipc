@@ -417,3 +417,39 @@ cloths, or a smaller cloth) and a budget at which vanilla SAC shows a curve;
 only then do paired seeds and the shuffled-label online control mean
 anything. Checkpoints: `output/iaql/online5k_s0_{sac,iaql}/online_beta_*.pt`.
 
+## Actor-gradient fidelity: the exact label beats both critics' action gradients (`fidelity_s0`, 2026-09-15)
+
+The ADR's counterfactual-action check on the two 5,000-step checkpoints, with
+the GPU otherwise idle (0.12 s per captured decision, the whole probe 2 min).
+Ten states of the frozen SAC policy (1–13 policy steps after a reset, seeds
+300–309), centre action the policy's mean clipped to ±0.9. Reference: the
+finite-difference gradient of the 8-decision return under the frozen policy
+(first action ±0.1 per axis, then the policy, terminal value from the
+policy's own target critic). Every candidate is rolled out along ±0.1·unit(g)
+and its own return change is measured.
+
+| Direction | Mean cosine with the return gradient | Return improved (states) | Mean return improvement | Mean distance gain (m) |
+|---|---|---|---|---|
+| reward gradient only, `dR/du` through the exact tangent | 0.857 | 10/10 | +0.151 | +0.00105 |
+| exact one-decision label, SAC critic's continuation (`ipc_sac`) | 0.842 | 10/10 | +0.149 | +0.00089 |
+| exact one-decision label, Sobolev critic's continuation (`ipc_sobolev`) | 0.852 | 10/10 | +0.145 | +0.00096 |
+| SAC critic's own `dQ/da` (`dq_sac`) | 0.325 | 8/10 | +0.038 | +0.00042 |
+| Sobolev critic's own `dQ/da` (`dq_sobolev`) | 0.604 | 9/10 | +0.087 | +0.00064 |
+
+Per state the SAC critic's action gradient points the wrong way twice
+(cosine −0.95 and −0.28, return −0.254 and −0.076) and the Sobolev critic's
+once (−0.56, −0.151); the exact label never does. Readings. (1) Used directly,
+the exact one-decision label improves the frozen policy's 8-step return at
+every state and four times as much as the SAC critic's own action gradient,
+which is the actor-side line's claim in the benchmark's units. (2) The
+critic-side transfer works: the Sobolev critic's `dQ/da` is twice as aligned
+and twice as effective as the SAC critic's at the policy's own action, but it
+still delivers only 60 % of the direct label's improvement, the cost of the
+second approximation layer. (3) At these states the reward gradient alone is
+as good as the full label: the continuation term `γ Dᵀ∇V̄(s')` adds nothing
+on average with 5k-step critics, and at one state the SAC critic's
+continuation destroys the direction (`ipc_sac` 0.09 where `ipc_sobolev` is
+0.79), so the value gradient is the weak factor, as the rejected gate states
+already said. The ranking direct label > Sobolev critic > SAC critic is the
+one the combined learner's arms test online next.
+
