@@ -364,11 +364,16 @@ def online(env, args):
                     batch = [replay[k] for k in rng.integers(0, len(replay), bs)]
                     kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if mechanics and (not fresh or weight > 0) else {}
                     kw = {k: v.to(dev) for k, v in kw.items()}
+                    if kw:
+                        # The label's next-action noise comes from its own stream: an arm with labels
+                        # samples its policy from the same global RNG sequence as the arm without.
+                        kw["label_noise"] = torch.randn((bs, 3), device=dev, generator=label_rng)
                     last_stats = agent.update_state_batch(tensor([r["obs"] for r in batch]).to(dev), tensor([r["action"] for r in batch]).to(dev),
                         tensor([[r["reward"]] for r in batch]).to(dev), tensor([r["next_obs"] for r in batch]).to(dev),
                         tensor([[r["mask"]] for r in batch]).to(dev),
                         update_actor=(not fresh) or replay_index < fresh_replay_actor_updates,
-                        force_actor=fresh and replay_index < fresh_replay_actor_updates, **kw)
+                        force_actor=fresh and replay_index < fresh_replay_actor_updates,
+                        replay_physics=not fresh, **kw)
                     actor_updates += int("actor_loss" in last_stats)
             last_stats.update(fresh_stats)
             last_stats.update(actor_updates=actor_updates, critic_updates=agent.updates)

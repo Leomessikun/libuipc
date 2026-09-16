@@ -2542,3 +2542,36 @@ original state. `iaql_benchmark` exposes this as `--actor-step-radius` and
 24 fresh actor and 200 critic updates; max measured action step was .00212 under
 the .03 radius. The long matched SAC/IPC runs were then launched from this
 implementation; their outputs are separate from the smoke artifact.
+
+## 2026-09-16 — Seed audit, two harness fixes, five-seed 40k study launched
+
+Owner asked whether seed 2's loss came from incomplete training and whether
+the IPC actor idea should be abandoned. Audit of `output/iaql/vec20k_s{0,1,2}_*`:
+every run trained 20,032 transitions with nine evaluations, the same flags and
+no traceback, so seed 2 was not cut short. Every run did see only two
+150-decision episode rounds (about 128 goals per run). The replay-batch actor
+term's coverage collapsed after about 5k transitions in all three seeds
+(1–9 of 32 rows, mean weight .01–.05), and its label drew `torch.randn_like`
+from the global RNG, so labelled and unlabelled arms did not share policy
+sampling noise. Result on record: two wins, one loss, not significant, and the
+"doubles SAC" reading in the performance index and roadmap overstates it.
+
+Fixes: `update_state_batch(label_noise=...)` lets the replay label take its
+next-action noise from the driver's `label_rng` (test: a labelled update leaves
+the global RNG exactly where an unlabelled one does); `replay_physics=False`
+keeps fresh-protocol replay actor steps plain SAC, which removes the
+"IAQL batch needs mechanics and validity" crash of the 14:47 matched fresh_ipc
+run (test). The fresh actor's step statistics use `.get`, fixing three
+pre-existing `test_fresh_iaql` failures under a mocked actor step. 82 related
+CPU tests pass; native 16-slot smokes of both protocols run.
+
+Launched 15:55, all 25 runs in parallel (`scripts/launch_seed_study.sh`,
+`output/iaql/study40k/`): group A replicates the 20k round's replay-batch
+configuration against SAC, seeds 0–4, 40k transitions, horizon 150; group B is
+the fresh-batch protocol (fresh SAC, fresh IPC ρ 1, norm-matched random), seeds
+0–4, 40k transitions, horizon 50. Decision rule agreed in advance: the IPC arm
+counts as better only if it beats its matched SAC arm in at least four of five
+seeds and on the mean of the final evaluation, and the random control does not.
+The SAC continuation arms' final-evaluation collapse (periodic ≈ 8, final −16 /
+−11) is not yet explained.
+

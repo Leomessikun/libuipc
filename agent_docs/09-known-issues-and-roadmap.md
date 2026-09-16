@@ -521,9 +521,10 @@ exports (`export_prev_coupling`, half-plane only) the frictional tangent is
 benchmark became learnable once the GPU was free and the world held 64
 lockstep cloths with the tangent on the GPU: at 20k transitions the actor's
 direct use of the exact label (estimator replacement, ρ 0.5, continuation
-trust) reaches 13.3 return / 0.022 m / 29 of 64 successes against SAC's
-6.8 / 0.062 / 9, the critic slope loss alone adds nothing, and a permuted
-label keeps a third of the gain (one seed). Open: simplex (cloth-body) friction
+trust) beats SAC in two of three seeds and loses one (not significant, with
+the term's coverage collapsing after 5k transitions); the critic slope loss
+alone adds nothing. A five-seed 40k study of this configuration and of the
+fresh-batch protocol is running. Open: simplex (cloth-body) friction
 coupling, a stick-slip-switching state, a learnable version of the
 benchmark (vanilla SAC must show a curve before any comparison), calibrated
 directional contact trust, and visual transfer.

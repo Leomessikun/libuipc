@@ -891,8 +891,8 @@ class SACAgent:
                              if action is not None else 0.0),
             max_action_retries=self.cfg.physics_actor_step_retries,
             optimizer=self.fresh_actor_optimizer))
-        stats["fresh_actor_step_accepted"] = stats["physics_step_accepted"]
-        stats["fresh_actor_step_retries"] = stats["physics_step_retries"]
+        stats["fresh_actor_step_accepted"] = stats.get("physics_step_accepted", 1.0)
+        stats["fresh_actor_step_retries"] = stats.get("physics_step_retries", 0)
         with torch.no_grad():
             _, updated_action, _, _ = self.actor(obs, compute_log_pi=False, noise=action_noise)
             step = (updated_action - action.detach()).norm(dim=-1)
@@ -901,23 +901,28 @@ class SACAgent:
         return stats
 
     def update_state_batch(self, obs, action, reward, next_obs, mask, *, tangent=None, reward_gradient=None,
-                           valid=None, update_actor=True, force_actor=False):
+                           valid=None, update_actor=True, force_actor=False, replay_physics=True, label_noise=None):
         """TD replay update, optionally with the historical sidecar actor/critic supervision.
 
         Fresh actors call this with update_actor=False: only critic/target clocks advance.
         Otherwise locality is measured at the actor term's actual squashed query action.
+        ``replay_physics=False`` keeps replay actor steps plain SAC (the fresh protocol, whose IPC
+        correction runs only on the fresh batch). ``label_noise`` supplies the label's next-action
+        noise so computing labels never consumes the global RNG that samples the policy.
         """
         if self.cfg.actor_type != "state":
             raise ValueError("update_state_batch requires the full-state actor")
         paired = physics = None
         label_stats = {}
-        if self.cfg.adjoint_weight or (self.cfg.physics_actor_weight and update_actor):
+        replay_actor_physics = bool(self.cfg.physics_actor_weight and update_actor and replay_physics)
+        if self.cfg.adjoint_weight or replay_actor_physics:
             from .iaql import soft_targets_detailed
             if tangent is None or reward_gradient is None or valid is None:
                 raise ValueError("IAQL batch needs mechanics and validity")
             y, g, info = soft_targets_detailed(self.actor, self.critic_target, next_obs, reward, mask, tangent, reward_gradient,
                                                self.alpha.detach(), self.cfg.discount,
                                                self.cfg.reward_abs_bound / max(1-self.cfg.discount, 1e-6),
+                                               noise=label_noise,
                                                continuation_trust_kappa=self.cfg.continuation_trust_kappa)
             live = valid.reshape(-1) > 0.5
             if live.any():
@@ -932,7 +937,7 @@ class SACAgent:
                 label_stats["label_critic_cosine"] = float(F.cosine_similarity(g_q[live], g[live], dim=-1).mean())
             if self.cfg.adjoint_weight:
                 paired = (y, g, valid)
-            if self.cfg.physics_actor_weight and update_actor:
+            if replay_actor_physics:
                 physics = (g, live.to(g.dtype))
         stats = self._update_critic(obs, action, reward, next_obs, mask, state=obs, next_state=next_obs, paired_targets=paired)
         stats.update(label_stats)

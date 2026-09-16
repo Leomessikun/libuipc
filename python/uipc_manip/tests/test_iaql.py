@@ -210,3 +210,44 @@ def test_mix_mode_replaces_the_fraction_rho_of_the_critic_gradient():
     torch.manual_seed(5); ref.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1))
     for a, b in zip(plain.actor.parameters(), ref.actor.parameters()):
         torch.testing.assert_close(a, b, rtol=0, atol=1e-6)
+
+
+def _state_agent(**overrides):
+    cfg = dict(actor_type="state", critic_input="privileged", privileged_dim=4, hidden_dim=16, batch_size=8,
+               actor_update_freq=1, state_activation="silu", physics_actor_mode="mix", physics_actor_rho=0.5,
+               physics_actor_weight=1.0, physics_actor_sigma=0.5, continuation_trust_kappa=2.0)
+    cfg.update(overrides)
+    return SACAgent(ObsSpec(3), 2, SACConfig(**cfg), "cpu")
+
+
+def test_replay_label_with_supplied_noise_leaves_the_policy_rng_untouched():
+    """With label_noise supplied, an update with labels consumes exactly as much global RNG as one
+    without: a labelled arm and an unlabelled arm sample the same policy noise sequence."""
+    torch.manual_seed(21)
+    agent = _state_agent()
+    state, action = torch.randn(8, 4), torch.rand(8, 2) * 2 - 1
+    tangent = torch.randn(8, 4, 2) * .1
+    nxt = state + torch.einsum("bsa,ba->bs", tangent, action)
+    plain = _state_agent(physics_actor_weight=0.0)
+    torch.manual_seed(5)
+    plain.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1))
+    after_plain = torch.get_rng_state()
+    torch.manual_seed(5)
+    gen = torch.Generator().manual_seed(80)
+    stats = agent.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1), tangent=tangent,
+                                     reward_gradient=torch.zeros(8, 2), valid=torch.ones(8),
+                                     label_noise=torch.randn((8, 2), generator=gen))
+    assert "physics_loss" in stats
+    assert torch.equal(torch.get_rng_state(), after_plain)
+
+
+def test_fresh_protocol_replay_actor_steps_need_no_mechanics():
+    """A fresh-protocol IPC arm's replay actor updates are plain SAC and must not demand tangents."""
+    torch.manual_seed(22)
+    agent = _state_agent()
+    state, action = torch.randn(8, 4), torch.rand(8, 2) * 2 - 1
+    stats = agent.update_state_batch(state, action, torch.zeros(8, 1), state, torch.ones(8, 1),
+                                     update_actor=True, force_actor=True, replay_physics=False)
+    assert "actor_loss" in stats and "physics_loss" not in stats
+    with pytest.raises(ValueError, match="mechanics"):
+        agent.update_state_batch(state, action, torch.zeros(8, 1), state, torch.ones(8, 1), update_actor=True)
