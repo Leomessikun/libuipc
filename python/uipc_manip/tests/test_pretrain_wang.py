@@ -514,3 +514,32 @@ def test_a_pretrained_representation_initialises_a_fresh_run_only(stub_run, tmp_
     pretrain_wang.main(["resume", str(tmp_path / "init"), "--transitions", "24"])
     # The resumed run replays the saved command line but takes its weights from the checkpoint.
     assert agents[-1].initialized is None
+
+
+def test_joint_policy_has_no_teacher_dependency_and_resumes(stub_run, tmp_path, monkeypatch):
+    from uipc_manip import train_sac
+    built, agents = stub_run
+    def forbid_teachers(*args, **kwargs):
+        raise AssertionError('joint training must not load teachers')
+    monkeypatch.setattr(train_sac, 'load_teachers', forbid_teachers)
+    argv = ['joint', '--regions', '13', '4', '--garments', *GARMENTS,
+            '--train-poses', '0', '1', '--eval-poses', '45', '--num-envs', '4',
+            '--horizon', '2', '--transitions', '8', '--eval-every', '8',
+            '--checkpoint-every', '0', '--replay-capacity', '64', '--batch-size', '2',
+            '--device', 'cpu', '--log-interval', '1', '--point-budget', '3',
+            '--work-dir', str(tmp_path)]
+    _, targs, plan = prepare(argv)
+    assert targs.teacher_checkpoints is None and targs.distill_weight == 0
+    assert (targs.critic_action_mode, targs.trunk_style) == ('dense', 'residual')
+    assert plan['protocol'] == 'joint_dressing'
+    assert plan['buffer_keys'] == [4, 13]
+    assert targs.run_name == 'joint_r4-13_s1'
+    pretrain_wang.main(argv)
+    assert agents[-1].teachers == {}
+    assert {pose_region(b) for w in _training_worlds(built) for _, b in w.cells} == {4, 13}
+    run = tmp_path / 'joint_r4-13_s1'
+    pretrain_wang.main(['resume', str(run), '--transitions', '16'])
+    state = json.loads((run / 'checkpoints/state.json').read_text())
+    assert state['transitions'] == 16 and state['plan']['stage'] == 'joint'
+    with pytest.raises(ValueError, match='protocol sets'):
+        prepare(argv + ['--teacher-checkpoints', 'unused.pt'])

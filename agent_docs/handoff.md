@@ -2504,3 +2504,12 @@ representation/value advantages remain unproven. A constant tangent is a strong
 baseline (.988 no-friction cosine); do not read high cosine as encoder success.
 Diagnostic checkpoints are fixed-mesh models, not production dressing weights.
 Also found old replay actor seed 2 loses to SAC: seed-level instability remains.
+
+## 2026-09-16 — Single-policy teacher-free entry and live-run audit
+
+Added `pretrain_wang joint --regions ...`: one dense/residual policy, no teacher
+loading/distillation, existing rotation/replay/evaluation/resume. All 17 launcher
+tests pass including joint resume. The owner stopped the old-worktree regional
+training at 134,832 logged transitions; its last evaluation had degraded from the
+best CSV checkpoint. Artifacts are preserved. No long fresh-hybrid result yet. See
+[status and algorithm corrections](performance/2026-09-16-single-policy-plan.md).

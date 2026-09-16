@@ -553,3 +553,27 @@ Sensitivity sampling mixes sensitive and uniform vertices; task sampling adds
 recorded grasp vertices (not sleeve/contact annotations). Validation always
 covers all vertices. Constant-tangent and commands-only probes are essential:
 a good learned JVP score alone does not establish a useful representation.
+
+### One dressing policy without regional teachers
+
+`pretrain_wang joint` reuses live configuration rotation, held-out evaluation,
+checkpoint/replay resume, and balanced regional replay while training **one**
+SAC policy. It loads no teacher and fixes distillation weight to zero. Dense Q
+and residual trunks remain the defaults. This is a teacher-free training entry,
+not yet an integration of the full-state fresh IPC benchmark into visual dressing.
+
+```bash
+PYTHONPATH=python python -m uipc_manip.pretrain_wang joint \
+  --regions 4 13 22 --garments tshirt_26 tshirt_68 \
+  --num-envs 24 --transitions 125000 --run-name joint_three_regions_s1
+PYTHONPATH=python python -m uipc_manip.pretrain_wang resume \
+  output/uipc_manip/joint_three_regions_s1 --transitions 250000
+```
+
+Regional replay buffers balance samples; they are not separate policies. Use
+`--replay-split none` for one buffer. The old `teacher`/`student` stages remain
+for reference reproduction. Resume preserves the original region distribution;
+this entry does not implement online pose-curriculum expansion. A weights-only
+restart is not a replay-preserving resume. Removing teachers reduces orchestration
+and teacher-training cost, but does not guarantee faster convergence or global
+pose generalization.

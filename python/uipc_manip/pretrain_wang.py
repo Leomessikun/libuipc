@@ -1,4 +1,4 @@
-"""Wang RSS 2023's pretraining protocol on live dressing cells: regional teachers, then one student.
+"""Wang RSS 2023's pretraining protocol on live dressing cells: regional teachers/student, or one teacher-free joint policy.
 
 Usage (from the repository root, inside the Genesis environment)::
 
@@ -194,12 +194,13 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     stages = p.add_subparsers(dest="stage", required=True)
-    for stage in ("teacher", "student"):
-        s = stages.add_parser(stage, allow_abbrev=False, help=f"train a Wang {stage}; unknown flags go to train_sac")
+    for stage in ("teacher", "student", "joint"):
+        s = stages.add_parser(stage, allow_abbrev=False, help=("train one policy across regions without teachers" if stage == "joint" else f"train a Wang {stage}; unknown flags go to train_sac"))
         if stage == "teacher":
             s.add_argument("--region", type=int, required=True, help="The arm-pose region (0-26) this teacher trains on.")
         else:
-            s.add_argument("--regions", type=int, nargs="+", required=True, help="Arm-pose regions the student trains on, each with a teacher.")
+            s.add_argument("--regions", type=int, nargs="+", required=True, help="Arm-pose regions this policy trains on.")
+        if stage == "student":
             s.add_argument("--teacher-checkpoints", nargs="+", required=True, help="One regional teacher checkpoint per region.")
             s.add_argument("--distill-weight", type=float, default=0.01, help="Weight of Wang's teacher loss; the paper states 0.01, the reference launcher 0.002.")
         s.add_argument("--garments", nargs="+", default=list(WANG_GARMENT_ORDER), help="Garments of the distribution; Wang's five by default.")
@@ -244,7 +245,7 @@ def run_name(args) -> str:
         return args.run_name
     if args.stage == "teacher":
         return f"wang_teacher_r{args.region}_s{args.seed}"
-    return f"wang_student_r{'-'.join(str(r) for r in sorted(set(args.regions)))}_s{args.seed}"
+    return f"{'joint' if args.stage == 'joint' else 'wang_student'}_r{'-'.join(str(r) for r in sorted(set(args.regions)))}_s{args.seed}"
 
 
 def trainer_argv(args, extra: list[str]) -> list[str]:
@@ -265,6 +266,8 @@ def trainer_argv(args, extra: list[str]) -> list[str]:
         argv += ["--settle-steps", str(physics["settle_steps"])]
     if args.stage == "student":
         argv += ["--teacher-checkpoints", *args.teacher_checkpoints, "--distill-weight", repr(float(args.distill_weight))]
+    if args.stage == "joint":
+        argv += ["--distill-weight", "0"]
     return argv + list(extra)
 
 
@@ -281,7 +284,7 @@ def stage_plan(args) -> dict:
         raise ValueError("--temperatures per-buffer needs --replay-split garment or region")
     order = curriculum_order(str(args.garment_curriculum_order).split(","), garments)
     return {
-        "protocol": "wang_rss2023",
+        "protocol": "joint_dressing" if args.stage == "joint" else "wang_rss2023",
         "stage": args.stage,
         "regions": regions,
         "garments": garments,
@@ -547,7 +550,7 @@ class WangRun:
         ``train_sac.load_teachers`` reads a teacher's region from it as from any run."""
         return {
             "task": "dressing",
-            "protocol": "wang_rss2023",
+            "protocol": self.plan["protocol"],
             "stage": self.plan["stage"],
             "env": self.env.descriptions[0]["config"] if self.env is not None else self.base_cfg.to_dict(),
             "sac_config": self.agent.cfg.to_dict(),
@@ -819,7 +822,7 @@ def prepare(argv: list[str]):
 
     args, extra = build_parser().parse_known_args(argv)
     if args.stage == "resume":
-        raise ValueError("prepare() takes a teacher or student command line")
+        raise ValueError("prepare() takes a teacher, student or joint command line")
     reserved = reserved_flags(extra)
     if reserved:
         raise ValueError(f"The protocol sets {['--' + r.replace('_', '-') for r in reserved]} itself; use this CLI's own flags")

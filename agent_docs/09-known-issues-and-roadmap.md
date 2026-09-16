@@ -543,3 +543,10 @@ real visual/history data with tracked response correspondence, varied contact
 regimes and garment/human holdouts. Constant-tangent and command-history baselines
 must accompany future representation claims. The old replay actor also loses
 seed 2 despite winning seeds 0/1; fresh-protocol learning curves are still needed.
+
+2026-09-16: `pretrain_wang joint` removes the regional-teacher dependency for
+one-policy multi-region training. [Status/plan](performance/2026-09-16-single-policy-plan.md).
+Teacher-free generalization and visual dressing IPC integration are unvalidated.
+Sparse fresh correction must precede replay actor steps; target-action regression
+alone does not bound actual policy movement. Preserve replay on resumes and
+separate update frequency from gradient mixture strength in future comparisons.
