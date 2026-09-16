@@ -97,6 +97,15 @@ pretraining, response-Q, mechanical metrics and extra horizons remain parked.
 
 ## Follow-up implementation and smoke test
 
+The fresh actor path now uses a separate `fresh_actor_optimizer`, so replay SAC
+Adam moments cannot steer an IPC correction. Checkpoints save and restore this
+state when present while remaining backward compatible with older checkpoints.
+The IAQL online driver also exposes `--fresh-replay-actor-updates`; this makes
+the number of replay SAC actor updates in fresh mode explicit instead of
+silently changing the actor-update budget. The default remains zero for the
+historical fresh-only protocol. The corresponding CPU tests cover optimizer
+state isolation and the existing action-bound enforcement.
+
 Commit `53c89d77` adds a transactional trust-radius option to fresh IPC actor
 updates. With `--actor-step-radius r`, the update snapshots actor parameters and
 optimizer state, retries an over-radius step with a halved learning rate, and

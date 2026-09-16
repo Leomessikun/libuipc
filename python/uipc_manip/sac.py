@@ -71,6 +71,8 @@ class SACConfig:
     actor_update_freq: int = 4
     critic_target_update_freq: int = 2
     actor_lr: float = 1.0e-4
+    fresh_actor_lr: float = 1.0e-4
+    """Learning rate for fresh same-action actor updates, isolated from replay Adam moments."""
     critic_lr: float = 1.0e-4
     alpha_lr: float = WANG_ALPHA_LR
     actor_beta: float = 0.9
@@ -346,6 +348,11 @@ class SACAgent:
         self.actor_optimizer = torch.optim.Adam(
             self.actor.parameters(), lr=cfg.actor_lr, betas=(cfg.actor_beta, 0.999), fused=fused
         )
+        # Fresh simulator corrections must not inherit replay SAC's momentum.  This optimizer
+        # is intentionally separate even when the fresh loss contains the ordinary SAC term.
+        self.fresh_actor_optimizer = torch.optim.Adam(
+            self.actor.parameters(), lr=cfg.fresh_actor_lr, betas=(cfg.actor_beta, 0.999), fused=fused
+        )
         self.critic_optimizer = torch.optim.Adam(
             self.critic.parameters(), lr=cfg.critic_lr, betas=(cfg.critic_beta, 0.999), fused=fused
         )
@@ -528,7 +535,8 @@ class SACAgent:
 
     def _update_actor_and_alpha(self, obs, state=None, label=None, index: int = 0, physics=None,
                                 action_noise=None, action_anchor=None, require_same_action=False,
-                                max_action_step: float = 0.0, max_action_retries: int = 0) -> dict:
+                                max_action_step: float = 0.0, max_action_retries: int = 0,
+                                optimizer=None) -> dict:
         if action_noise is not None:
             if self.cfg.actor_type != "state":
                 raise ValueError("Saved action noise currently requires the full-state actor")
@@ -614,15 +622,16 @@ class SACAgent:
         # must restore both parameters and moments before retrying at a smaller learning rate.
         import copy
         actor_before = copy.deepcopy(self.actor.state_dict()) if max_action_step > 0 and action_anchor is not None else None
-        optimizer_before = copy.deepcopy(self.actor_optimizer.state_dict()) if actor_before is not None else None
-        actor_lrs = [group["lr"] for group in self.actor_optimizer.param_groups]
-        self.actor_optimizer.zero_grad()
+        actor_optimizer = self.actor_optimizer if optimizer is None else optimizer
+        optimizer_before = copy.deepcopy(actor_optimizer.state_dict()) if actor_before is not None else None
+        actor_lrs = [group["lr"] for group in actor_optimizer.param_groups]
+        actor_optimizer.zero_grad()
         actor_loss.backward()
         grad_norm = self._clip(self.actor)
         retries = 0
         accepted_step = True
         while True:
-            self.actor_optimizer.step()
+            actor_optimizer.step()
             if actor_before is None:
                 break
             with torch.no_grad():
@@ -633,15 +642,15 @@ class SACAgent:
                 break
             retries += 1
             self.actor.load_state_dict(actor_before)
-            self.actor_optimizer.load_state_dict(optimizer_before)
-            for group, lr in zip(self.actor_optimizer.param_groups, actor_lrs):
+            actor_optimizer.load_state_dict(optimizer_before)
+            for group, lr in zip(actor_optimizer.param_groups, actor_lrs):
                 group["lr"] = lr * (0.5 ** retries)
         if actor_before is not None:
             stats_step = float(trial_step.max())
             if not accepted_step:
                 self.actor.load_state_dict(actor_before)
-                self.actor_optimizer.load_state_dict(optimizer_before)
-                for group, lr in zip(self.actor_optimizer.param_groups, actor_lrs):
+                actor_optimizer.load_state_dict(optimizer_before)
+                for group, lr in zip(actor_optimizer.param_groups, actor_lrs):
                     group["lr"] = lr
                 stats_step = 0.0
         else:
@@ -876,7 +885,8 @@ class SACAgent:
             action_anchor=action, require_same_action=True,
             max_action_step=(self.cfg.physics_actor_max_action_step
                              if physics is not None else 0.0),
-            max_action_retries=self.cfg.physics_actor_step_retries))
+            max_action_retries=self.cfg.physics_actor_step_retries,
+            optimizer=self.fresh_actor_optimizer))
         with torch.no_grad():
             _, updated_action, _, _ = self.actor(obs, compute_log_pi=False, noise=action_noise)
             step = (updated_action - action.detach()).norm(dim=-1)
@@ -885,7 +895,7 @@ class SACAgent:
         return stats
 
     def update_state_batch(self, obs, action, reward, next_obs, mask, *, tangent=None, reward_gradient=None,
-                           valid=None, update_actor=True):
+                           valid=None, update_actor=True, force_actor=False):
         """TD replay update, optionally with the historical sidecar actor/critic supervision.
 
         Fresh actors call this with update_actor=False: only critic/target clocks advance.
@@ -920,13 +930,14 @@ class SACAgent:
                 physics = (g, live.to(g.dtype))
         stats = self._update_critic(obs, action, reward, next_obs, mask, state=obs, next_state=next_obs, paired_targets=paired)
         stats.update(label_stats)
-        return self._finish_update(stats, obs, obs, physics=physics, update_actor=update_actor, action_anchor=action)
+        return self._finish_update(stats, obs, obs, physics=physics, update_actor=update_actor,
+                                   action_anchor=action, force_actor=force_actor)
 
     def _finish_update(self, stats, obs, state=None, label=None, index=0, physics=None,
-                       update_actor=True, action_anchor=None):
+                       update_actor=True, action_anchor=None, force_actor=False):
         """Shared SAC actor, temperature and target schedule for flat/state batches."""
         self.updates += 1
-        if update_actor and self.updates % self.cfg.actor_update_freq == 0:
+        if update_actor and (force_actor or self.updates % self.cfg.actor_update_freq == 0):
             stats.update(self._update_actor_and_alpha(obs, state, label, index, physics, action_anchor=action_anchor))
         if self.updates % self.cfg.critic_target_update_freq == 0:
             soft_update(self.critic.Q1, self.critic_target.Q1, self.cfg.critic_tau)
@@ -986,6 +997,7 @@ class SACAgent:
             "critic_target": self.critic_target.state_dict(),
             "log_alpha": self.log_alpha.detach().cpu(),
             "actor_optimizer": self.actor_optimizer.state_dict(),
+            "fresh_actor_optimizer": self.fresh_actor_optimizer.state_dict(),
             "critic_optimizer": self.critic_optimizer.state_dict(),
             "log_alpha_optimizer": self.log_alpha_optimizer.state_dict(),
             "sac_config": self.cfg.to_dict(),
@@ -1059,6 +1071,8 @@ class SACAgent:
             self.log_alpha.copy_(payload["log_alpha"].to(self.device))
         if load_optimizers:
             self.actor_optimizer.load_state_dict(payload["actor_optimizer"])
+            if "fresh_actor_optimizer" in payload:
+                self.fresh_actor_optimizer.load_state_dict(payload["fresh_actor_optimizer"])
             self.critic_optimizer.load_state_dict(payload["critic_optimizer"])
             self.log_alpha_optimizer.load_state_dict(payload["log_alpha_optimizer"])
         self.updates = int(payload.get("updates", 0))

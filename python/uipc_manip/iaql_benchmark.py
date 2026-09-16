@@ -279,6 +279,7 @@ def online(env, args):
     results = []
     N = getattr(env, "N", 1)
     fresh = args.actor_batch == "fresh"
+    fresh_replay_actor_updates = max(0, int(getattr(args, "fresh_replay_actor_updates", 0)))
     rounds = max(1, -(-args.eval_episodes // N))
     eval_seeds = [9000+k for k in range(rounds)]
     env_steps = -(-args.online_steps // N)
@@ -343,14 +344,17 @@ def online(env, args):
                     signal=args.physics_signal, control=args.physics_control, control_generator=control_rng, **kw)
                 actor_updates += 1
             if len(replay) >= max(64, agent.cfg.batch_size):
-                for _ in range(max(1, int(round(args.updates_per_step * N)))):
+                replay_updates = max(1, int(round(args.updates_per_step * N)))
+                for replay_index in range(replay_updates):
                     bs = agent.cfg.batch_size
                     batch = [replay[k] for k in rng.integers(0, len(replay), bs)]
                     kw = sidecar_batch(batch, env.obs_dim, shuffle=shuffle_rng if args.shuffle_labels else None) if mechanics and (not fresh or weight > 0) else {}
                     kw = {k: v.to(dev) for k, v in kw.items()}
                     last_stats = agent.update_state_batch(tensor([r["obs"] for r in batch]).to(dev), tensor([r["action"] for r in batch]).to(dev),
                         tensor([[r["reward"]] for r in batch]).to(dev), tensor([r["next_obs"] for r in batch]).to(dev),
-                        tensor([[r["mask"]] for r in batch]).to(dev), update_actor=not fresh, **kw)
+                        tensor([[r["mask"]] for r in batch]).to(dev),
+                        update_actor=(not fresh) or replay_index < fresh_replay_actor_updates,
+                        force_actor=fresh and replay_index < fresh_replay_actor_updates, **kw)
                     actor_updates += int("actor_loss" in last_stats)
             last_stats.update(fresh_stats)
             last_stats.update(actor_updates=actor_updates, critic_updates=agent.updates)
@@ -487,6 +491,8 @@ def main(argv=None):
     p.add_argument("--tangent-rows", type=int, default=1024, help="bounded mechanics sidecar; older rows learn values only")
     p.add_argument("--actor-batch", choices=["fresh", "replay"], default="fresh",
                    help="fresh: one same-action actor update per post-warmup vector step; replay: historical diluted actor protocol")
+    p.add_argument("--fresh-replay-actor-updates", type=int, default=0,
+                   help="In fresh mode, force this many replay SAC actor updates per vector step; 0 keeps fresh-only actor updates.")
     p.add_argument("--warmup-transitions", type=int, default=1024, help="Uniform random collection before policy actions (historical runs used 64)")
     p.add_argument("--physics-signal", choices=["bellman", "reward"], default="bellman")
     p.add_argument("--physics-control", choices=["paired", "random", "zero", "negative"], default="paired",
@@ -528,6 +534,7 @@ def main(argv=None):
                         "fidelity compares actor-gradient candidates against finite differences of the frozen policy's return")
     args = p.parse_args(argv)
     if (args.warmup_transitions < 0 or args.tangent_rows < 1 or args.actor_step_radius < 0
+            or args.fresh_replay_actor_updates < 0
             or args.actor_step_retries < 0 or not np.isfinite(args.updates_per_step)
             or args.updates_per_step <= 0 or args.horizon < 1 or args.online_steps < 1
             or args.batch_size < 1 or args.num_slots < 1 or args.eval_episodes < 1):

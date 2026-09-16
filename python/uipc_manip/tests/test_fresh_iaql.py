@@ -74,6 +74,28 @@ def test_td_updates_do_not_update_the_fresh_actor_or_require_sidecar_rows():
         torch.testing.assert_close(value, before[k], atol=0, rtol=0)
 
 
+def test_fresh_actor_uses_an_optimizer_without_replay_moments():
+    learner = agent()
+    obs, action, noise, reward, nxt, mask, g = batch(learner)
+    # Seed the ordinary replay optimizer with momentum; the fresh path must not consume it.
+    learner.actor_optimizer.zero_grad()
+    learner.actor(obs, noise=noise)[1].square().mean().backward()
+    learner.actor_optimizer.step()
+    with torch.no_grad():
+        action = learner.actor(obs, noise=noise)[1].detach()
+    replay_state_before = copy.deepcopy(learner.actor_optimizer.state_dict())
+    assert not learner.fresh_actor_optimizer.state
+    learner.update_fresh_state_actor(obs, action, noise, reward, nxt, mask,
+                                     reward_gradient=g, signal="reward")
+    assert learner.fresh_actor_optimizer.state
+    replay_state_after = learner.actor_optimizer.state_dict()
+    assert replay_state_after["param_groups"] == replay_state_before["param_groups"]
+    assert replay_state_after["state"].keys() == replay_state_before["state"].keys()
+    for key in replay_state_before["state"]:
+        for name, value in replay_state_before["state"][key].items():
+            torch.testing.assert_close(replay_state_after["state"][key][name], value)
+
+
 def test_replay_locality_uses_sampled_squashed_action():
     learner = agent()
     obs, action, noise, _, _, _, g = batch(learner)
