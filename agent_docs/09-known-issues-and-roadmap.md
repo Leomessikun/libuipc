@@ -1,5 +1,18 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Dressing RL research update — 2026-09-16
+
+The cloth-drag 40k study was stopped by the owner before completion; its interim
+scores do not measure dressing. The positive 24k dressing pair is one seed with
+an unstable SAC control. Open work is a reliable dressing comparison that isolates
+physics proposal quality, actor fitting, and full-episode success at matched cost.
+See the [redesign proposal](performance/2026-09-16-dressing-rl-redesign.md) for
+implementation order, existing-data reuse, derivative limitations, and rejection
+criteria. The proposal is unimplemented; no speedup or novel-algorithm result is
+established. Do not restart the stopped benchmark as a dependency of this work.
+
+## Solver roadmap context
+
 Status as of 2026-09-03. Completed performance work is
 recorded in `handoff.md`; this file tracks what is **open** — analyze here first
 before planning new work.

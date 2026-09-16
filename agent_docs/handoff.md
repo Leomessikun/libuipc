@@ -1,5 +1,21 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-16 — Dressing RL research resumed; cloth-drag study stopped
+
+The owner stopped the unrelated-to-dressing 40k diagnostic study: 24 surviving
+workers and its launcher were terminated, logs retained, no final checkpoints.
+Do not present its cloth-marker success rates as dressing results or restart it
+as a prerequisite for dressing research. The trajectory-generation pilot below
+is deprioritized; the existing trajectory corpus is the starting point.
+
+[Redesign research](performance/2026-09-16-dressing-rl-redesign.md) distinguishes
+the historical dressing last-frame value-gradient surrogate from the full-state
+benchmark's Bellman-gradient update. It proposes finite-rollout verification of
+occasional IPC action proposals, bounded policy fitting, and a controlled dressing
+comparison. This is a proposal, not an implemented or validated new algorithm.
+Primary literature, novelty limits, data/reset requirements, and stop rules are
+recorded. No new training or native experiment was launched in this research pass.
+
 ## 2026-09-16 — Preparing a dressing trajectory-generation pilot
 
 Added an opt-in outward elbow route, explicit pose subsets / parameter files for
