@@ -46,6 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--region", type=int, required=True, help="The arm-pose region (0-26) to measure.")
     p.add_argument("--poses", choices=("heldout", "train", "all"), default="heldout",
                    help="Held-out poses 45-49 (the teacher's bar), the training poses 0-44, or both.")
+    p.add_argument("--pose-ids", type=int, nargs="+", default=None,
+                   help="Explicit subset of --poses, preserving its train/evaluation boundary.")
+    p.add_argument("--expert-params", type=Path, default=None,
+                   help="JSON object of HeuristicDressingPolicy keyword parameters; recorded in the manifest.")
     p.add_argument("--garments", nargs="+", default=list(WANG_GARMENT_ORDER), help="Garments of the distribution.")
     p.add_argument("--num-envs", type=int, default=24, help="Configurations a world holds at once.")
     p.add_argument("--max-cells", type=int, default=None, help="Stop after this many configurations; for smoke tests.")
@@ -58,6 +62,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Play this SAC checkpoint deterministically instead of the expert, on the checkpoint's own "
                         "physics and observation. This is how a voided evaluation round is replayed offline.")
     return p
+
+
+def selected_poses(split: str, requested: list[int] | None) -> list[int]:
+    allowed = {"heldout": pretrain_wang.EVAL_POSES, "train": pretrain_wang.TRAIN_POSES,
+               "all": (*pretrain_wang.TRAIN_POSES, *pretrain_wang.EVAL_POSES)}[split]
+    poses = list(allowed) if requested is None else list(dict.fromkeys(requested))
+    if not poses or not set(poses) <= set(allowed):
+        raise ValueError(f"pose IDs must be a nonempty subset of the {split} split: {allowed}")
+    return poses
 
 
 class EpisodeTape:
@@ -74,6 +87,7 @@ class EpisodeTape:
         self.rewards: list[float] = []
         self.observations: list[np.ndarray] = []
         self.stages: list[str] = []
+        self.step_metrics: list[dict] = []
         self.ret = 0.0
         self.max_tracking = 0.0
         self.early_turn = False
@@ -85,6 +99,8 @@ class EpisodeTape:
         self.actions.append(np.asarray(action, dtype=np.float32))
         self.rewards.append(float(reward))
         self.stages.append(str(stage))
+        keys = (*self.metric_keys, "success", "sim_error", "early_turn", "tracking_error", "time_limit")
+        self.step_metrics.append({key: float(info[key]) for key in keys if key in info})
         if self.save_observations:
             self.observations.append(np.asarray(obs, dtype=np.float32))
         self.ret += float(reward)
@@ -122,6 +138,7 @@ class EpisodeTape:
             "actions": np.stack(self.actions) if self.actions else np.zeros((0, 0), dtype=np.float32),
             "rewards": np.asarray(self.rewards, dtype=np.float32),
             "stages": np.asarray(self.stages),
+            "step_metrics": np.asarray([json.dumps(row) for row in self.step_metrics]),
             "record": np.asarray(json.dumps(record)),
         }
         if self.save_observations and self.observations:
@@ -167,11 +184,12 @@ def run_world(env, cells, horizon: int, seed_base: int, out_dir: Path, index: in
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
     args, extra = build_parser().parse_known_args(argv)
-    poses = {
-        "heldout": list(pretrain_wang.EVAL_POSES),
-        "train": list(pretrain_wang.TRAIN_POSES),
-        "all": sorted({*pretrain_wang.TRAIN_POSES, *pretrain_wang.EVAL_POSES}),
-    }[args.poses]
+    poses = selected_poses(args.poses, args.pose_ids)
+    expert_params = {} if args.expert_params is None else json.loads(args.expert_params.read_text())
+    if not isinstance(expert_params, dict):
+        raise ValueError("expert parameters must be a JSON object")
+    if args.checkpoint is not None and args.expert_params is not None:
+        raise ValueError("expert parameters cannot be combined with checkpoint playback")
     garments = list(dict.fromkeys(str(g) for g in args.garments))
     # The teacher's own command line decides the physics, the horizon and the observation; this run
     # only replaces its policy, so the bar it measures is the bar the teacher is scored against.
@@ -245,6 +263,10 @@ def main(argv: list[str] | None = None) -> None:
             history = rollout_state(agent, env.num_envs)
             policy = lambda obs, history=history: act_with(agent, obs, True, history)  # noqa: E731
         try:
+            if args.expert_params is not None:
+                from .dressing_heuristic import HeuristicDressingPolicy
+
+                env._heuristic = HeuristicDressingPolicy(env, **expert_params)
             records += run_world(env, chunk, targs.horizon, int(args.seed) * 1000 + start, out_dir, start,
                                  save_observations=bool(args.save_observations), policy=policy, history=history)
         finally:
@@ -261,6 +283,8 @@ def main(argv: list[str] | None = None) -> None:
         "checkpoint_step": step,
         "region": int(args.region),
         "poses": args.poses,
+        "pose_ids": poses,
+        "expert_params": expert_params,
         "garments": garments,
         "horizon": int(targs.horizon),
         "num_envs": int(args.num_envs),

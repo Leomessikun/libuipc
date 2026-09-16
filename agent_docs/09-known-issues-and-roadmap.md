@@ -559,3 +559,9 @@ a zero target gradient; an actual-action bound is separate from target radius.
 Fresh optimizer state plus a bound improves all six probed batch means, but
 ongoing optimizer evolution, matched hybrid learning and visual dressing remain
 unvalidated. No long training was relaunched and no production SAC default changed.
+
+2026-09-16 dressing trajectory generation: the [route pilot](performance/2026-09-16-dressing-route-pilot.md)
+prepares a bounded comparison of the original expert, height tuning, and an
+outward elbow route on training poses. CPU checks pass; native execution is pending
+GPU capacity. Strategy synthesis, recovery, fresh action replay, sequence-corpus
+conversion, and policy distillation remain open. No physical improvement is claimed.

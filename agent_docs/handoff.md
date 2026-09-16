@@ -1,5 +1,13 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-16 — Preparing a dressing trajectory-generation pilot
+
+Added an opt-in outward elbow route, explicit pose subsets / parameter files for
+expert collection, per-decision metric traces, and a bounded sequential comparison
+runner. [Protocol and limits](performance/2026-09-16-dressing-route-pilot.md).
+32 CPU checks pass; native execution is pending GPU capacity. The current study
+was left running. No demonstration-quality or speed improvement has been measured.
+
 > **Routing note (2026-08-30)**: this file is the chronological audit trail and
 > may retain detailed commands/incidents. New durable architecture rationale
 > belongs in `agent_docs/adr/`; reusable performance conclusions and rejected
@@ -2574,4 +2582,3 @@ counts as better only if it beats its matched SAC arm in at least four of five
 seeds and on the mean of the final evaluation, and the random control does not.
 The SAC continuation arms' final-evaluation collapse (periodic ≈ 8, final −16 /
 −11) is not yet explained.
-

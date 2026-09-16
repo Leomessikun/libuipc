@@ -54,6 +54,7 @@ def test_the_tape_saves_what_a_demonstration_replay_needs(tmp_path):
     assert saved["privileged"].shape == (2, 35) and saved["actions"].shape == (2, 6)
     assert saved["rewards"].tolist() == [1.0, 2.0] and "obs" not in saved
     assert json.loads(str(saved["record"]))["length"] == 2
+    assert [json.loads(row)["upperarm_ratio"] for row in saved["step_metrics"]] == [0.2, 0.8]
 
 
 def test_observations_are_stored_only_when_asked(tmp_path):
@@ -126,4 +127,3 @@ def test_a_policy_replaces_the_expert(tmp_path):
 def test_a_checkpoint_can_be_played_instead_of_the_expert():
     args, _ = build_parser().parse_known_args(["--region", "13", "--checkpoint", "run/checkpoints/best.pt"])
     assert args.checkpoint == "run/checkpoints/best.pt"
-

@@ -44,6 +44,7 @@ class HeuristicDressingPolicy:
         align_max_steps: int = 30,
         proximity_push_z: float = 0.01,
         proximity_push_distance_m: float = 0.05,
+        outward_offset: float = 0.0,
     ) -> None:
         self.env = env
         self.n = int(env.num_envs)
@@ -63,6 +64,9 @@ class HeuristicDressingPolicy:
         self.align_max_steps = int(align_max_steps)
         self.proximity_push_z = float(proximity_push_z)
         self.proximity_push_distance = float(proximity_push_distance_m)
+        self.outward_offset = float(outward_offset)
+        if not np.isfinite(self.outward_offset) or self.outward_offset < 0.0:
+            raise ValueError("outward_offset must be finite and nonnegative")
         self.stage = np.zeros(self.n, dtype=np.int64)
         self._steps = np.zeros(self.n, dtype=np.int64)
         self._align_steps = np.zeros(self.n, dtype=np.int64)
@@ -79,12 +83,19 @@ class HeuristicDressingPolicy:
             if self.z_offset_range is not None and rng is not None:
                 z_off = float(rng.uniform(*self.z_offset_range))
             z_up = np.array([0.0, 0.0, z_off])
+            # The shoulder marks the inside of the forearm's bend. Project it onto
+            # the normal plane, then move away from it. A straight arm has no
+            # distinguished outside: leave its path unchanged rather than pick a
+            # world axis. This route candidate is opt-in and unvalidated in IPC.
+            inside = upperarm_dir - float(upperarm_dir @ forearm_dir) * forearm_dir
+            bend = float(np.linalg.norm(inside))
+            outward = -inside / bend * self.outward_offset if bend > 1e-6 else np.zeros(3)
             self._targets[i] = {
                 "forearm_dir": forearm_dir,
                 "upperarm_dir": upperarm_dir,
-                "approach": finger + z_up,
-                "finger": finger + z_up,
-                "middle": elbow + forearm_dir * self.elbow_overshoot,
+                "approach": finger + z_up + outward,
+                "finger": finger + z_up + outward,
+                "middle": elbow + forearm_dir * self.elbow_overshoot + outward,
                 "elbow_hook": elbow + upperarm_dir * self.elbow_hook_offset,
                 "last": shoulder + upperarm_dir * self.shoulder_overshoot,
             }
