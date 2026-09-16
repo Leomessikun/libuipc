@@ -10,13 +10,13 @@ from uipc_manip.obs import ObsSpec
 from uipc_manip.sac import SACAgent, SACConfig
 
 
-def agent(rho=.5, weight=1., trunk="plain"):
+def agent(rho=.5, weight=1., trunk="plain", max_step=0.0):
     torch.manual_seed(42)
     return SACAgent(ObsSpec(3), 3, SACConfig(
         actor_type="state", critic_input="privileged", privileged_dim=4, hidden_dim=16,
         batch_size=8, state_activation="silu", trunk_style=trunk, alpha_fixed=True,
         physics_actor_mode="mix", physics_actor_weight=weight, physics_actor_rho=rho,
-        physics_actor_sigma=.5), "cpu")
+        physics_actor_sigma=.5, physics_actor_max_action_step=max_step), "cpu")
 
 
 def batch(learner):
@@ -86,6 +86,14 @@ def test_replay_locality_uses_sampled_squashed_action():
                                            action_noise=noise, action_anchor=action)
     assert stats["physics_mix_weight"] == pytest.approx(1.)
     assert stats["physics_effective_rho"] == pytest.approx(.5)
+
+
+def test_fresh_update_rolls_back_and_bounds_actual_action_step():
+    learner = agent(max_step=.001)
+    obs, action, noise, reward, nxt, mask, g = batch(learner)
+    stats = learner.update_fresh_state_actor(obs, action, noise, reward, nxt, mask,
+                                            reward_gradient=100*g, signal="reward")
+    assert stats["physics_actual_step_max"] <= .001 + 1e-7
 
 
 @pytest.mark.parametrize("control", ["random", "zero", "negative"])

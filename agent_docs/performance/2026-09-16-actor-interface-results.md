@@ -95,6 +95,21 @@ interface, but do not establish reliable learning, a faster dressing policy,
 removal of all benefits of distillation, or a new RL algorithm. Differential
 pretraining, response-Q, mechanical metrics and extra horizons remain parked.
 
+## Follow-up implementation and smoke test
+
+Commit `53c89d77` adds a transactional trust-radius option to fresh IPC actor
+updates. With `--actor-step-radius r`, the update snapshots actor parameters and
+optimizer state, retries an over-radius step with a halved learning rate, and
+restores the snapshot if all retries fail. The default benchmark radius is .03;
+setting it to zero disables this protection. The protection applies only to the
+fresh IPC update and does not reset the ordinary SAC optimizer.
+
+A native eight-slot, 256-transition smoke run with radius .03 completed in 12.8s:
+24 fresh actor updates, 200 critic updates, no failed retries, and a measured
+maximum fresh action step of .00212. This validates the runtime path; its eight
+short evaluations are not a learning result. A dedicated unit test forces retry
+and verifies the final step is at most .001.
+
 ## Artifacts and validation
 
 - Reproducer: `python/uipc_manip/actor_interface_probe.py` (README gives commands).

@@ -2531,3 +2531,14 @@ Full [results and scope](performance/2026-09-16-actor-interface-results.md),
 including raw artifact paths and tracked per-batch numbers. All 17 fresh/probe
 tests pass, plus 17 launcher tests. No long training restarted; visual dressing
 IPC integration and optimizer-history-safe matched learning remain open.
+
+## 2026-09-16 — Transactional fresh IPC action trust radius
+
+Commit `53c89d77` adds `physics_actor_max_action_step` and retry count to the
+fresh actor path. An over-radius optimizer step restores actor and Adam state,
+halves the actor learning rate, and retries; after exhaustion it restores the
+original state. `iaql_benchmark` exposes this as `--actor-step-radius` and
+`--actor-step-retries`. Native eight-slot/256-transition smoke completed with
+24 fresh actor and 200 critic updates; max measured action step was .00212 under
+the .03 radius. The long matched SAC/IPC runs were then launched from this
+implementation; their outputs are separate from the smoke artifact.
