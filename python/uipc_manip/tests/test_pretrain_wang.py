@@ -533,7 +533,11 @@ def test_history_policy_needs_sequence_replay_and_keeps_state_per_world(stub_run
     with pytest.raises(RuntimeError):
         replay.sample_sequences(2, 8, pad=True)
     batch = replay.sample_sequences(2, 4, pad=True)
-    assert batch.valid[:, -1].all() and set(batch.episode_steps[:, -1].tolist()) == {0, 1}
+    # Sampling is with replacement: four draws need not contain both steps.
+    buffer = replay.buffers[batch.buffer_index]
+    assert set(buffer._episode_steps[:buffer.size].tolist()) == {0, 1}
+    assert batch.valid[:, -1].all()
+    assert (batch.valid[:, 0] == (batch.episode_steps[:, -1] == 1)).all()
     pretrain_wang.main(["resume", str(tmp_path / "history"), "--transitions", "24"])
 
 

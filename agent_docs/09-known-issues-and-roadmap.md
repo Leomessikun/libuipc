@@ -8,8 +8,14 @@ previously bypassed action-locality gating. Evaluation now records grasp-valid
 success and controller-rejection traces. Full six-substep/controller derivatives,
 stale critic labels, partial observability and useful elbow exploration remain
 open. Existing replay supports bounded IQL/BC/replay-SAC controls; this is not a
-new RL contribution or an established offline-to-online solution. Policy results
-are pending. Keep further online experiments bounded and justified by dressing
+new RL contribution or an established offline-to-online solution. The completed
+two-round development comparison gives source/IQL/BC/replay-SAC coverage
+.161/.135/.184/.223, with 0/4 successes each and substantial variability/grasp
+failures. No robust advantage is established; all jobs finished. Only 31/2,400
+labels in the historical IPC replay are within the endpoint actor's configured
+action radius, making naive uniform replay effectively starve the corrected
+physics term. Fresh same-action supervision and the complete executed/observed
+derivative remain open. Keep further online experiments bounded and justified by dressing
 failure evidence; do not restart the unrelated cloth-drag study.
 
 ## Dressing RL research update — 2026-09-16

@@ -86,7 +86,7 @@ def test_point_replay_physics_labels_are_gated_at_the_recorded_action():
     stats = agent.update(replay)
     assert stats["physics_valid_fraction"] == 1
     assert stats["physics_actor_fraction"] == 0
-    assert "physics_loss" not in stats and agent.physics_beta is None
+    assert stats["physics_loss"] == 0 and stats["physics_rows"] == 0 and agent.physics_beta is None
 
 
 def test_sac_update_and_checkpoint(tmp_path):

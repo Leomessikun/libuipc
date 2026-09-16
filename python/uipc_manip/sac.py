@@ -572,6 +572,10 @@ class SACAgent:
                 distill = distill + wang_distill_loss(mu[rows], log_std[rows], teacher_mu, teacher_log_std)
             actor_loss = actor_loss + self.cfg.distill_weight * distill
         physics_stats = {}
+        if physics is not None and self.cfg.physics_actor_weight > 0.0:
+            # Trainers retain the latest metrics across updates. Explicit zeros
+            # keep an empty/gated batch from displaying an earlier nonempty loss.
+            physics_stats.update(physics_rows=0, physics_loss=0.0)
         if action_anchor is not None:
             distance = (pi.detach() - action_anchor.detach()).norm(dim=-1)
             physics_stats.update(actor_action_distance_mean=float(distance.mean()),

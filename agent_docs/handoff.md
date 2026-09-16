@@ -13,10 +13,26 @@ changing control. A matched evaluation script records these per decision.
 data, not a claimed new algorithm or a solved offline-to-online method. The
 125,016-row dense/plain source yields 124,584 exact successor links in 432
 segments. The new offline updates use a common segment split and fresh optimizers;
-the source checkpoint had already seen that corpus. IQL/BC completed 2,000 updates
-in 220/67 seconds; the SAC control and full dressing evaluation are pending in
-this implementation milestone. 68 focused CPU tests pass. Do not infer policy
+the source checkpoint had already seen that corpus. IQL/BC/replay-only SAC
+completed 2,000 updates in 220/67/137 seconds. Full two-round, two-cell development
+evaluation gave source/IQL/BC/replay-SAC mean coverage .161/.135/.184/.223,
+**0/4 successes each**, substantial variation, and 0/23/497/582 invalid-grasp
+decisions out of 1,200 per policy. No robust advantage is established. Evaluation
+cost another 4,800 transitions and 637 s. All jobs finished. 88 focused CPU tests
+pass; an unrelated existing ADR 0008 heading check fails. Do not infer policy
 quality from the loss curves or silently resume IQL's non-soft critic as SAC.
+
+At the previous IPC checkpoint, only 31/2,400 labelled actions fall within the
+.5 radius of the current actor: .0243% of all replay, or about 1.55% chance of
+a nonempty physics batch of 64. This endpoint audit is not a training-time
+reconstruction. Correct locality mostly abstains on that replay. Empty physics
+batches now log explicit zero rows/loss, eliminating stale nonempty metrics.
+Next IPC actor work must address fresh same-action labels and the complete
+six-substep/controller/tool-relative observation derivative, or use task-based
+sequence supervision if critic guidance remains unreliable. The original policy
+stalls on one development arm despite accepted commands and valid grasp; BC
+also creates a separate controller-rejection failure. Neither justifies claiming
+all failures have one cause.
 
 The owner explicitly challenged treating offline-to-online RL as solved or IPC
 integration as impossible. Neither claim is supported. The bounded offline
