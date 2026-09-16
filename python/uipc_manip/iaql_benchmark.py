@@ -502,6 +502,10 @@ def main(argv=None):
                    help="direction: -beta*unit(g)*mu (beta matched once); mix: estimator replacement (1-rho c) dQ/da + rho c g")
     p.add_argument("--actor-rho", type=float, default=0.5)
     p.add_argument("--actor-sigma", type=float, default=0.0, help="Gaussian action-locality weight (0: hard distance gate)")
+    p.add_argument("--actor-step-radius", type=float, default=0.03,
+                   help="fresh IPC update trust radius in squashed action space; 0 disables transactional retries")
+    p.add_argument("--actor-step-retries", type=int, default=8,
+                   help="fresh IPC update retries, halving actor learning rate after an over-radius step")
     p.add_argument("--continuation-trust", type=float, default=0.0, help="kappa of exp(-kappa d^2) on the label's continuation part")
     p.add_argument("--reward-mode", choices=["dense", "terminal"], default="dense")
     p.add_argument("--num-slots", type=int, default=1, help="identical cloths stepping in lockstep in one World (online phase)")
@@ -523,7 +527,8 @@ def main(argv=None):
                         "online skips the gate and fixed-teacher fit already recorded for these arguments; "
                         "fidelity compares actor-gradient candidates against finite differences of the frozen policy's return")
     args = p.parse_args(argv)
-    if (args.warmup_transitions < 0 or args.tangent_rows < 1 or not np.isfinite(args.updates_per_step)
+    if (args.warmup_transitions < 0 or args.tangent_rows < 1 or args.actor_step_radius < 0
+            or args.actor_step_retries < 0 or not np.isfinite(args.updates_per_step)
             or args.updates_per_step <= 0 or args.horizon < 1 or args.online_steps < 1
             or args.batch_size < 1 or args.num_slots < 1 or args.eval_episodes < 1):
         p.error("warmup must be nonnegative; tangent rows and update rate must be positive")
@@ -541,6 +546,8 @@ def main(argv=None):
     torch.set_num_threads(1)
     AGENT_OPTIONS.update(physics_actor_mode=args.actor_mode, physics_actor_rho=args.actor_rho,
                          physics_actor_sigma=args.actor_sigma, continuation_trust_kappa=args.continuation_trust,
+                         physics_actor_max_action_step=args.actor_step_radius,
+                         physics_actor_step_retries=args.actor_step_retries,
                          batch_size=args.batch_size, trunk_style=args.trunk_style, trunk_blocks=args.trunk_blocks)
     global AGENT_DEVICE
     AGENT_DEVICE = args.device if args.phase == "online" else "cpu"

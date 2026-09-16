@@ -104,6 +104,10 @@ class SACConfig:
     physics_actor_rho: float = 0.5
     continuation_trust_kappa: float = 0.0
     """State benchmark: κ of the label's continuation trust exp(−κ d²) from the twin critics' disagreement."""
+    physics_actor_max_action_step: float = 0.0
+    """Fresh actor updates: reject and retry an optimizer step if any sampled action moves farther than this."""
+    physics_actor_step_retries: int = 8
+    """Maximum fresh actor step retries when the actual action displacement exceeds the trust radius."""
     adjoint_weight: float = 0.0
     adjoint_gradient_scale: float = 1.0
     grad_clip_max_norm: float = 0.0
@@ -523,7 +527,8 @@ class SACAgent:
         return float(self.cfg.physics_actor_weight) * norm_sac / max(norm_phys, 1e-12)
 
     def _update_actor_and_alpha(self, obs, state=None, label=None, index: int = 0, physics=None,
-                                action_noise=None, action_anchor=None, require_same_action=False) -> dict:
+                                action_noise=None, action_anchor=None, require_same_action=False,
+                                max_action_step: float = 0.0, max_action_retries: int = 0) -> dict:
         if action_noise is not None:
             if self.cfg.actor_type != "state":
                 raise ValueError("Saved action noise currently requires the full-state actor")
@@ -604,11 +609,46 @@ class SACAgent:
                 physics_loss = physics_actor_loss(mu, direction, self.physics_beta)
                 actor_loss = actor_loss + physics_loss
                 physics_stats.update(physics_loss=float(physics_loss.item()), physics_rows=rows, physics_beta=float(self.physics_beta))
+        # Keep the optimizer state transactional for fresh same-action updates. Adam's stored
+        # moments can move the policy even when the current correction is zero; a rejected trial
+        # must restore both parameters and moments before retrying at a smaller learning rate.
+        import copy
+        actor_before = copy.deepcopy(self.actor.state_dict()) if max_action_step > 0 and action_anchor is not None else None
+        optimizer_before = copy.deepcopy(self.actor_optimizer.state_dict()) if actor_before is not None else None
+        actor_lrs = [group["lr"] for group in self.actor_optimizer.param_groups]
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         grad_norm = self._clip(self.actor)
-        self.actor_optimizer.step()
-        stats = {"actor_loss": float(actor_loss.item()), "entropy": float(-log_pi.mean().item()), "actor_grad_norm": grad_norm, **physics_stats}
+        retries = 0
+        accepted_step = True
+        while True:
+            self.actor_optimizer.step()
+            if actor_before is None:
+                break
+            with torch.no_grad():
+                _, trial_action, _, _ = self.actor(obs, compute_log_pi=False, noise=action_noise)
+                trial_step = (trial_action - action_anchor.detach()).norm(dim=-1)
+            if float(trial_step.max()) <= float(max_action_step) or retries >= max(0, int(max_action_retries)):
+                accepted_step = float(trial_step.max()) <= float(max_action_step)
+                break
+            retries += 1
+            self.actor.load_state_dict(actor_before)
+            self.actor_optimizer.load_state_dict(optimizer_before)
+            for group, lr in zip(self.actor_optimizer.param_groups, actor_lrs):
+                group["lr"] = lr * (0.5 ** retries)
+        if actor_before is not None:
+            stats_step = float(trial_step.max())
+            if not accepted_step:
+                self.actor.load_state_dict(actor_before)
+                self.actor_optimizer.load_state_dict(optimizer_before)
+                for group, lr in zip(self.actor_optimizer.param_groups, actor_lrs):
+                    group["lr"] = lr
+                stats_step = 0.0
+        else:
+            stats_step = 0.0
+        stats = {"actor_loss": float(actor_loss.item()), "entropy": float(-log_pi.mean().item()), "actor_grad_norm": grad_norm,
+                 "physics_step_retries": retries, "physics_step_accepted": float(accepted_step),
+                 "physics_actual_step_max": stats_step, **physics_stats}
         if distill is not None:
             stats["distill_loss"] = float(distill.item())
         if not self.cfg.alpha_fixed:
@@ -833,7 +873,10 @@ class SACAgent:
             physics = (g.detach(), torch.ones(len(obs), dtype=g.dtype, device=g.device))
         stats.update(self._update_actor_and_alpha(
             obs, state=obs, physics=physics, action_noise=action_noise,
-            action_anchor=action, require_same_action=True))
+            action_anchor=action, require_same_action=True,
+            max_action_step=(self.cfg.physics_actor_max_action_step
+                             if physics is not None else 0.0),
+            max_action_retries=self.cfg.physics_actor_step_retries))
         with torch.no_grad():
             _, updated_action, _, _ = self.actor(obs, compute_log_pi=False, noise=action_noise)
             step = (updated_action - action.detach()).norm(dim=-1)
