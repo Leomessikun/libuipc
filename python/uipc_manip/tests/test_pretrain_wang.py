@@ -6,6 +6,25 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+
+def test_initial_replay_pairs_transition_count_and_reward_scale():
+    from uipc_manip.pretrain_wang import validate_initial_replay
+
+    payload = {"step": 7, "metadata": {"transitions": 56, "reward_scale": .5}}
+    validate_initial_replay(payload, {"transitions": 56, "reward_scale": .5}, .5)
+    with pytest.raises(ValueError, match="transition count"):
+        validate_initial_replay(payload, {"transitions": 55, "reward_scale": .5}, .5)
+    with pytest.raises(ValueError, match="reward scale"):
+        validate_initial_replay(payload, {"transitions": 56, "reward_scale": 1.}, .5)
+
+
+def test_initial_replay_and_optimizer_flags_require_a_checkpoint():
+    from uipc_manip.pretrain_wang import prepare
+
+    for flag in (["--init-optimizers"], ["--init-replay", "unused"]):
+        with pytest.raises(ValueError, match="require --init-from"):
+            prepare(["teacher", "--region", "13", *flag])
+
 torch = pytest.importorskip("torch")
 
 from uipc_manip import pretrain_wang, sac  # noqa: E402
@@ -301,12 +320,13 @@ def stub_run(monkeypatch):
 
         def save(self, path, step, metadata=None):
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps({"step": step, "metadata": metadata or {}, "sac_config": self.cfg.to_dict()}, default=str))
+            path.write_text(json.dumps({"step": step, "updates": self.updates, "metadata": metadata or {}, "sac_config": self.cfg.to_dict()}, default=str))
             return path
 
-        def load(self, path, load_optimizers=True):
+        def load(self, path, load_optimizers=True, allow_runtime_config_mismatch=False):
             payload = json.loads(Path(path).read_text())
             assert load_optimizers and payload["sac_config"] == json.loads(json.dumps(self.cfg.to_dict()))
+            self.updates = int(payload.get("updates", 0))
             return payload
 
         @staticmethod
@@ -323,6 +343,25 @@ def stub_run(monkeypatch):
 
 def _training_worlds(built):
     return [w for w in built if all(b % 1000 < 45 for _, b in w.cells)]
+
+
+def test_warm_start_keeps_replay_count_and_only_trains_the_remaining_budget(stub_run, tmp_path):
+    import csv
+
+    built, agents = stub_run
+    pretrain_wang.main(RUN_ARGV + ["--transitions", "24", "--work-dir", str(tmp_path), "--run-name", "source"])
+    source = tmp_path / "source" / "checkpoints"
+    old_updates = agents[-1].updates
+    built.clear()
+    pretrain_wang.main(RUN_ARGV + ["--transitions", "32", "--work-dir", str(tmp_path), "--run-name", "warm",
+                                 "--init-from", str(source / "checkpoint_00000024.pt"), "--init-optimizers",
+                                 "--init-replay", str(source / "replay_latest")])
+    assert len(_training_worlds(built)) == 1  # Eight new transitions, not 32.
+    assert agents[-1].updates > old_updates
+    state = json.loads((tmp_path / "warm/checkpoints/state.json").read_text())
+    assert state["transitions"] == 32 and state["counters"]["vector_step"] == 2
+    with (tmp_path / "warm/eval_log.csv").open() as handle:
+        assert [int(row["transitions"]) for row in csv.DictReader(handle)] == [24, 32]
 
 
 def test_run_rotates_worlds_evaluates_held_out_poses_and_resumes_the_same_draws(stub_run, tmp_path):

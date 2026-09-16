@@ -55,3 +55,23 @@ def test_grad_norm_of_leaves_no_gradient_behind():
     _, phys = ft.actor_losses(agent, actor, obs, g, beta=1.0)
     assert ft.grad_norm_of(actor, phys) == pytest.approx(float(np.sqrt(6.0)))
     assert actor.w.grad is None
+
+
+def test_verified_proposal_respects_separate_bounds_and_disabled_rotation():
+    action = np.array([.95, 0., 0., 0., 0., 0.])
+    target = ft.bounded_proposal(action, np.ones(6), .2, .3)
+    assert np.all(np.abs(target) <= 1)
+    assert np.linalg.norm(target[:3] - action[:3]) <= .2 + 1e-12
+    assert np.linalg.norm(target[3:] - action[3:]) == pytest.approx(.3)
+    assert target[3] == 0
+    assert np.array_equal(ft.bounded_proposal(action, np.full(6, np.nan), .2, .3), action)
+
+
+def test_verification_rejects_noise_coverage_regression_and_failed_confirmation():
+    base = {"return": 10., "upperarm": .2}
+    good = {"return": 10.5, "upperarm": .21}
+    assert ft.confirmed_gain(base, good, base, good, .1) == pytest.approx(.4)
+    assert ft.confirmed_gain(base, good, base, base, .1) == 0
+    assert ft.confirmed_gain(base, good, base, good, .6) == 0
+    assert ft.confirmed_gain(base, {"return": 11., "upperarm": .1}, base, good, .1) == 0
+    assert ft.confirmed_gain(base, good, base, {"return": float("nan"), "upperarm": .2}, .1) == 0

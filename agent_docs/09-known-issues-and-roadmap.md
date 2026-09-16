@@ -8,8 +8,14 @@ an unstable SAC control. Open work is a reliable dressing comparison that isolat
 physics proposal quality, actor fitting, and full-episode success at matched cost.
 See the [redesign proposal](performance/2026-09-16-dressing-rl-redesign.md) for
 implementation order, existing-data reuse, derivative limitations, and rejection
-criteria. The proposal is unimplemented; no speedup or novel-algorithm result is
-established. Do not restart the stopped benchmark as a dependency of this work.
+criteria. The [implemented local gate](performance/2026-09-16-dressing-verified-results.md)
+accepted 0/8 IPC corrections. Preserving Adam and the existing replay now works
+in controlled new branches; one 2,400-transition SAC continuation improved
+two-cell development coverage .15164 -> .51295, with success still 0/2. The
+matched IPC-actor comparison is pending. Native simulation dominates measured
+environment time; larger homogeneous batches did not improve throughput past
+eight slots. No general speedup or novel-algorithm result is established. Do not
+restart the stopped benchmark as a dependency of this work.
 
 ## Solver roadmap context
 

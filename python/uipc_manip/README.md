@@ -325,6 +325,8 @@ PYTHONPATH=python $GENESIS_PY -m uipc_manip.pretrain_wang resume output/uipc_man
 | `--eval-every` | 10,000 | transitions between evaluations, taken at the next episode boundary; each round plays one deterministic episode per held-out configuration, and `best.pt` ranks their mean final upper-arm ratio first |
 | `--eval-slots` | 32 | largest evaluation world; more held-out configurations use several worlds, all kept for the run |
 | `--checkpoint-every` | 50,000 | transitions between checkpoints. Each writes the agent, the replay snapshot (only the latest is kept; 400,000 transitions are 17 GB in memory, about 2.9 GB compressed and 90 s to write) and `state.json`, which carries the rotation RNG and the counters a resume needs |
+| `--init-optimizers` | off | with `--init-from`, restore Adam state when branching an experiment; SAC settings must match, except runtime physics-update controls |
+| `--init-replay` | none | load the replay snapshot paired with `--init-from`; dimensions, transition count and reward scale are checked; `--transitions` includes the loaded historical count |
 | `--garment-curriculum-interval` | 0 | transitions between admitting one more garment to the draw, easiest first; the reference launcher has none |
 | `--dt` | 1/60 | simulation step; the action repeat (0.1 s decisions), cuff strength (the same physical hold) and settle follow it unless passed explicitly |
 
@@ -336,6 +338,26 @@ pool the first time it is drawn and listed in the checkpoint metadata; nothing i
 filtered on whether the scripted expert dresses it. Section 6 of
 `agent_docs/performance/2026-09-10-one-policy-protocol.md` maps each choice to the
 reference and states the deviations.
+
+Use `resume` for exact continuation of the same experiment. For a controlled new
+branch, `--init-from checkpoint.pt --init-optimizers --init-replay replay_latest`
+preserves the available learning state while starting a new run directory and
+environment draw. Keep the source observation settings and explicitly select its
+architecture (for example, `--critic-action-mode dense --trunk-style plain` for an
+older plain-trunk checkpoint). A 125,016-transition snapshot with
+`--transitions 127416` collects 2,400 new transitions. Supplying `--init-from`
+alone retains the existing weights-only behavior with fresh optimizers and replay.
+
+`scripts/profile_dressing.py --out profile.json` measures one, eight and 24
+identical dressing cells, including the time inside simulation and observation
+methods. Run it with the same native build/Python environment as training.
+`--timer-steps 5` adds a separate instrumented window after the throughput window;
+native timers synchronize the GPU, so their durations are diagnostic. The
+homogeneous expert workload does not measure full RL training speed. The bounded
+`physics_gradient_finetune --verified` experiment tests finite IPC, SAC and random
+action corrections; its actor-only artifacts are not SAC-resume checkpoints.
+See the [dressing experiment record](../../agent_docs/performance/2026-09-16-dressing-verified-results.md)
+for the current negative proposal result and training limitations.
 
 ### Step 0: the scripted expert's bar and its demonstrations
 

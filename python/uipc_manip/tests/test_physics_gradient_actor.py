@@ -78,3 +78,34 @@ def test_unit_action_scales_translation_and_rotation_separately():
     assert np.allclose(a[:3], [0.3, 0.0, 0.4])
     assert np.allclose(a[3:], [0.0, 0.0, 0.5])
     assert np.all(np.abs(actor.unit_action(np.ones(6), env, 1.0, 1.0)) <= 1.0)
+
+
+def test_proposal_queries_preserve_parameter_gradients():
+    class Policy(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.scale = torch.nn.Parameter(torch.tensor(2.0))
+
+        def forward(self, obs, **kwargs):
+            return self.scale * obs, None, None, None
+
+    class Critic(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.scale = torch.nn.Parameter(torch.tensor(3.0))
+
+        def forward(self, obs, action):
+            q = self.scale * (obs + action).sum().reshape(1, 1)
+            return q, q + 1.0
+
+    policy, critic = Policy(), Critic()
+    agent = SimpleNamespace(actor=policy, critic=critic, device=torch.device("cpu"), _unpack=lambda x: x)
+    capture = SimpleNamespace(capture=lambda x: {"visible": np.arange(1), "counts": np.ones(1)},
+                              torch_observation=lambda cap, x, agent: x)
+    # An existing learning gradient must survive a diagnostic query unchanged.
+    policy.scale.grad, critic.scale.grad = torch.tensor(7.0), torch.tensor(8.0)
+    result = actor.value_and_gradient(agent, capture, np.ones((1, 3)))
+    assert np.allclose(result["gradient"], 9.0)  # d[3(x + 2x)] / dx.
+    result = actor.sac_action_gradient(agent, np.ones(3))
+    assert np.allclose(result["dQ_da"], 3.0)
+    assert policy.scale.grad.item() == 7.0 and critic.scale.grad.item() == 8.0

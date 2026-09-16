@@ -1,5 +1,29 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-16 — Dressing implementation, negative correction gate, and preserved-state continuation
+
+Read [the measured experiment record](performance/2026-09-16-dressing-verified-results.md)
+before launching more training. The owner requested implementation/testing and
+speed diagnosis after both critic/actor routes had already been tried.
+`physics_gradient_finetune --verified` now tests bounded finite IPC/SAC/random
+corrections and fits guarded actor copies; all three proposal types had 0/8
+accepted targets over tshirt_26/14049 and tshirt_392/14046. No IPC policy benefit
+was established, so do not extend this particular correction run blindly.
+
+`pretrain_wang --init-optimizers --init-replay ... --init-from ...` preserves
+existing Adam/replay when branching a controlled experiment. Targets include
+historical transitions. The 125,016 -> 127,416 SAC continuation completed with
+zero simulator errors: two-cell development coverage .15164 -> .51295, success
+still 0/2. The matched existing IPC-actor arm is pending at this stage. Input
+derivative queries avoid parameter-gradient accumulation; physics timing logs
+now preserve the cumulative timer. 28 focused CPU tests pass.
+
+Dressing-only homogeneous batch profiling measured 7.02/18.29/17.71 simulator
+transitions/s at 1/8/24 environments; 96–98% of environment time was in simulation.
+This is not an end-to-end training speedup claim. `scripts/profile_dressing.py`
+provides a reusable profile and optional separate native timer window. The
+unrelated cloth-drag study remains stopped.
+
 ## 2026-09-16 — Dressing RL research resumed; cloth-drag study stopped
 
 The owner stopped the unrelated-to-dressing 40k diagnostic study: 24 surviving

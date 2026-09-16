@@ -6,6 +6,13 @@ corpus and expensive IPC simulation. Evaluate other tasks after the dressing
 mechanism is established. The owner stopped the cloth-drag study; do not resume
 it as a prerequisite for this work. No new training was launched for this report.
 
+**Implementation follow-up:** the bounded frozen-critic diagnostic is now
+implemented and tested on two dressing cells. It accepted no IPC corrections
+(0/8 anchors). Replay/optimizer-preserving continuation and actual dressing
+profiling were added separately. See [the experiment record](2026-09-16-dressing-verified-results.md).
+The full online algorithm below remains a proposal; the original research-pass
+status above describes when this document was written.
+
 ## 1. What the evidence actually establishes
 
 The dressing and cloth-drag experiments use different environments, observations,

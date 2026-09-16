@@ -17,6 +17,10 @@ same batches with the critic frozen:
 
 Each actor is then run deterministically for twelve decisions from the elbow state it was tuned
 at and from a second state of the same cell it never saw, against the untouched actor.
+
+With ``--verified``, instead compare finite IPC/SAC/random first-action corrections with
+independent rollout confirmation, then fit bounded actor copies. This diagnostic freezes
+the critic and uses binary accepted-target weights; it is not full online SAC training.
 """
 from __future__ import annotations
 
@@ -169,6 +173,190 @@ def deterministic_walk(env, snap: dict, agent, actor, steps: int) -> dict:
 
 
 # ------------------------------------------------------------------------ main
+def bounded_proposal(action, direction, translation_radius, rotation_radius, clip_x=True):
+    """A finite action correction with separately bounded translation/rotation norms."""
+    action, direction = np.asarray(action, dtype=np.float64), np.asarray(direction, dtype=np.float64).copy()
+    if not np.isfinite(direction).all():
+        return action.copy()
+    if clip_x:
+        direction[3] = 0.0
+    delta = np.zeros(6)
+    for sl, radius in ((slice(0, 3), translation_radius), (slice(3, 6), rotation_radius)):
+        norm = np.linalg.norm(direction[sl])
+        if norm > 1e-12:
+            delta[sl] = radius * direction[sl] / norm
+    proposal = np.clip(action + delta, -1.0, 1.0)
+    if clip_x:
+        proposal[3] = action[3]
+    return proposal
+
+
+def confirmed_gain(reference, candidate, confirmation_reference, confirmation, margin):
+    """Selection and independent confirmation must both improve return and preserve coverage."""
+    def gain(base, test):
+        if not all(np.isfinite(r[k]) for r in (base, test) for k in ("return", "upperarm")):
+            return 0.0
+        return max(0.0, test["return"] - base["return"] - margin) if test["upperarm"] >= base["upperarm"] - 1e-4 else 0.0
+    return min(gain(reference, candidate), gain(confirmation_reference, confirmation))
+
+
+def verified_experiment(env, agent, feature, layout, capture, snaps, args, out):
+    """Bounded dressing proposal/fitting experiment. No critic learning or full-task gain claim."""
+    import torch
+    from .sac import frozen_parameters
+
+    rng = np.random.default_rng(args.seed)
+    start = next(s for s in snaps if s["name"] == args.train_state)
+    anchors = []
+    probe.restore(env, start)
+    for i in range(args.verified_anchors):
+        # A native dump immediately after recover is invalid; advance before every new dump.
+        obs = env.observation()[0]
+        probe.decision(env, agent.act(obs[None], deterministic=True)[0])
+        snap = probe.take_snapshot(env, f"anchor_{i}", int(env._episode_step))
+        snap["rng_states"] = [copy.deepcopy(r.bit_generator.state) for r in env.rngs]
+        anchors.append(snap)
+
+    def restore(snap):
+        error = probe.restore(env, snap)
+        if error > 1e-5:
+            raise RuntimeError(f"Snapshot restoration error {error} exceeds 10 micrometres")
+        for r, state in zip(env.rngs, snap.get("rng_states", [])):
+            r.bit_generator.state = copy.deepcopy(state)
+
+    costs = {"scope": "proposal queries, verification, and evaluation; excludes world setup and approach/anchor collection",
+             "rollout_s": 0.0, "physics_s": 0.0, "simulator_transitions": 0}
+
+    def rollout(snap, first_action):
+        restore(snap)
+        t0, ret = time.perf_counter(), 0.0
+        for t in range(args.horizon):
+            obs = env.observation()[0]
+            action = first_action if t == 0 else agent.act(obs[None], deterministic=True)[0]
+            result = probe.decision(env, action)
+            ret += agent.cfg.discount**t * result["reward_step"]
+            costs["simulator_transitions"] += 1
+        costs["rollout_s"] += time.perf_counter() - t0
+        return {"return": float(ret), "upperarm": result["upperarm_ratio"], "axis_m": result["upperarm_axis_m"]}
+
+    rows, records = [], []
+    path = out / "verified.json"
+    report = {"kind": "frozen_critic_dressing_verified_corrections", "checkpoint": args.checkpoint,
+              "garment": args.garment, "body": args.body, "arguments": vars(args), "anchors": records, "costs": costs}
+
+    def save():
+        path.write_text(json.dumps(report, indent=2, default=float) + "\n")
+
+    for i, snap in enumerate(anchors):
+        restore(snap)
+        obs = env.observation()[0]
+        a0 = agent.act(obs[None], deterministic=True)[0].astype(np.float64)
+        sac = actor_exp.sac_action_gradient(agent, obs, a0)["dQ_da"]
+        t0 = time.perf_counter()
+        probe.decision(env, a0)
+        costs["simulator_transitions"] += 1
+        vg = actor_exp.value_and_gradient(agent, capture, env.positions()[0])
+        ipc, residual, _ = actor_exp.last_frame_gradient(feature, layout, vg["gradient"], {"offsets": env._offsets[0]}, env)
+        costs["physics_s"] += time.perf_counter() - t0
+        if not np.isfinite(residual) or residual > 1e-4:
+            ipc = np.zeros(6)
+        directions = {"ipc": ipc, "sac": sac, "random": rng.normal(size=6)}
+        reference, repeat = rollout(snap, a0), rollout(snap, a0)
+        margin = max(args.verified_margin, 2 * abs(reference["return"] - repeat["return"]))
+        row = {"obs": obs.astype(np.float32), "action": a0.astype(np.float32), "targets": {}, "weights": {}}
+        rec = {"anchor": i, "episode_step": snap["episode_step"], "reference": reference,
+               "repeat": repeat, "margin": margin, "residual": residual, "arms": {}}
+        for name, direction in directions.items():
+            usable = bool(np.isfinite(direction).all() and np.linalg.norm(direction) > 1e-12)
+            target = bounded_proposal(a0, direction, args.correction_radius, args.correction_radius,
+                                      bool(env.cfg.clip_rotation_to_yz))
+            selection = rollout(snap, target)
+            confirmation = rollout(snap, target)
+            gain = confirmed_gain(reference, selection, repeat, confirmation, margin) if usable else 0.0
+            row["targets"][name] = target.astype(np.float32)
+            row["weights"][name] = float(gain > 0.0)
+            rec["arms"][name] = {"action": target.tolist(), "selection": selection, "confirmation": confirmation,
+                                  "usable_direction": usable, "confirmed_gain": gain, "accepted": gain > 0.0}
+        rows.append(row)
+        records.append(rec)
+        save()
+        print(f"[verified] anchor {i}: " + " ".join(f"{k}={v['confirmed_gain']:.4f}" for k, v in rec["arms"].items()), flush=True)
+
+    # Preserve the actual training data for reproduction and later integration.
+    np.savez_compressed(out / "verified_targets.npz", obs=np.stack([r["obs"] for r in rows]),
+                        actions=np.stack([r["action"] for r in rows]),
+                        **{f"target_{k}": np.stack([r["targets"][k] for r in rows]) for k in directions},
+                        **{f"weight_{k}": np.array([r["weights"][k] for r in rows]) for k in directions})
+    flat = torch.as_tensor(np.stack([r["obs"] for r in rows]), device=agent.device)
+    batch = agent._unpack(flat)
+    with torch.no_grad():
+        original_mu = agent.actor(batch, compute_pi=False, compute_log_pi=False)[0]
+    original_actor = agent.actor
+    actors = {"initial": original_actor}
+    report["training"] = {}
+    for arm in ("sac_only", "ipc", "sac", "random"):
+        actor = copy.deepcopy(original_actor)
+        opt = torch.optim.Adam(actor.parameters(), lr=agent.cfg.actor_lr, betas=(agent.cfg.actor_beta, 0.999))
+        target = torch.as_tensor(np.stack([r["targets"].get(arm, r["action"]) for r in rows]), device=agent.device)
+        weights = torch.as_tensor([r["weights"].get(arm, 0.0) for r in rows], device=agent.device)
+        accepted, rejected, last = 0, 0, {}
+        torch.manual_seed(args.seed + 100)  # Same SAC sampling stream in every arm.
+        t0 = time.perf_counter()
+        for k in range(args.updates):
+            with frozen_parameters(agent.critic):
+                mu, pi, lp, _ = actor(batch)
+                q1, q2 = agent.critic(batch, pi)
+                sac_loss = (agent._alpha_at(0).detach() * lp - torch.min(q1, q2)).mean()
+                correction = (weights * (mu - target).square().sum(-1)).mean()
+                loss = sac_loss + args.verified_weight * correction
+            old = copy.deepcopy(actor.state_dict())
+            old_opt = copy.deepcopy(opt.state_dict())
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            opt.step()
+            with torch.no_grad():
+                after = actor(batch, compute_pi=False, compute_log_pi=False)[0]
+                displacement = (after - original_mu).norm(dim=-1).max().item()
+            # Bound cumulative drift from the verified policy, not just this optimizer step.
+            if not np.isfinite(displacement) or displacement > args.fit_radius:
+                actor.load_state_dict(old)
+                opt.load_state_dict(old_opt)
+                for group in opt.param_groups:
+                    group["lr"] *= 0.5
+                rejected += 1
+            else:
+                accepted += 1
+            last = {"sac_loss": float(sac_loss.detach()), "correction_loss": float(correction.detach())}
+        torch.cuda.synchronize() if agent.device.type == "cuda" else None
+        actor.train(False)
+        actors[arm] = actor
+        report["training"][arm] = {"accepted_updates": accepted, "rejected_updates": rejected,
+                                   "accepted_targets": int(weights.sum()), "seconds": time.perf_counter() - t0, **last}
+        # Save actor-only artifacts explicitly; they are not complete SAC-resume checkpoints.
+        torch.save({"actor": actor.state_dict(), "source_checkpoint": args.checkpoint,
+                    "kind": "frozen_critic_actor_only", "arm": arm}, out / f"verified_{arm}_actor.pt")
+        save()
+    report["evaluation"] = {}
+    for snap in snaps:
+        if snap["name"] not in args.eval_states:
+            continue
+        report["evaluation"][snap["name"]] = {}
+        for name, actor in actors.items():
+            agent.actor = actor
+            reps = []
+            for _ in range(args.eval_repeats):
+                restore(snap)
+                first = agent.act(env.observation(), deterministic=True)[0]
+                reps.append(rollout(snap, first))
+            report["evaluation"][snap["name"]][name] = reps
+            print(f"[verified-eval] {snap['name']} {name}: return {np.mean([r['return'] for r in reps]):.3f} "
+                  f"upperarm {np.mean([r['upperarm'] for r in reps]):.4f}", flush=True)
+            save()
+    agent.actor = original_actor
+    save()
+    return report
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--garment", default="tshirt_26")
@@ -177,7 +365,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--train-state", default="elbow")
     p.add_argument("--eval-states", nargs="+", default=["elbow", "stall"])
     p.add_argument("--checkpoint", required=True)
-    p.add_argument("--probe-json", required=True)
+    p.add_argument("--probe-json", default=None, help="Required for the historical proxy-collection experiment.")
+    p.add_argument("--verified", action="store_true", help="Compare verified IPC/SAC/random corrections on actual dressing states.")
+    p.add_argument("--verified-anchors", type=int, default=8)
+    p.add_argument("--correction-radius", type=float, default=0.25, help="Separate translation/rotation correction norms in normalized action units.")
+    p.add_argument("--fit-radius", type=float, default=0.25, help="Maximum cumulative actor movement on the anchor batch.")
+    p.add_argument("--verified-margin", type=float, default=0.01, help="Minimum raw discounted-return gain above measured repeat variability.")
+    p.add_argument("--verified-weight", type=float, default=1.0)
     p.add_argument("--out", required=True)
     p.add_argument("--device", default="cuda")
     p.add_argument("--policy-episodes", type=int, default=12)
@@ -193,6 +387,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--stall-window", type=int, default=15)
     p.add_argument("--max-steps", type=int, default=300)
     args = p.parse_args(argv)
+    if not args.verified and args.probe_json is None:
+        p.error("--probe-json is required unless --verified is set")
+    if args.verified_anchors < 1 or min(args.correction_radius, args.fit_radius) <= 0 or args.verified_margin < 0:
+        p.error("Positive anchor count/radii and nonnegative verification margin required")
+    if min(args.updates, args.horizon, args.eval_repeats) < 1 or args.verified_weight < 0:
+        p.error("Positive updates/horizon/repeats and nonnegative correction weight required")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -217,6 +417,10 @@ def main(argv: list[str] | None = None) -> None:
         agent = actor_exp.load_agent(Path(args.checkpoint), int(env.spec.point_budget), int(env.action_dim), args.device)
         capture = actor_exp.ObservationCapture(env)
         layout = adjoint.cloth_layout(env, 1.0)
+        if args.verified:
+            snaps, _ = probe.drive_to_snapshots(env, args.stall_window, 0.01, args.max_steps)
+            verified_experiment(env, agent, feature, layout, capture, snaps, args, out)
+            return
         rec = json.loads(Path(args.probe_json).read_text())["snapshots"][0]
         g = rec["gradients"]
         key = str(g["epsilons"][len(g["epsilons"]) // 2])

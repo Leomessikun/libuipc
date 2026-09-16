@@ -141,9 +141,11 @@ def value_and_gradient(agent, capture: ObservationCapture, positions: np.ndarray
     mu, _, _, _ = agent.actor(obs, compute_pi=False, compute_log_pi=False)
     q1, q2 = agent.critic(obs, mu)
     v = torch.min(q1, q2).sum()
-    v.backward()
+    # Only the input derivative is needed. Accumulating every actor/critic parameter
+    # gradient wastes work and leaves stale gradients behind during proposal queries.
+    gradient = torch.autograd.grad(v, x)[0]
     return {"value": float(v.item()), "q1": float(q1.item()), "q2": float(q2.item()), "mu": mu.detach().cpu().numpy().reshape(-1),
-            "gradient": x.grad.detach().cpu().numpy().astype(np.float64).reshape(-1), "visible": int(cap["visible"].shape[0]),
+            "gradient": gradient.detach().cpu().numpy().astype(np.float64).reshape(-1), "visible": int(cap["visible"].shape[0]),
             "voxels": int(cap["counts"].shape[0])}
 
 
@@ -169,8 +171,8 @@ def sac_action_gradient(agent, flat_obs: np.ndarray, action: np.ndarray | None =
     a = mu.clone() if action is None else torch.as_tensor(np.asarray(action, dtype=np.float32).reshape(1, -1), device=agent.device)
     a = a.requires_grad_(True)
     q1, q2 = agent.critic(batch, a)
-    torch.min(q1, q2).sum().backward()
-    return {"mu": mu.cpu().numpy().reshape(-1), "dQ_da": a.grad.cpu().numpy().astype(np.float64).reshape(-1), "q": float(torch.min(q1, q2).item())}
+    gradient = torch.autograd.grad(torch.min(q1, q2).sum(), a)[0]
+    return {"mu": mu.cpu().numpy().reshape(-1), "dQ_da": gradient.detach().cpu().numpy().astype(np.float64).reshape(-1), "q": float(torch.min(q1, q2).item())}
 
 
 # ------------------------------------------------------------------------ the physics actor gradient

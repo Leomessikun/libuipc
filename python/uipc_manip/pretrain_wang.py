@@ -218,6 +218,8 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument("--eval-every", type=int, default=WANG_EVAL_TRANSITIONS, help="Transitions between evaluations; 0 evaluates only before and after training.")
         s.add_argument("--eval-slots", type=int, default=32, help="Largest evaluation world; more held-out configurations are split over several worlds.")
         s.add_argument("--checkpoint-every", type=int, default=50_000, help="Transitions between checkpoints with a replay snapshot; only the latest snapshot is kept.")
+        s.add_argument("--init-optimizers", action="store_true", help="With --init-from, preserve the source optimizers; SAC settings must match except physics-update controls.")
+        s.add_argument("--init-replay", default=None, help="Replay snapshot paired with --init-from; --transitions includes its historical transition count.")
         s.add_argument("--garment-curriculum-interval", type=int, default=0, help="Transitions between admitting one more garment to the draw, easiest first; 0, the reference launcher's setting, admits all.")
         s.add_argument("--garment-curriculum-order", default=",".join(WANG_GARMENT_ORDER), help="Comma-separated garments, easiest first.")
         s.add_argument("--horizon", type=int, default=HORIZON, help="Decisions per episode.")
@@ -485,9 +487,11 @@ class WangRun:
         self.spec = ObsSpec(targs.point_budget)
         self.agent = sac.SACAgent(self.spec, env.action_dim, sac_cfg, targs.device)
         if getattr(targs, "init_from", None) and self.resume is None:
-            payload = self.agent.load(targs.init_from, load_optimizers=False)
+            keep_optimizers = bool(getattr(self.args, "init_optimizers", False))
+            payload = self.agent.load(targs.init_from, load_optimizers=keep_optimizers,
+                                      allow_runtime_config_mismatch=keep_optimizers)
             print(f"[wang] weights and temperature initialised from {targs.init_from} (after {payload.get('updates', 0)} updates); "
-                  "optimizers and replay start fresh", flush=True)
+                  f"optimizers {'restored' if keep_optimizers else 'start fresh'}", flush=True)
         self.representation_init = None
         if targs.init_representation and self.resume is None:
             # A resumed run replays its saved command line; the representation it started from is in its checkpoint.
@@ -507,6 +511,16 @@ class WangRun:
                                     targs.device, priv_dim=priv_dim, labelled=self.labelled, sequence=targs.sequence_replay,
                                     physics=sac_cfg.physics_actor_weight > 0.0)
         self.reward_scale = wang_equivalent_reward_scale(sac_cfg.discount)
+        if getattr(self.args, "init_replay", None) and self.resume is None:
+            meta = self.replay.load(self.args.init_replay)
+            validate_initial_replay(payload, meta, self.reward_scale)
+            print(f"[wang] restored {self.replay.total_added} historical transitions; "
+                  f"target {self.args.transitions} includes them", flush=True)
+            if int(self.args.transitions) <= self.replay.total_added:
+                raise ValueError("--transitions must exceed the initial replay's historical transition count")
+            interval = int(plan["checkpoint_every_transitions"])
+            if interval > 0:
+                self.next_checkpoint = (self.replay.total_added // interval + 1) * interval
         self.teacher_regions = sorted(self.teachers)
         if self.teachers:
             self.agent.set_teachers(self.teachers)
@@ -556,6 +570,8 @@ class WangRun:
             "sac_config": self.agent.cfg.to_dict(),
             "reward_scale": self.reward_scale,
             "representation_init": getattr(self, "representation_init", None),
+            "initial_replay": getattr(self.args, "init_replay", None),
+            "initial_optimizers_restored": bool(getattr(self.args, "init_optimizers", False)),
             "seed": int(self.args.seed),
             "num_envs": int(self.plan["num_envs"]),
             "cells": [[g, int(b)] for g, b in self.pool.configs()],
@@ -685,7 +701,8 @@ class WangRun:
         if self.resume is None:
             # The reference evaluates the untrained policy at step 0.
             self.evaluate()
-            self.next_eval = int(plan["eval_every_transitions"])
+            interval = int(plan["eval_every_transitions"])
+            self.next_eval = (self.replay.total_added // interval + 1) * interval if interval > 0 else 0
         priv = self.env.privileged() if self.privileged else None
         episode_return = np.zeros(len(self.slot_cells))
         recent_returns: list[float] = []
@@ -738,7 +755,9 @@ class WangRun:
                 t = time.time()
                 physics = self.physics_signal.after_step(next_obs, actions)
                 self.timing["physics_s"] += time.time() - t
-                stats = {**stats, **{k: v for k, v in physics[2].items() if isinstance(v, (int, float))}}
+                # Do not overwrite the cumulative timer with the last query's duration.
+                stats = {**stats, **{("physics_query_s" if k == "physics_s" else k): v
+                                    for k, v in physics[2].items() if isinstance(v, (int, float))}}
             for i, info in enumerate(infos):
                 # Time limits are not terminal: bootstrap from the true final observation.
                 terminal_obs = info.get("terminal_obs", None)
@@ -816,6 +835,17 @@ class WangRun:
             self.env = None
 
 
+def validate_initial_replay(payload: dict, replay_metadata: dict, reward_scale: float) -> None:
+    """Wang snapshots pair on transition count, not the generic trainer's vector-step field."""
+    saved = payload.get("metadata", {})
+    count = int(saved.get("transitions", -1))
+    if count < 0 or int(replay_metadata.get("transitions", -2)) != count:
+        raise ValueError("Initial replay must come from the same checkpoint transition count")
+    for scale in (saved.get("reward_scale"), replay_metadata.get("reward_scale")):
+        if scale is None or not np.isclose(float(scale), reward_scale):
+            raise ValueError("Initial replay reward scale does not match the checkpoint and new learner")
+
+
 def prepare(argv: list[str]):
     """Parse a stage command line into the protocol args, the generated trainer settings and the plan."""
     from . import train_sac
@@ -828,6 +858,8 @@ def prepare(argv: list[str]):
         raise ValueError(f"The protocol sets {['--' + r.replace('_', '-') for r in reserved]} itself; use this CLI's own flags")
     targs = train_sac.build_parser().parse_args(trainer_argv(args, extra))
     train_sac.resolve_defaults(targs)
+    if (args.init_optimizers or args.init_replay) and not targs.init_from:
+        raise ValueError("--init-optimizers and --init-replay require --init-from")
     return args, targs, stage_plan(args)
 
 
