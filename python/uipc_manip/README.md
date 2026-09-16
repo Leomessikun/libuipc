@@ -577,3 +577,25 @@ this entry does not implement online pose-curriculum expansion. A weights-only
 restart is not a replay-preserving resume. Removing teachers reduces orchestration
 and teacher-training cost, but does not guarantee faster convergence or global
 pose generalization.
+
+### Check the IPC actor update before long training
+
+`actor_interface_probe` compares a single actor update from saved full-state
+`cloth_drag` checkpoints, including Adam state, with paired native eight-step
+reward rollouts. This is an interface diagnostic, not visual dressing training.
+
+```bash
+PYTHONPATH=build_raw/python/src:python OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+LD_LIBRARY_PATH=/home/ge47gax/Toolchain/uipc_cuda128/lib \
+/home/ge47gax/kun/genesis-world/.venv/bin/python -m uipc_manip.actor_interface_probe \
+  --out output/iaql/actor_interface_new
+```
+
+The default compares SAC, gradient replacement, raw/normalized linear guidance,
+target fitting, a displacement-bounded target step, and semantic controls. Use
+`--arms target zero_target target_freshadam bounded_target_freshadam random_freshadam bounded_random_freshadam`
+to isolate optimizer history. `freshadam` deliberately clears moments for this
+one-step diagnostic; it is not a recommendation to reset the training optimizer.
+The guard restores both actor and optimizer on each retry and bounds movement
+only on the anchor batch. Output directories must be new. Checkpoint paths are
+`output/iaql/vec20k_s{seed}_actor_trust/online_beta_0.0.pt`.

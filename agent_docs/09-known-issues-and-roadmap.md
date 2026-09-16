@@ -550,3 +550,11 @@ Teacher-free generalization and visual dressing IPC integration are unvalidated.
 Sparse fresh correction must precede replay actor steps; target-action regression
 alone does not bound actual policy movement. Preserve replay on resumes and
 separate update frequency from gradient mixture strength in future comparisons.
+
+2026-09-16 actor-interface follow-up: [native results](performance/2026-09-16-actor-interface-results.md)
+show normalized target fitting is first-step equivalent to the linear surrogate,
+not a remedy for actor Jacobian/optimizer effects. Inherited Adam moves even for
+a zero target gradient; an actual-action bound is separate from target radius.
+Fresh optimizer state plus a bound improves all six probed batch means, but
+ongoing optimizer evolution, matched hybrid learning and visual dressing remain
+unvalidated. No long training was relaunched and no production SAC default changed.

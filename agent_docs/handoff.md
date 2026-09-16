@@ -2513,3 +2513,21 @@ tests pass including joint resume. The owner stopped the old-worktree regional
 training at 134,832 logged transitions; its last evaluation had degraded from the
 best CSV checkpoint. Artifacts are preserved. No long fresh-hybrid result yet. See
 [status and algorithm corrections](performance/2026-09-16-single-policy-plan.md).
+
+## 2026-09-16 — Native actor-interface and optimizer-history probe
+
+Owner resumed bounded experiments after stopping the old dressing run. Added
+`actor_interface_probe.py`, reusing SAC and the native full-state IPC diagnostic.
+Three saved actor checkpoints, two eight-slot anchor batches each, paired eight-
+step reward rollouts; no terminal critic in evaluation. Target fitting and its
+normalized linear surrogate produce identical actual anchor actions. Target
+radius .03 nevertheless permits .16142 actual movement with inherited Adam.
+Even a zero-gradient target moves .14292 because of stored Adam moments.
+Clearing moments plus an actual-movement guard changes mean reward improvement
+from -.03109 to +.01366; bounded random gives -.00763. The bounded IPC arm improves
+all six batch means, but this is not a learning result or a diagnosis of prior
+seed collapse. Do not reset shared training Adam on the strength of this probe.
+Full [results and scope](performance/2026-09-16-actor-interface-results.md),
+including raw artifact paths and tracked per-batch numbers. All 17 fresh/probe
+tests pass, plus 17 launcher tests. No long training restarted; visual dressing
+IPC integration and optimizer-history-safe matched learning remain open.
