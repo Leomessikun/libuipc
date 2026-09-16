@@ -891,6 +891,8 @@ class SACAgent:
                              if action is not None else 0.0),
             max_action_retries=self.cfg.physics_actor_step_retries,
             optimizer=self.fresh_actor_optimizer))
+        stats["fresh_actor_step_accepted"] = stats["physics_step_accepted"]
+        stats["fresh_actor_step_retries"] = stats["physics_step_retries"]
         with torch.no_grad():
             _, updated_action, _, _ = self.actor(obs, compute_log_pi=False, noise=action_noise)
             step = (updated_action - action.detach()).norm(dim=-1)
