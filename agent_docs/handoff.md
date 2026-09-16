@@ -14,14 +14,23 @@ was established, so do not extend this particular correction run blindly.
 existing Adam/replay when branching a controlled experiment. Targets include
 historical transitions. The 125,016 -> 127,416 SAC continuation completed with
 zero simulator errors: two-cell development coverage .15164 -> .51295, success
-still 0/2. The matched existing IPC-actor arm is pending at this stage. Input
+still 0/2. The matched existing IPC-actor arm finished at .36100 coverage, also
+0/2 successes, and took 592 s of training-loop time against SAC's 391 s. This is
+a short development comparison with only 1.88% physics-labelled replay. Three
+fixed-seed evaluation rounds per final checkpoint give mean coverage .47347 (SAC)
+versus .37301 (IPC), with 0/6 successes each on the two repeated development
+configurations. No general advantage or complete dressing policy is established.
+All jobs launched in this pass finished. Input
 derivative queries avoid parameter-gradient accumulation; physics timing logs
 now preserve the cumulative timer. 28 focused CPU tests pass.
 
 Dressing-only homogeneous batch profiling measured 7.02/18.29/17.71 simulator
 transitions/s at 1/8/24 environments; 96–98% of environment time was in simulation.
-This is not an end-to-end training speedup claim. `scripts/profile_dressing.py`
-provides a reusable profile and optional separate native timer window. The
+Two eight-slot processes on the existing MPS server then delivered 29.11 versus
+18.05 aggregate transitions/s for one process (1.61x). This is not a shared-policy
+training speedup claim. `scripts/profile_dressing.py` provides a reusable profile
+and separate native timer window. Collision-candidate search was 56% of that
+instrumented window; PCG was 11%. The
 unrelated cloth-drag study remains stopped.
 
 ## 2026-09-16 — Dressing RL research resumed; cloth-drag study stopped

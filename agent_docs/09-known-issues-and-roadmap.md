@@ -12,9 +12,15 @@ criteria. The [implemented local gate](performance/2026-09-16-dressing-verified-
 accepted 0/8 IPC corrections. Preserving Adam and the existing replay now works
 in controlled new branches; one 2,400-transition SAC continuation improved
 two-cell development coverage .15164 -> .51295, with success still 0/2. The
-matched IPC-actor comparison is pending. Native simulation dominates measured
-environment time; larger homogeneous batches did not improve throughput past
-eight slots. No general speedup or novel-algorithm result is established. Do not
+matched IPC actor reached .36100, also 0/2, and used 592 s versus 391 s of training
+time. Three fixed-seed endpoint rounds gave mean coverage .47347 versus .37301,
+with 0/6 successes each on two repeated configurations. This short comparison has
+sparse physics labels and still needs broader development cells and independent
+training seeds before a general ranking. Native simulation dominates measured environment time; collision-candidate
+search was 56% of the instrumented window. Larger homogeneous batches did not
+improve throughput past eight slots, but two eight-slot MPS processes yielded
+1.61x aggregate simulator throughput. A shared-policy asynchronous collector is
+not implemented, and no novel-algorithm result is established. Do not
 restart the stopped benchmark as a dependency of this work.
 
 ## Solver roadmap context

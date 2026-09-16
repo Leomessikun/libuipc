@@ -97,6 +97,34 @@ Artifacts: `batch_profile.json` and `batch_profile.log`. The reusable
 `--timer-steps` instruments a separate trailing window because native timers add
 GPU synchronization overhead. Timings of nested methods are inclusive.
 
+### Native bottleneck and concurrent worlds
+
+The native instrumented window at decisions 101–103 comprised 18 IPC frames and
+41 Newton iterations. Pipeline time was 1.568 s: disjoint DCD/trajectory candidate
+detection scopes totalled .8765 s (55.9%), global linear-system build/solve .4046 s
+(25.8%), and FusedPCG within that scope .1677 s (10.7%). This small expert window
+points to collision search as the larger target; it does not profile every late
+training stall. The configuration already uses MAS and conditional CUDA-graph
+PCG. We did not reduce simulation tolerances, collision checks, or substeps.
+
+A single eight-slot process connected to the existing MPS server measured 18.045
+transitions/s including action selection. Two concurrent eight-slot processes
+measured **29.112 transitions/s combined**, a **1.61x aggregate throughput ratio**.
+The pair completed 1,600 transitions over the union of their measured windows,
+54.960 s; initialization is excluded. Their individual simulation rates were
+14.962 and 14.567 transitions/s. Each individual process slowed down, but the
+GPU completed more total work per second. No native error was reported.
+
+This was one homogeneous expert benchmark, not learning or a shared-policy
+asynchronous collector. Use it as evidence for a small number of concurrent
+independent experiments, not a promise that one learner now trains 61% faster.
+The MPS server already existed with a default active-thread percentage of 100;
+the test only connected two clients and did not change global server settings.
+Artifacts: `mps_single.json` (including native timers), `mps_pair_0.json`,
+`mps_pair_1.json`, and `mps_comparison.json`. Start two profiler processes with
+distinct output paths and `CUDA_MPS_PIPE_DIRECTORY` pointing to the existing
+server; do not run unrelated workloads during this comparison.
+
 ## Continuation repair and comparison
 
 The historical positive physics/control pair discarded Adam state and the old
@@ -125,21 +153,82 @@ from region 13, tshirt_26, no observation augmentation, and 2,400 new transition
 (125,016 -> 127,416). Full 300-decision evaluations before/after use bodies 14046
 and 14049. These two repeatedly inspected cells are development evaluation,
 not a final held-out test. The physics arm changes only the actor weight to .5.
-Results and validation are recorded below after both bounded runs complete.
+Both runs completed all 2,400 new transitions and updates without a simulator or
+build error. Their final evaluations used the same seed block (1097, 1098).
 
-The SAC control completed all 2,400 new transitions and updates without a
-simulator/build error. Mean final coverage rose .15164 -> .51295; per-body final
-coverage was .60520 and .42070. Success remained 0/2 at the .7 threshold. Simulation
-took 312.51 s, updates 77.61 s, and the two evaluation rounds 152.39 s. The final
-replay/checkpoint save took another 22 s. This is one short continuation with two
-development cells; retaining the old learning state did not itself prove the
-cause of improvement. The matched IPC-actor run is pending at this stage.
+| Arm | Initial coverage | Final coverage | Final success | Training-loop seconds | Simulation seconds | Update seconds | Physics-query seconds |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SAC | .15164 | .51295 | 0/2 | 390.8 | 312.5 | 77.6 | 0 |
+| SAC + historical IPC actor, weight .5 | .15018 | .36100 | 0/2 | 592.2 | 475.6 | 78.7 | 37.2 |
+
+The table excludes setup, evaluation and checkpoint saving. SAC's two evaluation
+rounds took 152.39 s; the IPC arm's took about 140 s. Each final replay/checkpoint
+save took 22 s. SAC's final per-body coverage was .60520 and .42070. Neither arm
+reached the .7 success threshold. Average stochastic training-episode returns
+were 197.44 for SAC and 69.25 for IPC. Final deterministic evaluation returns
+were 236.25 and 184.53. About 163 of the IPC arm's extra 201 seconds occurred in
+forward simulation, beyond the direct gradient-query cost.
+
+All 2,400 new physics labels were marked valid by the historical production gate;
+they comprise only 1.8836% of the 127,416-row replay. The initial replay has no
+physics labels. This is an important limit of a short warm-start comparison.
+The fixed physics coefficient was 3.10191 after gradient-norm calibration. The
+last nonempty physics-batch statistics may persist in the merged training log;
+use the saved replay's validity array to count label coverage.
+
+In this run SAC improved more and trained faster than the existing IPC term.
+One short continuation with two development cells does not establish a general
+ranking or prove that retained learning state caused the improvement. The same
+source checkpoint's initial returns also varied substantially (52.80 vs 121.93),
+despite similar final coverage. Additional fixed-seed checkpoint evaluations
+are recorded separately to check endpoint repeatability.
+
+### Fixed-seed endpoint rechecks
+
+Two further full 300-decision evaluations per checkpoint used the same two bodies
+and seed block (1097, 1098), on an otherwise idle GPU, with no learning. Including
+the original final evaluation gives three rounds, six episodes per arm:
+
+| Checkpoint | Coverage by round | Mean coverage | Mean episode return | Success |
+| --- | --- | ---: | ---: | ---: |
+| SAC | .51295, .46957, .43789 | .47347 | 232.25 | 0/6 |
+| IPC actor | .36100, .37391, .38411 | .37301 | 195.03 | 0/6 |
+
+All repeats completed without simulator errors. These repeated evaluations show
+the same ordering and substantial numerical/path variation. They are **not six
+independent configurations or three training seeds**, and do not establish a
+general statistically significant advantage. Both policies remain below complete
+dressing success on these cases. Artifacts: `policy_repeats.json`, its `.log`, and
+`recheck_policies.py` under the experiment output directory. The trained full SAC
+checkpoints are `warm_sac/checkpoints/checkpoint_00127416.pt` and
+`warm_physics/checkpoints/checkpoint_00127416.pt`; their source 125k training cost
+must not be omitted from any claim of training from scratch.
+
+## Decision after the tests
+
+Keep the replay/optimizer-preserving SAC continuation as the measured baseline.
+Do not extend the failed small first-action correction prototype or launch a large
+IPC-actor sweep based on this pilot. The useful engineering changes are learning-
+state reuse, falsifiable finite-correction tests, accurate cost logging and a
+reproducible GPU scheduling measurement. A new RL algorithm with a demonstrated
+advantage is not finished.
+
+Before another online IPC variant, require proposals that produce repeatable
+finite elbow improvements on development states. Existing successful trajectory
+segments can supply candidate multi-action behaviors, but a sequence-based actor
+target and its continuation must be evaluated consistently; the failed one-action
+test is not evidence that simply increasing the horizon will work. A shared-policy
+multi-process collector is a separate implementation task, justified for further
+measurement by the 1.61x aggregate simulation result. All bounded training,
+profiling, and endpoint-recheck jobs launched in this pass completed; none was
+left running.
 
 Validation of this implementation: 28 focused CPU tests passed, including replay
 pairing/reward rejection, remaining-budget continuation, bounded proposals,
 independent confirmation, and input-gradient correctness/isolation. Both native
 verified dressing experiments and the full SAC continuation completed. Broader
-policy generalization and a final held-out test remain unmeasured.
+policy generalization and a final held-out test remain unmeasured. The matched
+IPC continuation and native single/concurrent-world profiler runs also completed.
 
 ## Reproduction
 

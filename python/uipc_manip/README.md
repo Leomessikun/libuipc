@@ -356,6 +356,11 @@ native timers synchronize the GPU, so their durations are diagnostic. The
 homogeneous expert workload does not measure full RL training speed. The bounded
 `physics_gradient_finetune --verified` experiment tests finite IPC, SAC and random
 action corrections; its actor-only artifacts are not SAC-resume checkpoints.
+In the measured homogeneous workload, two independent eight-slot processes
+connected to the existing CUDA MPS server produced 1.61x the aggregate simulator
+throughput of one. Each process must use a distinct output path. This supports
+testing a small number of concurrent independent experiments; a shared-policy
+parallel collector is not implemented by this profiler.
 See the [dressing experiment record](../../agent_docs/performance/2026-09-16-dressing-verified-results.md)
 for the current negative proposal result and training limitations.
 
