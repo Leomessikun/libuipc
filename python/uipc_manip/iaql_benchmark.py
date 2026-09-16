@@ -26,12 +26,17 @@ AGENT_DEVICE = "cpu"
 """Where the online phase's learner lives; the probe, fit and fidelity phases stay on the CPU."""
 
 
-def agent_for(state_dim, seed=0, weight=0.0, actor_weight=0.0, device=None):
+def agent_for(state_dim, seed=0, weight=0.0, actor_weight=0.0, device=None, checkpoint=None):
     torch.manual_seed(seed)
-    return SACAgent(ObsSpec(3), 3, SACConfig(actor_type="state", critic_input="privileged",
+    agent = SACAgent(ObsSpec(3), 3, SACConfig(actor_type="state", critic_input="privileged",
         privileged_dim=int(state_dim), hidden_dim=128, actor_lr=3e-4, critic_lr=3e-4,
         actor_log_std_min=-5, actor_log_std_max=1, adjoint_weight=weight, physics_actor_weight=actor_weight,
         state_activation="silu", **{"batch_size": 32, **AGENT_OPTIONS}), device or "cpu")
+    if checkpoint is not None:
+        # Each arm restores the same actor/critic/target/temperature and both optimizer states;
+        # replay is deliberately refilled identically by the online collector below.
+        agent.load(checkpoint, load_optimizers=True)
+    return agent
 
 
 def tensor(x):
@@ -286,7 +291,8 @@ def online(env, args):
     warmup_steps = -(-args.warmup_transitions // N)
     weights = ([0.0] if fresh else [0.0, args.beta]) if args.online_weights is None else args.online_weights
     for weight in weights:
-        agent = agent_for(env.obs_dim, args.seed+50, weight, args.actor_weight, AGENT_DEVICE)
+        agent = agent_for(env.obs_dim, args.seed+50, weight, args.actor_weight, AGENT_DEVICE,
+                          getattr(args, "resume_checkpoint", None))
         dev = agent.device
         actor_mechanics = args.actor_weight > 0 and (not fresh or args.actor_rho > 0)
         mechanics = weight > 0 or actor_mechanics
@@ -522,6 +528,8 @@ def main(argv=None):
                    help="online control: permute each batch's mechanics among its valid rows (everything else matched)")
     p.add_argument("--online-weights", type=float, nargs="+", default=None,
                    help="online arms to run in this process (default: 0 and --beta); one arm per process runs the pair in parallel")
+    p.add_argument("--resume-checkpoint", type=Path, default=None,
+                   help="Restore a state-benchmark checkpoint, including actor/critic/alpha and both optimizer states, before identical replay refill")
     p.add_argument("--fidelity-sac", type=Path, default=None, help="SAC-arm checkpoint for --phase fidelity")
     p.add_argument("--fidelity-iaql", type=Path, default=None, help="IAQL-arm checkpoint for --phase fidelity")
     p.add_argument("--fidelity-policy", choices=["sac", "sobolev"], default="sac", help="whose actor is the frozen continuation policy")

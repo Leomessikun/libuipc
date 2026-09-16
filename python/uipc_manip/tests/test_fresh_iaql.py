@@ -96,6 +96,14 @@ def test_fresh_actor_uses_an_optimizer_without_replay_moments():
             torch.testing.assert_close(replay_state_after["state"][key][name], value)
 
 
+def test_fresh_sac_control_is_action_bounded():
+    learner = agent(weight=0.0, max_step=.001)
+    obs, action, noise, reward, nxt, mask, _ = batch(learner)
+    stats = learner.update_fresh_state_actor(obs, action, noise, reward, nxt, mask)
+    assert stats["fresh_actor_action_step_max"] <= .001 + 1e-7
+    assert stats["physics_actual_step_max"] <= .001 + 1e-7
+
+
 def test_replay_locality_uses_sampled_squashed_action():
     learner = agent()
     obs, action, noise, _, _, _, g = batch(learner)

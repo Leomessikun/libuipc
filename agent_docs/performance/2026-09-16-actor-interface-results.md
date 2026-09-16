@@ -100,11 +100,17 @@ pretraining, response-Q, mechanical metrics and extra horizons remain parked.
 The fresh actor path now uses a separate `fresh_actor_optimizer`, so replay SAC
 Adam moments cannot steer an IPC correction. Checkpoints save and restore this
 state when present while remaining backward compatible with older checkpoints.
+The fresh optimizer uses `fresh_actor_beta=0` by default, and the action-step
+bound is applied to fresh SAC controls as well as labeled IPC controls; every
+fresh update reports its actual movement and acceptance flag.
 The IAQL online driver also exposes `--fresh-replay-actor-updates`; this makes
 the number of replay SAC actor updates in fresh mode explicit instead of
 silently changing the actor-update budget. The default remains zero for the
 historical fresh-only protocol. The corresponding CPU tests cover optimizer
-state isolation and the existing action-bound enforcement.
+state isolation and the existing action-bound enforcement. `iaql_benchmark`
+also accepts `--resume-checkpoint` for state-benchmark continuation, restoring
+the actor, critics, targets, temperature, and both actor optimizer states before
+each arm refills replay from the same seeded collection protocol.
 
 Commit `53c89d77` adds a transactional trust-radius option to fresh IPC actor
 updates. With `--actor-step-radius r`, the update snapshots actor parameters and

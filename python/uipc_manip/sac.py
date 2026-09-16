@@ -73,6 +73,8 @@ class SACConfig:
     actor_lr: float = 1.0e-4
     fresh_actor_lr: float = 1.0e-4
     """Learning rate for fresh same-action actor updates, isolated from replay Adam moments."""
+    fresh_actor_beta: float = 0.0
+    """First Adam moment for fresh updates; zero avoids cross-state momentum drift."""
     critic_lr: float = 1.0e-4
     alpha_lr: float = WANG_ALPHA_LR
     actor_beta: float = 0.9
@@ -351,7 +353,7 @@ class SACAgent:
         # Fresh simulator corrections must not inherit replay SAC's momentum.  This optimizer
         # is intentionally separate even when the fresh loss contains the ordinary SAC term.
         self.fresh_actor_optimizer = torch.optim.Adam(
-            self.actor.parameters(), lr=cfg.fresh_actor_lr, betas=(cfg.actor_beta, 0.999), fused=fused
+            self.actor.parameters(), lr=cfg.fresh_actor_lr, betas=(cfg.fresh_actor_beta, 0.999), fused=fused
         )
         self.critic_optimizer = torch.optim.Adam(
             self.critic.parameters(), lr=cfg.critic_lr, betas=(cfg.critic_beta, 0.999), fused=fused
@@ -883,8 +885,10 @@ class SACAgent:
         stats.update(self._update_actor_and_alpha(
             obs, state=obs, physics=physics, action_noise=action_noise,
             action_anchor=action, require_same_action=True,
+            # Bound every fresh arm, including the rho=0 fresh-SAC control.  Otherwise the
+            # control gets a large unconstrained step while IPC is trust-region limited.
             max_action_step=(self.cfg.physics_actor_max_action_step
-                             if physics is not None else 0.0),
+                             if action is not None else 0.0),
             max_action_retries=self.cfg.physics_actor_step_retries,
             optimizer=self.fresh_actor_optimizer))
         with torch.no_grad():
