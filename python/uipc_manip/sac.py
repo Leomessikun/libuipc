@@ -1060,14 +1060,30 @@ class SACAgent:
                 "components": [f"actor.{name}" for name in modules],
                 "pretraining": payload["metadata"]["pretraining"]}
 
-    def load(self, path: str | Path, *, load_optimizers: bool = True, strict_protocol: bool = True) -> dict:
+    def load(self, path: str | Path, *, load_optimizers: bool = True, strict_protocol: bool = True,
+             allow_runtime_config_mismatch: bool = False) -> dict:
         payload = self.read_checkpoint(path)
         if strict_protocol and payload["protocol"] != self.protocol():
             raise ValueError(
                 f"Checkpoint protocol {json.dumps(payload['protocol'], sort_keys=True)} does not match "
                 f"{json.dumps(self.protocol(), sort_keys=True)}"
             )
-        if load_optimizers and SACConfig.from_dict(payload["sac_config"]).to_dict() != self.cfg.to_dict():
+        saved_cfg = SACConfig.from_dict(payload["sac_config"])
+        saved_dict = saved_cfg.to_dict()
+        current_dict = self.cfg.to_dict()
+        if allow_runtime_config_mismatch:
+            # These fields alter only how the fresh diagnostic update is formed; they do not
+            # change network shapes or replay/critic semantics, so continuation arms may vary them
+            # while restoring the same optimizer state.
+            runtime_only = {
+                "physics_actor_weight", "physics_actor_gate", "physics_actor_action_distance",
+                "physics_actor_sigma", "physics_actor_mode", "physics_actor_rho",
+                "continuation_trust_kappa", "physics_actor_max_action_step",
+                "physics_actor_step_retries", "fresh_actor_lr", "fresh_actor_beta",
+            }
+            saved_dict = {k: v for k, v in saved_dict.items() if k not in runtime_only}
+            current_dict = {k: v for k, v in current_dict.items() if k not in runtime_only}
+        if load_optimizers and saved_dict != current_dict:
             raise ValueError("Training resume requires the saved SACConfig; restoring optimizers with a different "
                              "discount, reward protocol, or learning rate would silently mix experiments")
         self.actor.load_state_dict(payload["actor"])

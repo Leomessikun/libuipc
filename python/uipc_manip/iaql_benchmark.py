@@ -28,14 +28,22 @@ AGENT_DEVICE = "cpu"
 
 def agent_for(state_dim, seed=0, weight=0.0, actor_weight=0.0, device=None, checkpoint=None):
     torch.manual_seed(seed)
-    agent = SACAgent(ObsSpec(3), 3, SACConfig(actor_type="state", critic_input="privileged",
-        privileged_dim=int(state_dim), hidden_dim=128, actor_lr=3e-4, critic_lr=3e-4,
-        actor_log_std_min=-5, actor_log_std_max=1, adjoint_weight=weight, physics_actor_weight=actor_weight,
-        state_activation="silu", **{"batch_size": 32, **AGENT_OPTIONS}), device or "cpu")
+    if checkpoint is not None:
+        saved = SACAgent.read_checkpoint(checkpoint)
+        cfg_dict = dict(saved["sac_config"])
+        cfg_dict.update(AGENT_OPTIONS)
+        cfg_dict.update(adjoint_weight=weight, physics_actor_weight=actor_weight)
+        cfg = SACConfig.from_dict(cfg_dict)
+    else:
+        cfg = SACConfig(actor_type="state", critic_input="privileged",
+            privileged_dim=int(state_dim), hidden_dim=128, actor_lr=3e-4, critic_lr=3e-4,
+            actor_log_std_min=-5, actor_log_std_max=1, adjoint_weight=weight, physics_actor_weight=actor_weight,
+            state_activation="silu", **{"batch_size": 32, **AGENT_OPTIONS})
+    agent = SACAgent(ObsSpec(3), 3, cfg, device or "cpu")
     if checkpoint is not None:
         # Each arm restores the same actor/critic/target/temperature and both optimizer states;
         # replay is deliberately refilled identically by the online collector below.
-        agent.load(checkpoint, load_optimizers=True)
+        agent.load(checkpoint, load_optimizers=True, allow_runtime_config_mismatch=True)
     return agent
 
 
