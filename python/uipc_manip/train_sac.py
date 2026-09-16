@@ -616,6 +616,11 @@ def evaluate(
                 }
                 # FMVP Appendix A.1 keeps a trajectory when it ends dressed and never cut the elbow.
                 record["paper_filter"] = bool(record["success"] and not record["early_turn"])
+                if hasattr(env, "grasp_tracking_tolerance_m") or "valid_grasp_success" in info:
+                    # Geometry-only success can survive a lost/overstretched grasp.
+                    # Missing metrics on a simulator failure must not count as valid.
+                    record["grasp_valid"] = bool(info.get("grasp_valid", False))
+                    record["valid_grasp_success"] = bool(info.get("valid_grasp_success", False))
                 # A simulator error ends the episode without metrics; it is scored as of its last completed decision.
                 for k in metric_keys:
                     record[f"final_{k}"] = float(info[k]) if k in info else float(last_seen[k][i])
@@ -659,6 +664,9 @@ def evaluate(
     for k in metric_keys:
         summary[f"mean_final_{k}"] = float(np.nanmean([r[f"final_{k}"] for r in finished]))
         summary[f"mean_max_{k}"] = float(np.nanmean([r[f"max_{k}"] for r in finished]))
+    if all("valid_grasp_success" in r for r in finished):
+        summary["valid_grasp_success_rate"] = float(np.mean([r["valid_grasp_success"] for r in finished]))
+        summary["grasp_valid_rate"] = float(np.mean([r["grasp_valid"] for r in finished]))
     if slot_cells is None:
         slot_cells = _cells_from_records(finished, env.num_envs)
     if slot_cells is not None:

@@ -665,6 +665,9 @@ class GenesisIPCDressingEnv:
         if cfg.clip_rotation_to_yz:
             rotation[:, 0] = 0.0
         tracking_max = np.zeros(n, dtype=np.float64)
+        anchor_before = self._anchor.copy()
+        collision_rejected = np.zeros(n, dtype=np.int32)
+        tether_rejected = np.zeros(n, dtype=np.int32)
         started = time.perf_counter()
         budget = decision_time_limit(self._decision_times, cfg.decision_time_floor_s, cfg.decision_time_factor)
         held = self.positions() if cfg.anchor_tether_m is not None else None
@@ -676,11 +679,14 @@ class GenesisIPCDressingEnv:
                     # PyFlex no-move collision: a step that would put the anchor inside the shell is dropped.
                     if np.min(np.linalg.norm(cell.arm_points - candidate[None, :], axis=1)) < cfg.no_move_collision_threshold:
                         candidate = self._anchor[i]
+                        collision_rejected[i] += 1
                     # The tether drops the whole move, the rotation too, where the collision rule keeps the rotation.
                     if held is None or tether_allows(
                         candidate[None, :] + offsets, held[i][self._pickers[i]["anchor_idx"]], self._anchor[i][None, :] + self._offsets[i], cfg.anchor_tether_m
                     ):
                         self._offsets[i], self._anchor[i] = offsets, candidate
+                    else:
+                        tether_rejected[i] += 1
                 self._update_targets()
                 self._sim_step()
                 if cfg.decision_watchdog and time.perf_counter() - started > budget:
@@ -735,6 +741,11 @@ class GenesisIPCDressingEnv:
                     # constraint_strength * mass / dt^2, so its displacement is a force, and it is
                     # the one a real robot could feel through joint effort.
                     "grasp_tracking_m": float(tracking_max[i]),
+                    "collision_rejected_substeps": int(collision_rejected[i]),
+                    "tether_rejected_substeps": int(tether_rejected[i]),
+                    "commanded_translation_m": float(np.linalg.norm(translation[i])),
+                    # Accepted controller anchor motion, not measured cloth motion.
+                    "accepted_anchor_translation_m": float(np.linalg.norm(self._anchor[i] - anchor_before[i])),
                 }
             )
             if force_summaries is not None:

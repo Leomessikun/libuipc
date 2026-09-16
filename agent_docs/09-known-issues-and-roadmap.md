@@ -1,5 +1,17 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Dressing first-principles audit — 2026-09-17
+
+[Current research and control implementation](performance/2026-09-17-dressing-first-principles.md):
+fixed the missing replay-action anchor in the dressing IPC actor update, which
+previously bypassed action-locality gating. Evaluation now records grasp-valid
+success and controller-rejection traces. Full six-substep/controller derivatives,
+stale critic labels, partial observability and useful elbow exploration remain
+open. Existing replay supports bounded IQL/BC/replay-SAC controls; this is not a
+new RL contribution or an established offline-to-online solution. Policy results
+are pending. Keep further online experiments bounded and justified by dressing
+failure evidence; do not restart the unrelated cloth-drag study.
+
 ## Dressing RL research update — 2026-09-16
 
 The cloth-drag 40k study was stopped by the owner before completion; its interim

@@ -38,6 +38,24 @@ def _checkpoint():
     }
 
 
+def test_evaluation_keeps_grasp_valid_success_separate_from_geometric_success():
+    class Env:
+        num_envs = 2
+        grasp_tracking_tolerance_m = 0.02
+
+        def reset(self, seeds):
+            return np.zeros((2, 1))
+
+        def step(self, actions):
+            infos = [dict(success=True, distance=0, grasp_valid=False, valid_grasp_success=False),
+                     dict(success=True, distance=0, grasp_valid=True, valid_grasp_success=True)]
+            return np.zeros((2, 1)), np.zeros(2), np.ones(2, bool), infos
+
+    result = evaluate(Env(), lambda obs, deterministic: obs, ObsSpec(3), SimpleNamespace(seed=0), 2)
+    assert result["success_rate"] == 1
+    assert result["valid_grasp_success_rate"] == result["grasp_valid_rate"] == 0.5
+
+
 def test_resume_recovers_timing_reward_camera_and_temperature():
     args = build_parser().parse_args([])
     cfg = restore_resume_args(args, [], _checkpoint())

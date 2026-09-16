@@ -1,5 +1,30 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — First-principles audit and bounded offline controls
+
+Read [the audit and research plan](performance/2026-09-17-dressing-first-principles.md).
+The point-cloud dressing replay path omitted the original action when applying
+IPC labels, bypassing its locality gate. Fixed and regression-tested. Evaluation
+now retains grasp-valid success separately from geometric success. Dressing info
+reports collision/tether rejection counts and accepted anchor translation without
+changing control. A matched evaluation script records these per decision.
+
+`offline_rl` provides explicit IQL, BC and replay-only SAC controls on existing
+data, not a claimed new algorithm or a solved offline-to-online method. The
+125,016-row dense/plain source yields 124,584 exact successor links in 432
+segments. The new offline updates use a common segment split and fresh optimizers;
+the source checkpoint had already seen that corpus. IQL/BC completed 2,000 updates
+in 220/67 seconds; the SAC control and full dressing evaluation are pending in
+this implementation milestone. 68 focused CPU tests pass. Do not infer policy
+quality from the loss curves or silently resume IQL's non-soft critic as SAC.
+
+The owner explicitly challenged treating offline-to-online RL as solved or IPC
+integration as impossible. Neither claim is supported. The bounded offline
+comparison is diagnostic; a large offline study is not the agreed next step.
+The next IPC mechanism should follow measured controller/cloth/policy failure
+classification. Gradient-free options include privileged value learning,
+execution prediction and simulated recovery supervision; none is validated here.
+
 ## 2026-09-16 — Dressing implementation, negative correction gate, and preserved-state continuation
 
 Read [the measured experiment record](performance/2026-09-16-dressing-verified-results.md)

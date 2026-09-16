@@ -70,6 +70,25 @@ def test_wang_helpers():
     assert gradient_update_budget(transitions_added=4, replay_size=1000, batch_size=64, updates_started=True, updates_per_step=2) == (2, True)
 
 
+def test_point_replay_physics_labels_are_gated_at_the_recorded_action():
+    torch.manual_seed(5)
+    spec = ObsSpec(10)
+    cfg = _small_cfg()
+    cfg.physics_actor_weight = 1.0
+    cfg.physics_actor_action_distance = 1e-8
+    cfg.actor_update_freq = 1
+    agent = SACAgent(spec, 3, cfg, "cpu")
+    env = ToyEnv(spec)
+    replay = FlatReplayBuffer(spec.dim, 3, 32, 16, "cpu", physics=True)
+    for _ in range(16):
+        obs = env.reset()
+        replay.add(obs, np.ones(3), 0, obs, False, physics=np.ones(3), physics_valid=1)
+    stats = agent.update(replay)
+    assert stats["physics_valid_fraction"] == 1
+    assert stats["physics_actor_fraction"] == 0
+    assert "physics_loss" not in stats and agent.physics_beta is None
+
+
 def test_sac_update_and_checkpoint(tmp_path):
     torch.manual_seed(0)
     spec = ObsSpec(10)

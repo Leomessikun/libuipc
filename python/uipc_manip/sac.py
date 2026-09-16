@@ -831,7 +831,10 @@ class SACAgent:
             stats = self._update_critic(obs, action, reward, next_obs, not_done, state, next_state, index)
         stats["batch_reward"] = float(reward.mean().item())
         stats["learning_positions"] = int(action.shape[0])
-        return self._finish_update(stats, obs, state, label, index, physics)
+        # Physics labels are local to the recorded command, including in point-cloud
+        # dressing replay. Without its anchor the distance gate is silently bypassed.
+        return self._finish_update(stats, obs, state, label, index, physics,
+                                   action_anchor=action if physics is not None else None)
 
     @torch.no_grad()
     def sample_state_action(self, obs):
