@@ -21,14 +21,25 @@ Two successes are repeats of a withheld configuration. **Both score 0/8 under
 the historical early-turn paper filter.** No robust-policy or Q-term-only causal
 claim: one-step distillation and iterative flow generation also differ.
 
-The full FQL state is now continuing for 27,000 more updates to 30,000 total;
-the same native evaluation is chained after successful training. Root:
-`output/uipc_manip/fql_pretrain_20260917/`, training log:
-`continue_a100_s17_30k.log`. Launch-time training/parent PIDs 1728654/1728653;
-verify live processes before acting. Do not launch competing GPU runs. This is
-authorized new work; earlier training holds do not apply.
-The old correction experiments remain stopped. Full online FQL collector
-integration and matched SAC/RLPD experiments are not yet implemented.
+The 30,000-update continuation and evaluation **finished** (2026-09-18).
+FQL / flow prior: 5/8 versus 1/8 coverage-plus-whole-grasp successes. FQL training-
+body results rise 2/4 to 4/4 from the pilot, but withheld-body results fall 2/4
+to 1/4. These tiny repeated-cell samples do not establish overfitting or a robust
+improvement. Every FQL rollout triggers early_turn. The prior's single historical
+paper-filter pass fails grasp validity; both have zero combined strict passes.
+Total training time to 30k: 54.55 min; completed preparation, both training and
+evaluation phases: 79.61 min (excluding aborted setup and engineering).
+Root: `output/uipc_manip/fql_pretrain_20260917/`; see `summary_30k.json` and
+`eval_a100_s17_30k/result.json`. No FQL training process remains.
+
+Next: audit the early-turn flag and persistent withheld failures, then a matched
+one-step distillation-only control to isolate Q's contribution. Connect the
+collector only under a declared bounded offline-to-online protocol and compare
+against from-scratch FQL and SAC/prior-data SAC at common total cost. See the
+[research plan](performance/2026-09-17-fql-pretraining.md#research-plan-after-the-completed-pilot).
+Full online FQL collector integration and matched controls remain unimplemented.
+The old correction experiments remain stopped. No new training was launched for
+this research-plan update; prior authorization for bounded experiments persists.
 
 ## 2026-09-17 — Prior-data inventory for the FQL design
 

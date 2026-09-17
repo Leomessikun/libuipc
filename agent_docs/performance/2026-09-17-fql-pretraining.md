@@ -80,8 +80,8 @@ not the checkpoint with the best inspected rollout result.
 Evaluate actor and learned behavior prior on tshirt_26/14046, tshirt_68/14046,
 tshirt_26/14048 and tshirt_68/14049, two full 300-decision rounds with policy
 order reversed in the second round. Record final coverage, whole-episode grasp
-validity, simulator errors and total time. The first run answers whether value-
-based improvement helps the jointly trained prior; it is not a matched SAC/
+validity, simulator errors and total time. The first run compares the complete FQL actor to the jointly trained prior;
+it does not isolate the Q term and is not a matched SAC/
 RLPD comparison or an offline-to-online improvement result. An online collector
 integration remains separate work; checkpoint continuation already retains the
 FQL learner's objectives and state.
@@ -163,20 +163,83 @@ The evaluation completion flag was added to the CLI; this initial run's result
 was marked complete only after its process exited successfully and all four
 evaluation groups / 16 complete episodes were verified.
 
-## Authorized continuation currently running
+## Completed 30,000-update continuation — 2026-09-18
 
-Preserve the pilot checkpoint and continue its full FQL state for 27,000
-additional updates, reaching **30,000 total gradient updates**, with the same
-data, split, alpha and learning objective. This tests whether the preliminary
-gain survives more value learning; improvement is not assumed. No fresh IPC
-training transitions are collected, so this is still offline pretraining.
+The full-state continuation and automatic evaluation both finished. No FQL
+training process remains. The learner performed 27,000 additional updates on
+exactly the same data, reaching 30,000 total gradient updates; these are not
+new physics transitions. Continuation took 2,938.85 s and evaluation 381.88 s.
+Both training phases together took 54.55 min. Successful preparation, both
+training phases and both evaluations together cost 79.61 min, excluding the
+previously identified aborted setup and engineering/testing work.
 
-Run: `continue_a100_s17_30k/`; log: `continue_a100_s17_30k.log`. Successful
-completion automatically launches the same two-round actor/prior evaluation in
-`eval_a100_s17_30k/`, sequentially on the same GPU. The continuation was verified
-at update 3,001 with finite diagnostics and restored optimizer/target state.
-Do not launch competing GPU experiments. Launch-time training PID: 1728654;
-parent sequential pipeline PID: 1728653. Check live processes before acting on
-either PID. The pipeline is bounded by its update budget; finite-loss checks
-run at the configured reporting intervals. No claim of autonomous monitoring
-after the agent turn.
+All four evaluation groups completed, with 16 full 300-decision episodes and
+no simulator errors. Artifacts: `continue_a100_s17_30k/result.json`, its
+`final.pt`, `eval_a100_s17_30k/result.json`, and `summary_30k.json`.
+
+| Policy / split | Episodes | Final coverage >= .7 and whole-episode grasp <= 2 cm | Mean final coverage | Whole-episode valid grasp | Historical paper filter | Paper filter AND valid grasp |
+|---|---:|---:|---:|---:|---:|---:|
+| FQL actor / all | 8 | 5 | .63059 | 7 | 0 | 0 |
+| FQL actor / training body | 4 | 4 | .94996 | 4 | 0 | 0 |
+| FQL actor / withheld bodies | 4 | 1 | .31123 | 3 | 0 | 0 |
+| Flow behavior prior / all | 8 | 1 | .31746 | 3 | 1 | 0 |
+| Flow behavior prior / training body | 4 | 1 | .52743 | 2 | 1 | 0 |
+| Flow behavior prior / withheld bodies | 4 | 0 | .10749 | 1 | 0 | 0 |
+
+The historical paper filter alone does not enforce grasp validity: its single
+prior pass has 3.08 cm maximum tracking error and fails the combined criterion.
+Every FQL episode triggers early_turn. Thus geometric success is not yet a
+validated robust-dressing result. The tshirt_26/14048 actor never reaches any
+upper-arm coverage in either round (maximum forearm coverage .852/.910).
+The tshirt_68/14049 actor fails with 2.74 cm tracking error in one round and
+succeeds in the other. These are distinct observed failure patterns; an elbow-
+only cause, value extrapolation, and insufficient observation history remain
+hypotheses, not diagnoses.
+
+Compared with 3,000 updates, training-body successes rise 2/4 to 4/4 while
+withheld-body successes fall 2/4 to 1/4. Four cells, two evaluation rounds and
+one training seed cannot establish a significant improvement or overfitting.
+Longer offline optimization has not established improved generalization.
+
+## Research plan after the completed pilot
+
+Objective: one shared dressing policy that uses existing IPC experience to
+reduce fresh simulation and total single-workstation time to robust success.
+This is currently established FQL pretraining, not a novel RL algorithm and
+not an implemented offline-to-online training loop.
+
+1. Audit success and the repeated failures before another long run. Inspect
+   sleeve/arm geometry, early_turn timing, commanded movement and grasp tracking
+   for the failed withheld configurations and reported successes. Check whether
+   the early-turn flag identifies an actual bad dressing route. Do not remove
+   that criterion just to increase success. Freeze the reward/evaluation contract
+   for subsequent matched comparisons; no retrospective metric switching.
+2. Isolate the learning benefit. Add a one-step distillation-only control with
+   the same data, architecture, latent sampling and update budget as FQL, disabling
+   only the actor's Q objective. Retain the behavior-flow comparison but do not
+   attribute its difference from FQL solely to Q. Repeat the compact protocol
+   across training seeds before expanding the study. Keep withheld bodies out of
+   gradient updates and choose new untouched configurations for final testing.
+3. Test whether pretraining saves subsequent RL cost. Connect the existing native
+   collector to the same FQL learner, preserving targets/optimizer and genuine
+   terminal/timeout semantics. Keep prior and fresh training experience separately
+   accounted for. Compare pretrained FQL continuation with FQL from scratch and
+   SAC under the same simulator, reward, observations and task distribution;
+   add the prior-data SAC/RLPD control to separate prior-data use from the choice
+   of algorithm. Report success versus fresh physics transitions AND total wall
+   time, including preparation/pretraining/evaluation. Declare bounded budgets
+   before launching; do not treat offline checkpoint resume as online learning.
+4. Design a new mechanism only around a reproducible baseline limitation. The
+   research question is how to turn sparse successful contact experience into
+   reliable recovery on configurations absent from training, using little fresh
+   expensive simulation. If the audit finds missing recovery transitions, first
+   test targeted recovery data against equal-cost generic collection. If data is
+   adequate but value-based actor improvement fails, test that specific learning
+   failure instead. Neither explanation is established yet. FQL plus IPC alone
+   is not an algorithmic contribution. Broader contact-task benchmarks and real-
+   robot transfer follow a repeatable dressing gain, with a prior-art check
+   before any novelty claim.
+
+Immediate next work is the failure/metric audit and matched one-step control,
+not an indefinite extension beyond 30,000 updates or a solver-gradient redesign.
+No new training was launched while preparing this research-plan update.

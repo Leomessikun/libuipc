@@ -14,11 +14,20 @@ retain coverage at the final 20 decisions. Both score 0/8 on the historical
 early-turn paper filter. This does not isolate Q improvement from one-step
 distillation, nor establish robustness or the best algorithm.
 
-Full-state continuation to 30,000 total gradient updates is running, followed
-automatically by the same native evaluation; see the handoff for logs and PIDs.
-No competing GPU runs. Full online
-collector integration and matched SAC/RLPD comparisons remain open; do not
-describe a resumed offline checkpoint as online adaptation.
+Full-state continuation to 30,000 total gradient updates and native evaluation
+finished on 2026-09-18: actor 5/8, prior 1/8 by coverage plus whole-grasp validity.
+Actor training-body results improve 2/4 to 4/4, withheld-body results fall 2/4
+to 1/4; this small sample does not establish improved generalization. Every actor
+episode triggers early_turn, and neither policy passes paper-filter AND valid
+whole-episode grasp. No FQL training process remains.
+
+Next gates: audit actual route/geometry and persistent withheld failures; add a
+matched one-step control without actor Q improvement; then bounded same-learner
+online continuation and comparisons with from-scratch FQL and SAC/prior-data SAC.
+Full online integration remains open. See the
+[updated research plan](performance/2026-09-17-fql-pretraining.md#research-plan-after-the-completed-pilot).
+Do not describe resumed offline training as online adaptation or generic FQL
+integration as algorithmic novelty.
 
 ## Shared FQL pretraining — proposed first implementation, 2026-09-17
 

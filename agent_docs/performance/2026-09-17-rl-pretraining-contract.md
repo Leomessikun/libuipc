@@ -2,8 +2,11 @@
 
 Implementation update: the owner subsequently authorized training. The
 [FQL implementation and measured pilot](2026-09-17-fql-pretraining.md) now exist,
-with offline continuation to 30,000 updates running. The review/proposal below
-records the earlier reasoning; full online collector integration is still open.
+with offline continuation to 30,000 updates and evaluation completed. FQL scores
+5/8 coverage-plus-grasp successes, but only 1/4 on withheld bodies and zero with
+the historical early-turn filter. The linked note records the current research
+plan. The review/proposal below records the earlier reasoning; full online
+collector integration is still open.
 
 Status: literature and source review, not implementation or a new training result.
 The owner challenged the sleeve-transfer recommendation and referred to
