@@ -1,5 +1,22 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Dressing recovery research — 2026-09-17
+
+[New evidence and experiment plan](performance/2026-09-17-dressing-research-redesign.md):
+fixed identical actions after snapshot recovery produce a .04916 final coverage
+range over three 12-decision runs, despite identical restored positions, valid
+grasp and zero rejection. Actor inference on cached input is identical. Compare
+cold-prefix replay versus recovery and inspect full state/numerical convergence;
+do not assume velocities are omitted or nondeterminism makes RL impossible.
+Audit compatible existing expert data and success/admission semantics before new
+pretraining: one 25-episode diagnostic set has 11 geometric final successes,
+six also within 2 cm maximum tracking, but no policy observations and no entries
+passing the early-turn filter. This is not an inventory of the full corpus.
+Then test distinct recovery routes with matched movement and compute controls;
+longer local gradient sequences were already tried. Only train a correction-guided
+SAC if the recovery teacher beats its controls. Research/132-decision diagnostic
+complete; no policy training or demonstrated new algorithm in this stage.
+
 ## SAC actor-action audit — 2026-09-17
 
 [Bounded test and stop rules](performance/2026-09-17-dressing-actor-audit.md):

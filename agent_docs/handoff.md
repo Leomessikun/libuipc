@@ -1,5 +1,32 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Deep dressing research and repeatability decomposition
+
+Read [the evidence and staged redesign](performance/2026-09-17-dressing-research-redesign.md).
+New `scripts/diagnose_dressing_repeatability.py` completed 132 native decisions
+in 61.41 s at tshirt_26/14046 decision 60. Cached-observation deterministic actor
+outputs are identical, but three restored fixed-action 12-decision runs finish
+at .22954/.24619/.19703 coverage: a .04916 range without policy feedback. All
+grasp checks pass, commands are exactly identical, and no controller rejection
+occurs. Position restore error is zero; source code does restore velocities and
+previous positions. The cause within forward/recovery/numerical execution is
+not isolated. Next compare cold-prefix replay with recovery and inspect complete
+state before trusting small local improvement labels. Stochasticity alone does
+not prove RL cannot learn.
+
+One existing expert diagnostic subset has 11/25 final geometric successes,
+6/25 also within the current 2 cm maximum tracking limit, and 0/25 passing the
+early-turn admission filter. Four reach near-full coverage then end at zero;
+inspect geometry/metric before naming the cause. This subset stores actions and
+35D geometry summaries, not policy observation sequences. Locate compatible
+records in the existing corpus; the previous offline controls used policy replay,
+not all expert trajectories. Twelve-action optimization was already tried:
+most gain came from larger movements. The proposed next mechanism tests distinct
+recovery routes with equal movement/compute controls, then supervises SAC at
+learner-visited states only if the teacher wins. MPC+SAC, chunking and distillation
+already have close prior art; no new successful RL algorithm is claimed. No
+policy training was launched; all new diagnostic work is complete.
+
 ## 2026-09-17 — Bounded SAC actor-action audit
 
 The owner approved the next actor test, not another long training run. Read
