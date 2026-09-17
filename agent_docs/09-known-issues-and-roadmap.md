@@ -1,5 +1,23 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Shared FQL pretraining — proposed first implementation, 2026-09-17
+
+The owner requested a concrete way to train dressing. The
+[design](performance/2026-09-17-rl-pretraining-contract.md#concrete-first-training-design-shared-fql-pretraining-and-continuation)
+selects a known FQL learner: behavior prior, critics and one-step actor, trained
+from compatible existing data and continued under the same objectives with IPC
+interaction. Keep the existing observation/action/controller contract. This
+replaces the learning objective, not the controller, and is not SAC with an IPC
+gradient. No algorithmic novelty or policy improvement is claimed.
+
+Implementation order: validate a common corrected reward/success contract;
+adapt existing episode/replay data with true successors and explicit reward
+versions; add the FQL learner; connect the existing collector; compare complete
+learning against SAC and prior-data RLPD at matched total workstation cost.
+Do not mix unrelabelable old rewards with corrected rewards or manufacture
+timeout successors. Training and native simulation remain stopped; no learner
+implementation was made in this design review.
+
 ## RL pretraining contract — current design priority, 2026-09-17
 
 The owner challenged the sleeve-transfer proposal and referred to Berkeley

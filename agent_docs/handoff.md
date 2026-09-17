@@ -1,5 +1,26 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Concrete shared-policy pretraining design, not yet implemented
+
+The owner's follow-up asks how to train dressing and for algorithm/pretraining
+ideas. The [concrete design](performance/2026-09-17-rl-pretraining-contract.md#concrete-first-training-design-shared-fql-pretraining-and-continuation)
+selects established FQL for the first explicit pretrain-to-online experiment:
+behavior prior, return critics and one-step actor trained from compatible
+existing data, then the same objectives continued with fresh IPC experience.
+Preserve the observation/action/controller interface; SAC updates are a separate
+baseline, not a silent continuation of the FQL critic. No IPC derivative is
+required. This is a proposed pretraining structure, not a novel algorithm or a
+demonstrated dressing improvement. RLPD is the prior-data comparison.
+
+Resolve the audited reward/success discontinuity consistently across arms.
+Do not mix old and corrected rewards without exact relabeling. Some existing
+tapes lack a final successor; missing bootstrap rows cannot become fabricated
+terminals. Data incompatible with Q updates may still have a declared prior-
+training role. Count data preparation, learning, IPC and evaluation time.
+No new training, native rollout or algorithm implementation. All abandoned
+correction experiments remain stopped; older teacher/collection proposals below
+are not the selected next experiment.
+
 ## 2026-09-17 — Owner requests RL/pretraining reassessment using CS 285
 
 The owner challenged the sleeve-transfer recommendation and referred to Sergey

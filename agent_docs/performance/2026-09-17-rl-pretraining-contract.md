@@ -111,3 +111,102 @@ in the shared workspace during the review and were preserved. Read the cited
 lecture PDFs, selected slide diagrams, primary papers and local source/contracts.
 No training, native evaluation, algorithm changes or new success numbers.
 Abandoned IPC correction experiments remain stopped.
+
+## Concrete first training design: shared FQL pretraining and continuation
+
+Proposed after the owner's follow-up asking how to train the policy. This selects
+an established learner for a concrete experiment; it is not implemented, a new
+algorithm, or evidence of better dressing. The preceding review's statement that
+no method was selected describes that earlier review. Keep the withdrawn
+sleeve-goal architecture and abandoned IPC correction runs stopped.
+
+**Learn one policy across configurations from existing compatible experience,
+then improve it with fresh IPC interaction.** Use FQL as the first explicit
+pretrain-to-online learner. It has a behavior flow model, return critics, and a
+separate one-step actor. The actor maximizes predicted return while remaining
+close to the flow model's sampled actions. Continue these objectives online;
+do not export an ordinary-return critic and silently resume SAC's soft-return
+updates. Only the one-step actor is needed for execution. This is the published
+[FQL structure](https://arxiv.org/html/2502.02538v1), not our contribution.
+
+### Data and reward contract
+
+- Start with the existing point-cloud/proprioception input and six-dimensional
+  gripper command/controller contract. Keep history length fixed for the first
+  comparison. Joint training already exists; eliminating regional teachers is
+  a training choice, not architectural novelty.
+- Correct and validate the shoulder-overshoot reward/success issue using saved
+  geometry before producing a new reward version. Physical completion and
+  retained valid grasp must determine success; taking maximum progress alone
+  is not a fix. Give every comparison the same objective and evaluator.
+- Build a manifest of prior data by observation, action, physics, reward version,
+  episode/configuration identity and available successors. This is adaptation
+  of existing files, not a request to collect a new corpus. Cross-solver data
+  require an explicit compatibility/transfer decision, even for action labels.
+- Use successful and valid failed transitions for value learning when their
+  rewards and successors satisfy that contract. Do not import distillation's
+  success-only admission rule into the transition loader. Keep prior and newly
+  collected transitions separately identifiable; log their actual sampling mix.
+- Old reward values cannot be mixed with corrected values. Relabel only when
+  the recorded fields determine the corrected reward exactly. Otherwise,
+  compatible observation/action pairs can still support the behavior prior,
+  but those rows are not corrected-reward Bellman examples. A changed success
+  termination rule also changes masks/boundaries, not only reward scalars.
+- The inspected reconstructed native episode has 300 observations, actions,
+  rewards and privileged vectors, with no extra final observation. Adjacent
+  pre-action observations can supply internal successors. Do not fabricate the
+  final successor, join episodes, or treat a timeout as a terminal failure;
+  exclude an incomplete bootstrap row from Q updates. Existing SAC replay has
+  its own explicit successor/boundary contract. It lacks privileged geometry,
+  which prevents assuming that all its rewards can be geometrically relabeled.
+- Split by source episode and body/configuration, grouping repeated replays.
+  Already inspected development bodies are not untouched final test bodies.
+
+### Learning, integration and compute
+
+1. Cache admitted existing data and train the behavior prior, critics and actor
+   with the FQL objectives. This is reward-based pretraining, not just the
+   earlier action-MSE fit. Reuse current observation processing, normalization
+   and configured dense-Q/residual modules where compatible; document any
+   departure from the reference learner.
+2. Integrate this learner with the existing collector and replay boundary
+   handling. Continue the same objectives with mixed prior/fresh IPC experience,
+   preserving targets and optimizer state in an explicit FQL checkpoint. SAC
+   remains a separate baseline; this is not a SAC option that adds IPC gradients.
+3. IPC supplies real simulator transitions and complete-episode evaluations.
+   Network updates use cached batches without an IPC solve or derivative per
+   update. Batch/preload to the single GPU where memory permits; tune update
+   reuse against held-out rollout gain and wall time. Flow-model training and
+   its action sampling also cost compute. High utilization alone is not success.
+4. Deploy the actor through the existing command/controller interface. Neither
+   flow integration, a critic nor IPC is required for actor inference. This
+   does not establish real-world transfer: the real observation pipeline and
+   controller must meet the training contract and be validated separately.
+
+The reason to test this is specific: the audited ordinary SAC did not consume
+the expert folder, successful exploration was scarce, and environment plus
+evaluation time dominated its run. These facts justify testing more useful
+learning per IPC interaction. They do not prove that FQL fixes perception,
+partial observability, elbow recovery or critic error. The small BC result also
+does not demonstrate that action multimodality was its limiting factor.
+
+### Decision and contribution
+
+The first complete comparison is this pretrain-plus-continuation recipe against
+ordinary SAC and [RLPD](https://arxiv.org/html/2302.02948v3), which tests whether
+online reuse of prior data suffices without offline initialization. Match task,
+reward, sensors and configuration splits; give FQL/RLPD the same admissible prior
+data. Report prior-data preparation cost, new IPC decisions, all learning and
+evaluation time, and repeated full-episode success/grasp validity. Compare the
+pretraining ablation at equal total cost, not equal online steps alone. Existing
+unmatched BC/SAC numbers are not this experiment's result. First obtain a bounded
+complete curve; expand seeds/configurations only if it merits that cost.
+
+This is an implementable pretraining structure, with no demonstrated algorithmic
+novelty yet. Action chunking is already addressed by
+[Q-chunking](https://arxiv.org/abs/2507.07969), and contact-dependent adaptive
+chunk duration has close prior art in
+[Adaptive Q-Chunking](https://arxiv.org/abs/2605.05544). Do not relabel those as our
+new algorithm. A contribution would need a measured remaining failure and a
+specific improvement beyond these references at matched workstation cost.
+No learner code, native simulation or training was run for this design update.
