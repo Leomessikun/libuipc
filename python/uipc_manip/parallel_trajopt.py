@@ -168,13 +168,14 @@ class IPCBatchEvaluator:
         valid_t = torch.as_tensor(valid, device=self.device)
         scores = robust_scores(cov_t, axis_t, valid_t)
         # Transfer completed summaries once; native calls already synchronize physics.
-        record = dict(seconds=time.perf_counter() - started, step_seconds=step_s, restore_seconds=restore_s,
+        record = dict(step_seconds=step_s, restore_seconds=restore_s,
                       candidates=count, slots=n, repeats_per_slot=repeats,
                       closed_loop_candidates=list(closed_loop_candidates),
                       physical_decisions=n * sum(1 for _ in candidate_schedule(count, n, repeats)) * (horizon + tail_steps),
                       restore_error_max_m=max(restore_errors), scores=[s if np.isfinite(s) else None for s in scores.cpu().tolist()],
                       coverage=coverage.tolist(), axis=axis.tolist(), tracking_m=tracking.tolist(),
                       valid=valid.tolist(), rewards=reward.tolist(), rejections=rejection.tolist())
+        record["seconds"] = time.perf_counter() - started
         self.records.append(record)
         return scores, record
 

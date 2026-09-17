@@ -5,7 +5,12 @@
 [Implementation and bounded protocol](performance/2026-09-17-parallel-dressing-trajopt.md):
 CUDA CEM plus batched IPC forward solves implemented; 12 focused tests pass.
 The optimizer evaluates each candidate on each restored slot and caps command
-magnitudes against the reference. Native speed/quality validation is pending.
+magnitudes against the reference. Native tests completed: matched 384-decision
+evaluation is 1.439x faster with four copies, but only 1.079x including setup and
+approach. In fresh validation CEM/reference/SAC coverage is .57704/.58330/.57259,
+each 0/4 sustained successes; no robust policy benefit established. All jobs
+finished. Resolve forward/recovery variability and objective/horizon validity
+before increasing the learning budget.
 CPU environment orchestration remains; a complete contact adjoint, policy
 distillation and robust dressing improvements are not established by this work.
 

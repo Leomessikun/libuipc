@@ -1,6 +1,7 @@
 # Parallel IPC dressing trajectory optimization
 
-Status: implementation and 12 focused tests complete; native measurements pending.
+Status: implementation, 12 focused tests, native pilot, throughput comparison and
+independent five-control validation complete. All jobs finished.
 This is a derivative-free shooting optimizer, not a new RL algorithm or a complete
 contact adjoint. No policy training is launched by this module.
 
@@ -107,5 +108,82 @@ synthetic learning test establishes optimizer mechanics, not physical success.
 
 ## Native evidence
 
-Pending. A four-copy pilot is running with finite optimization and validation
-budgets. Do not infer a policy gain or parallel speedup from GPU utilization.
+Artifacts: `output/uipc_manip/parallel_trajopt_20260917/`.
+Checkpoint: `dressing_redesign_20260916/warm_sac/checkpoints/checkpoint_00127416.pt`.
+Cell: tshirt_26/body 14046, 60-decision approach, 12-decision plans, seed 1097.
+These are development states, not held-out generalization.
+
+### Pilot
+
+`batch4/`: eight candidates, four copies, two CEM generations, then four controls
+with 60 additional SAC decisions. 2,208 physical decisions, 397.50 s including
+setup. Search banks took 84.48 and 101.44 s for 384 decisions each. The best
+second-generation search score was .20715 versus reference .17199.
+
+| Pilot control | Mean coverage after plan + SAC continuation |
+|---|---:|
+| Reference | .57833 |
+| CEM selected plan | .57308 |
+| Capped scaling | .57618 |
+| Fixed random | .56736 |
+
+All four replicas of every control retained valid grasp; all scored 0/4 sustained
+successes. The search-score advantage did **not** become a continuation advantage.
+This pilot preceded the final cyclic scheduler and explicit closed-loop SAC control;
+the committed path is checked by the bank benchmarks and independent validation.
+
+### Matched saved-bank throughput
+
+Both runs replay the pilot's exact saved prefix and first candidate bank. Run
+sequentially, with no overlapping native experiment. Each evaluates 8 candidates
+4 times for 12 decisions: **384 branch decisions in either case**.
+
+| Run | Slots | Repeats per slot | Branch time | Transitions/s | Total command time |
+|---|---:|---:|---:|---:|---:|
+| `serial_bench/` | 1 | 4 | 163.19 s | 2.353 | 196.62 s |
+| `parallel_bench/` | 4 | 1 | 113.37 s | 3.387 | 182.24 s |
+
+Observed branch throughput improves **1.439x**. Setup and approach reduce the
+whole-command speedup to **1.079x**; the parallel command performs more approach
+work (240 versus 60 slot-decisions) and builds more cloth copies. Neither value
+is an established policy-training speedup. Retaining a world can amortize setup,
+but that benefit is not measured by this standalone runner.
+
+The serial branch starts at coverage .01790; parallel copies start at
+.00799/.01114/.01014/.04634. Thus identical commands do not guarantee identical
+physical paths across batch sizes. This is an end-to-end observed workload
+comparison, not an isolated CUDA kernel scaling claim. During native execution,
+GPU utilization samples were 88–99%; those samples are not an average, SM occupancy
+measurement or evidence that every GPU resource is saturated.
+
+### Independent five-control validation
+
+`validation/`: fresh four-copy world, the saved selected/control trajectories, and
+an explicit closed-loop SAC baseline. No additional optimization or selection
+uses these outcomes. 1,680 physical decisions including approach, 249.18 s.
+
+| Control | Mean final coverage | Range over four saved states | Sustained valid successes |
+|---|---:|---:|---:|
+| Reference plan + SAC | .58330 | .57248–.61057 | 0/4 |
+| CEM plan + SAC | .57704 | .57063–.58450 | 0/4 |
+| Capped scaling + SAC | .57887 | .56626–.60341 | 0/4 |
+| Fixed random + SAC | .55891 | .55377–.56541 | 0/4 |
+| Closed-loop SAC throughout | .57259 | .56243–.59438 | 0/4 |
+
+All 20 continuations maintain valid grasp and have zero controller collision or
+tether rejections; maximum tracking error is .00795 m. The CEM-minus-SAC coverage
+differences are -1.657, +.571, +2.207 and +.660 percentage points. Their mean
++.445 percentage points is not a robust established improvement. CEM also loses
+to the fixed reference plan's mean. These 72-decision continuations stop at
+episode decision 132; they are not complete 300-decision episodes.
+
+The four native commands total **4,956 physical decisions and 1,025.53 s** including
+construction/approach. All completed without simulation errors. `summary.json`
+and `comparison.png` in the artifact root retain the aggregation and plot.
+
+The implementation demonstrates parallel search and an observed throughput gain.
+It does not yet justify training on the optimized corrections: search-score
+improvement does not reliably survive resimulation and policy continuation.
+Prioritize the forward/recovery variability and the search objective/horizon
+before spending a larger policy-training budget. No production SAC weights or
+gradient path were changed.

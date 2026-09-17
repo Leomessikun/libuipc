@@ -1,6 +1,6 @@
 # Handoff — Current State of the Repo
 
-## 2026-09-17 — Parallel IPC trajectory optimizer implementation
+## 2026-09-17 — Parallel IPC trajectory optimizer implemented and tested
 
 The owner requested parallel GPU implementation and testing. New
 `uipc_manip.parallel_trajopt` uses CUDA CEM candidate generation/ranking and native
@@ -8,8 +8,15 @@ batched CUDA IPC rollouts, with balanced candidate-to-state assignment and equal
 per-decision command norm caps. It uses no CPU Hessian factorization. The existing
 environment still uses CPU control/metrics/transfers, so this is not GPU-only.
 Twelve focused tests pass, including CUDA execution and closed-loop SAC/tail
-accounting. Native pilot and matched throughput/validation are pending; no policy
-training launched. See [protocol and boundaries](performance/2026-09-17-parallel-dressing-trajopt.md).
+accounting. Four completed native runs total 4,956 decisions / 1,025.53 s. Matched
+384-decision bank evaluation takes 163.19 s serial versus 113.37 s with four slots
+(1.439x observed speedup); construction/approach reduce whole-command benefit to
+1.079x. Physical paths differ across batch sizes, so this is not isolated kernel
+scaling. Fresh five-control validation gives CEM/reference/closed-loop SAC mean
+coverage .57704/.58330/.57259, each 0/4 sustained successes after 72 decisions.
+All 20 continuations have valid grasp and zero controller rejections. The small
+CEM-SAC difference does not establish a policy gain. All jobs finished; no policy
+training launched. See [results and boundaries](performance/2026-09-17-parallel-dressing-trajopt.md).
 
 ## 2026-09-17 — Deep dressing research and repeatability decomposition
 
