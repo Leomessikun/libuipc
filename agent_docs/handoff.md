@@ -1,5 +1,50 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — IPC-label SAC closed on five seeds; sleeve-path and reward audit of the existing data
+
+Two offline results, no simulation or training launched, nothing running.
+
+**The five-seed cloth-drag study closes the IPC-label SAC updates.** The owner
+stopped it at 35k of 40k transitions; the pre-registered rule is applied to the
+last common evaluation ([record](performance/2026-09-14-iaql-benchmark.md),
+last section). Fresh-batch label against fresh-batch SAC: 1 of 4 seeds,
+−0.11 ± 0.35 return; replay label against replay SAC: 2 of 4, +0.09 ± 1.33;
+both label arms trail SAC at 10k; SAC alone reaches 59.5 of 64 successes. The
+label beats a random direction of equal norm in 3 of 4 seeds, which is not the
+bar. `B_fresh_ipc_s0` died on a MAGMA allocation assertion with 25 processes on
+one GPU. The export modes, the friction coupling, the lockstep multi-slot
+environment and the batched GPU tangent are validated and stay.
+
+**Owner's goal for the new direction (recorded in `rule.md`)**: train a
+dressing policy fast and easily on one workstation; the reference pipeline's
+per-region RL teachers are hard to scale and need a cluster.
+
+**[Sleeve-path and reward audit](performance/2026-09-17-sleeve-path-audit.md)**
+of the 25 scripted-expert episodes and the ordinary SAC replay, bearing on the
+[transfer proposal](performance/2026-09-17-dressing-transfer-direction.md):
+the opening is 19 cm from the tool and moves 11 cm relative to it within an
+episode, and the tool path realising one sleeve path differs by garment by
+14–30 cm, but the expert already servos the opening centroid, so the tight
+sleeve path (1.2 cm lateral spread against 8.5 cm for the tool) is partly a
+property of the data generator. All ten real expert failures are one executor
+failure: the opening stalls just past the elbow (arc 0.61–0.79) while the tool
+runs 0.14–0.27 ahead in nine, tshirt_392 on all five bodies. Four more
+"failures" are complete dressings: the upper-arm ratio falls from 1.00 to 0.00
+in one decision with under 1 mm of opening motion once the opening passes the
+shoulder (`wang_progress` ray origin), so the expert dresses 15 of 25 at the
+peak, 11 by the final reading, 6 with the grasp limit. In the SAC replay,
+branch switches of the reward carry 91 % of the summed squared one-decision
+reward change (128 on-arm → off-arm drops, median 0.76, against a median change
+of 0.0032). The SAC replay has no privileged geometry (`priv_dim` 0).
+
+Before the proposal's first comparison: fix the success rule (past the shoulder
+is complete; stop rule or peak-with-valid-grasp), truncate the four overshoot
+episodes at their peak, collect a few hundred geometry-logged expert episodes
+(25 cost 733 s), and test a teacher with stall detection, back-off and lateral
+centring on the same 25 cells (about 12 minutes). That last test decides
+whether sleeve feedback repairs the dominant failure; nothing here was run.
+No cross-simulator transfer result can come from existing data.
+
 ## 2026-09-17 — Research pivot after completed SAC audit
 
 The owner renewed the instruction to abandon the previous idea and research a

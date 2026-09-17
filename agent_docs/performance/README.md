@@ -22,6 +22,7 @@ when iteration counts change. Report both and state which is the primary signal.
 
 | Record | Status | Scope |
 |---|---|---|
+| [Sleeve-path and reward audit](2026-09-17-sleeve-path-audit.md) | Offline analysis complete; nothing run | 25 scripted-expert episodes and the ordinary SAC replay: opening 19 cm from the tool and garment-dependent (confounded by an expert that already servos the opening); all ten real expert failures are an elbow stall of the executor; four complete dressings scored zero past the shoulder; reward branch switches carry 91 % of the squared one-decision reward change; protocol consequences for the sleeve-goal comparison |
 | [Ordinary SAC rollout audit](2026-09-17-normal-sac-rollout-audit.md) | Current priority; saved traces analysed, 1,800 unchanged-policy decisions with geometry captured; all jobs finished | Partial-progress stalls, opening displacement, training-pose failures, scarce successful experience and unstable checkpoint results; causal learning diagnosis remains incomplete |
 | [IPC policy-gradient correction research](2026-09-17-ipc-policy-gradient-research.md) | Abandoned by owner; historical design and seven mathematical tests | Prior-art audit and unimplemented simulation allocator; superseded by ordinary SAC diagnosis |
 | [IPC recovery guidance in SAC pretraining](2026-09-17-recovery-sac-pretraining.md) | Implemented; 74 tests pass; comparison stopped following novelty objection | Conventional auxiliary actor loss with unchanged critic and downstream interface; no completed training comparison |

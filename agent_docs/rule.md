@@ -110,6 +110,14 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **The dressing goal is fast, easy training on one workstation.** The owner
+  stated that the reference dressing pipeline (per-region reinforcement-learning
+  teachers, then distillation) is hard to scale and train and needs a cluster;
+  the new direction must train a policy fast and easily without one. Judge
+  candidate methods by total wall time on the single-GPU workstation, data
+  preparation and evaluation included, not by update speed alone.
+  (Set 2026-09-17.)
+
 - **Research a new direction after the SAC audit.** Following the completed
   ordinary SAC rollout analysis, the owner again instructed the agent to give
   up the previous idea and deeply research alternatives for dressing. Use the
