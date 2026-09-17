@@ -497,3 +497,79 @@ exploration noise), two thirds do. An actor-only shuffled control and more
 seeds are the next round. (4) Both mix arms' Q means are twice SAC's with
 lower critic loss: the policy improvement feeds back into the value.
 
+
+## Five-seed study, stopped at 35k transitions: the label does not beat SAC (`study40k/`, 2026-09-16)
+
+Launched 2026-09-16 15:48 by `scripts/launch_seed_study.sh` (commit
+`9897a990`): 25 parallel 64-slot runs, friction 0, 40k transitions planned,
+64 evaluation episodes every 5k. Group A is the replay-batch protocol of the
+20k round (`A_sac`, `A_actor` with mix ρ 0.5, σ 0.5, continuation trust 2);
+group B is the fresh-batch protocol (`B_fresh_sac`, `B_fresh_ipc` with the
+paired Bellman label at ρ 1, `B_fresh_random` with a random direction of the
+same norm). The label noise comes from its own generator, so arms of one
+seed share the policy's random stream. The decision rule was written before
+the launch: the IPC arm counts as better only if it beats its matched SAC
+arm in at least four of five seeds and on the mean of the final evaluation,
+and the random control does not.
+
+The owner stopped the study at 21:56 to free the GPU for dressing work, so
+there is no 40k evaluation and no final checkpoint. Group B and `A_sac`
+reached the 35k evaluation, `A_actor` (the slowest arm) the 25k one.
+`B_fresh_ipc_s0` died at 16:46 on a MAGMA assertion
+(`magma_queue::setup_ptrArray: ptrArray__ != NULL`, a failed device
+allocation inside the batched LU with 25 processes on one GPU); that seed is
+missing from the IPC arm. The rule is applied to the last common evaluation.
+
+Mean return over seeds (number of seeds):
+
+| Transitions | A_sac | A_actor | B_fresh_sac | B_fresh_ipc | B_fresh_random |
+|---:|---:|---:|---:|---:|---:|
+| 5k | −4.87 (5) | −17.70 (5) | −6.80 (5) | −8.03 (5) | −11.32 (5) |
+| 10k | 6.06 (5) | 0.51 (5) | 8.17 (5) | 2.98 (4) | 2.79 (5) |
+| 15k | 10.21 (5) | 8.47 (5) | 8.01 (5) | 10.18 (4) | 10.24 (5) |
+| 20k | 12.26 (5) | 12.09 (5) | 12.95 (5) | 12.57 (4) | 11.43 (5) |
+| 25k | 13.80 (5) | 13.58 (4) | 12.85 (5) | 13.26 (4) | 12.38 (5) |
+| 30k | 14.62 (5) | – | 14.35 (5) | 14.07 (4) | 13.60 (5) |
+| 35k | 14.44 (5) | – | 14.72 (5) | 14.61 (4) | 13.94 (5) |
+
+Paired by seed at the last common evaluation (return difference, mean ± SE):
+
+| Comparison | At | Seeds won | Difference | Successes of 64 |
+|---|---:|---:|---:|---:|
+| `A_actor` − `A_sac` | 25k | 2 of 4 | +0.09 ± 1.33 | 35.8 vs 39.2 |
+| `A_actor` − `A_sac` | 20k | 2 of 5 | −0.17 ± 1.52 | 24.2 vs 27.0 |
+| `B_fresh_ipc` − `B_fresh_sac` | 35k | 1 of 4 | −0.11 ± 0.35 | 54.8 vs 59.5 |
+| `B_fresh_random` − `B_fresh_sac` | 35k | 3 of 5 | −0.78 ± 0.70 | 49.0 vs 59.6 |
+| `B_fresh_ipc` − `B_fresh_random` | 35k | 3 of 4 | +0.88 ± 0.78 | 54.8 vs 46.0 |
+
+Reading. (1) **The rule fails in both protocols.** Neither IPC arm wins four
+seeds, neither leads on the mean, and no difference exceeds one standard
+error. The 20k round's "13.3 against 6.8" was one seed of a baseline whose
+seed-to-seed spread at that budget is larger than the effect; at 20k the five
+`A_sac` seeds alone span 8.9 to 14.3. (2) **SAC solves this benchmark by
+itself**: 59.5 of 64 successes at 35k with a seed spread of 0.16 in return.
+A benchmark the baseline saturates cannot show an asymptotic gain, and the
+label gives no sample-efficiency gain either: at 10k both IPC arms are
+*behind* SAC (0.5 and 3.0 against 6.1 and 8.2), the price of the label's
+warm-up and of a second force on the actor while the critic is still wrong.
+(3) The label carries information (it beats a random direction of the same
+norm in three of four seeds, and the random arm is the only one with a
+collapsed seed, 11.3 with 25 successes), but "better than noise" is not
+"better than nothing", and the arm that adds nothing is the cheapest: in the
+same 6.1 h under the same GPU contention, seed 1 of `A_sac` logged 38.8k
+transitions and `A_actor` 25.4k (1.5 times the wall time per transition);
+the fresh-batch arms are closer (38.9k for SAC, 37.2k for the label).
+(4) The mechanics results above stand unchanged: the tangent is exact to
+0.2 %, and the label is a better local direction than either critic's action
+gradient. What failed is the step from an accurate one-decision derivative
+to a faster or better learner, on the one benchmark where the derivative is
+cleanest. The dressing-side tests agree (`2026-09-16-dressing-verified-results.md`:
+0 of 8 verified corrections accepted; `2026-09-17-dressing-actor-audit.md`:
+six proposal types, 0 of 6 state gates), and there a fixed action sequence
+replayed from one restored state already varies by 0.049 in coverage, five
+times the 0.01 improvement threshold a local correction was asked to clear.
+
+Verdict: the IPC-label actor and critic updates are closed as a route to a
+better SAC. Keep the export modes, the friction coupling, the lockstep
+multi-slot environment and the batched GPU tangent; they are validated and
+independent of this result.

@@ -700,8 +700,13 @@ lockstep cloths with the tangent on the GPU: at 20k transitions the actor's
 direct use of the exact label (estimator replacement, ρ 0.5, continuation
 trust) beats SAC in two of three seeds and loses one (not significant, with
 the term's coverage collapsing after 5k transitions); the critic slope loss
-alone adds nothing. A five-seed 40k study of this configuration and of the
-fresh-batch protocol is running. Open: simplex (cloth-body) friction
+alone adds nothing. The five-seed study of this configuration and of the
+fresh-batch protocol (stopped by the owner at 35k of 40k transitions) fails the
+pre-registered rule: the label wins 1 of 4 seeds against fresh-batch SAC
+(−0.11 ± 0.35) and 2 of 4 against replay SAC (+0.09 ± 1.33), trails SAC at 10k,
+and SAC alone reaches 59.5 of 64 successes. The IPC-label SAC updates are
+closed; the mechanics, the multi-slot environment and the GPU tangent stay.
+Open on the mechanics side only: simplex (cloth-body) friction
 coupling, a stick-slip-switching state, a learnable version of the
 benchmark (vanilla SAC must show a curve before any comparison), calibrated
 directional contact trust, and visual transfer.
