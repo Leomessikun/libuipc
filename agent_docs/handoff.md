@@ -1,5 +1,39 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-18 — Review of the data-efficient dressing RL plan
+
+Offline measurements on the completed FQL pilot plus three literature surveys;
+nothing trained or simulated. [Record](performance/2026-09-18-research-plan-review.md).
+Measured: the teacher itself fails one of the two withheld evaluation cells
+(tshirt_26/14048, 0.35 upper arm, 3.3 cm tracking), and passes 7/15 training
+against 2/10 withheld cells, so "4/4 versus 1/4" is mostly the teacher's gap;
+stratify evaluation cells by teacher outcome. Eight failed teacher episodes
+stall for about 130 decisions with a saturated command: 1,340 of 7,500 rows
+(18 %) carry one action label at a stall, so the critic has no alternative to
+rank there; the 13 "regained" progress losses are ray-metric discontinuities.
+`early_turn` is inherited from the teacher (24/25). Identical commands from a
+restored snapshot give final coverages 0.230/0.246/0.197, so ranking actions
+at a state needs several continuations each.
+
+Surveys (primary sources): every part of the "selective recovery experience"
+mechanism is published (Tavakoli 2018 restart distributions with TD-error
+prioritization at equal cost; RFCL ICLR 2024, the strongest reset baseline;
+SCOUT July 2026 names "scaffold access" and "allocation"; VinePPO branches
+from every state in language), all rigid-body; not found: visited-state
+selection by critic unreliability, branched Monte-Carlo critic targets in
+robotics, a budget that charges the restore, or any deformable reset
+curriculum. Generalization: Lin et al. ICLR 2025 and Mediratta et al. ICLR
+2024 put the lever on distinct configurations (8 → 0.8, 32 → 0.9), we have
+three bodies on the withheld axis; the reference pipeline used 6,750
+configurations and states no GPU hours. Learner: FQL is behind QC-FQL/AQC/RQL/
+ReBRAC-v2 on OGBench (1–100 M transitions), and flow policies lose to
+Gaussian ones on narrow 25-demo data; run a tuned cloning arm, RLPD, WSRL,
+DSRL and QC-FQL beside it. Recommended order stays: fix the success rule,
+repair the teacher at the elbow, scale bodies with the scripted generator,
+then compare learners at equal total simulator time; the first mechanism
+experiment is restore-and-branch from the eight stalled states with scripted
+alternatives, measuring outcome spread and restore cost.
+
 ## 2026-09-17 — Owner authorizes FQL implementation and training
 
 [Implementation, method choice and bounded protocol](performance/2026-09-17-fql-pretraining.md).
