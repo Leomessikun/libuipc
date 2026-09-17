@@ -181,7 +181,7 @@ def evaluate(args):
     args.out.mkdir(parents=True, exist_ok=True)
     result = dict(checkpoint=str(args.checkpoint), cells=cells, env=cfg.to_dict(),
                   build_seconds=time.perf_counter() - started, rounds=args.rounds,
-                  policies=args.policies, evaluations=[])
+                  policies=args.policies, evaluations=[], completed=False)
     try:
         for rep in range(args.rounds):
             for policy in args.policies[::1 if rep % 2 == 0 else -1]:
@@ -200,6 +200,8 @@ def evaluate(args):
                 result["total_seconds"] = time.perf_counter() - started
                 (args.out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
                 print(json.dumps({k: v for k, v in row.items() if k != "records"}), flush=True)
+        result["completed"] = True
+        (args.out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     finally:
         env.close()
 

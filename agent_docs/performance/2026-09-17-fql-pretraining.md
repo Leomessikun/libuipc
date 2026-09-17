@@ -92,4 +92,91 @@ Validation before learning: 19 focused tests pass (FQL targets, detached flow
 integration, updates of all components, exact full-state resume, source split
 isolation, invalid reset rejection, timeout successors, reward geometry and
 existing expert tests). Python compilation and `git diff --check` pass.
-Native reconstruction is running; learning/evaluation results will be appended.
+An additional 39 relevant existing tests pass (four native tests deselected),
+with one existing empty-distance warning in a mocked simulator-error test.
+The resume equivalence test is bitwise on CPU, not a GPU determinism claim.
+Recomputing the corrected metric on 1,806 saved SAC geometry frames preserves
+their existing ratios to numerical precision; those frames do not themselves
+contain the expert's shoulder overshoot. The synthetic regression exercises
+that boundary, out-of-band openings and lateral false positives.
+
+## Preparation and first learner completed
+
+`dataset_shoulder_v1/` contains 25 complete episodes / 7,500 transitions, no
+simulator errors, collected in 662.56 s including that process's dataset build
+and serialization. Nine episodes pass final coverage and whole-episode grasp
+admission: seven of 15 training episodes and two of ten validation episodes.
+The loader retains all 4,500 / 3,000 valid train/validation rows, including
+failed episodes. Every tshirt_392 reconstruction fails. Original success labels
+are not inherited. The earlier aborted setup and implementation/testing time
+are outside the 662.56 s preparation measurement.
+
+The first run is in `train_a100_s17/` with log `train_a100_s17.log`.
+At 500 updates, elapsed learning-loop time is 55.47 s and validation actor/prior
+action MSE is .08124 / .07841 (initial .88963 / .72917). These are fitting
+diagnostics, not dressing success or convergence. Sampled GPU utilization is
+100%, approximately 22 GiB used and 461–486 W; not an occupancy measurement.
+
+## Completed 3,000-update pilot
+
+Training completes with finite logged diagnostics in 334.00 s including loading,
+validation and checkpoint writes (332.03 s learning loop). Final validation
+actor/prior action MSE is .06671 / .06416. Peak Torch allocated memory is
+12,032,960,512 bytes; device-wide sampled usage includes reserved/runtime memory.
+
+The predeclared final checkpoint was evaluated for two complete rounds, reversing
+actor/prior order. Every episode contains 300 decisions and there are no simulator
+errors. Evaluation including world setup costs 459.34 s. Successful reconstruction,
+training and this evaluation total 1,455.90 s (24.26 min), excluding the aborted
+initial setup and implementation/testing work already identified above.
+
+| Policy / split | Episodes | Final coverage >= .7 and whole-episode grasp <= 2 cm | Same criterion with coverage retained for final 20 decisions | Mean final coverage | Whole-episode valid grasp | Historical paper filter |
+|---|---:|---:|---:|---:|---:|---:|
+| FQL actor / all | 8 | 4 | 4 | .47719 | 8 | 0 |
+| FQL actor / training body | 4 | 2 | 2 | .50000 | 4 | 0 |
+| FQL actor / withheld bodies | 4 | 2 | 2 | .45439 | 4 | 0 |
+| Flow behavior prior / all | 8 | 0 | 0 | .20427 | 2 | 0 |
+| Flow behavior prior / training body | 4 | 0 | 0 | .33213 | 2 | 0 |
+| Flow behavior prior / withheld bodies | 4 | 0 | 0 | .07640 | 0 | 0 |
+
+FQL succeeds on tshirt_26/14046 in both rounds (coverage 1.0/1.0) and withheld
+tshirt_68/14049 (1.0/.81755). It fails on tshirt_68/14046 and withheld
+tshirt_26/14048 in both rounds (zero final upper-arm coverage). These are four
+configurations repeated twice, not eight independent configurations. All FQL
+episodes trigger `early_turn`, including its geometric successes; none passes
+the stricter historical paper filter. The prior reaches .873 transiently on
+tshirt_26/14048 in one round but finishes at zero with an invalid grasp. Peak
+coverage would misrepresent that result.
+
+This is preliminary evidence for the complete FQL actor relative to its learned
+flow behavior prior under the declared corrected geometric metric. It does not
+isolate the Q term: one-step distillation versus iterative action generation is
+also different. A one-step distillation-only control would be needed for that
+causal claim. There is no matched SAC/RLPD comparison, multiple training-seed
+result, pristine test-set result, real-robot result, or robust dressing claim.
+Do not compare this corrected-reward/data protocol directly to historical SAC
+success counts. Three thousand updates do not establish value convergence.
+
+Artifacts: `summary.json`, `train_a100_s17/result.json`,
+`train_a100_s17/final.pt`, and `eval_a100_s17/result.json` under the root above.
+The evaluation completion flag was added to the CLI; this initial run's result
+was marked complete only after its process exited successfully and all four
+evaluation groups / 16 complete episodes were verified.
+
+## Authorized continuation currently running
+
+Preserve the pilot checkpoint and continue its full FQL state for 27,000
+additional updates, reaching **30,000 total gradient updates**, with the same
+data, split, alpha and learning objective. This tests whether the preliminary
+gain survives more value learning; improvement is not assumed. No fresh IPC
+training transitions are collected, so this is still offline pretraining.
+
+Run: `continue_a100_s17_30k/`; log: `continue_a100_s17_30k.log`. Successful
+completion automatically launches the same two-round actor/prior evaluation in
+`eval_a100_s17_30k/`, sequentially on the same GPU. The continuation was verified
+at update 3,001 with finite diagnostics and restored optimizer/target state.
+Do not launch competing GPU experiments. Launch-time training PID: 1728654;
+parent sequential pipeline PID: 1728653. Check live processes before acting on
+either PID. The pipeline is bounded by its update budget; finite-loss checks
+run at the configured reporting intervals. No claim of autonomous monitoring
+after the agent turn.

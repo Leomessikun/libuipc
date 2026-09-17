@@ -6,9 +6,17 @@ The owner requested training. [Protocol and implementation](performance/2026-09-
 select known FQL after checking newer RQL and other Levine-group references.
 Point-cloud learner, full-state checkpoints, data-boundary tests and native
 evaluation are implemented; 19 focused tests pass. Existing expert sequences
-are being replayed with true successor observations and a declared shoulder-ray
-correction. The bounded first offline run and full-episode evaluation follow.
-No best-algorithm, novelty or robust-policy result is established. Full online
+were replayed with true successor observations and a declared shoulder-ray
+correction. Preparation and the first offline run now finish in 662.56 s and
+334.00 s. In repeated complete dressing episodes, FQL actor / flow prior score
+4/8 versus 0/8 by final coverage and whole-episode grasp; all four FQL passes
+retain coverage at the final 20 decisions. Both score 0/8 on the historical
+early-turn paper filter. This does not isolate Q improvement from one-step
+distillation, nor establish robustness or the best algorithm.
+
+Full-state continuation to 30,000 total gradient updates is running, followed
+automatically by the same native evaluation; see the handoff for logs and PIDs.
+No competing GPU runs. Full online
 collector integration and matched SAC/RLPD comparisons remain open; do not
 describe a resumed offline checkpoint as online adaptation.
 

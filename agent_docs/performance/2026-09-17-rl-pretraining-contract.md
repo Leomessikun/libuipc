@@ -1,5 +1,10 @@
 # RL pretraining infrastructure: correction after reviewing CS 285
 
+Implementation update: the owner subsequently authorized training. The
+[FQL implementation and measured pilot](2026-09-17-fql-pretraining.md) now exist,
+with offline continuation to 30,000 updates running. The review/proposal below
+records the earlier reasoning; full online collector integration is still open.
+
 Status: literature and source review, not implementation or a new training result.
 The owner challenged the sleeve-transfer recommendation and referred to
 [Sergey Levine's Berkeley course](https://rail.eecs.berkeley.edu/deeprlcourse/).

@@ -7,14 +7,26 @@ FQL is selected for this first offline-to-online-oriented dressing experiment;
 newer Levine-group RQL reports stronger offline benchmark averages, but neither
 is established as best for this task. The point-cloud FQL learner and explicit
 checkpoint/transition contracts are implemented. Nineteen focused tests pass.
-The learner has no SAC entropy term and uses no IPC derivative.
+The learner has no SAC entropy term and uses no IPC derivative. An additional
+39 existing tests pass (58 total across the selected files).
 
 Reconstruction replays the existing 25 expert action sequences with observations
 and actual successors, including failures and a declared opt-in 5 cm shoulder-
 ray reward correction. Old unrelabelable replay rewards are excluded. Native
-preparation is running; no new policy success result yet. The prescribed first
-run is 3,000 CUDA updates, then repeated full-episode actor/behavior-prior
-evaluation. This is authorized new work; earlier training holds do not apply.
+preparation finished: 7,500 transitions / 662.56 s, with 4,500 training and 3,000
+body-disjoint validation rows. The first 3,000 CUDA updates finished in 334.00 s.
+Repeated full-episode evaluation: FQL actor 4/8 coverage-plus-whole-grasp successes,
+flow prior 0/8; all four FQL passes retain coverage for the final 20 decisions.
+Two successes are repeats of a withheld configuration. **Both score 0/8 under
+the historical early-turn paper filter.** No robust-policy or Q-term-only causal
+claim: one-step distillation and iterative flow generation also differ.
+
+The full FQL state is now continuing for 27,000 more updates to 30,000 total;
+the same native evaluation is chained after successful training. Root:
+`output/uipc_manip/fql_pretrain_20260917/`, training log:
+`continue_a100_s17_30k.log`. Launch-time training/parent PIDs 1728654/1728653;
+verify live processes before acting. Do not launch competing GPU runs. This is
+authorized new work; earlier training holds do not apply.
 The old correction experiments remain stopped. Full online FQL collector
 integration and matched SAC/RLPD experiments are not yet implemented.
 
