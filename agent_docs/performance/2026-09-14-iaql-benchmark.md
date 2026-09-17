@@ -512,7 +512,7 @@ the launch: the IPC arm counts as better only if it beats its matched SAC
 arm in at least four of five seeds and on the mean of the final evaluation,
 and the random control does not.
 
-The owner stopped the study at 21:56 to free the GPU for dressing work, so
+The owner stopped the study at 21:56 as unrelated to dressing, so
 there is no 40k evaluation and no final checkpoint. Group B and `A_sac`
 reached the 35k evaluation, `A_actor` (the slowest arm) the 25k one.
 `B_fresh_ipc_s0` died at 16:46 on a MAGMA assertion
