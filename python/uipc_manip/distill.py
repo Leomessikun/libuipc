@@ -61,6 +61,14 @@ def episode_ok(record: dict, *, min_upperarm_ratio: float | None) -> bool:
     return True
 
 
+def environment_contract(env: dict) -> dict:
+    """Physics, control and observation settings shared by compatible demonstrations."""
+    ignore = {"cells", "human", "garments", "workspace", "seed", "show_viewer", "logging_level",
+              "decision_watchdog", "contact_force_readout"}
+    # Checkpoint tuples and their JSON list representation have identical meaning.
+    return json.loads(json.dumps({k: v for k, v in env.items() if k not in ignore}))
+
+
 def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_train_transitions: int,
                  min_upperarm_ratio: float | None, validation_bodies: list[int] | None = None):
     """Episode-level split of the kept rollouts into flat observation and action arrays."""
@@ -78,9 +86,7 @@ def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_tra
     if len(dims) != 1:
         raise SystemExit(f"Source rollouts disagree on observation or action layout: {sorted(dims)}")
     # Equal tensor dimensions do not establish compatible physics or camera inputs.
-    ignore = {"cells", "human", "garments", "workspace", "seed", "show_viewer", "logging_level",
-              "decision_watchdog", "contact_force_readout"}
-    contracts = [{k: v for k, v in m.get("env", {}).items() if k not in ignore} for m in manifests]
+    contracts = [environment_contract(m.get("env", {})) for m in manifests]
     if any(contract != contracts[0] for contract in contracts[1:]):
         raise ValueError("Source environment contracts differ; use an explicit transfer experiment")
     if not 0 <= val_ratio < 1:

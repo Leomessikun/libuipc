@@ -1,16 +1,40 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## IPC policy-gradient research — 2026-09-17
+
+The owner rejected the novelty of supervised SAC. The
+[new research note](performance/2026-09-17-ipc-policy-gradient-research.md)
+compares close prior art and specifies a candidate joint query/horizon/repetition
+allocation problem for return-based policy-gradient correction. Basic gradient
+and selection-weight identities are established methods, not novel contributions.
+Seven standalone mathematical tests pass; no native correction collector or
+learned allocator is implemented. First demonstrate a better correction direction
+per wall time at learner states, including restoration variability and time-limit
+bootstrap accounting, before training. Do not silently substitute teacher
+continuations for current-policy returns. No training is running; algorithmic
+novelty, dressing improvement and real-world transfer remain unproven.
+
 ## IPC recovery supervision — 2026-09-17
+
+[SAC pretraining integration](performance/2026-09-17-recovery-sac-pretraining.md)
+implements the owner's clarified scope: verified recovery actions enter the
+ordinary SAC actor update during pretraining, while downstream plain SAC and
+inference use the existing interface. Critic targets are unchanged. Seventy-four
+focused tests pass. The fixed live comparison was stopped during its control
+run after the owner's novelty objection; treatment and final evaluation never
+started. Keep the option as a conventional baseline, not a novel RL result.
 
 [Novelty audit and pilot](performance/2026-09-17-recovery-teacher.md): the broad
 teacher/pretrain/correct/SAC recipe has close prior art. New bounded prototype
 compares full-episode geometric recoveries at a BC-visited training state with
 policy and scaled-policy controls, then requires fresh-world verification before
 admitting labels. Seventeen focused tests plus two native terminal/reset checks
-pass. Outward-route search succeeds on both copies; independent verification is
-running. Actor-only initialization supports the conditional paired learner test.
-Useful teacher corrections, their transfer to
-the actor, improved robustness and any algorithmic novelty remain unproven.
+pass. Outward-route search and independent verification succeed on both copies,
+producing 360 admitted rows. BC transfer comparison finishes at 2/8, 2/8, 3/8
+successes for original/continued/recovery actors, with all failing the target
+sleeve twice. Matching the teacher's command caps does not rescue that failure.
+All BC/teacher jobs finished. The useful recovery teacher is demonstrated on one
+case; its autonomous transfer, improved robustness and novelty remain unproven.
 
 ## Existing-expert policy pretraining — 2026-09-17
 

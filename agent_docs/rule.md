@@ -110,6 +110,13 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- IPC recovery guidance belongs inside RL pretraining; preserve the existing
+  downstream policy/training interface rather than treating standalone imitation
+  as the requested RL integration. The owner subsequently clarified that adding
+  an established imitation loss to SAC does not meet the novel-algorithm goal;
+  research and distinguish the actual algorithmic contribution before claiming
+  novelty. (Clarified 2026-09-17.)
+
 - During the Stiff-GIPC performance-alignment work: "when a design choice
   is uncertain, follow Stiff-GIPC's algorithm design" — that applied to
   that effort (and its evidence lives in `handoff.md`), not to unrelated

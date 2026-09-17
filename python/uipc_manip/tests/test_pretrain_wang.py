@@ -25,6 +25,18 @@ def test_initial_replay_and_optimizer_flags_require_a_checkpoint():
         with pytest.raises(ValueError, match="require --init-from"):
             prepare(["teacher", "--region", "13", *flag])
 
+
+def test_recovery_supervision_is_explicit_in_pretraining_plan():
+    from uipc_manip.pretrain_wang import prepare
+
+    argv = ["joint", "--regions", "13"]
+    assert "recovery_supervision" not in prepare(argv)[2]
+    args, _, plan = prepare([*argv, "--recovery-source-dirs", "verified", "--recovery-weight", "2"])
+    assert plan["recovery_supervision"] == {"sources": ["verified"], "weight": 2}
+    assert args.recovery_source_dirs == ["verified"]
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        prepare([*argv, "--recovery-weight", "nan"])
+
 torch = pytest.importorskip("torch")
 
 from uipc_manip import pretrain_wang, sac  # noqa: E402

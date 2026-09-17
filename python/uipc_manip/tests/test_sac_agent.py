@@ -123,6 +123,72 @@ def test_sac_update_and_checkpoint(tmp_path):
         mismatched.load(path)
 
 
+@pytest.mark.parametrize("weight", [0.0, 10.0])
+def test_recovery_guidance_changes_only_actor_at_first_update_and_exports_plain_sac(tmp_path, weight):
+    from uipc_manip.recovery_supervision import RecoveryActionSupervision
+
+    spec = ObsSpec(10)
+    cfg = _small_cfg()
+    cfg.actor_update_freq = 1
+    torch.manual_seed(3)
+    plain = SACAgent(spec, 3, cfg, "cpu")
+    checkpoint = plain.save(tmp_path / "initial.pt", step=0)
+    guided = SACAgent(spec, 3, cfg, "cpu")
+    guided.load(checkpoint)
+    env = ToyEnv(spec)
+    obs = torch.as_tensor(np.stack([env.reset() for _ in range(16)]))
+    actions = torch.full((16, 3), .6)
+    batch = (obs, actions, torch.ones(16, 1), obs, torch.ones(16, 1))
+
+    class Replay:
+        def sample(self, n):
+            return batch
+
+    replay = Replay()
+    supervision = RecoveryActionSupervision(obs, actions, weight=weight, active_axes=(0, 1, 2),
+                                           seed=7, device="cpu")
+    torch.manual_seed(12)
+    baseline = plain.update(replay)
+    torch.manual_seed(12)
+    result = guided.update(replay, action_supervision=supervision)
+    assert result["critic_loss"] == baseline["critic_loss"]
+    assert result["alpha_loss"] == baseline["alpha_loss"]
+    for key, value in plain.critic.state_dict().items():
+        assert torch.equal(value, guided.critic.state_dict()[key])
+    changed = any(not torch.equal(value, guided.actor.state_dict()[key])
+                  for key, value in plain.actor.state_dict().items())
+    assert changed == (weight > 0)
+    assert result["actor_loss"] == pytest.approx(
+        result["sac_actor_loss"] + weight * result["recovery_action_loss"], abs=1e-6)
+    assert result["recovery_rows"] == (16 if weight else 0)
+    # Guidance uses no global sampling RNG and has no persistent policy state.
+    exported = guided.save(tmp_path / "guided.pt", step=1)
+    restored = SACAgent(spec, 3, cfg, "cpu")
+    restored.load(exported)
+    np.testing.assert_array_equal(restored.act(obs.numpy(), deterministic=True),
+                                  guided.act(obs.numpy(), deterministic=True))
+    assert "recovery_rows" not in restored.update(replay)
+
+
+def test_recovery_guidance_excludes_inactive_axis_and_refuses_history_before_updates():
+    from uipc_manip.recovery_supervision import RecoveryActionSupervision
+
+    spec = ObsSpec(10)
+    agent = SACAgent(spec, 3, _small_cfg(), "cpu")
+    obs = torch.as_tensor(np.stack([ToyEnv(spec).reset()] * 16))
+    with torch.no_grad():
+        mu = agent.actor(agent._unpack(obs), compute_pi=False, compute_log_pi=False)[0]
+    target = mu.clone()
+    target[:, 1] = .99
+    supervision = RecoveryActionSupervision(obs, target, weight=1, active_axes=(0, 2), seed=1, device="cpu")
+    loss, _ = supervision.loss(agent)
+    assert loss.item() < 1e-12
+    agent.cfg.history_length = 2
+    with pytest.raises(ValueError, match="single-frame"):
+        agent.update(None, action_supervision=supervision)
+    assert agent.updates == 0
+
+
 def test_actor_update_uses_the_critic_action_gradient():
     """The actor must learn from ``dQ/da``, not from the entropy term alone.
 
@@ -416,7 +482,7 @@ def test_distillation_smoke_produces_a_loadable_student(tmp_path):
         np.savez_compressed(rollouts / path, obs=obs, actions=act, rewards=np.zeros(6, dtype=np.float32))
         records.append({"path": path, "kept": True, "final_upperarm_ratio": 0.9, "early_turn": False, "sim_error": False})
     (rollouts / "episode_metrics.json").write_text(json.dumps(records))
-    (rollouts / "manifest.json").write_text(json.dumps({"obs_dim": spec.dim, "action_dim": 3, "point_budget": 16}))
+    (rollouts / "manifest.json").write_text(json.dumps({"env": {}, "obs_dim": spec.dim, "action_dim": 3, "point_budget": 16}))
     distill.main([
         "--source-dirs", str(rollouts), "--work-dir", str(tmp_path), "--run-name", "student",
         "--encoder", "pointnet2", "--hidden-dim", "32", "--steps", "6", "--batch-size", "4",
@@ -427,7 +493,7 @@ def test_distillation_smoke_produces_a_loadable_student(tmp_path):
     cfg = SACConfig.from_dict(SACAgent.read_checkpoint(ckpt)["sac_config"])
     student = SACAgent(spec, 3, cfg, "cpu")
     payload = student.load(ckpt, load_optimizers=False)
-    assert payload["metadata"]["stage"] == "fmvp_distillation"
+    assert payload["metadata"]["stage"] == "expert_behavior_cloning"
     assert student.act(np.stack([env.reset()]), deterministic=True).shape == (1, 3)
 
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -24,10 +25,17 @@ def main():
     parser.add_argument("--policy", nargs="+", required=True, help="NAME=CHECKPOINT entries")
     parser.add_argument("--cells", nargs="+", default=["tshirt_26:14046", "tshirt_26:14049"])
     parser.add_argument("--rounds", type=int, default=2)
+    parser.add_argument("--translation-cap-m", type=float, default=None,
+                        help="Optional per-decision translation norm cap, recorded as a separate control contract.")
+    parser.add_argument("--rotation-cap-rad", type=float, default=None,
+                        help="Optional effective rotation norm cap; requires the five-axis controller.")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     if args.rounds < 1:
         parser.error("rounds must be positive")
+    if any(x is not None and (not math.isfinite(x) or x <= 0)
+           for x in (args.translation_cap_m, args.rotation_cap_rad)):
+        parser.error("Command caps must be finite and positive")
     if args.out.exists():
         raise FileExistsError(args.out)
     policies = [entry.split("=", 1) for entry in args.policy]
@@ -40,10 +48,14 @@ def main():
     train_sac.resolve_defaults(targs)
     cfg = replace(train_sac.dressing_config(targs), cells=tuple(cells), decision_watchdog=False,
                   workspace=str(args.out.parent / (args.out.stem + "_assets")))
+    use_caps = args.translation_cap_m is not None or args.rotation_cap_rad is not None
+    if use_caps and not cfg.clip_rotation_to_yz:
+        parser.error("Capped evaluation requires the five-axis dressing controller")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     env = GenesisIPCDressingEnv(cfg, num_envs=len(cells), cell_factory=LiveCellFactory(cfg.live))
     result = {"reference": str(args.reference), "cells": cells, "rounds": args.rounds,
+              "command_caps": {"translation_m": args.translation_cap_m, "rotation_rad": args.rotation_cap_rad},
               "build_seconds": time.perf_counter() - started, "env": cfg.to_dict(), "evaluations": []}
     original_step = env.step
     traces = []
@@ -71,7 +83,17 @@ def main():
                 traces.clear()
                 targs._eval_round = rep + 1
                 before = time.perf_counter()
-                evaluation = train_sac.evaluate(env, agent.act, env.spec, targs, len(cells),
+
+                def act(obs, deterministic):
+                    actions = agent.act(obs, deterministic=deterministic)
+                    if use_caps:
+                        from uipc_manip.recovery_teacher import cap_commands
+                        actions = cap_commands(actions,
+                            args.translation_cap_m / cfg.max_translation if args.translation_cap_m else math.sqrt(3),
+                            args.rotation_cap_rad / cfg.max_rotation if args.rotation_cap_rad else math.sqrt(2))
+                    return actions
+
+                evaluation = train_sac.evaluate(env, act, env.spec, targs, len(cells),
                                                 slot_cells=cells, heldout_slots=range(len(cells)))
                 row = {"name": name, "checkpoint": checkpoint, "round": rep,
                        "seed_base": targs.seed * 1000 + 97 * (rep + 1),

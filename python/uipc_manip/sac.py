@@ -538,7 +538,7 @@ class SACAgent:
     def _update_actor_and_alpha(self, obs, state=None, label=None, index: int = 0, physics=None,
                                 action_noise=None, action_anchor=None, require_same_action=False,
                                 max_action_step: float = 0.0, max_action_retries: int = 0,
-                                optimizer=None) -> dict:
+                                optimizer=None, action_supervision=None) -> dict:
         if action_noise is not None:
             if self.cfg.actor_type != "state":
                 raise ValueError("Saved action noise currently requires the full-state actor")
@@ -558,6 +558,12 @@ class SACAgent:
         # Wang's alpha[alpha_idx]: the actor loss and the temperature loss use the batch's buffer's temperature.
         alpha = self._alpha_at(index)
         actor_loss = (alpha.detach() * log_pi - torch.min(q1, q2)).mean()
+        supervision_stats = {}
+        if action_supervision is not None:
+            supervision_stats["sac_actor_loss"] = float(actor_loss.detach())
+            guidance, guidance_stats = action_supervision.loss(self)
+            actor_loss = actor_loss + guidance
+            supervision_stats.update(guidance_stats)
         distill = None
         if self.teachers and label is not None and self.cfg.distill_weight > 0.0:
             # Each row is pulled toward its own region's teacher on the same observation; rows
@@ -663,7 +669,7 @@ class SACAgent:
             stats_step = 0.0
         stats = {"actor_loss": float(actor_loss.item()), "entropy": float(-log_pi.mean().item()), "actor_grad_norm": grad_norm,
                  "physics_step_retries": retries, "physics_step_accepted": float(accepted_step),
-                 "physics_actual_step_max": stats_step, **physics_stats}
+                 "physics_actual_step_max": stats_step, **physics_stats, **supervision_stats}
         if distill is not None:
             stats["distill_loss"] = float(distill.item())
         if not self.cfg.alpha_fixed:
@@ -684,10 +690,14 @@ class SACAgent:
         max_norm = float(self.cfg.grad_clip_max_norm) if self.cfg.grad_clip_max_norm > 0 else float("inf")
         return float(torch.nn.utils.clip_grad_norm_(module.parameters(), max_norm=max_norm))
 
-    def update(self, replay) -> dict:
+    def update(self, replay, *, action_supervision=None) -> dict:
         """One optimizer update following the Wang actor/target schedule."""
+        if action_supervision is not None:
+            # Validate before any optimizer mutation. Supervision belongs to this
+            # call only; neither checkpoints nor later plain SAC inherit it.
+            action_supervision.validate(self)
         with reuse_neighbourhoods():
-            return self._update(replay)
+            return self._update(replay, action_supervision=action_supervision)
 
     def _sample_single(self, replay):
         batch = replay.sample(self.cfg.batch_size)
@@ -823,7 +833,7 @@ class SACAgent:
             soft_update(self.critic.history, self.critic_target.history, self.cfg.encoder_tau)
         return stats
 
-    def _update(self, replay) -> dict:
+    def _update(self, replay, *, action_supervision=None) -> dict:
         if (int(self.cfg.history_length) > 1 and self.cfg.history_kind == "rlt"
                 and self.cfg.rlt_learning_mode == "prefix"):
             return self._update_rlt(replay)
@@ -838,7 +848,8 @@ class SACAgent:
         # Physics labels are local to the recorded command, including in point-cloud
         # dressing replay. Without its anchor the distance gate is silently bypassed.
         return self._finish_update(stats, obs, state, label, index, physics,
-                                   action_anchor=action if physics is not None else None)
+                                   action_anchor=action if physics is not None else None,
+                                   action_supervision=action_supervision)
 
     @torch.no_grad()
     def sample_state_action(self, obs):
@@ -952,11 +963,12 @@ class SACAgent:
                                    action_anchor=action, force_actor=force_actor)
 
     def _finish_update(self, stats, obs, state=None, label=None, index=0, physics=None,
-                       update_actor=True, action_anchor=None, force_actor=False):
+                       update_actor=True, action_anchor=None, force_actor=False, action_supervision=None):
         """Shared SAC actor, temperature and target schedule for flat/state batches."""
         self.updates += 1
         if update_actor and (force_actor or self.updates % self.cfg.actor_update_freq == 0):
-            stats.update(self._update_actor_and_alpha(obs, state, label, index, physics, action_anchor=action_anchor))
+            stats.update(self._update_actor_and_alpha(obs, state, label, index, physics,
+                         action_anchor=action_anchor, action_supervision=action_supervision))
         if self.updates % self.cfg.critic_target_update_freq == 0:
             soft_update(self.critic.Q1, self.critic_target.Q1, self.cfg.critic_tau)
             soft_update(self.critic.Q2, self.critic_target.Q2, self.cfg.critic_tau)

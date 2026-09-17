@@ -220,6 +220,10 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument("--checkpoint-every", type=int, default=50_000, help="Transitions between checkpoints with a replay snapshot; only the latest snapshot is kept.")
         s.add_argument("--init-optimizers", action="store_true", help="With --init-from, preserve the source optimizers; SAC settings must match except physics-update controls.")
         s.add_argument("--init-replay", default=None, help="Replay snapshot paired with --init-from; --transitions includes its historical transition count.")
+        s.add_argument("--recovery-source-dirs", nargs="+", default=None,
+                       help="Verified IPC recovery directories for auxiliary actor supervision during this pretraining run.")
+        s.add_argument("--recovery-weight", type=float, default=1.0,
+                       help="Weight of mean squared active-action error added to the SAC actor loss; default 1, 0 disables.")
         s.add_argument("--garment-curriculum-interval", type=int, default=0, help="Transitions between admitting one more garment to the draw, easiest first; 0, the reference launcher's setting, admits all.")
         s.add_argument("--garment-curriculum-order", default=",".join(WANG_GARMENT_ORDER), help="Comma-separated garments, easiest first.")
         s.add_argument("--horizon", type=int, default=HORIZON, help="Decisions per episode.")
@@ -285,7 +289,7 @@ def stage_plan(args) -> dict:
     if args.temperatures == "per-buffer" and split == "none":
         raise ValueError("--temperatures per-buffer needs --replay-split garment or region")
     order = curriculum_order(str(args.garment_curriculum_order).split(","), garments)
-    return {
+    plan = {
         "protocol": "joint_dressing" if args.stage == "joint" else "wang_rss2023",
         "stage": args.stage,
         "regions": regions,
@@ -307,6 +311,9 @@ def stage_plan(args) -> dict:
         "horizon": int(args.horizon),
         "dt": float(args.dt),
     }
+    if args.recovery_source_dirs:
+        plan["recovery_supervision"] = {"sources": list(args.recovery_source_dirs), "weight": args.recovery_weight}
+    return plan
 
 
 def eval_summary(records: list[dict], cells: list[tuple[str, int]]) -> dict:
@@ -531,6 +538,14 @@ class WangRun:
             if int(meta.get("transitions", -1)) != int(self.resume["transitions"]):
                 raise ValueError("The replay snapshot does not come from the checkpoint it is resumed with")
         self.streams = ReplayStreams(self.replay, env.num_envs)
+        self.recovery_supervision, self.recovery_metadata = None, None
+        if self.args.recovery_source_dirs:
+            from .recovery_supervision import load_recovery_supervision
+
+            self.recovery_supervision, self.recovery_metadata = load_recovery_supervision(
+                self.args.recovery_source_dirs, agent=self.agent, env=self.base_cfg.to_dict(),
+                eval_bodies={body for _, body in self.plan["eval_configs"]},
+                weight=self.args.recovery_weight, seed=self.args.seed)
         self.history = rollout_state(self.agent, env.num_envs)
         if self.history is not None and not self.replay.sequence:
             raise SystemExit("--history-length above 1 learns from padded episode windows; add --sequence-replay")
@@ -570,6 +585,7 @@ class WangRun:
             "sac_config": self.agent.cfg.to_dict(),
             "reward_scale": self.reward_scale,
             "representation_init": getattr(self, "representation_init", None),
+            "recovery_supervision": getattr(self, "recovery_metadata", None),
             "initial_replay": getattr(self.args, "init_replay", None),
             "initial_optimizers_restored": bool(getattr(self.args, "init_optimizers", False)),
             "seed": int(self.args.seed),
@@ -786,7 +802,10 @@ class WangRun:
             t = time.time()
             if step > targs.init_steps:
                 for _ in range(budget):
-                    stats = {**stats, **self.agent.update(self.replay)}
+                    if self.recovery_supervision is None:
+                        stats = {**stats, **self.agent.update(self.replay)}
+                    else:
+                        stats = {**stats, **self.agent.update(self.replay, action_supervision=self.recovery_supervision)}
             self.timing["update_s"] += time.time() - t
             transitions = int(self.replay.total_added)
             if step % n_log == 0:
@@ -860,6 +879,11 @@ def prepare(argv: list[str]):
     train_sac.resolve_defaults(targs)
     if (args.init_optimizers or args.init_replay) and not targs.init_from:
         raise ValueError("--init-optimizers and --init-replay require --init-from")
+    if not np.isfinite(args.recovery_weight) or args.recovery_weight < 0:
+        raise ValueError("--recovery-weight must be finite and nonnegative")
+    if args.recovery_source_dirs and (args.stage == "student" or targs.history_length != 1
+                                     or targs.physics_actor_weight or getattr(targs, "adjoint_weight", 0)):
+        raise ValueError("Recovery supervision requires single-frame SAC without other teacher/physics losses")
     return args, targs, stage_plan(args)
 
 

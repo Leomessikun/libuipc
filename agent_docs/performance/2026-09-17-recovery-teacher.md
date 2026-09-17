@@ -106,8 +106,115 @@ Seventeen focused tests pass for admission, command caps, existing parallel sear
 and distillation. `distill --init-actor` initializes only actor weights, checks the
 saved protocol and leaves critic/optimizer state fresh; its behavior is tested.
 Two native CUDA tests pass for both automatic reset and retained terminal state.
-Search has found the outward route above .99 sustained coverage on both copies;
-fresh-world verification is running. No correction-guided actor has been trained.
+Implementation commits: `5272f35e` (teacher) and `bcc44472` (actor-only continuation).
+Native search, verification, both fixed actor continuations, the 24-episode
+student comparison, and the separate 12-episode cap diagnostic have completed.
+The later owner-requested [SAC integration](2026-09-17-recovery-sac-pretraining.md)
+is a separate experiment; none of the results below includes a SAC learning update.
+
+## Completed teacher and training results
+
+| Search controller | Sustained valid successes | Minimum late coverage over both slots |
+|---|---:|---:|
+| Policy | 0/2 | .00000 |
+| Faster policy | 0/2 | Rejected: grasp violations |
+| Middle-stage expert | 1/2 | .00000 |
+| Alignment-stage expert | 1/2 | Rejected: one grasp violation |
+| Elbow-hook expert | 0/2 | .37292 |
+| Outward-route expert | 2/2 | .99037 |
+
+The middle-stage expert reaches .99402 maximum coverage on its failed slot but
+finishes at zero. The elbow-hook expert finishes one slot at .99371, yet its
+last-12-decision minimum is .37292. These are distinct reasons for rejecting
+peak-only and last-frame-only teaching criteria in this pilot.
+
+In fresh-world verification, the frozen outward route achieves sustained
+coverage .98444/.97604 and final coverage .98481/.97880 with valid grasps.
+Policy and scaled-policy controls both have zero sustained coverage on both
+slots. The policy retains valid grasp; the scaled policy violates it. The
+admission gate passes, producing two 180-decision recovery sequences (360 rows).
+Both admitted sequences still fail the historical early-turn/paper filter.
+
+Search costs 2,400 native decisions / 351.24 s; verification costs 1,320 / 221.97 s.
+Totals: 3,720 decisions / 573.21 s, including both world constructions and policy
+approaches. All reported position restore errors are zero; this does not imply
+complete numerical trajectory repeatability or independent convergence between
+batched copies. No simulation errors occurred.
+
+The control continuation trains on 1,800 original rows; the recovery continuation
+trains on 2,160 rows, of which 1/6 are new recoveries. Both use the same 1,800
+withheld-body validation rows. Each completes 1,000 updates in 29.1 s through
+scheduled final validation, with no simulation during updates. This excludes
+process startup, loading and final extra validation/checkpoint writes. Final
+validation MSE is .030163 for the control and .035575 for recovery training;
+no policy benefit is inferred from these prediction errors.
+
+## Completed closed-loop student comparison
+
+| Actor | Final coverage/grasp successes | Mean final coverage | Withheld-body successes | Invalid-grasp decisions |
+|---|---:|---:|---:|---:|
+| Original BC | 2/8 | .26551 | 0/4 | 0/2,400 |
+| Another 1,000 original-data BC updates | 2/8 | .27350 | 1/4 | 263/2,400 |
+| Another 1,000 BC updates including recovery data | 3/8 | .38375 | 1/4 | 130/2,400 |
+
+Every geometric success also has valid grasp throughout its episode; sustained
+last-12-decision successes have the same counts. All three actors fail the
+target tshirt_68/14046 in both rounds. Recovery BC retains tshirt_26/14046 in both
+rounds and succeeds on tshirt_26/14047 once. Continued BC loses a previously
+successful training case in one round. Controller collision rejections total
+0 / 1,719 / 0, respectively; no tether rejection or simulation error occurs.
+Historical paper-filter passes are 0/8, 1/8 and 0/8, respectively.
+
+The 24 complete episodes cost 7,200 native decisions / 648.66 s. These are two
+repeats of four development configurations, not independent training seeds or an
+untouched test set. One extra success with substantial rollout variation does
+not establish a robust policy gain or successful transfer of the target recovery.
+
+Read-only evaluation on the same 360 teacher observations gives active-action
+MSE .12874 / .12387 / .01281 for original/continued/recovery BC. Recovery BC fits
+the recorded teacher actions about ten times more closely, yet still fails the
+target rollout. Fitting error on recorded observations is therefore insufficient
+as a policy-quality measure. Distribution shift in the learner's approach and
+subsequent feedback remains a plausible cause, not an isolated diagnosis.
+
+### Additional command-limit diagnostic
+
+After the first full comparison round, the recovery actor still fails the target
+sleeve and exceeds the teacher's 8 mm/decision cap on 184/300 decisions, reaching
+11.57 mm. Its coverage at decision 120 is .13145 versus the unchanged actor's
+.19918: actor fitting has already changed its approach to the correction state.
+The first grasp violation is at decision 238. These observations motivate a
+separate inference-only cap ablation; they do not establish the cause by themselves.
+
+After the fixed two-round comparison, evaluate all three unchanged checkpoints
+for **one additional round** on the same four configurations, now applying the
+teacher's 8 mm translation/.05 rad rotation norm caps to all actors. This is an
+explicit follow-up diagnostic chosen after observing first-round failures,
+not a replacement for the primary results or another training/checkpoint search.
+`evaluate_dressing_policies.py` records the optional caps and executed commands.
+The analysis verifies every measured command stays within the specified limits.
+Original/continued/recovery BC achieve 1/4, 0/4 and 1/4 valid-grasp successes;
+mean final coverage is .39602, .13465 and .24744. Invalid-grasp decisions are
+0, 274 and 58. All actors still fail the target sleeve. The 12 episodes cost
+3,600 decisions / 305.47 s including setup. This exploratory one-round check
+does not rescue the recovery policy or prove the command limit is the sole cause.
+
+## Conclusion and accounting
+
+IPC found and independently verified a useful recovery controller on one failed
+configuration. This particular actor-only imitation recipe has not transferred
+that recovery into a robust autonomous policy. Do not merely extend its BC
+budget or present it as an improved SAC algorithm. The owner subsequently asked
+to integrate the guidance into actual RL pretraining; that work is recorded
+separately and must be assessed on its own results.
+
+All jobs in this experiment finished. Teacher search/verification plus primary
+and cap evaluation total 14,520 native decisions / 1,527.35 s (25.46 minutes).
+The two actor fitting loops add about 58.2 s through scheduled validation;
+startup, final extra validation and checkpoint I/O are outside that training
+scope. Existing demonstrations and the source actor's training cost are shared
+inputs, not free data. Artifacts include `analysis_summary.json`,
+`prediction_audit.json`, `teacher_comparison.png`, and `student_comparison.png`.
 
 Hardware/runtime: RTX PRO 6000 Blackwell Workstation Edition, driver 595.84,
 native Release build with CUDA 12.8, PyTorch 2.12.0+cu130. Native physics is batched
@@ -128,3 +235,40 @@ work counts, timing, restore checks and full episode tapes. If selection passes,
 `verification/` holds the independent execution and distillation manifest/records;
 root `result.json` records the admission decision. No native test is left running
 as a prerequisite after a failed gate.
+
+Actor reproduction, after a successful teacher admission (fresh output run names
+are required):
+
+```bash
+export PYTHONPATH=build_raw/python/src:python
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+export LD_LIBRARY_PATH=build_raw/Release/bin:/home/ge47gax/Toolchain/uipc_cuda128/lib
+PY=/home/ge47gax/kun/genesis-world/.venv/bin/python
+ROOT=output/uipc_manip/recovery_teacher_20260917
+BASE=output/uipc_manip/expert_pretrain_20260917/bc/checkpoints/actor_final.pt
+DATA=output/uipc_manip/expert_pretrain_20260917/dataset
+$PY -m uipc_manip.distill --source-dirs "$DATA" \
+  --teacher-checkpoint "$BASE" --init-actor "$BASE" \
+  --validation-bodies 14047 14048 --preload-to-device \
+  --work-dir "$ROOT/learning" --run-name continued_bc \
+  --steps 1000 --batch-size 128 --loss mse --eval-every 500 --save-every 0 --seed 1
+$PY -m uipc_manip.distill --source-dirs "$DATA" "$ROOT/verification" \
+  --teacher-checkpoint "$BASE" --init-actor "$BASE" \
+  --validation-bodies 14047 14048 --preload-to-device \
+  --work-dir "$ROOT/learning" --run-name recovery_bc \
+  --steps 1000 --batch-size 128 --loss mse --eval-every 500 --save-every 0 --seed 1
+$PY scripts/evaluate_dressing_policies.py --reference "$BASE" \
+  --policy "original_bc=$BASE" \
+    "continued_bc=$ROOT/learning/continued_bc/checkpoints/actor_final.pt" \
+    "recovery_bc=$ROOT/learning/recovery_bc/checkpoints/actor_final.pt" \
+  --cells tshirt_26:14046 tshirt_68:14046 tshirt_26:14047 tshirt_68:14048 \
+  --rounds 2 --out "$ROOT/evaluation.json"
+```
+
+The separate cap diagnostic uses that evaluation command with `--rounds 1`,
+`--translation-cap-m .008 --rotation-cap-rad .05`, and
+`--out "$ROOT/command_cap_evaluation.json"`. The actor weight files are identical
+in the primary and capped comparisons. Artifact `analyze_results.py` generates
+the teacher/student plots and aggregates; `audit_student_predictions.py` measures
+all three fixed actors on the same demonstration/recovery observations without
+optimization. Neither script selects a new checkpoint.

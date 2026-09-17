@@ -1,6 +1,42 @@
 # Handoff — Current State of the Repo
 
-## 2026-09-17 — Recovery teacher prototype and novelty audit
+## 2026-09-17 — Novelty objection: gradient-correction research, no training running
+
+The owner explicitly rejected SAC plus recovery imitation as insufficiently
+novel and asked for deep research on a new RL algorithm. Read the
+[prior-art comparison and precise candidate](performance/2026-09-17-ipc-policy-gradient-research.md)
+before implementation. Q-Prop/Stein, TPX, AHAC, adaptive value expansion, MFPG
+and recent targeted-gradient/compute-allocation work limit generic novelty claims.
+Candidate: allocate expensive IPC root queries, continuation depth and repetition
+to improve the accuracy of a return-based SAC actor correction per second.
+The baseline control-variate and inverse-probability identities are established;
+the joint allocator, native collector and actual benefit are still unimplemented
+or unproven. A standalone `policy_gradient_correction` mathematical primitive has
+seven passing tests and is not wired into training. Respect policy freshness,
+selection probabilities, full root state and the existing time-limit bootstrap;
+teacher actions/returns cannot be treated as current-policy branch samples.
+The newly launched guided-SAC comparison was stopped during its control run;
+there is no completed training comparison. All experiment processes are stopped.
+
+## 2026-09-17 — IPC recovery guidance integrated into SAC pretraining
+
+The owner clarified that the desired contribution belongs inside RL pretraining,
+with the existing downstream policy interface. [Implementation and fixed pilot](performance/2026-09-17-recovery-sac-pretraining.md).
+`pretrain_wang --recovery-source-dirs` now adds verified active-action MSE to the
+same scheduled SAC actor loss/optimizer step; the critic still learns ordinary
+soft Bellman targets. Recovery arrays stay on GPU and an independent batch is
+sampled per actor update. Guidance is explicit per update and is absent from
+plain SAC continuation/inference. Source contracts, completed verification and
+held-out body exclusion are checked. No new force input, architecture, controller
+cap, reward, solver or runtime teacher is introduced. The old BC-only test did
+not test this integration. The fixed live comparison was stopped after the
+owner's novelty objection; the treatment never started and no final continuation
+checkpoint exists. The source's initial evaluation is not a new training result.
+Seventy-four focused tests pass, and all 360 recovery rows load on CUDA under
+the saved SAC contract. Keep this option as an established baseline, disabled by
+default. See the report for cost and inference boundaries.
+
+## 2026-09-17 — Recovery teacher and BC transfer experiment complete
 
 The owner asked whether recovery teaching is novel and to try a promising
 contribution. [Prior-art audit and fixed experiment](performance/2026-09-17-recovery-teacher.md)
@@ -10,12 +46,16 @@ recovery routes and policy/scaled-policy controls from the BC actor's own failed
 tshirt_68/14046 state, through the full episode. A fresh-world verification must
 beat both controls before any labels are admitted. `step(reset_on_done=False)`
 retains terminal state without changing default reset or horizon. Seventeen focused
-tests and two native terminal/reset tests pass. Search found the outward route
-above .99 sustained coverage on both copies; fresh-world verification is running.
-`distill --init-actor` copies only compatible actor weights, leaving critic and
-optimizers fresh. Conditional paired 1,000-update actor fitting and a 24-episode
-comparison are prepared, pending verified useful recovery.
-Do not claim a new RL algorithm or restart long SAC training on speculation.
+tests and two native terminal/reset tests pass. Search found outward recovery
+above .99 sustained coverage; independent verification reaches .98444/.97604,
+admitting 360 rows. Original/continued/recovery BC full-episode successes are
+2/8, 2/8, 3/8; all fail target tshirt_68/14046 twice. Recovery BC fits teacher
+actions about ten times better but does not transfer that recovery. A separate
+command-cap check gives 1/4, 0/4, 1/4 and still fails the target. Total teacher
+and evaluation cost is 14,520 native decisions / 25.46 min, plus ~58.2 s fitting.
+All jobs in that experiment finished. IPC supplies a useful teacher here;
+robust policy improvement and algorithmic novelty remain unproven. The owner's
+subsequent SAC integration is separate; do not merge its results with BC.
 
 ## 2026-09-17 — Existing-expert actor pretraining and evaluation complete
 

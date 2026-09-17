@@ -234,6 +234,8 @@ def main():
                     arrays = {k: data[k] for k in data.files}
                 arrays["record"] = np.asarray(json.dumps(r))
                 np.savez_compressed(path, **arrays)
+        verify["admitted"] = result["admitted"]
+        (args.out / "verification" / "result.json").write_text(json.dumps(verify, indent=2) + "\n")
         (args.out / "verification" / "episode_metrics.json").write_text(json.dumps(verify["records"], indent=2) + "\n")
         manifest = dict(env=cfg.to_dict(), obs_dim=cfg.point_budget * 7 + 7, point_budget=cfg.point_budget,
                         action_dim=6, admission_rule="verified_full_continuation_v1", completed=True,
