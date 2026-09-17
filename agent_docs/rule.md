@@ -110,6 +110,14 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Diagnose ordinary SAC rollouts before a replacement research proposal.** The
+  owner abandoned the IPC algorithm direction, requested a new direction, then
+  clarified twice that actual normal SAC policy results must be analysed first.
+  BC or IPC-modified policy failures cannot stand in for SAC failure evidence.
+  Keep the abandoned experiments stopped and distinguish measured rollout
+  failures from hypotheses about their learning causes. This supersedes the
+  following IPC-integration task instruction. (Set 2026-09-17.)
+
 - IPC recovery guidance belongs inside RL pretraining; preserve the existing
   downstream policy/training interface rather than treating standalone imitation
   as the requested RL integration. The owner subsequently clarified that adding

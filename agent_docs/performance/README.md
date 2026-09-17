@@ -22,7 +22,8 @@ when iteration counts change. Report both and state which is the primary signal.
 
 | Record | Status | Scope |
 |---|---|---|
-| [IPC policy-gradient correction research](2026-09-17-ipc-policy-gradient-research.md) | Candidate design and seven mathematical tests; no training or novelty claim | Prior-art audit, selective nested return correction, and proposed joint simulation allocation; native collector and benefit unproven |
+| [Ordinary SAC rollout audit](2026-09-17-normal-sac-rollout-audit.md) | Current priority; saved traces analysed, 1,800 unchanged-policy decisions with geometry captured; all jobs finished | Partial-progress stalls, opening displacement, training-pose failures, scarce successful experience and unstable checkpoint results; causal learning diagnosis remains incomplete |
+| [IPC policy-gradient correction research](2026-09-17-ipc-policy-gradient-research.md) | Abandoned by owner; historical design and seven mathematical tests | Prior-art audit and unimplemented simulation allocator; superseded by ordinary SAC diagnosis |
 | [IPC recovery guidance in SAC pretraining](2026-09-17-recovery-sac-pretraining.md) | Implemented; 74 tests pass; comparison stopped following novelty objection | Conventional auxiliary actor loss with unchanged critic and downstream interface; no completed training comparison |
 | [IPC recovery teacher](2026-09-17-recovery-teacher.md) | Teacher verified; BC successes 2/8, 2/8, 3/8, all target-sleeve failures persist; all jobs finished | Prior-art audit, 360 admitted labels, BC transfer and separate command-cap diagnostic; useful teacher but no robust policy gain |
 | [Existing-expert policy pretraining](2026-09-17-expert-policy-pretraining.md) | BC/SAC 2/8 versus 0/8 coverage-and-grasp successes, BC withheld-body 0/4; all jobs finished; 17 tests pass | Existing corpus audit, reconstructed observations, 3,000 CUDA updates in 86.8 s and full dressing evaluation; no robustness or new RL claim |

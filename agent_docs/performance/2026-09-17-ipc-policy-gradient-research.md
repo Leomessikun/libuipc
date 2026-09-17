@@ -1,5 +1,9 @@
 # Research direction: allocating IPC computation to policy-gradient correction
 
+Status: abandoned by the owner later on 2026-09-17. Retained as historical
+research, not the next implementation plan. The owner now prioritizes
+[ordinary SAC rollout diagnosis](2026-09-17-normal-sac-rollout-audit.md).
+
 ## Decision
 
 The owner rejected SAC plus recovery imitation as the research contribution and

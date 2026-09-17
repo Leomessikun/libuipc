@@ -1,5 +1,33 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Owner abandons IPC correction; ordinary SAC diagnosis first
+
+The owner abandoned the proposed research direction and then clarified twice:
+analyse **normal SAC policy rollouts** before proposing a replacement. The
+[SAC-only audit](performance/2026-09-17-normal-sac-rollout-audit.md) takes precedence
+over the older proposals below. No training is running. The gradient-correction
+prototype remains historical and must not be resumed as the current plan.
+
+Saved ordinary SAC traces show tshirt_26 stalling at .51–.67 upper-arm progress,
+while tshirt_68 peaks at .21–.27 and loses the arm intersection; all eight episodes
+have zero controller rejection. New unchanged-policy geometry captures confirm
+the opening moves away from the upper arm in tshirt_68, including one episode
+with valid grasp throughout. Two sampled training poses finish at .720 and .150;
+the first exceeds the grasp limit earlier, so neither is whole-episode valid
+success. The problem is not solely unseen-body generalization. Completed SAC
+diagnostics: 1,800 decisions / 240.69 s including setup/serialization; metrics
+recomputed from geometry agree to 1.12e-16. All jobs finished.
+
+The source ordinary SAC did not use the existing expert trajectories. Its 125k
+transitions include 408 complete episodes across 225 planned configurations, with
+logged rolling training success at most .025. Historical ordinary dense/residual
+SAC reached 7/25 reported geometric successes before returning to 0/25; the peak
+needs repeated, grasp-aware validation. No specific critic/perception/exploration
+cause is yet isolated. First compare saved best/final ordinary SAC on a fixed
+matrix, then test one cause at a documented SAC failure window. BC/recovery results
+are not explanations of SAC's failures; the initially launched BC diagnostic was
+stopped after clarification and excluded. No replacement algorithm is selected.
+
 ## 2026-09-17 — Novelty objection: gradient-correction research, no training running
 
 The owner explicitly rejected SAC plus recovery imitation as insufficiently

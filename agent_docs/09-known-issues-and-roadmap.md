@@ -1,6 +1,25 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
-## IPC policy-gradient research — 2026-09-17
+## Ordinary SAC rollout diagnosis — current priority, 2026-09-17
+
+The owner abandoned the IPC algorithm direction and explicitly requested normal
+SAC rollout analysis first. [Completed audit](performance/2026-09-17-normal-sac-rollout-audit.md):
+SAC partially advances then stalls, or moves the sleeve opening away from the
+upper arm. Zero controller rejections across eight saved and six new episodes;
+some grasp violations, plus fully grasp-valid failures. Failure also occurs on
+a sampled training pose. New geometry captures total 1,800 decisions / 240.69 s;
+no learning or simulator errors, metrics independently recomputed from geometry.
+
+Existing trajectories were not consumed by this baseline. Source SAC sees scarce
+successful experience and only 408 complete episodes across 225 planned cells.
+Historical ordinary SAC peak 7/25 geometric success is not stable across later
+checkpoints/seeds or validated as whole-episode grasp success. Compare saved best
+and final SAC under one fixed protocol before isolating critic/state/exploration
+causes; do not select a replacement algorithm from BC evidence. Training remains
+stopped. All older proposed IPC/recovery next steps below are historical and
+superseded by this owner instruction.
+
+## IPC policy-gradient research — abandoned by owner, 2026-09-17
 
 The owner rejected the novelty of supervised SAC. The
 [new research note](performance/2026-09-17-ipc-policy-gradient-research.md)
