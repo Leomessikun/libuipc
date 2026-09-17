@@ -5,10 +5,14 @@
 Train the visual actor from existing successful expert actions, avoiding an IPC
 simulation step for every gradient update. This implements the owner's approved
 pretraining step. It is ordinary behavior cloning (BC), not a new RL algorithm
-or an IPC-gradient modification to SAC. Full dressing evaluation is running;
-action prediction loss is not evidence of closed-loop success.
+or an IPC-gradient modification to SAC. Completed evaluation gives BC 2/8
+coverage-and-grasp successes versus existing SAC 0/8. Both BC successes are the
+same training configuration, repeated; withheld bodies score 0/4. Mean coverage
+is lower for BC (.25968 versus .29953). Both policies pass the historical
+early-turn filter 0/8. Fast pretraining works; robust dressing remains unsolved.
 
-Base commit: `387e1132`, branch `research/ipc-adjoint-q-learning`. Existing
+Base commit: `387e1132`, implementation `426b43a2`, branch
+`research/ipc-adjoint-q-learning`. Existing
 untracked build/worktree/output files were present and preserved. Changes reuse
 `uipc_manip.distill`, `EpisodeTape`, the saved actor architecture and the existing
 matched dressing evaluator. No solver or SAC update equation changed.
@@ -86,6 +90,10 @@ Training minibatch MSE changes from .097205 to .003660; the complete withheld-bo
 validation MSE changes from .099883 after update 1 to .044945 at update 3,000.
 Validation remains appreciably worse than training; extending optimization alone
 is not justified by this curve. Loss values do not measure dressing success.
+A read-only final checkpoint audit gives full-training MSE .003948 and validation
+MSE .044945. A constant mean action fitted on the training set gives .081636 and
+.089284 respectively. The network learned predictive structure beyond a constant
+action, but this has not generalized to closed-loop success on withheld bodies.
 
 ## Full dressing evaluation protocol
 
@@ -100,14 +108,61 @@ This costs 4,800 native decisions if all episodes reach their horizons.
 The pre-existing SAC and freshly trained BC have different training histories;
 this answers whether this pretraining recipe produces a useful policy at its
 measured cost, not which algorithm wins with matched total data/compute. Neither
-result would establish an IPC-vs-other-solver advantage. Full results pending.
+result establishes an IPC-vs-other-solver advantage.
+
+## Completed full-episode results
+
+| Policy / BC split | Episodes | Coverage-and-grasp successes | Mean final coverage | Whole-episode valid grasp |
+|---|---:|---:|---:|---:|
+| SAC / all | 8 | 0 | .29953 | 2/8 |
+| Expert BC / all | 8 | 2 | .25968 | 8/8 |
+| SAC / training body | 4 | 0 | .26818 | 0/4 |
+| Expert BC / training body | 4 | 2 | .51935 | 4/4 |
+| SAC / withheld bodies | 4 | 0 | .33087 | 2/4 |
+| Expert BC / withheld bodies | 4 | 0 | .00000 | 4/4 |
+
+The two successful BC episodes are tshirt_26/14046, final coverage
+.96253/.98436. The training configuration tshirt_68/14046 finishes at
+.13052/.00000. In its second round it temporarily reaches approximately .99
+before coverage abruptly drops to zero, while grasp remains valid. The trace
+alone does not establish whether cloth geometry or the coverage metric explains
+this discontinuity; maximum coverage must not be substituted for final success.
+Both withheld configurations have zero upper-arm coverage throughout their BC
+episodes. Thus the shortfall includes generalization before upper-arm progress
+and a separate loss of progress; it is not established as one elbow-only cause.
+
+SAC has 109 invalid-grasp decisions out of 2,400; BC has zero. Both policies have
+zero recorded collision/tether command rejections and zero simulator errors.
+BC makes accepted motions with valid grasps even on failed episodes: rejected
+commands and lost grasp do not explain those failures. All 16 evaluation
+episodes fail the historical early-turn paper filter. The BC successes therefore
+apply only to the explicitly reported coverage/grasp definition.
+
+All 4,800 evaluation decisions completed in 454.46 s including 6.65 s construction.
+SAC rounds take 146.76/142.35 s and BC rounds 78.02/79.73 s. Their physical paths
+differ, so the latter is not an actor inference or controlled solver speedup.
+Reconstruction, training-loop and evaluation scopes sum to 859.90 s, excluding
+training startup/final writes and the small prediction audit. The 86.8 s BC
+figure must not be described as end-to-end dataset preparation and evaluation.
+
+The next learning step should increase compatible body/state coverage and teach
+recovery at the learner's actual failed states. Repeated optimization on the same
+one-body successes has no demonstrated route to robustness. Audit the coverage
+collapse and admission disagreement before using them as new improvement labels;
+require any IPC recovery teacher to improve full continuations before fitting
+those targets. This is a proposed next step, not an implemented recovery method
+or a reason to launch another long SAC run. No additional training was started.
 
 ## Validation, environment and reproduction
 
-Sixteen focused CPU tests pass, covering body/repeat separation, independent
+Seventeen focused CPU tests pass, covering body/repeat separation, independent
 validation size, observation/action alignment, excluded failed reconstructions,
 incompatible physics with equal tensor sizes, and existing collection/expert
-protocol behavior. Native reconstruction and all 3,000 CUDA updates completed.
+protocol behavior. A final loader fix ensures an optional coverage threshold can
+only tighten the explicit admission rule, never re-admit a rejected episode or
+silently substitute the paper filter. The measured run did not use that optional
+threshold, so its dataset and results are unchanged. Native reconstruction,
+all 3,000 CUDA updates, full evaluation and checkpoint prediction audit completed.
 
 Machine: NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 97,887 MiB reported
 memory, driver 595.84. Native `build_raw` is Release with CUDA 12.8; PyTorch is
@@ -139,3 +194,7 @@ Artifacts under `output/uipc_manip/expert_pretrain_20260917/`: `corpus_audit.jso
 `dataset/{manifest,episode_metrics}.json`, `dataset/episodes/*.npz`,
 `bc/config.json`, `bc/distill_log.csv`, `bc/checkpoints/actor_final.pt`, and
 `evaluation.json` with per-decision actions and controller/grasp traces.
+`results_summary.json` holds all episode/group results; `comparison.png` plots
+the full trajectories; `prediction_audit.json` verifies final prediction error
+against constant baselines. Re-run `analyze_results.py` and `audit_prediction.py`
+in that artifact directory for their read-only analyses. All jobs finished.

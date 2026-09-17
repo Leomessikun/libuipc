@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from uipc_manip.distill import load_dataset
+from uipc_manip.distill import episode_ok, load_dataset
 
 
 def dataset(tmp_path):
@@ -71,3 +71,11 @@ def test_equal_dimensions_do_not_allow_mixing_different_physics(tmp_path):
     args["source_dirs"].append(str(second))
     with pytest.raises(ValueError, match="environment contracts"):
         load_dataset(**args, validation_bodies=[20])
+
+
+def test_extra_coverage_threshold_only_tightens_the_explicit_admission_rule():
+    row = dict(path="episode.npz", kept=False, final_upperarm_ratio=.9, early_turn=False)
+    assert not episode_ok(row, min_upperarm_ratio=.8)
+    row.update(kept=True, early_turn=True)
+    assert episode_ok(row, min_upperarm_ratio=.8)
+    assert not episode_ok(row, min_upperarm_ratio=.95)

@@ -52,11 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def episode_ok(record: dict, *, min_upperarm_ratio: float | None) -> bool:
-    if record.get("path") is None or record.get("sim_error", False):
+    if record.get("path") is None or record.get("sim_error", False) or not record.get("kept", False):
         return False
     if min_upperarm_ratio is not None:
-        return float(record["final_upperarm_ratio"]) >= float(min_upperarm_ratio) and not bool(record["early_turn"])
-    return bool(record.get("kept", False))
+        return float(record["final_upperarm_ratio"]) >= float(min_upperarm_ratio)
+    return True
 
 
 def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_train_transitions: int,

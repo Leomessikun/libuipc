@@ -1,6 +1,6 @@
 # Handoff — Current State of the Repo
 
-## 2026-09-17 — Existing-expert actor pretraining implemented
+## 2026-09-17 — Existing-expert actor pretraining and evaluation complete
 
 The owner approved connecting existing expert data to fast policy pretraining.
 [Corpus audit, training and protocol](performance/2026-09-17-expert-policy-pretraining.md).
@@ -11,10 +11,18 @@ coverage/grasp rule (mean .96398 coverage), but all fail historical early-turn
 admission, recorded separately. BC trains on body 14046 and withholds 14047/14048
 with all repeats grouped. A fresh actor with the saved SAC architecture completed
 3,000 CUDA MSE updates in 86.8 s through final scheduled validation; no simulation
-occurs during BC. Critics remain untrained. Sixteen focused tests pass. The fixed
-final actor is undergoing full 300-decision evaluation versus existing SAC on
-four development configurations, two rounds. Results pending; do not infer policy
-success from imitation loss or claim a new RL method. No online training started.
+occurs during BC. Critics remain untrained. Seventeen focused tests pass. Full
+300-decision evaluation on four development configurations, two rounds, is done:
+BC/SAC coverage-and-grasp successes 2/8 versus 0/8, mean coverage .25968/.29953.
+Both BC successes are tshirt_26/14046; withheld-body BC is 0/4 with zero upper-arm
+coverage. BC has no invalid-grasp decisions or controller rejections; SAC has
+109/2,400 invalid-grasp decisions. Both policies pass historical early-turn
+admission 0/8. One BC training-case trace reaches ~.99 then collapses to zero
+without grasp failure; inspect geometry/metric before labeling recoveries.
+Evaluation cost 4,800 decisions / 454.46 s. All jobs finished. The fast BC path
+works, but robustness, useful IPC recoveries and a new RL method remain unproven.
+No online training started. Optional coverage filtering now only tightens the
+explicit kept label; this unused option does not change the measured run.
 
 ## 2026-09-17 — Parallel IPC trajectory optimizer implemented and tested
 
