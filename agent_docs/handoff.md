@@ -1,5 +1,16 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Parallel IPC trajectory optimizer implementation
+
+The owner requested parallel GPU implementation and testing. New
+`uipc_manip.parallel_trajopt` uses CUDA CEM candidate generation/ranking and native
+batched CUDA IPC rollouts, with balanced candidate-to-state assignment and equal
+per-decision command norm caps. It uses no CPU Hessian factorization. The existing
+environment still uses CPU control/metrics/transfers, so this is not GPU-only.
+Twelve focused tests pass, including CUDA execution and closed-loop SAC/tail
+accounting. Native pilot and matched throughput/validation are pending; no policy
+training launched. See [protocol and boundaries](performance/2026-09-17-parallel-dressing-trajopt.md).
+
 ## 2026-09-17 — Deep dressing research and repeatability decomposition
 
 Read [the evidence and staged redesign](performance/2026-09-17-dressing-research-redesign.md).

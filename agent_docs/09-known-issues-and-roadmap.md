@@ -1,5 +1,14 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Parallel dressing trajectory search — 2026-09-17
+
+[Implementation and bounded protocol](performance/2026-09-17-parallel-dressing-trajopt.md):
+CUDA CEM plus batched IPC forward solves implemented; 12 focused tests pass.
+The optimizer evaluates each candidate on each restored slot and caps command
+magnitudes against the reference. Native speed/quality validation is pending.
+CPU environment orchestration remains; a complete contact adjoint, policy
+distillation and robust dressing improvements are not established by this work.
+
 ## Dressing recovery research — 2026-09-17
 
 [New evidence and experiment plan](performance/2026-09-17-dressing-research-redesign.md):
