@@ -9,9 +9,16 @@ recorded controller acceptance, clipping and finite rotations. Observation RNG
 is restored with snapshots. Mesh-contact friction history is still missing;
 the batched training signal has not been replaced with this unvalidated chain.
 `physics_actor_audit` compares full executed finite differences and six action
-corrections against the stronger existing SAC at four development states, with
-two repeated 12-decision continuations and a grasp/coverage gate. 17 CPU tests
-pass. The native audit is in progress; offline and policy training remain paused.
+corrections against the stronger existing SAC at four later development states
+plus two earlier elbow states, with repeated 12-decision continuations and a
+grasp/coverage gate. **All six proposal types pass 0/6 state gates**. Native cost:
+1,794 decisions / 404.92 s, all jobs finished; 38 focused CPU tests pass. No policy
+training ran. Geometric task gradients often agree well, but value directions
+do not pass accuracy at both finite-difference scales. Earlier body 14046's
+repeated SAC coverage differs by .06709 despite restored positions/RNG, so
+complete trajectory repeatability must be checked before interpreting that case.
+Small positive coverage changes elsewhere are below the preset .01 threshold.
+Do not claim IPC cannot help or the critic alone explains the failures.
 
 ## 2026-09-17 — First-principles audit and bounded offline controls
 

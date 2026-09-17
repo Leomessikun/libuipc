@@ -68,12 +68,13 @@ def main(argv=None):
     parser.add_argument("--cells", nargs="+", default=["tshirt_26:14049", "tshirt_26:14046"])
     parser.add_argument("--steps", nargs="+", type=int, default=[180, 240])
     parser.add_argument("--epsilons", nargs="+", type=float, default=[0.05, 0.1])
+    parser.add_argument("--fd-repeats", type=int, default=1)
     parser.add_argument("--horizon", type=int, default=12)
     parser.add_argument("--radius", type=float, default=0.5)
     parser.add_argument("--seed", type=int, default=1097)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
-    if args.horizon < 1 or min(args.steps) < 1 or min(args.epsilons) <= 0 or not 0 < args.radius <= 1:
+    if args.horizon < 1 or args.fd_repeats < 1 or min(args.steps) < 1 or min(args.epsilons) <= 0 or not 0 < args.radius <= 1:
         parser.error("Positive steps, horizon, epsilons and radius in (0, 1] required")
     if args.out.exists():
         raise FileExistsError(args.out)
@@ -155,8 +156,14 @@ def main(argv=None):
                                 axis_m=obj["axis_m"], grasp_valid=float(roll["decisions"][0]["grasp_valid"]))
 
                 for eps in args.epsilons:
-                    gradients, outcomes = finite_action_differences(action, eps, measure_action, cfg.clip_rotation_to_yz)
-                    record["finite_differences"].append(dict(epsilon=eps, gradients=gradients, outcomes=outcomes,
+                    draws, outcomes = [], []
+                    for _ in range(args.fd_repeats):
+                        draw, sides = finite_action_differences(action, eps, measure_action, cfg.clip_rotation_to_yz)
+                        draws.append(draw)
+                        outcomes.append(sides)
+                    gradients = {k: np.mean([d[k] for d in draws], axis=0) for k in draws[0]}
+                    record["finite_differences"].append(dict(epsilon=eps, gradients=gradients, outcomes=outcomes, draws=draws,
+                        repeat_cosine={k: probe.cosine(draws[0][k], draws[1][k]) for k in draws[0]} if len(draws) > 1 else {},
                         chain_frozen_cosine=probe.cosine(pg["chain"], gradients["frozen_value"]),
                         old_last_frozen_cosine=probe.cosine(pg["last_frame"], gradients["frozen_value"]),
                         chain_full_cosine=probe.cosine(pg["chain"], gradients["value"]),

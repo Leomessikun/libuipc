@@ -6,8 +6,11 @@
 diagnostic actor guidance now includes tool-relative observation derivatives and
 per-substep controller masks/finite rotations. Full cloth–arm friction history
 and contact/observation branch changes remain outside the analytic chain. A
-four-state executed finite-difference and action-improvement audit is running;
-no training resumes until accuracy and valid-grasp task-improvement gates pass.
+six-state executed finite-difference and action-improvement audit completed:
+all six proposal types pass 0/6 gates; no actor training followed. Earlier body
+14046's repeated SAC coverage differs by .06709, making complete restored-rollout
+repeatability a prerequisite for that case. Geometry-based derivatives often
+agree, but a useful, repeatable recovery and robust value guidance remain unproven.
 
 ## Dressing first-principles audit — 2026-09-17
 
