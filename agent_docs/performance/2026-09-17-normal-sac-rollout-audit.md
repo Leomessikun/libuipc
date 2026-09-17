@@ -1,5 +1,10 @@
 # Ordinary SAC dressing: rollout and training audit
 
+Subsequent direction: the owner requested a new research assessment after this
+audit. See [the transfer research proposal](2026-09-17-dressing-transfer-direction.md).
+The suggested next comparison below remains unexecuted; it is historical advice,
+not a prerequisite blocking that later request. The measured results are unchanged.
+
 Status: completed analysis of saved SAC results and two bounded, unchanged-policy
 geometry captures. No training, policy update, solver change or new algorithm.
 The owner abandoned IPC policy-gradient research and then clarified twice that

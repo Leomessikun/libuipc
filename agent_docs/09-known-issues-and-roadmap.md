@@ -1,6 +1,24 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
-## Ordinary SAC rollout diagnosis — current priority, 2026-09-17
+## Research pivot — current recommendation, 2026-09-17
+
+After the completed SAC audit, the owner again asked to abandon the previous idea
+and explore a new direction. [Research assessment and bounded comparison](performance/2026-09-17-dressing-transfer-direction.md):
+investigate transferable sleeve-motion goals with domain-specific execution.
+Published dressing diffusion/MPC, relative placement and hierarchical/latent
+transfer are close precedents; generic module combinations are not novel.
+
+No method is implemented and no new policy result exists. First proposed screen:
+matched action-sequence imitation versus sleeve-goal control on compatible native
+data, complete dressing episodes, two seeds and withheld body configurations.
+Only a useful native result warrants testing whether additional source geometry
+reduces target learning needs. Source geometry availability, target reachability,
+occluded-state estimation and real-robot adaptation are unresolved. Do not assume
+that contact-independent goals exist or that a good predicted goal is executable.
+Existing trajectory contracts need alignment; do not restart long SAC or IPC
+correction runs. Training remains stopped.
+
+## Ordinary SAC rollout diagnosis — completed, 2026-09-17
 
 The owner abandoned the IPC algorithm direction and explicitly requested normal
 SAC rollout analysis first. [Completed audit](performance/2026-09-17-normal-sac-rollout-audit.md):

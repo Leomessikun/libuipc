@@ -110,6 +110,14 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Research a new direction after the SAC audit.** Following the completed
+  ordinary SAC rollout analysis, the owner again instructed the agent to give
+  up the previous idea and deeply research alternatives for dressing. Use the
+  measured SAC findings as evidence, keep abandoned IPC correction experiments
+  stopped, and distinguish a proposed contribution from an implemented or
+  validated algorithm. The earlier diagnosis-first ordering has been satisfied;
+  it must not prevent the requested research assessment. (Set 2026-09-17.)
+
 - **Diagnose ordinary SAC rollouts before a replacement research proposal.** The
   owner abandoned the IPC algorithm direction, requested a new direction, then
   clarified twice that actual normal SAC policy results must be analysed first.

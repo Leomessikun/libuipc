@@ -1,5 +1,30 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Research pivot after completed SAC audit
+
+The owner renewed the instruction to abandon the previous idea and research a
+new direction. The [new research assessment](performance/2026-09-17-dressing-transfer-direction.md)
+uses the completed ordinary SAC audit and supersedes the next-step instruction
+in the older section below. Do not restart IPC/SAC corrections. No training or
+native evaluation was launched during this research; no new policy result exists.
+
+Recommended hypothesis: learn desired sleeve-geometry sequences from existing
+trajectories and execute them with domain-specific feedback control, investigating
+transfer across contact dynamics. This is a task/transfer research proposal, not
+an established novel RL algorithm. Dressing diffusion/MPC, TAX3D, ArticuBot,
+keypoint actions and latent transfer substantially constrain novelty. Existing
+arm-relative privileged features are infrastructure, not a new contribution.
+
+First proposed screen is a matched native action-sequence versus sleeve-goal
+policy comparison; only a positive full-episode result justifies the subsequent
+source-to-target transfer study. These experiments are specified, not run.
+The inspected Newton buffer has x-ray observations and kinematic cuff grasp but
+no explicit full geometry, so geometry-rich source records must be identified
+before pooling goals. Reusing actions or padding observations across domains is
+not valid. Real sensor-to-command deployment and reduced adaptation cost remain
+unproven. Further ordinary SAC checkpoint evaluation is useful as a baseline,
+not a reason to withhold the requested research assessment.
+
 ## 2026-09-17 — Owner abandons IPC correction; ordinary SAC diagnosis first
 
 The owner abandoned the proposed research direction and then clarified twice:
