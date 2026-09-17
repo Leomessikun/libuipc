@@ -140,3 +140,59 @@ def test_coverage_objective_gradient_is_the_leading_triangle():
     assert np.allclose(g[:3, 0], [-0.25, -0.25, -0.5], atol=1e-5) and np.allclose(g[:3, 1:], 0.0, atol=1e-5)
     value, g, on = trajopt.coverage_objective(env, pos + np.array([2.0, 0, 0]))
     assert not on and value == 0.0 and not g.any()
+
+
+def test_controller_jacobian_zero_commands_respect_rejection_and_clipping():
+    env = _env()
+    actions = np.zeros((2, 6))
+    actions[1, 0] = 1.2  # fully saturated: no local derivative
+    anchor, offsets = np.array([0.1, 0.2, 0.3]), np.array([[0.02, 0.01, -0.01]])
+    frames = []
+    for t in range(2):
+        start = anchor.copy()
+        for k in range(REPEAT):
+            # Entire first decision rejected, including its zero rotation.
+            accepted = t == 1
+            if accepted:
+                anchor = anchor + np.array([env.cfg.max_translation / REPEAT, 0, 0])
+            frames.append(dict(anchor=anchor.copy(), offsets=offsets.copy(), start_anchor=start,
+                               start_offsets=offsets.copy(), decision=t, substep=k + 1,
+                               translation_accepted=accepted, rotation_accepted=accepted))
+    aims, tools = trajopt.controller_jacobians(frames, actions, env)
+    assert np.allclose(aims[..., 0, :], 0) and np.allclose(tools[..., 0, :], 0)
+    assert np.allclose(aims[..., 1, 0], 0) and np.allclose(tools[..., 1, 0], 0)
+    assert np.allclose(aims[..., 3], 0)  # x rotation ignored
+    assert np.allclose(tools[-1, :, 1, 1], [0, env.cfg.max_translation, 0])
+    # At zero rotation, d offset / d angle_y = e_y cross offset.
+    assert np.allclose(aims[-1, 0, :, 1, 4], np.cross([0, 1, 0], offsets[0]) * env.cfg.max_rotation)
+
+
+def test_controller_jacobian_matches_finite_rotation_with_partial_acceptance():
+    from scipy.spatial.transform import Rotation
+
+    env = _env()
+    env.cfg.max_rotation = 0.8
+    action = np.array([[0.2, -0.1, 0.3, 0.9, 0.7, -0.5]])
+    initial = np.array([[0.01, 0.02, -0.03], [-0.02, 0.01, 0.04]])
+    anchor, offsets = np.zeros(3), initial.copy()
+    frames = []
+    for k in range(REPEAT):
+        trans, rot = k % 2 == 0, k != 2
+        if trans:
+            anchor += action[0, :3] * env.cfg.max_translation / REPEAT
+        if rot:
+            offsets = Rotation.from_rotvec([0, action[0, 4] * 0.8 / REPEAT, action[0, 5] * 0.8 / REPEAT]).apply(offsets)
+        frames.append(dict(anchor=anchor.copy(), offsets=offsets.copy(), start_anchor=np.zeros(3),
+                           start_offsets=initial, decision=0, substep=k + 1,
+                           translation_accepted=trans, rotation_accepted=rot))
+    aims, tools = trajopt.controller_jacobians(frames, action, env)
+    def endpoint(a):
+        rot = Rotation.from_rotvec([0, a[4] * 0.8 * 5 / REPEAT, a[5] * 0.8 * 5 / REPEAT])
+        return a[:3] * env.cfg.max_translation * 3 / REPEAT + rot.apply(initial)
+    fd = np.zeros((2, 3, 6))
+    for k in range(6):
+        p, m = action[0].copy(), action[0].copy()
+        p[k] += 1e-6
+        m[k] -= 1e-6
+        fd[:, :, k] = (endpoint(p) - endpoint(m)) / 2e-6
+    assert np.allclose(aims[-1, :, :, 0, :], fd, atol=1e-9)

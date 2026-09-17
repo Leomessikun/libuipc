@@ -102,10 +102,13 @@ def rollout(env, snap: dict, actions: np.ndarray, feature=None) -> dict:
     restore_error = probe.restore(env, snap)
     frames: list[dict] = []
     original = env._sim_step
+    previous_trace = getattr(env, "_control_trace", None)
+    env._control_trace = []
 
     def hooked():
         original()
         entry = {"anchor": env._anchor[0].copy(), "offsets": np.asarray(env._offsets[0]).copy()}
+        entry["translation_accepted"], entry["rotation_accepted"] = env._control_trace[-1][0]
         if feature is not None:
             rows, cols, values, _ = feature.export_system()
             entry["H"] = adjoint.system_to_matrix(rows, cols, values, int(feature.dof_count()))
@@ -127,6 +130,7 @@ def rollout(env, snap: dict, actions: np.ndarray, feature=None) -> dict:
             decisions.append(out)
     finally:
         env._sim_step = original
+        env._control_trace = previous_trace
     positions = env.positions()[0].astype(np.float64)
     return {"restore_error_m": restore_error, "frames": frames, "decisions": decisions, "positions": positions,
             "seconds": time.time() - t0, "measure": probe.measure(env)}
@@ -144,6 +148,58 @@ def summarise(env, roll: dict, layout: dict) -> dict:
 
 
 # ------------------------------------------------------------------------ the chain over h decisions
+def controller_jacobians(frames: list[dict], actions: np.ndarray, env) -> tuple[np.ndarray, np.ndarray]:
+    """Aim/tool Jacobians through clipping, Rodrigues rotations and recorded accept/reject masks.
+
+    Central differences here evaluate only the inexpensive rigid controller, never the
+    simulator. The discrete rejection branch is frozen; branch changes are checked by
+    full simulator finite differences. In particular, a rejected zero command has zero
+    derivative rather than the old fallback k/repeat.
+    """
+    from uipc_manip.dressing_env import _rodrigues
+
+    actions = np.asarray(actions, dtype=np.float64)
+    if not frames or not all("translation_accepted" in f and "rotation_accepted" in f for f in frames):
+        raise ValueError("Controller derivatives require recorded per-substep acceptance masks")
+
+    def execute(a):
+        a = np.clip(a, -1.0, 1.0)
+        translation = a[:, :3] * float(env.cfg.max_translation) / env.cfg.action_repeat
+        rotation = a[:, 3:].copy() * float(env.cfg.max_rotation) / env.cfg.action_repeat
+        if env.cfg.clip_rotation_to_yz:
+            rotation[:, 0] = 0.0
+        anchor, offsets = frames[0]["start_anchor"].copy(), frames[0]["start_offsets"].copy()
+        aims, tools = [], []
+        for fr in frames:
+            t = fr["decision"]
+            if fr["translation_accepted"]:
+                anchor = anchor + translation[t]
+            if fr["rotation_accepted"]:
+                offsets = _rodrigues(offsets, rotation[t])
+            tools.append(anchor.copy())
+            aims.append(anchor[None, :] + offsets)
+        return np.asarray(aims), np.asarray(tools)
+
+    aims, tool = execute(actions)
+    if not np.allclose(tool, [f["anchor"] for f in frames], atol=1e-8, rtol=0):
+        raise ValueError("Recorded controller does not reproduce executed anchors")
+    if not np.allclose(aims - tool[:, None, :], [f["offsets"] for f in frames], atol=1e-8, rtol=0):
+        raise ValueError("Recorded controller does not reproduce executed offsets")
+    aim_jac = np.zeros((*aims.shape, *actions.shape))
+    tool_jac = np.zeros((*tool.shape, *actions.shape))
+    eps = 1e-5
+    for t in range(len(actions)):
+        for k in range(6):
+            plus, minus = actions.copy(), actions.copy()
+            plus[t, k] += eps
+            minus[t, k] -= eps
+            ap, tp = execute(plus)
+            am, tm = execute(minus)
+            aim_jac[..., t, k] = (ap - am) / (2 * eps)
+            tool_jac[..., t, k] = (tp - tm) / (2 * eps)
+    return aim_jac, tool_jac
+
+
 def executed_ratios(frames: list[dict], actions: np.ndarray, env) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
     """Per frame: the executed fraction of its decision's commanded translation and rotation so far
     (k/6 when the whole command executed, less where substeps were refused), and the rotation R_f
@@ -214,6 +270,11 @@ def chain_gradient(frames: list[dict], layout: dict, g_final: np.ndarray, action
     grad_action[:, 3:] = grad_rad * float(env.cfg.max_rotation)
     if getattr(env.cfg, "clip_rotation_to_yz", False):
         grad_action[:, 3] = 0.0
+    if all("translation_accepted" in f for f in frames):
+        aim_jac, _ = controller_jacobians(frames, actions, env)
+        grad_action = np.einsum("fvi,fvitk->tk", np.asarray(dL_daim), aim_jac)
+        grad_m = grad_action[:, :3] / float(env.cfg.max_translation)
+        grad_rad = grad_action[:, 3:] / float(env.cfg.max_rotation)
     return {"per_action": grad_action, "per_metre": grad_m, "per_radian": grad_rad, "reverse_s": reverse_s, "dL_daim": dL_daim,
             "executed_translation_ratio": trans_ratio.tolist(), "executed_rotation_ratio": rot_ratio.tolist(),
             "frames": F, "decisions": h}

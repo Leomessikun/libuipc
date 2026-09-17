@@ -11,7 +11,32 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from uipc_manip import physics_gradient_actor as actor  # noqa: E402
-from uipc_manip.obs import FLAG_DEFORMABLE, POINT_DIM, ObsSpec  # noqa: E402
+from uipc_manip.obs import FLAG_DEFORMABLE, FLAG_MARKER, FLAG_TOOL, POINT_DIM, ObsSpec  # noqa: E402
+
+
+def test_tool_motion_changes_arm_goal_and_extras_and_cancels_held_cloth_motion():
+    spec = ObsSpec(8)
+    tool0 = np.array([0.1, 0.2, 0.3], dtype=np.float32)
+    points = np.array([[0.5, 0.4, 0.6], [0.2, 0.3, 0.5]], dtype=np.float32)
+    flags = np.zeros((2, 4), dtype=np.float32)
+    flags[0, FLAG_MARKER], flags[1, FLAG_DEFORMABLE] = 1, 1
+    flat = spec.pack_labeled(points - tool0, flags, np.array([0.8, 0.7, 0.6]), tool0, True)
+    cap = dict(flat=flat, visible=np.array([0]), inverse=np.array([0]), counts=np.ones(1),
+               deformable_rows=np.array([1]), tool=tool0)
+    agent = SimpleNamespace(spec=spec, device=torch.device("cpu"), _cut_padding=False)
+    capture = actor.ObservationCapture.__new__(actor.ObservationCapture)
+    delta = torch.tensor([0.03, -0.02, 0.01], requires_grad=True)
+    pos, feat, valid, extra = capture.torch_observation(cap, torch.tensor(points[1:]) + delta, agent,
+                                                      tool=torch.tensor(tool0) + delta)
+    # A held point follows the tool, so its relative coordinate must not change.
+    assert torch.allclose(pos[0, 1], torch.tensor(points[1] - tool0))
+    assert torch.allclose(torch.autograd.grad(pos[0, 1].sum(), delta, retain_graph=True)[0], torch.zeros(3))
+    assert torch.allclose(pos[0, 0], torch.tensor(points[0] - tool0) - delta)
+    assert torch.allclose(pos[0, 2], torch.tensor([0.8, 0.7, 0.6]) - delta)
+    assert torch.allclose(pos[0, 3:], torch.zeros((5, 3)))  # tool and padding stay zero
+    assert torch.allclose(extra[0, :3], torch.tensor(tool0) + delta)
+    assert torch.allclose(extra[0, 3:6], torch.tensor([0.8, 0.7, 0.6]) - delta)
+    assert torch.allclose(torch.autograd.grad(pos[0, 0].sum(), delta)[0], -torch.ones(3))
 
 
 def test_torch_observation_matches_the_captured_centroids_and_spreads_the_gradient():

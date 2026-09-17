@@ -1,5 +1,14 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## SAC actor-action audit — 2026-09-17
+
+[Bounded test and stop rules](performance/2026-09-17-dressing-actor-audit.md):
+diagnostic actor guidance now includes tool-relative observation derivatives and
+per-substep controller masks/finite rotations. Full cloth–arm friction history
+and contact/observation branch changes remain outside the analytic chain. A
+four-state executed finite-difference and action-improvement audit is running;
+no training resumes until accuracy and valid-grasp task-improvement gates pass.
+
 ## Dressing first-principles audit — 2026-09-17
 
 [Current research and control implementation](performance/2026-09-17-dressing-first-principles.md):

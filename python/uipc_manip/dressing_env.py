@@ -673,11 +673,14 @@ class GenesisIPCDressingEnv:
         held = self.positions() if cfg.anchor_tether_m is not None else None
         try:
             for _ in range(cfg.action_repeat):
+                control_trace = getattr(self, "_control_trace", None)
+                accepted = [] if control_trace is not None else None
                 for i, cell in enumerate(self.cells):
                     offsets = _rodrigues(self._offsets[i], rotation[i] / cfg.action_repeat)
                     candidate = self._anchor[i] + translation[i] / cfg.action_repeat
                     # PyFlex no-move collision: a step that would put the anchor inside the shell is dropped.
-                    if np.min(np.linalg.norm(cell.arm_points - candidate[None, :], axis=1)) < cfg.no_move_collision_threshold:
+                    collision_blocked = np.min(np.linalg.norm(cell.arm_points - candidate[None, :], axis=1)) < cfg.no_move_collision_threshold
+                    if collision_blocked:
                         candidate = self._anchor[i]
                         collision_rejected[i] += 1
                     # The tether drops the whole move, the rotation too, where the collision rule keeps the rotation.
@@ -685,8 +688,14 @@ class GenesisIPCDressingEnv:
                         candidate[None, :] + offsets, held[i][self._pickers[i]["anchor_idx"]], self._anchor[i][None, :] + self._offsets[i], cfg.anchor_tether_m
                     ):
                         self._offsets[i], self._anchor[i] = offsets, candidate
+                        if accepted is not None:
+                            accepted.append((not bool(collision_blocked), True))
                     else:
                         tether_rejected[i] += 1
+                        if accepted is not None:
+                            accepted.append((False, False))
+                if control_trace is not None:
+                    control_trace.append(accepted)
                 self._update_targets()
                 self._sim_step()
                 if cfg.decision_watchdog and time.perf_counter() - started > budget:

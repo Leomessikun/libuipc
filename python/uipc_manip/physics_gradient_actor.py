@@ -4,9 +4,11 @@ A trained SAC checkpoint supplies a value of the next state, ``V(x') = min(Q1, Q
 the solver supplies how the next state moves with the command, so the actor's gradient is
 ``∂V/∂u = (∂V/∂x')ᵀ ∂x'/∂u``: the one-decision adjoint chain of ``physics_gradient_adjoint`` (six
 exported systems, host factorisation) or the frame's own device solve on the last system alone.
-``∂V/∂x'`` is the exact derivative of the critic through the environment's observation function
-(camera visibility, voxel centroids, tool-relative packing), rebuilt in torch from the discrete
-choices the environment made at ``x'``.
+The observation derivative includes cloth and tool coordinates with visibility and voxel
+membership frozen. The six-frame chain includes recorded controller acceptance and finite
+rotations, but its projected last-iterate Hessians and inertia-only state coupling remain
+approximations; cloth-arm friction history is not differentiated. Full executed finite
+differences in ``physics_actor_audit`` measure these limits before using its proposals.
 
 At each state the script compares that physics gradient with central differences of ``V`` over the
 command, with SAC's own actor signal ``∂Q(s, a)/∂a``, and with the one-step proxy direction of the
@@ -25,7 +27,7 @@ import numpy as np
 from uipc_manip import physics_gradient_adjoint as adjoint
 from uipc_manip import physics_gradient_probe as probe
 from uipc_manip import physics_gradient_trajopt as trajopt
-from uipc_manip.obs import FLAG_DEFORMABLE, ObsSpec
+from uipc_manip.obs import FLAG_DEFORMABLE, FLAG_TOOL, ObsSpec
 
 
 # ------------------------------------------------------------------------ the checkpoint
@@ -108,8 +110,12 @@ class ObservationCapture:
             raise RuntimeError("rebuilt voxel centroids do not match the observation's deformable points")
         return {"flat": flat, "visible": visible, "inverse": inverse, "counts": counts, "deformable_rows": deformable, "tool": tool}
 
-    def torch_observation(self, cap: dict, x: "torch.Tensor", agent):
-        """``(pos, feat, valid, extra)`` for the agent with the deformable rows a function of ``x`` [n, 3]."""
+    def torch_observation(self, cap: dict, x: "torch.Tensor", agent, tool=None):
+        """Frozen discrete observation choices, differentiable in cloth and optional world tool.
+
+        Arm/goal rows move by minus the tool displacement, the explicit tool row stays
+        zero, and both absolute tool and relative goal extras follow the same transform.
+        """
         import torch
 
         flat = torch.as_tensor(cap["flat"], device=agent.device).unsqueeze(0)
@@ -120,10 +126,16 @@ class ObservationCapture:
         sums = torch.zeros((counts.shape[0], 3), device=agent.device, dtype=x.dtype)
         sums = sums.index_add(0, inverse, x[visible])
         centroids = sums / counts.unsqueeze(-1)
-        tool = torch.as_tensor(cap["tool"], device=agent.device, dtype=x.dtype)
+        captured_tool = torch.as_tensor(cap["tool"], device=agent.device, dtype=x.dtype)
+        tool = captured_tool if tool is None else tool
         rows = torch.as_tensor(cap["deformable_rows"], device=agent.device)
         pos = pos.clone().to(x.dtype)
+        moving = valid & (feat[:, :, FLAG_TOOL] < 0.5)
+        pos = pos - moving.unsqueeze(-1) * (tool - captured_tool)
         pos[0, rows] = centroids - tool[None, :]
+        extra = extra.clone().to(x.dtype)
+        extra[:, :3] = tool
+        extra[:, 3:6] = extra[:, 3:6] - (tool - captured_tool)
         if agent._cut_padding:
             used = valid.any(dim=0).nonzero()
             m = int(used.max()) + 1 if used.numel() else 1
@@ -131,22 +143,25 @@ class ObservationCapture:
         return pos.to(torch.float32), feat, valid, extra
 
 
-def value_and_gradient(agent, capture: ObservationCapture, positions: np.ndarray) -> dict:
+def value_and_gradient(agent, capture: ObservationCapture, positions: np.ndarray, *, include_tool=False, cap=None) -> dict:
     """``V(x') = min Q(s', μ(s'))`` and ``∂V/∂x'`` on every cloth vertex (3n), through the observation."""
     import torch
 
-    cap = capture.capture(positions)
+    cap = capture.capture(positions) if cap is None else cap
     x = torch.as_tensor(positions, device=agent.device, dtype=torch.float32).requires_grad_(True)
-    obs = capture.torch_observation(cap, x, agent)
+    tool = torch.as_tensor(cap["tool"], device=agent.device, dtype=torch.float32).requires_grad_(True) if include_tool else None
+    obs = capture.torch_observation(cap, x, agent, tool=tool) if include_tool else capture.torch_observation(cap, x, agent)
     mu, _, _, _ = agent.actor(obs, compute_pi=False, compute_log_pi=False)
     q1, q2 = agent.critic(obs, mu)
     v = torch.min(q1, q2).sum()
     # Only the input derivative is needed. Accumulating every actor/critic parameter
     # gradient wastes work and leaves stale gradients behind during proposal queries.
-    gradient = torch.autograd.grad(v, x)[0]
+    grads = torch.autograd.grad(v, (x, tool) if include_tool else (x,))
+    gradient = grads[0]
     return {"value": float(v.item()), "q1": float(q1.item()), "q2": float(q2.item()), "mu": mu.detach().cpu().numpy().reshape(-1),
             "gradient": gradient.detach().cpu().numpy().astype(np.float64).reshape(-1), "visible": int(cap["visible"].shape[0]),
-            "voxels": int(cap["counts"].shape[0])}
+            "voxels": int(cap["counts"].shape[0]),
+            "tool_gradient": grads[1].detach().cpu().numpy().astype(np.float64) if include_tool else np.zeros(3)}
 
 
 def value(agent, flat_obs: np.ndarray) -> float:
@@ -194,30 +209,40 @@ def last_frame_gradient(feature, layout: dict, g: np.ndarray, frame: dict, env) 
     return grad, float(residual), seconds
 
 
-def physics_gradient(env, snap: dict, u: np.ndarray, feature, layout: dict, agent, capture: ObservationCapture) -> dict:
+def physics_gradient(env, snap: dict, u: np.ndarray, feature, layout: dict, agent, capture: ObservationCapture, *, task_direction=False) -> dict:
     """One decision ``u`` from the restored state with its six systems; ``V`` at the result and
     ``∂V/∂u`` by the chain (host) and by the last frame alone (device)."""
     roll = trajopt.rollout(env, snap, u[None, :], feature)
     cap = capture.capture(roll["positions"])
-    vg = value_and_gradient(agent, capture, roll["positions"])
+    vg = value_and_gradient(agent, capture, roll["positions"], include_tool=True, cap=cap)
     t0 = time.time()
     chain = trajopt.chain_gradient(roll["frames"], layout, vg["gradient"], u[None, :], env)
+    cloth_only = chain["per_action"][0].copy()
+    _, tool_jac = trajopt.controller_jacobians(roll["frames"], u[None, :], env)
+    direct = vg["tool_gradient"] @ tool_jac[-1, :, 0, :]
+    chain["per_action"][0] += direct
     chain_s = time.time() - t0
     last, residual, last_s = last_frame_gradient(feature, layout, vg["gradient"], roll["frames"][-1], env)
+    task = None
+    if task_direction:
+        obj = trajopt.objective(env, roll["positions"], layout)
+        task = trajopt.chain_gradient(roll["frames"], layout, obj["gradient"], u[None, :], env)["per_action"][0]
     return {"value": vg["value"], "chain": chain["per_action"][0], "last_frame": last, "device_residual": residual,
             "chain_s": chain_s, "device_s": last_s, "rollout_s": roll["seconds"], "positions": roll["positions"],
             "measure": roll["measure"], "visible": vg["visible"], "voxels": vg["voxels"],
-            "gradient_norm": float(np.linalg.norm(vg["gradient"])), "executed_m": roll["decisions"][0]["executed_m"], "cap": cap}
+            "gradient_norm": float(np.linalg.norm(vg["gradient"])), "executed_m": roll["decisions"][0]["executed_m"], "cap": cap,
+            "chain_cloth_only": cloth_only, "direct_tool": direct, "decisions": roll["decisions"], "task_chain": task}
 
 
-def frozen_value(agent, capture: ObservationCapture, cap: dict, positions: np.ndarray) -> float:
+def frozen_value(agent, capture: ObservationCapture, cap: dict, positions: np.ndarray, tool=None) -> float:
     """``V`` at ``positions`` seen through the visibility and voxel membership captured at another
     state: the differentiable part of the observation alone."""
     import torch
 
     with torch.no_grad():
         x = torch.as_tensor(positions, device=agent.device, dtype=torch.float32)
-        obs = capture.torch_observation(cap, x, agent)
+        tool = None if tool is None else torch.as_tensor(tool, device=agent.device, dtype=torch.float32)
+        obs = capture.torch_observation(cap, x, agent, tool=tool)
         mu, _, _, _ = agent.actor(obs, compute_pi=False, compute_log_pi=False)
         q1, q2 = agent.critic(obs, mu)
         return float(torch.min(q1, q2).item())
@@ -242,7 +267,7 @@ def finite_difference(env, snap: dict, u: np.ndarray, agent, eps_m: float, eps_r
             roll = trajopt.rollout(env, snap, a[None, :])
             sides.append(value(agent, env.observation([roll["positions"]])[0]))
             if capture is not None and cap is not None:
-                frozen.append(frozen_value(agent, capture, cap, roll["positions"]))
+                frozen.append(frozen_value(agent, capture, cap, roll["positions"], env._anchor[0]))
         fd[k] = (sides[0] - sides[1]) / (2.0 * e)
         if frozen:
             fd_frozen[k] = (frozen[0] - frozen[1]) / (2.0 * e)

@@ -31,6 +31,7 @@ expert's own next command.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 import time
@@ -178,6 +179,7 @@ def take_snapshot(env, name: str, step: int) -> dict:
         "last_progress": list(env._last_progress), "privileged": env._privileged.copy(),
         "heuristic": {k: getattr(h, k).copy() for k in ("stage", "_steps", "_align_steps", "_best_upper")},
         "positions": [p.copy() for p in env.positions()],
+        "rng_states": [copy.deepcopy(r.bit_generator.state) for r in env.rngs],
         "measure": measure(env),
     }
 
@@ -195,6 +197,8 @@ def restore(env, snap: dict) -> float:
     env._last_progress = list(snap["last_progress"])
     env._privileged = snap["privileged"].copy()
     env._episode_step = int(snap["episode_step"])
+    for rng, state in zip(env.rngs, snap.get("rng_states", []), strict=False):
+        rng.bit_generator.state = copy.deepcopy(state)
     env._decision_times.clear()
     h = heuristic(env)
     for k, v in snap["heuristic"].items():
@@ -238,6 +242,9 @@ def decision(env, action: np.ndarray) -> dict:
     out["executed_m"] = float(np.linalg.norm(env._anchor[0] - before))
     out["commanded_rad"] = float(np.linalg.norm(commanded_rotation(env, action)))
     out["executed_rad"] = rotation_angle(offsets_before, np.asarray(env._offsets[0]))
+    for key in ("grasp_valid", "valid_grasp_success", "collision_rejected_substeps", "tether_rejected_substeps"):
+        if key in infos[0]:
+            out[key] = infos[0][key]
     return out
 
 

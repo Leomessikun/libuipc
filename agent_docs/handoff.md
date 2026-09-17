@@ -1,5 +1,18 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Bounded SAC actor-action audit
+
+The owner approved the next actor test, not another long training run. Read
+[the protocol and derivative limits](performance/2026-09-17-dressing-actor-audit.md).
+The diagnostic six-frame chain now includes tool-relative arm/goal/extras and
+recorded controller acceptance, clipping and finite rotations. Observation RNG
+is restored with snapshots. Mesh-contact friction history is still missing;
+the batched training signal has not been replaced with this unvalidated chain.
+`physics_actor_audit` compares full executed finite differences and six action
+corrections against the stronger existing SAC at four development states, with
+two repeated 12-decision continuations and a grasp/coverage gate. 17 CPU tests
+pass. The native audit is in progress; offline and policy training remain paused.
+
 ## 2026-09-17 — First-principles audit and bounded offline controls
 
 Read [the audit and research plan](performance/2026-09-17-dressing-first-principles.md).
