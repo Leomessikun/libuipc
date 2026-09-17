@@ -1,5 +1,25 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Prior-data inventory for the FQL design
+
+Offline only; nothing running. The [inventory](performance/2026-09-17-prior-data-inventory.md)
+tests the data premise of the [shared FQL design](performance/2026-09-17-rl-pretraining-contract.md)
+(other session, `4dbd2464`, `f23627f6`). The eight compatible replays hold
+945,864 transitions and 3,072 slot-episodes; 105 episodes (3.4 %) and 0.49 % of
+decisions ever come near success, and four runs have none. All have `priv_dim`
+0, so the shoulder-overshoot reward correction cannot be computed for them:
+corrected-reward Bellman data is the ~11,000 scripted-expert rows, or the
+replays keep the cliff reward (a geometry-free mask of the 2,000 on-arm →
+off-arm drop rows is a partial way out). A behavior prior fit to this corpus
+learns the elbow stall. On the 25 evaluation cells the scripted expert scores
+11 final / 15 at the peak in 733 s; the best RL evaluation ever logged is 7,
+one snapshot. FQL against RLPD and imitation at matched wall time remains the
+right comparison once a repaired teacher has generated data with success in
+it; choose the learner last. The record also lists sourced open problems;
+the one that matches IPC's guarantee is cloth against moving arms, which
+FleX-based work states it cannot simulate and our fixed-arm scene does not
+yet do either.
+
 ## 2026-09-17 — Concrete shared-policy pretraining design, not yet implemented
 
 The owner's follow-up asks how to train dressing and for algorithm/pretraining
