@@ -1,5 +1,19 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Recovery teacher prototype and novelty audit
+
+The owner asked whether recovery teaching is novel and to try a promising
+contribution. [Prior-art audit and fixed experiment](performance/2026-09-17-recovery-teacher.md)
+find DAgger/GPS, selective intervention and MPC-guided SAC close precedents;
+the broad recipe is not new. `recovery_teacher` now tests four existing geometric
+recovery routes and policy/scaled-policy controls from the BC actor's own failed
+tshirt_68/14046 state, through the full episode. A fresh-world verification must
+beat both controls before any labels are admitted. `step(reset_on_done=False)`
+retains terminal state without changing default reset or horizon. Sixteen focused
+tests and two native terminal/reset tests pass. Native selection is running;
+conditional paired 1,000-update actor fitting is pending verified useful recovery.
+Do not claim a new RL algorithm or restart long SAC training on speculation.
+
 ## 2026-09-17 — Existing-expert actor pretraining and evaluation complete
 
 The owner approved connecting existing expert data to fast policy pretraining.

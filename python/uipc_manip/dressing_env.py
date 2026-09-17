@@ -656,7 +656,12 @@ class GenesisIPCDressingEnv:
         self._privileged = self._privileged_state(positions, self._last_progress)
         return self.observation(positions)
 
-    def step(self, actions: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict]]:
+    def step(self, actions: np.ndarray, *, reset_on_done: bool = True) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict]]:
+        """Advance one decision; branching evaluators may retain a time-limit state.
+
+        Simulator errors still reset. With reset_on_done=False the caller must
+        reset or restore after the terminal decision before stepping again.
+        """
         cfg = self.cfg
         n = self.num_envs
         a = np.clip(np.asarray(actions, dtype=np.float64).reshape(n, self.action_dim), -1.0, 1.0)
@@ -764,7 +769,8 @@ class GenesisIPCDressingEnv:
             for i in range(n):
                 infos[i]["terminal_obs"] = obs[i]
                 infos[i]["terminal_privileged"] = self._privileged[i]
-            obs = self.reset()
+            if reset_on_done:
+                obs = self.reset()
         return obs, rewards, dones, infos
 
     def observation(self, positions: list[np.ndarray] | None = None) -> np.ndarray:

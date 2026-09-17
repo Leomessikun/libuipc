@@ -22,6 +22,7 @@ when iteration counts change. Report both and state which is the primary signal.
 
 | Record | Status | Scope |
 |---|---|---|
+| [IPC recovery teacher](2026-09-17-recovery-teacher.md) | Prototype tested; native selection running; 16 focused and 2 native tests pass | Prior-art audit, full-episode geometric recovery selection at a BC-visited state, fresh verification and conditional label admission |
 | [Existing-expert policy pretraining](2026-09-17-expert-policy-pretraining.md) | BC/SAC 2/8 versus 0/8 coverage-and-grasp successes, BC withheld-body 0/4; all jobs finished; 17 tests pass | Existing corpus audit, reconstructed observations, 3,000 CUDA updates in 86.8 s and full dressing evaluation; no robustness or new RL claim |
 | [Parallel IPC dressing trajectory search](2026-09-17-parallel-dressing-trajopt.md) | Implemented; 12 tests pass; 4,956 native decisions complete; 1.439x observed rollout speedup, no robust dressing gain | CUDA CEM and batched IPC rollouts, balanced state assignment and five controls; CPU environment boundary remains |
 | [Dressing recovery research and redesign](2026-09-17-dressing-research-redesign.md) | Research and 132-decision native diagnostic complete; no training | Fixed-action variability isolated from policy feedback; bounded expert data audit; previous sequence controls; prior-art comparison and staged recovery-supervised SAC proposal |

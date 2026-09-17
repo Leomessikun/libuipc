@@ -1,5 +1,15 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## IPC recovery supervision — 2026-09-17
+
+[Novelty audit and pilot](performance/2026-09-17-recovery-teacher.md): the broad
+teacher/pretrain/correct/SAC recipe has close prior art. New bounded prototype
+compares full-episode geometric recoveries at a BC-visited training state with
+policy and scaled-policy controls, then requires fresh-world verification before
+admitting labels. Sixteen focused tests plus two native terminal/reset checks
+pass. Native selection is running. Useful teacher corrections, their transfer to
+the actor, improved robustness and any algorithmic novelty remain unproven.
+
 ## Existing-expert policy pretraining — 2026-09-17
 
 [Training and full-episode protocol](performance/2026-09-17-expert-policy-pretraining.md):

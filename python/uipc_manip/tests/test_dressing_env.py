@@ -14,7 +14,8 @@ from uipc_manip.dressing_assets import DressingCache, DressingCacheConfig  # noq
 from uipc_manip.dressing_env import DressingConfig, GenesisIPCDressingEnv  # noqa: E402
 
 
-def test_batched_dressing_env_steps():
+@pytest.mark.parametrize("reset_on_done", [True, False])
+def test_batched_dressing_env_steps(reset_on_done):
     cache_cfg = DressingCacheConfig()
     if not cache_cfg.cache_path.exists():
         pytest.skip("Newton dressing cache is not available on this machine")
@@ -31,7 +32,7 @@ def test_batched_dressing_env_steps():
     assert actions.shape == (2, 6) and np.all(np.abs(actions) <= 1.0)
     infos = []
     for _ in range(cfg.horizon):
-        obs, rewards, dones, infos = env.step(actions)
+        obs, rewards, dones, infos = env.step(actions, reset_on_done=reset_on_done)
         assert obs.shape == (2, env.spec.dim) and np.isfinite(obs).all() and np.isfinite(rewards).all()
     assert dones.all() and all(info["time_limit"] for info in infos)
     assert all(0.0 <= info["upperarm_ratio"] <= 1.0 for info in infos)
@@ -39,7 +40,15 @@ def test_batched_dressing_env_steps():
     assert all("terminal_obs" in info for info in infos)
     # The terminal state is the one before the reset, which the post-reset state replaces.
     assert all(info["terminal_privileged"].shape == (env.privileged_dim,) for info in infos)
-    assert not np.allclose(np.stack([info["terminal_privileged"] for info in infos]), env.privileged())
+    terminal = np.stack([info["terminal_privileged"] for info in infos])
+    if reset_on_done:
+        assert not np.allclose(terminal, env.privileged())
+    else:
+        assert env._episode_step == cfg.horizon
+        assert np.array_equal(terminal, env.privileged())
+        assert np.array_equal(obs, np.stack([info["terminal_obs"] for info in infos]))
+        env.reset()
+        assert env._episode_step == 0
     env.close()
 
 
