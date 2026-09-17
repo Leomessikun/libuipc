@@ -86,6 +86,7 @@ class EpisodeTape:
         self.actions: list[np.ndarray] = []
         self.rewards: list[float] = []
         self.observations: list[np.ndarray] = []
+        self.next_observations: list[np.ndarray] = []
         self.stages: list[str] = []
         self.step_metrics: list[dict] = []
         self.ret = 0.0
@@ -94,7 +95,7 @@ class EpisodeTape:
         self.running_max = {k: -np.inf for k in self.metric_keys}
         self.last_seen = {k: float("nan") for k in self.metric_keys}
 
-    def step(self, privileged, action, obs, stage: str, reward: float, info: dict) -> None:
+    def step(self, privileged, action, obs, stage: str, reward: float, info: dict, *, next_obs=None) -> None:
         self.privileged.append(np.asarray(privileged, dtype=np.float32))
         self.actions.append(np.asarray(action, dtype=np.float32))
         self.rewards.append(float(reward))
@@ -103,6 +104,8 @@ class EpisodeTape:
         self.step_metrics.append({key: float(info[key]) for key in keys if key in info})
         if self.save_observations:
             self.observations.append(np.asarray(obs, dtype=np.float32))
+            if next_obs is not None:
+                self.next_observations.append(np.asarray(next_obs, dtype=np.float32))
         self.ret += float(reward)
         self.max_tracking = max(self.max_tracking, float(info.get("tracking_error", 0.0)))
         self.early_turn |= bool(info.get("early_turn", False))
@@ -143,6 +146,10 @@ class EpisodeTape:
         }
         if self.save_observations and self.observations:
             arrays["obs"] = np.stack(self.observations)
+        if self.next_observations:
+            if len(self.next_observations) != len(self.actions):
+                raise ValueError("Every recorded transition must have a successor observation")
+            arrays["next_obs"] = np.stack(self.next_observations)
         np.savez_compressed(path, **arrays)
 
 

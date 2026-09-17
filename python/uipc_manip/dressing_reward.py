@@ -30,6 +30,17 @@ class WangRewardConfig:
     far_center_range: float = 0.075
     reward_min_clamp: float = -100.0
     success_upperarm_ratio: float = 0.7
+    upperarm_extension_m: float = 0.0
+    """Opt-in shoulder-ray extension [m]; zero preserves historical rewards.
+
+    A positive value admits opening intersections just beyond the shoulder and
+    caps their rewarded progress at the upper-arm length. It does not infer
+    completion from a past maximum or certify grasp validity.
+    """
+
+    def __post_init__(self):
+        if not np.isfinite(self.upperarm_extension_m) or self.upperarm_extension_m < 0:
+            raise ValueError("upperarm_extension_m must be finite and nonnegative")
 
 
 @dataclass
@@ -138,7 +149,8 @@ def wang_progress(
         task = forearm_distance
 
     # Upper arm: ray from the shoulder toward the elbow; progress measured back from the elbow.
-    up_hit, up_pts = line_triangles(shoulder, upper_dir, triangles)
+    up_origin = shoulder - cfg.upperarm_extension_m * upper_dir
+    up_hit, up_pts = line_triangles(up_origin, upper_dir, triangles)
     up_progress = np.sum((up_pts - elbow[None, :]) * (-upper_dir)[None, :], axis=1)
     up_valid = up_hit & (up_progress >= 0.0)
     on_upperarm = bool(up_valid.any())
@@ -147,7 +159,7 @@ def wang_progress(
         # The reference takes the minimum over all valid triangles on the upper arm.
         masked = np.where(up_valid, up_progress, np.inf)
         best = int(np.argmin(masked))
-        upperarm_distance = float(up_progress[best])
+        upperarm_distance = float(min(up_progress[best], upper_len))
         upper_intersection = up_pts[best]
         forearm_distance = forearm_len
         task = forearm_len + cfg.upper_w * upperarm_distance

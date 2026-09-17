@@ -1,5 +1,17 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## First FQL run — authorized and implemented, 2026-09-17
+
+The owner requested training. [Protocol and implementation](performance/2026-09-17-fql-pretraining.md)
+select known FQL after checking newer RQL and other Levine-group references.
+Point-cloud learner, full-state checkpoints, data-boundary tests and native
+evaluation are implemented; 19 focused tests pass. Existing expert sequences
+are being replayed with true successor observations and a declared shoulder-ray
+correction. The bounded first offline run and full-episode evaluation follow.
+No best-algorithm, novelty or robust-policy result is established. Full online
+collector integration and matched SAC/RLPD comparisons remain open; do not
+describe a resumed offline checkpoint as online adaptation.
+
 ## Shared FQL pretraining — proposed first implementation, 2026-09-17
 
 The owner requested a concrete way to train dressing. The

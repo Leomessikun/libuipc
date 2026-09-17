@@ -110,6 +110,14 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Start the dressing pretraining experiment.** The owner authorized training
+  and selection of the best suitable offline-pretraining method from Sergey
+  Levine's work. This authorizes implementation, necessary data preparation,
+  bounded training and dressing evaluation; prior instructions to keep new
+  training stopped no longer block this experiment. Do not restart abandoned
+  IPC-gradient corrections or claim a universal best method from benchmark
+  rankings alone. (Set 2026-09-17.)
+
 - **The dressing goal is fast, easy training on one workstation.** The owner
   stated that the reference dressing pipeline (per-region reinforcement-learning
   teachers, then distillation) is hard to scale and train and needs a cluster;

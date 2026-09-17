@@ -37,6 +37,10 @@ def main():
     p.add_argument("--batch-size", type=int, default=3)
     p.add_argument("--repeats", type=int, default=2)
     p.add_argument("--seed", type=int, default=4100)
+    p.add_argument("--include-failures", action="store_true",
+                   help="Reconstruct every simulator-valid source episode for RL; BC admission remains separate.")
+    p.add_argument("--upperarm-extension-m", type=float, default=0.0,
+                   help="Explicit reward-version change; extend the shoulder ray by this many metres.")
     args = p.parse_args()
     if min(args.batch_size, args.repeats) < 1:
         p.error("Positive batch size and repeats required")
@@ -44,7 +48,7 @@ def main():
         raise FileExistsError(args.out)
     source = json.loads((args.source / "manifest.json").read_text())
     records = json.loads((args.source / "records.json").read_text())
-    chosen = [r for r in records if admissible(r)]
+    chosen = [r for r in records if not r.get("sim_error", False)] if args.include_failures else [r for r in records if admissible(r)]
     if not chosen:
         raise ValueError("No historical physically valid successful episodes to reconstruct")
     payload = SACAgent.read_checkpoint(args.reference)
@@ -63,14 +67,16 @@ def main():
         raise ValueError(f"Source/reference environment mismatch: {mismatch}")
     args.out.mkdir(parents=True)
     (args.out / "episodes").mkdir()
-    cfg = replace(cfg, workspace=str(args.out / "assets"), decision_watchdog=False, contact_force_readout=False)
+    cfg = replace(cfg, workspace=str(args.out / "assets"), decision_watchdog=False, contact_force_readout=False,
+                  reward=replace(cfg.reward, upperarm_extension_m=args.upperarm_extension_m))
     factory = LiveCellFactory(cfg.live)
     started = time.perf_counter()
     result = dict(source=str(args.source), reference=str(args.reference), env=cfg.to_dict(),
                   policy="replayed_existing_expert_actions", admission_rule="geometric_and_grasp_v1",
                   min_final_coverage=.7, max_tracking_m=.02, early_turn_is_separate=True,
                   source_episodes=len(chosen), repeats=args.repeats, obs_dim=reference_cfg.point_budget * 7 + 7,
-                  point_budget=cfg.point_budget, action_dim=6, records=[], completed=False)
+                  point_budget=cfg.point_budget, action_dim=6, records=[], completed=False,
+                  includes_failures=args.include_failures, transition_schema="explicit_successors_v1")
 
     def save():
         result["seconds"] = time.perf_counter() - started
@@ -95,7 +101,8 @@ def main():
                     actions = np.stack([a["actions"][t] for a in arrays])
                     nxt, reward, done, info = env.step(actions)
                     for i, tape in enumerate(tapes):
-                        tape.step(priv[i], actions[i], obs[i], "saved_expert", float(reward[i]), info[i])
+                        tape.step(priv[i], actions[i], obs[i], "saved_expert", float(reward[i]), info[i],
+                                  next_obs=info[i].get("terminal_obs", nxt[i]))
                     obs = nxt
                     if any(row.get("sim_error") for row in info) or np.any(done):
                         break

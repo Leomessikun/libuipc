@@ -79,6 +79,27 @@ def test_collision_penalty_when_cuff_touches_body(arm):
     assert near.reward == pytest.approx(-0.1 + cfg.collision_w * -1.0, abs=1e-6)
 
 
+def test_shoulder_extension_is_bounded_caps_reward_and_requires_intersection(arm):
+    finger, elbow, shoulder = arm
+    axis = (shoulder - elbow) / np.linalg.norm(shoulder - elbow)
+    def progress(distance, lateral=0.0, extension=.05):
+        ring = _ring(shoulder + distance * axis + np.array([lateral, 0, 0]), axis, .03)
+        cloth, polygon, tri = _cloth_with_ring(ring)
+        return wang_progress(cloth, polygon_idx=polygon, triangle_idx=tri, cuff_idx=polygon,
+                             finger=finger, elbow=elbow, shoulder=shoulder,
+                             human_points=np.array([[10., 10., 10.]]),
+                             cfg=WangRewardConfig(upperarm_extension_m=extension))
+    assert progress(.02, extension=0).upperarm_ratio == 0
+    before, after = progress(-1e-5), progress(1e-5)
+    assert after.reward == pytest.approx(before.reward, abs=1e-4)
+    assert progress(.02).upperarm_ratio == 1
+    assert progress(.04).task_reward == pytest.approx(.3 + 5 * .3)
+    assert not progress(.06).on_upperarm
+    assert not progress(.02, lateral=.10).on_upperarm
+    with pytest.raises(ValueError):
+        WangRewardConfig(upperarm_extension_m=-.01)
+
+
 def test_opening_threaded_requires_ring_between_finger_and_shoulder(arm):
     finger, _, shoulder = arm
     axis = shoulder - finger

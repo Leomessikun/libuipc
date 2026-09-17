@@ -1,5 +1,23 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Owner authorizes FQL implementation and training
+
+[Implementation, method choice and bounded protocol](performance/2026-09-17-fql-pretraining.md).
+FQL is selected for this first offline-to-online-oriented dressing experiment;
+newer Levine-group RQL reports stronger offline benchmark averages, but neither
+is established as best for this task. The point-cloud FQL learner and explicit
+checkpoint/transition contracts are implemented. Nineteen focused tests pass.
+The learner has no SAC entropy term and uses no IPC derivative.
+
+Reconstruction replays the existing 25 expert action sequences with observations
+and actual successors, including failures and a declared opt-in 5 cm shoulder-
+ray reward correction. Old unrelabelable replay rewards are excluded. Native
+preparation is running; no new policy success result yet. The prescribed first
+run is 3,000 CUDA updates, then repeated full-episode actor/behavior-prior
+evaluation. This is authorized new work; earlier training holds do not apply.
+The old correction experiments remain stopped. Full online FQL collector
+integration and matched SAC/RLPD experiments are not yet implemented.
+
 ## 2026-09-17 — Prior-data inventory for the FQL design
 
 Offline only; nothing running. The [inventory](performance/2026-09-17-prior-data-inventory.md)
