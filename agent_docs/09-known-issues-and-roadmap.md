@@ -1,5 +1,18 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Existing-expert policy pretraining — 2026-09-17
+
+[Training and full-episode protocol](performance/2026-09-17-expert-policy-pretraining.md):
+existing-data reconstruction and fast CUDA BC implemented; 16 focused tests pass.
+Twelve replays pass geometric/grasp admission but fail historical early-turn
+admission. Body-disjoint training uses 1,800 rows from body 14046; another 1,800
+rows on 14047/14048 are withheld. Fixed 3,000-update BC completed in 86.8 s through
+scheduled validation, without simulation during training. Full dressing comparison
+against existing SAC is running; robust policy benefit and a new RL method remain
+unproven. The larger Newton corpus requires explicit observation/control transfer.
+Do not treat the BC checkpoint's untrained critic as a pretrained SAC critic or
+silently reuse the current development bodies as pristine research test states.
+
 ## Parallel dressing trajectory search — 2026-09-17
 
 [Implementation and bounded protocol](performance/2026-09-17-parallel-dressing-trajopt.md):

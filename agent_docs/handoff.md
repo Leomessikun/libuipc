@@ -1,5 +1,21 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Existing-expert actor pretraining implemented
+
+The owner approved connecting existing expert data to fast policy pretraining.
+[Corpus audit, training and protocol](performance/2026-09-17-expert-policy-pretraining.md).
+Larger Newton collections exist but have incompatible observation/physics
+contracts. Six compatible IPC expert sequences lacked observations; replaying
+each twice reconstructed 3,600 transitions in 318.63 s. All 12 pass the explicit
+coverage/grasp rule (mean .96398 coverage), but all fail historical early-turn
+admission, recorded separately. BC trains on body 14046 and withholds 14047/14048
+with all repeats grouped. A fresh actor with the saved SAC architecture completed
+3,000 CUDA MSE updates in 86.8 s through final scheduled validation; no simulation
+occurs during BC. Critics remain untrained. Sixteen focused tests pass. The fixed
+final actor is undergoing full 300-decision evaluation versus existing SAC on
+four development configurations, two rounds. Results pending; do not infer policy
+success from imitation loss or claim a new RL method. No online training started.
+
 ## 2026-09-17 — Parallel IPC trajectory optimizer implemented and tested
 
 The owner requested parallel GPU implementation and testing. New

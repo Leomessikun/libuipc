@@ -22,6 +22,7 @@ when iteration counts change. Report both and state which is the primary signal.
 
 | Record | Status | Scope |
 |---|---|---|
+| [Existing-expert policy pretraining](2026-09-17-expert-policy-pretraining.md) | 12 native replays and 3,000 CUDA BC updates complete; full dressing evaluation running; 16 tests pass | Existing corpus audit, reconstructed observations, body-disjoint split and explicit geometric/grasp admission; ordinary BC, no new RL claim |
 | [Parallel IPC dressing trajectory search](2026-09-17-parallel-dressing-trajopt.md) | Implemented; 12 tests pass; 4,956 native decisions complete; 1.439x observed rollout speedup, no robust dressing gain | CUDA CEM and batched IPC rollouts, balanced state assignment and five controls; CPU environment boundary remains |
 | [Dressing recovery research and redesign](2026-09-17-dressing-research-redesign.md) | Research and 132-decision native diagnostic complete; no training | Fixed-action variability isolated from policy feedback; bounded expert data audit; previous sequence controls; prior-art comparison and staged recovery-supervised SAC proposal |
 | [Dressing actor-action audit](2026-09-17-dressing-actor-audit.md) | Six proposal types each pass 0/6 gates; all jobs finished, no training | Corrected observation/controller derivatives, executed finite differences, small coverage gains and an unreliable early-elbow restore comparison |

@@ -1,4 +1,4 @@
-"""FMVP Stage I-C: distil a visual policy from paper-filtered teacher rollouts.
+"""Distil a visual policy from explicitly admitted teacher rollouts.
 
 Appendix A.1 of FMVP clones the filtered trajectories into the Wang RSS 2023
 segmentation-PointNet++ actor with Adam at 1e-4, batch 128, negative log
@@ -36,6 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--lr", type=float, default=1.0e-4)
     p.add_argument("--val-ratio", type=float, default=0.1, help="Fraction of kept episodes held out, split by episode.")
+    p.add_argument("--validation-bodies", type=int, nargs="+", default=None,
+                   help="Explicit body-disjoint split; overrides val-ratio and requires human IDs in records.")
+    p.add_argument("--preload-to-device", action="store_true", help="Keep the finite demonstration arrays on the training device.")
     p.add_argument("--loss", choices=("nll", "mse", "nll_mse"), default="nll", help="nll is the paper's; use mse for bang-bang scripted data whose atanh is unbounded.")
     p.add_argument("--mse-weight", type=float, default=1.0)
     p.add_argument("--grad-clip", type=float, default=10.0)
@@ -56,7 +59,8 @@ def episode_ok(record: dict, *, min_upperarm_ratio: float | None) -> bool:
     return bool(record.get("kept", False))
 
 
-def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_train_transitions: int, min_upperarm_ratio: float | None):
+def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_train_transitions: int,
+                 min_upperarm_ratio: float | None, validation_bodies: list[int] | None = None):
     """Episode-level split of the kept rollouts into flat observation and action arrays."""
     episodes: list[tuple[Path, dict]] = []
     manifests: list[dict] = []
@@ -71,27 +75,50 @@ def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_tra
     dims = {(int(m["obs_dim"]), int(m["action_dim"]), int(m["point_budget"])) for m in manifests}
     if len(dims) != 1:
         raise SystemExit(f"Source rollouts disagree on observation or action layout: {sorted(dims)}")
+    # Equal tensor dimensions do not establish compatible physics or camera inputs.
+    ignore = {"cells", "human", "garments", "workspace", "seed", "show_viewer", "logging_level",
+              "decision_watchdog", "contact_force_readout"}
+    contracts = [{k: v for k, v in m.get("env", {}).items() if k not in ignore} for m in manifests]
+    if any(contract != contracts[0] for contract in contracts[1:]):
+        raise ValueError("Source environment contracts differ; use an explicit transfer experiment")
+    if not 0 <= val_ratio < 1:
+        raise ValueError("val_ratio must be in [0,1)")
     rng = np.random.default_rng(seed)
     order = rng.permutation(len(episodes))
-    n_val = int(round(val_ratio * len(episodes))) if len(episodes) > 1 else 0
-    val_idx, train_idx = order[:n_val], order[n_val:]
+    if validation_bodies is not None:
+        if any("human" not in record for _, record in episodes):
+            raise ValueError("Body-disjoint splitting requires a human ID for every episode")
+        held = set(validation_bodies)
+        val_idx = np.asarray([k for k in order if int(episodes[k][1]["human"]) in held], dtype=int)
+        train_idx = np.asarray([k for k in order if int(episodes[k][1]["human"]) not in held], dtype=int)
+        if not len(val_idx) or not len(train_idx):
+            raise ValueError("Body-disjoint split requires nonempty training and validation sets")
+    else:
+        n_val = min(len(episodes) - 1, int(round(val_ratio * len(episodes))))
+        val_idx, train_idx = order[:n_val], order[n_val:]
+    n_val = len(val_idx)
 
-    def stack(indices):
+    def stack(indices, limit=0):
         obs, act = [], []
         total = 0
         for k in indices:
-            data = np.load(episodes[k][0])
-            o, a = data["obs"], data["actions"]
-            if max_train_transitions > 0 and total + len(o) > max_train_transitions:
-                o, a = o[: max_train_transitions - total], a[: max_train_transitions - total]
+            with np.load(episodes[k][0]) as data:
+                o, a = data["obs"], data["actions"]
+            obs_dim, action_dim, _ = next(iter(dims))
+            if (o.ndim != 2 or a.shape != (len(o), action_dim) or o.shape[1] != obs_dim
+                    or not len(o) or not np.isfinite(o).all() or not np.isfinite(a).all()
+                    or np.abs(a).max() > 1 + 1e-6):
+                raise ValueError(f"Invalid observation/action alignment or values: {episodes[k][0]}")
+            if limit > 0 and total + len(o) > limit:
+                o, a = o[: limit - total], a[: limit - total]
             obs.append(o)
             act.append(a)
             total += len(o)
-            if max_train_transitions > 0 and total >= max_train_transitions:
+            if limit > 0 and total >= limit:
                 break
         return np.concatenate(obs), np.concatenate(act)
 
-    train_obs, train_act = stack(train_idx)
+    train_obs, train_act = stack(train_idx, max_train_transitions)
     val_obs, val_act = stack(val_idx) if n_val > 0 else (train_obs[: min(256, len(train_obs))], train_act[: min(256, len(train_act))])
     summary = {
         "source_dirs": [str(d) for d in source_dirs],
@@ -101,6 +128,11 @@ def load_dataset(source_dirs: list[str], *, val_ratio: float, seed: int, max_tra
         "train_transitions": int(len(train_obs)),
         "val_transitions": int(len(val_obs)),
         "val_from_train": bool(n_val == 0),
+        "split_kind": "body" if validation_bodies is not None else "episode",
+        "train_paths": [str(episodes[k][0]) for k in train_idx],
+        "val_paths": [str(episodes[k][0]) for k in val_idx],
+        "train_cells": sorted({(r.get("garment", "unknown"), r.get("human", -1)) for k in train_idx for r in [episodes[k][1]]}),
+        "val_cells": sorted({(r.get("garment", "unknown"), r.get("human", -1)) for k in val_idx for r in [episodes[k][1]]}),
         "obs_dim": int(next(iter(dims))[0]),
         "action_dim": int(next(iter(dims))[1]),
         "point_budget": int(next(iter(dims))[2]),
@@ -117,7 +149,7 @@ def student_config(args, manifests: list[dict]) -> SACConfig:
     return SACConfig(actor_type=args.actor, hidden_dim=args.hidden_dim, encoder=EncoderConfig(kind=args.encoder))
 
 
-def bc_loss(agent: SACAgent, obs_np: np.ndarray, act_np: np.ndarray, loss_kind: str, mse_weight: float):
+def bc_loss(agent: SACAgent, obs_np, act_np, loss_kind: str, mse_weight: float, *, report: bool = True):
     import torch
     import torch.nn.functional as F
 
@@ -126,11 +158,12 @@ def bc_loss(agent: SACAgent, obs_np: np.ndarray, act_np: np.ndarray, loss_kind: 
     batch = agent._unpack(flat)
     mu, _, _, _ = agent.actor(batch, compute_pi=False, compute_log_pi=False)
     mse = F.mse_loss(mu, target)
-    metrics = {"mse": float(mse.detach().item()), "max_abs": float((mu - target).abs().max().item())}
+    metrics = {"mse": float(mse.detach().item()), "max_abs": float((mu - target).abs().max().item())} if report else {}
     if loss_kind == "mse":
         return mse, metrics
     nll = -agent.actor.action_log_prob(batch, target).mean()
-    metrics["nll"] = float(nll.detach().item())
+    if report:
+        metrics["nll"] = float(nll.detach().item())
     return (nll if loss_kind == "nll" else nll + float(mse_weight) * mse), metrics
 
 
@@ -138,6 +171,8 @@ def main(argv: list[str] | None = None) -> None:
     import torch
 
     args = build_parser().parse_args(argv)
+    if min(args.steps, args.batch_size, args.eval_every) < 1 or args.lr <= 0:
+        raise ValueError("Positive training steps, batch size, evaluation interval and learning rate required")
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
     train_obs, train_act, val_obs, val_act, manifests, summary = load_dataset(
@@ -146,6 +181,7 @@ def main(argv: list[str] | None = None) -> None:
         seed=args.seed,
         max_train_transitions=args.max_train_transitions,
         min_upperarm_ratio=args.min_upperarm_ratio,
+        validation_bodies=args.validation_bodies,
     )
     cfg = student_config(args, manifests)
     if int(cfg.history_length) != 1:
@@ -154,11 +190,23 @@ def main(argv: list[str] | None = None) -> None:
     agent = SACAgent(ObsSpec(summary["point_budget"]), summary["action_dim"], cfg, args.device)
     run_name = args.run_name or f"distill_{cfg.actor_type}_{cfg.encoder.kind}_seed{args.seed}"
     run_dir = Path(args.work_dir) / run_name
+    if run_dir.exists():
+        raise FileExistsError(run_dir)
     ckpt_dir = run_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    metadata = {"stage": "fmvp_distillation", "dataset": summary, "args": vars(args), "sac_config": cfg.to_dict()}
+    metadata = {"stage": "expert_behavior_cloning", "dataset": summary, "args": vars(args), "sac_config": cfg.to_dict(),
+                "task": "dressing", "env": manifests[0]["env"],
+                "actor_initialization": "random_same_architecture", "critic_trained": False,
+                "cells": summary["train_cells"], "heldout_cells": summary["val_cells"],
+                "admission_rules": [m.get("admission_rule", "paper_filter") for m in manifests]}
     (run_dir / "config.json").write_text(json.dumps(metadata, indent=2) + "\n")
-    optimizer = torch.optim.Adam(agent.actor.parameters(), lr=float(args.lr))
+    # Save the optimizer actually used by BC in the SAC-format checkpoint.
+    optimizer = agent.actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=float(args.lr),
+                                                        fused=agent.device.type == "cuda")
+    if args.preload_to_device:
+        train_obs, train_act, val_obs, val_act = [torch.as_tensor(x, device=agent.device)
+                                                for x in (train_obs, train_act, val_obs, val_act)]
+    generator = torch.Generator(device=agent.device).manual_seed(args.seed)
     print(f"[distill] {json.dumps(summary)}", flush=True)
     log_path = run_dir / "distill_log.csv"
     log_path.write_text("step,train_loss,train_mse,val_loss,val_mse,val_max_abs,elapsed_s\n")
@@ -167,21 +215,28 @@ def main(argv: list[str] | None = None) -> None:
 
     def evaluate() -> tuple[float, dict]:
         agent.actor.eval()
+        total_loss, total_mse, maximum = 0., 0., 0.
         with torch.no_grad():
-            idx = rng.integers(0, len(val_obs), size=min(args.batch_size, len(val_obs)))
-            loss, metrics = bc_loss(agent, val_obs[idx], val_act[idx], args.loss, args.mse_weight)
+            for start in range(0, len(val_obs), args.batch_size):
+                o, a = val_obs[start:start + args.batch_size], val_act[start:start + args.batch_size]
+                loss, metrics = bc_loss(agent, o, a, args.loss, args.mse_weight)
+                total_loss += len(o) * float(loss.item())
+                total_mse += len(o) * metrics["mse"]
+                maximum = max(maximum, metrics["max_abs"])
         agent.actor.train()
-        return float(loss.item()), metrics
+        return total_loss / len(val_obs), {"mse": total_mse / len(val_obs), "max_abs": maximum}
 
     for step in range(1, int(args.steps) + 1):
-        idx = rng.integers(0, len(train_obs), size=int(args.batch_size))
-        loss, metrics = bc_loss(agent, train_obs[idx], train_act[idx], args.loss, args.mse_weight)
+        report = step == 1 or step % int(args.eval_every) == 0 or step == int(args.steps)
+        idx = (torch.randint(len(train_obs), (args.batch_size,), device=agent.device, generator=generator)
+               if args.preload_to_device else rng.integers(0, len(train_obs), size=args.batch_size))
+        loss, metrics = bc_loss(agent, train_obs[idx], train_act[idx], args.loss, args.mse_weight, report=report)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         if args.grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), float(args.grad_clip))
         optimizer.step()
-        if step == 1 or step % int(args.eval_every) == 0 or step == int(args.steps):
+        if report:
             val_loss, val_metrics = evaluate()
             with log_path.open("a") as handle:
                 handle.write(f"{step},{loss.item():.6f},{metrics['mse']:.6f},{val_loss:.6f},{val_metrics['mse']:.6f},{val_metrics['max_abs']:.4f},{time.time() - t0:.1f}\n")
