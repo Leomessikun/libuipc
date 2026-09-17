@@ -6,8 +6,10 @@
 teacher/pretrain/correct/SAC recipe has close prior art. New bounded prototype
 compares full-episode geometric recoveries at a BC-visited training state with
 policy and scaled-policy controls, then requires fresh-world verification before
-admitting labels. Sixteen focused tests plus two native terminal/reset checks
-pass. Native selection is running. Useful teacher corrections, their transfer to
+admitting labels. Seventeen focused tests plus two native terminal/reset checks
+pass. Outward-route search succeeds on both copies; independent verification is
+running. Actor-only initialization supports the conditional paired learner test.
+Useful teacher corrections, their transfer to
 the actor, improved robustness and any algorithmic novelty remain unproven.
 
 ## Existing-expert policy pretraining — 2026-09-17

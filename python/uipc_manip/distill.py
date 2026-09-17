@@ -29,6 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--work-dir", type=str, default="output/uipc_manip")
     p.add_argument("--run-name", type=str, default=None)
     p.add_argument("--teacher-checkpoint", type=str, default=None, help="Copy the actor architecture from this SAC checkpoint.")
+    p.add_argument("--init-actor", type=str, default=None,
+                   help="Initialize actor weights only from a compatible checkpoint; critic and optimizers stay fresh.")
     p.add_argument("--actor", choices=("wang-flow", "flat"), default="wang-flow")
     p.add_argument("--encoder", choices=("pointnet2", "transformer"), default="transformer")
     p.add_argument("--hidden-dim", type=int, default=1024)
@@ -149,6 +151,16 @@ def student_config(args, manifests: list[dict]) -> SACConfig:
     return SACConfig(actor_type=args.actor, hidden_dim=args.hidden_dim, encoder=EncoderConfig(kind=args.encoder))
 
 
+def initialize_actor(agent, checkpoint):
+    """Copy only compatible actor weights; never adopt an untrained BC critic."""
+    payload = SACAgent.read_checkpoint(checkpoint)
+    saved = payload.get("protocol", {})
+    ours = agent.protocol()
+    if any(saved.get(k) != v for k, v in ours.items() if k in saved):
+        raise ValueError("Actor initialization checkpoint protocol differs")
+    agent.actor.load_state_dict(payload["actor"], strict=True)
+
+
 def bc_loss(agent: SACAgent, obs_np, act_np, loss_kind: str, mse_weight: float, *, report: bool = True):
     import torch
     import torch.nn.functional as F
@@ -188,6 +200,8 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("The teacher is a history-aware policy; causal sequence behaviour cloning is not implemented, "
                          "so a student cannot be distilled from single-frame demonstrations")
     agent = SACAgent(ObsSpec(summary["point_budget"]), summary["action_dim"], cfg, args.device)
+    if args.init_actor:
+        initialize_actor(agent, args.init_actor)
     run_name = args.run_name or f"distill_{cfg.actor_type}_{cfg.encoder.kind}_seed{args.seed}"
     run_dir = Path(args.work_dir) / run_name
     if run_dir.exists():
@@ -196,7 +210,8 @@ def main(argv: list[str] | None = None) -> None:
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     metadata = {"stage": "expert_behavior_cloning", "dataset": summary, "args": vars(args), "sac_config": cfg.to_dict(),
                 "task": "dressing", "env": manifests[0]["env"],
-                "actor_initialization": "random_same_architecture", "critic_trained": False,
+                "actor_initialization": "checkpoint_actor_only" if args.init_actor else "random_same_architecture",
+                "critic_trained": False,
                 "cells": summary["train_cells"], "heldout_cells": summary["val_cells"],
                 "admission_rules": [m.get("admission_rule", "paper_filter") for m in manifests]}
     (run_dir / "config.json").write_text(json.dumps(metadata, indent=2) + "\n")

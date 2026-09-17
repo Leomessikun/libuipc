@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from uipc_manip.distill import episode_ok, load_dataset
+from uipc_manip.distill import episode_ok, initialize_actor, load_dataset
 
 
 def dataset(tmp_path):
@@ -79,3 +79,25 @@ def test_extra_coverage_threshold_only_tightens_the_explicit_admission_rule():
     row.update(kept=True, early_turn=True)
     assert episode_ok(row, min_upperarm_ratio=.8)
     assert not episode_ok(row, min_upperarm_ratio=.95)
+
+
+def test_actor_initialization_leaves_critic_and_optimizer_untouched(monkeypatch):
+    from types import SimpleNamespace
+    import torch
+    from uipc_manip.sac import SACAgent
+
+    actor, critic = torch.nn.Linear(3, 2), torch.nn.Linear(3, 2)
+    initial_critic = {k:v.clone() for k,v in critic.state_dict().items()}
+    optimizer = torch.optim.Adam(actor.parameters())
+    payload = dict(protocol={'actor_type':'test'}, actor={k:torch.ones_like(v) for k,v in actor.state_dict().items()},
+                   critic={k:torch.zeros_like(v) for k,v in critic.state_dict().items()})
+    monkeypatch.setattr(SACAgent, 'read_checkpoint', lambda _:payload)
+    agent = SimpleNamespace(actor=actor, critic=critic, actor_optimizer=optimizer,
+                            protocol=lambda: {'actor_type':'test'})
+    initialize_actor(agent, 'unused')
+    assert all(torch.all(v == 1) for v in actor.state_dict().values())
+    assert all(torch.equal(v, initial_critic[k]) for k,v in critic.state_dict().items())
+    assert agent.actor_optimizer is optimizer and not optimizer.state
+    payload['protocol']['actor_type'] = 'incompatible'
+    with pytest.raises(ValueError, match='protocol'):
+        initialize_actor(agent, 'unused')

@@ -84,7 +84,11 @@ separate: this gate does not certify a successful episode under that definition.
 If admitted, the next fixed comparison is two copies of the same BC actor,
 1,000 additional updates each: old demonstrations alone versus old demonstrations
 plus admitted recovery sequences. Evaluate the fixed final actors against the
-unchanged BC actor, on familiar and BC-withheld bodies. No training extends the
+unchanged BC actor on tshirt_26/14046, tshirt_68/14046, tshirt_26/14047 and
+tshirt_68/14048, two rounds each (24 full episodes total). Use seed 1, batch 128,
+MSE, learning rate 1e-4 and complete validation every 500 updates. Uniform sampling
+of the combined training rows gives the recovery examples their natural data
+fraction; no adaptive weights or checkpoint selection are added. No training extends the
 budget or selects a checkpoint from physical evaluation. If admission fails,
 there is no justified correction-labelled policy training in this pilot.
 
@@ -98,10 +102,12 @@ true time-limit state after recording terminal observations. Default automatic
 reset is unchanged; simulator errors still reset. This avoids extending the
 episode horizon or accidentally collecting observations from the next episode.
 
-Sixteen focused tests pass for admission, command caps, existing parallel search
-and distillation. Two native CUDA tests pass for both automatic reset and retained
-terminal state. The native teacher run is in progress; no correction-guided actor
-has been trained and no useful recovery has yet been established.
+Seventeen focused tests pass for admission, command caps, existing parallel search
+and distillation. `distill --init-actor` initializes only actor weights, checks the
+saved protocol and leaves critic/optimizer state fresh; its behavior is tested.
+Two native CUDA tests pass for both automatic reset and retained terminal state.
+Search has found the outward route above .99 sustained coverage on both copies;
+fresh-world verification is running. No correction-guided actor has been trained.
 
 Hardware/runtime: RTX PRO 6000 Blackwell Workstation Edition, driver 595.84,
 native Release build with CUDA 12.8, PyTorch 2.12.0+cu130. Native physics is batched

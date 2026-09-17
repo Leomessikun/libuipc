@@ -9,9 +9,12 @@ the broad recipe is not new. `recovery_teacher` now tests four existing geometri
 recovery routes and policy/scaled-policy controls from the BC actor's own failed
 tshirt_68/14046 state, through the full episode. A fresh-world verification must
 beat both controls before any labels are admitted. `step(reset_on_done=False)`
-retains terminal state without changing default reset or horizon. Sixteen focused
-tests and two native terminal/reset tests pass. Native selection is running;
-conditional paired 1,000-update actor fitting is pending verified useful recovery.
+retains terminal state without changing default reset or horizon. Seventeen focused
+tests and two native terminal/reset tests pass. Search found the outward route
+above .99 sustained coverage on both copies; fresh-world verification is running.
+`distill --init-actor` copies only compatible actor weights, leaving critic and
+optimizers fresh. Conditional paired 1,000-update actor fitting and a 24-episode
+comparison are prepared, pending verified useful recovery.
 Do not claim a new RL algorithm or restart long SAC training on speculation.
 
 ## 2026-09-17 — Existing-expert actor pretraining and evaluation complete
