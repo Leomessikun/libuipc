@@ -68,6 +68,20 @@ centring on the same 25 cells (about 12 minutes). That last test decides
 whether sleeve feedback repairs the dominant failure; nothing here was run.
 No cross-simulator transfer result can come from existing data.
 
+**[Prior-art check](performance/2026-09-17-sleeve-goal-prior-art.md)** of the
+sleeve-goal proposal (two web surveys; the key paper verified directly): sleeve
+state in arm coordinates as the control target is already published for
+dressing (Wearing A Coat, arXiv 2607.10999, July 2026: hand-set multi-phase
+goals, gradient MPC through a non-IPC differentiable cloth simulator taking
+seconds, friction with the human given as input, no learned controller).
+Kotsovolis and Demiris learn forward models of the opening for MPC. Learned
+goal geometry with a separate executor exists outside dressing (TAX3D,
+DefGoalNet). Not found: a learned sleeve-goal policy with a closed-loop
+executor for dressing, any dressing work on IPC contact, and any controlled
+test of transfer across garment-to-arm friction, stiffness or simulator. That
+last axis is where a contribution could be; the first cheap measurement is
+whether successful sleeve paths shift with friction under one servo teacher.
+
 ## 2026-09-17 — Research pivot after completed SAC audit
 
 The owner renewed the instruction to abandon the previous idea and research a
