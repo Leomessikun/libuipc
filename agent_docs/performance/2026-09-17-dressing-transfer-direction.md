@@ -1,5 +1,11 @@
 # Research pivot: transferring sleeve motion across contact dynamics
 
+Subsequent correction: after the owner's CS 285 reference, this proposal is
+withdrawn as the default next experiment. See the
+[RL pretraining contract review](2026-09-17-rl-pretraining-contract.md). The
+literature comparison remains useful, but the SAC findings did not establish
+that a new goal-policy architecture should replace the original RL objective.
+
 Status: research recommendation, not an implemented method or a positive training
 result. The owner has abandoned IPC/SAC correction and requested a new direction
 after the ordinary SAC audit. Literature checked on 2026-09-17. No training,

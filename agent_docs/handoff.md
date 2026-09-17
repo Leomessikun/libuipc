@@ -1,5 +1,28 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-17 — Owner requests RL/pretraining reassessment using CS 285
+
+The owner challenged the sleeve-transfer recommendation and referred to Sergey
+Levine's course. [Course-grounded correction and source audit](performance/2026-09-17-rl-pretraining-contract.md)
+withdraws that recommendation as the default next experiment. Preserve fast,
+reward-based dressing policy learning on one workstation as the objective.
+Pretraining can learn representations, behavior, values or dynamics; it is not
+synonymous with offline RL, and standalone BC is not its downstream evaluation.
+
+The existing components have distinct contracts: representation transfer copies
+actor encoder/history only; BC trains actions; the bounded IQL test used SAC's
+own replay with no expert data or online continuation. Component-only pretraining
+is valid; no requirement says every network must be pretrained. What remains
+unproven is the downstream gain of a declared data-reuse/pretraining recipe.
+
+RLPD/FQL are established references, not new contributions or selected dressing
+solutions. Establish the compatible data, initialization, online-improvement and
+total-cost evaluation contract. Include the newer shoulder/reward audit below;
+do not use peak coverage alone as proof of retained valid dressing. Existing
+observed SAC transitions remain useful to model-free RL despite absent geometry.
+No training or native rollout in this review; no new algorithm implementation.
+Earlier suggested teacher repairs/new collection are not automatically launched.
+
 ## 2026-09-17 — IPC-label SAC closed on five seeds; sleeve-path and reward audit of the existing data
 
 Two offline results, no simulation or training launched, nothing running.

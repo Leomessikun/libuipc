@@ -1,6 +1,23 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
-## Research pivot — current recommendation, 2026-09-17
+## RL pretraining contract — current design priority, 2026-09-17
+
+The owner challenged the sleeve-transfer proposal and referred to Berkeley
+CS 285. [Reassessment](performance/2026-09-17-rl-pretraining-contract.md): preserve
+the goal of fast reward-based policy learning using existing experience. Define
+what pretraining transfers and how subsequent RL consumes it; evaluate downstream
+improvement rather than equating prediction/BC loss with useful initialization.
+Component-only pretraining is valid; pretraining every network is not required.
+
+Representation, BC, replay-IQL and online-SAC paths have different contracts.
+The recorded IQL control did not use expert trajectories or continue online.
+RLPD/FQL are reference methods, not demonstrated dressing solutions. Include the
+shoulder-overshoot metric issue from the newer reward audit when specifying the
+learning objective and evaluation. Align compatible existing transitions,
+checkpoint semantics and total-cost/success evaluation before selecting another
+algorithm modification. No new training, native rollout or implementation.
+
+## Sleeve-transfer proposal — withdrawn as default next step, 2026-09-17
 
 After the completed SAC audit, the owner again asked to abandon the previous idea
 and explore a new direction. [Research assessment and bounded comparison](performance/2026-09-17-dressing-transfer-direction.md):
