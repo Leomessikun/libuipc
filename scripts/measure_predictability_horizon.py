@@ -38,6 +38,8 @@ def main():
     p.add_argument("--repeats", type=int, default=5)
     p.add_argument("--perturbations", default="0,1e-4,1e-3,1e-2", help="Normalized action units on the first command")
     p.add_argument("--seed", type=int, default=1097)
+    p.add_argument("--force", action="store_true",
+                   help="Also read the contact force on the arm every decision and record it")
     p.add_argument("--out", type=Path, required=True)
     args = p.parse_args()
     steps = sorted(int(s) for s in args.snapshot_steps.split(","))
@@ -52,7 +54,7 @@ def main():
     train_sac.resolve_defaults(targs)
     g, b = args.cell.rsplit(":", 1)
     cfg = replace(train_sac.dressing_config(targs), cells=((g, int(b)),), decision_watchdog=False,
-                  contact_force_readout=False, workspace=str(args.out / "assets"))
+                  contact_force_readout=bool(args.force), workspace=str(args.out / "assets"))
     if steps[-1] + args.horizon >= cfg.horizon or cfg.augment_obs:
         raise ValueError("Snapshots plus horizon must end before auto-reset; observations must be unaugmented")
     args.out.mkdir(parents=True)
@@ -71,9 +73,11 @@ def main():
 
     def measure(info):
         priv = env.privileged()[0]
-        return dict(upperarm_ratio=float(info["upperarm_ratio"]), forearm_ratio=float(info["forearm_ratio"]),
-                    tracking_error=float(info["tracking_error"]), grasp_valid=bool(info["grasp_valid"]),
-                    opening_center=[float(x) for x in priv[13:16]], tool=[float(x) for x in priv[3:6]])
+        row = dict(upperarm_ratio=float(info["upperarm_ratio"]), forearm_ratio=float(info["forearm_ratio"]),
+                   tracking_error=float(info["tracking_error"]), grasp_valid=bool(info["grasp_valid"]),
+                   opening_center=[float(x) for x in priv[13:16]], tool=[float(x) for x in priv[3:6]])
+        row.update({k: float(v) for k, v in info.items() if k.startswith("arm_force_")})
+        return row
 
     def run(commands, first_delta=None):
         """Replay ``commands`` from the restored state; returns rows, positions and executed commands."""
