@@ -1,5 +1,19 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Recovery-decision gate reviewed — 2026-09-18
+
+[Audit](performance/2026-09-18-recovery-decisions-review.md) of the two completed
+cells weakens the proposed state-dependent recovery learner: repeat-held-out
+selection adds only 0.002266 / 0.000988 coverage beyond fixed cell-wise macros.
+There is no full-episode improvement or novel algorithm result. Defer learner
+construction and extra collection pending the already-started cell results.
+
+Before attributing a cause, account for closed-loop repeat commands, the
+direction/rotation confound, grouped validation, and the tool-relative history
+feature. A future simple-intervention episode test needs matched rotation and
+trigger controls plus frozen choices on held-out cases. Review only: no new
+simulation/training or production code changes.
+
 ## Research question after CS 185/285 review — 2026-09-18
 
 The [course/literature assessment](performance/2026-09-18-cs285-research-direction.md)

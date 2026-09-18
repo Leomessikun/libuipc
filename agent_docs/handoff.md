@@ -1,5 +1,29 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-18 — Recovery-decision result audited; do not scale the selector
+
+[Review of 58ed3416](performance/2026-09-18-recovery-decisions-review.md).
+Saved-data reanalysis selects macros using two repeats and scores the held-out
+third. Per-state selection adds only 0.002266 / 0.000988 sustained coverage over
+fixed lift / forward in the completed tshirt_26 / tshirt_392 cells. All 1,008
+branches are grasp-valid; none reaches sustained coverage >=0.7. These are
+short-branch outcomes, not a learned policy or full-episode evaluation.
+
+Corrections to the historical entry below: commands are recomputed in closed
+loop, not replayed identically; fixed directional macros zero rotation while
+policy_scaled preserves it, so direction was not isolated; repeat range is a
+screening heuristic, not statistical significance. Leave-one-state-out probes
+retain other times from the same approach and do not establish generalization.
+The privileged probe's top-1 advantage does not prove missing deployment
+information. History centroid differences are tool-relative. Zero restore
+position error alone does not validate every hidden solver variable.
+
+This weakens the proposed state-dependent recovery-learning direction. Analyse
+the remaining cells when complete before expanding collection. Any next native
+gate should compare simple controls over complete episodes with rotation,
+trigger, budget and held-out evaluation specified. No physics/training run was
+launched or interrupted; collector and learner code are unchanged.
+
 ## 2026-09-18 — Counterfactual recovery decisions measured: the action exists, the decision does not
 
 [Record](performance/2026-09-18-recovery-decisions.md). The saved SAC policy is

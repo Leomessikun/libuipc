@@ -1,5 +1,13 @@
 # Is there a recovery decision to learn at a stalled dressing policy? — 2026-09-18
 
+**Subsequent audit:** see [source and held-out-repeat review](2026-09-18-recovery-decisions-review.md).
+The measured small marginal value of state-dependent selection remains, but
+several interpretations below require correction: recovery branches recompute
+closed-loop commands; directional macros also remove rotation; repeat range is
+not a significance threshold; state-wise predictor validation does not establish
+held-out-configuration generalization or an irreducible sensing limit. The
+original measurements and narrative are preserved below as the historical record.
+
 Status: two collections complete, two more running. No policy was trained and no
 solver, reward or controller setting was changed. This tests, before any learner is
 built, the three premises of a recovery-decision method: that a better action exists
