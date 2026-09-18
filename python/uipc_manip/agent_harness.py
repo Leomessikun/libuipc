@@ -41,10 +41,11 @@ class DressingSession:
     """
 
     def __init__(self, env, *, slot: int = 0, max_decisions: int = 300, agent=None,
-                 image_dir: Path | None = None, response_window: int = 8):
+                 image_dir: Path | None = None, response_window: int = 8, render_every: int = 0):
         self.env, self.slot, self.max_decisions = env, int(slot), int(max_decisions)
         self._agent, self._image_dir = agent, image_dir
         self._response_window = int(response_window)
+        self._render_every = int(render_every)
         self.decisions_used = 0
         self.calls: list[dict] = []
         self.trace: list[dict] = []
@@ -83,16 +84,34 @@ class DressingSession:
         self._log("observe", None, out)
         return out
 
+    def points(self) -> dict:
+        """The segmented point cloud the robot sees, in the tool's frame, as arrays.
+
+        ``garment`` and ``arm`` are ``[N, 3]`` in metres relative to the tool, ``goal``
+        is the shoulder relative to the tool. A program that needs the fingertip, the
+        arm's axis or the garment's shape computes them from these.
+        """
+        budget = self.env.spec.point_budget
+        pos, feat, valid, extra = df.unpack_observation(self._obs[self.slot], budget)
+        out = dict(garment=pos[valid & (feat[:, 0] > 0.5) & (feat[:, 1] < 0.5)],
+                   arm=pos[valid & (feat[:, 1] > 0.5)], goal=np.asarray(extra[3:6], dtype=float),
+                   tool=np.asarray(extra[0:3], dtype=float))
+        self._log("points", None, {k: (len(v) if v.ndim == 2 else None) for k, v in out.items()})
+        return out
+
     def response(self) -> float | None:
         """Metres the garment centroid moved per metre commanded, over the recent window.
 
         ``None`` before the window fills. Well below one means the garment has stopped
         following the commands, which is what a stall looks like from the robot's side.
         """
-        if len(self._commanded) < self._response_window:
+        window = self._response_window
+        if len(self._centroids) < window + 1:
             return None
-        moved = np.linalg.norm(np.diff(np.stack(self._centroids[-self._response_window - 1:]), axis=0), axis=1)
-        commanded = np.asarray(self._commanded[-self._response_window:])
+        # ``_centroids[i]`` and ``_commanded[i]`` are both recorded after decision ``i``, so the
+        # motion between consecutive centroids pairs with the later decision's command.
+        moved = np.linalg.norm(np.diff(np.stack(self._centroids[-window - 1:]), axis=0), axis=1)
+        commanded = np.asarray(self._commanded[-window:])
         keep = commanded > 1e-4
         return round(float(moved[keep].sum() / commanded[keep].sum()), 4) if keep.any() else None
 
@@ -193,6 +212,8 @@ class DressingSession:
                                   if k in ("upperarm_ratio", "forearm_ratio", "tracking_error", "grasp_valid",
                                            "commanded_translation_m", "accepted_anchor_translation_m",
                                            "collision_rejected_substeps", "tether_rejected_substeps")}))
+        if self._render_every and self._image_dir is not None and self.decisions_used % self._render_every == 0:
+            self.render()
         if bool(np.any(done)) and self.decisions_used < self.max_decisions:
             raise RuntimeError("Episode ended before its decision budget")
 
@@ -202,7 +223,7 @@ class DressingSession:
 
 
 def run_program(program: Path, cfg, out: Path, *, cell: str, seed: int, checkpoint: Path | None,
-                max_decisions: int, render: bool) -> dict:
+                max_decisions: int, render: bool, render_every: int = 0) -> dict:
     """Execute ``program``'s ``policy(session)`` for one episode and record everything."""
     from dataclasses import replace
 
@@ -223,8 +244,8 @@ def run_program(program: Path, cfg, out: Path, *, cell: str, seed: int, checkpoi
             from .physics_gradient_actor import load_agent
 
             agent = load_agent(checkpoint, env.spec.point_budget, env.action_dim, "cuda")
-        session = DressingSession(env, max_decisions=max_decisions, agent=agent,
-                                  image_dir=out / "images" if render else None)
+        session = DressingSession(env, max_decisions=max_decisions, agent=agent, render_every=render_every,
+                                  image_dir=out / "images" if (render or render_every) else None)
         namespace: dict = {}
         exec(compile(source, str(program), "exec"), namespace)
         if "policy" not in namespace:
@@ -268,6 +289,7 @@ def main():
     p.add_argument("--no-policy", action="store_true", help="Refuse run_policy: the agent must drive alone")
     p.add_argument("--max-decisions", type=int, default=300)
     p.add_argument("--render", action="store_true")
+    p.add_argument("--render-every", type=int, default=0, help="Also draw the state every N decisions")
     args = p.parse_args()
     if args.out.exists():
         raise FileExistsError(args.out)
@@ -280,7 +302,7 @@ def main():
                   contact_force_readout=False, decision_watchdog=False)
     result = run_program(args.program, cfg, args.out, cell=args.cell, seed=args.seed,
                          checkpoint=None if args.no_policy else args.checkpoint,
-                         max_decisions=args.max_decisions, render=args.render)
+                         max_decisions=args.max_decisions, render=args.render, render_every=args.render_every)
     print(json.dumps({k: v for k, v in result.items()
                       if k in ("completed", "program_error", "decisions_used", "success", "sustained_coverage",
                                "final_coverage", "max_coverage", "max_tracking_error",

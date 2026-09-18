@@ -1,5 +1,38 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-19 — The policy does not stall: recovery closed, grasp and containment named, agent harness added
+
+[Record](performance/2026-09-19-intervention-and-agent-baseline.md). Three arms from
+the same eight seeds over full 300-decision episodes, two cells: the policy alone, the
+policy with a deployment-side stall detector handing eight decisions to the garment's
+best macro, and the same detector handing them to a random macro. The detector fired
+twice in 24 episodes on tshirt_26 and never on tshirt_392, so two arms are the control
+repeated; sustained coverage 0.538 / 0.550 / 0.583 on tshirt_26 is run-to-run spread,
+and every arm is 0/8 successes on both cells. The policy commands a median 2.72 mm per
+decision and the garment follows, so there is no stall to detect.
+
+What the episodes contain instead: tshirt_26 loses the grasp in 24 of 24 episodes,
+reaching 30 mm against the 2 cm limit, while coverage plateaus at 0.54-0.58;
+tshirt_392 keeps the grasp and loses the sleeve sideways at decision 227-250, with the
+opening ring's centre 8.6-9.1 cm from the arm's centreline against its own 9.0 cm
+radius. Recomputing the metric from saved geometry (`scripts/capture_policy_geometry.py`,
+`scripts/audit_progress_metric.py`) shows the one-decision jumps are that marginal
+configuration rather than a bug, with 4-9 % of decisions reading zero while the ring
+still encircles the arm, and the long zero stretches genuine (centre 20-23 cm away).
+
+`uipc_manip.agent_harness` gives a program the tool surface the agentic-robotics
+demonstrations use — segmented cloud in the tool frame, tool pose, goal direction,
+garment motion per commanded metre, rendered views, commands in metres under the
+controller's own limits, optional hand-back to the trained policy — with task metrics
+behind report() and every call logged. Two programs written in this session reach
+0.000 peak coverage on tshirt_26/14046 where the trained policy reaches 0.598 from the
+same seed; the first dragged the cuff to the shoulder outside the arm, the second kept
+the grasp but never enveloped the fingertip. Ten focused tests.
+
+Next measurements follow from the two named failures: what the grip does in the
+decisions before the tracking error crosses 2 cm, and what the opening's lateral offset
+does before it leaves the arm, both from quantities a robot can see.
+
 ## 2026-09-18 — Recovery-decision result audited; do not scale the selector
 
 [Review of 58ed3416](performance/2026-09-18-recovery-decisions-review.md).
