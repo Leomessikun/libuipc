@@ -61,6 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--checkpoint", type=str, default=None,
                    help="Play this SAC checkpoint deterministically instead of the expert, on the checkpoint's own "
                         "physics and observation. This is how a voided evaluation round is replayed offline.")
+    p.add_argument("--supervised", action="store_true",
+                   help="Override the expert while it stalls, drifts off the arm's centreline or strains the "
+                        "grasp, with uipc_manip.dressing_supervisor's measured repairs.")
     return p
 
 
@@ -274,6 +277,17 @@ def main(argv: list[str] | None = None) -> None:
                 from .dressing_heuristic import HeuristicDressingPolicy
 
                 env._heuristic = HeuristicDressingPolicy(env, **expert_params)
+            if args.supervised:
+                from .dressing_supervisor import TeacherSupervisor
+
+                supervisors = [TeacherSupervisor() for _ in range(env.num_envs)]
+
+                def policy(obs, env=env, supervisors=supervisors):
+                    actions = np.asarray(env.scripted_actions(), dtype=np.float32).copy()
+                    privileged = env.privileged()
+                    for i, supervisor in enumerate(supervisors):
+                        actions[i] = supervisor.command(actions[i], privileged[i])[0]
+                    return actions
             records += run_world(env, chunk, targs.horizon, int(args.seed) * 1000 + start, out_dir, start,
                                  save_observations=bool(args.save_observations), policy=policy, history=history)
         finally:
@@ -292,6 +306,7 @@ def main(argv: list[str] | None = None) -> None:
         "poses": args.poses,
         "pose_ids": poses,
         "expert_params": expert_params,
+        "supervised": bool(args.supervised),
         "garments": garments,
         "horizon": int(targs.horizon),
         "num_envs": int(args.num_envs),
