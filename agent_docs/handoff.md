@@ -1,5 +1,33 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-18 — Predictability of garment-arm contact measured; decision-branch collector added
+
+The owner asked for the open scientific questions of this area rather than another
+learner, then approved attacking them. First answer recorded:
+[how predictable garment-arm contact is](performance/2026-09-18-predictability-horizon.md).
+`scripts/measure_predictability_horizon.py` replays one command sequence from an
+exactly restored state (restore error 0.00e+00 m over 147 restores), five times
+identically and five times each with 0.87 / 8.7 / 87 micrometre first-command
+perturbations, 40 decisions, at 3-4 snapshots in two cells; 6,220 decisions /
+38.7 min, no simulator error. Identical commands separate by 0.16 mm after one
+decision, millimetres by ten and centimetres by forty (growth 0.004-1.258 per
+decision, state dependent); the perturbation's size changes nothing, so consequences
+of commands differing by under about one percent of a decision's translation are
+inseparable. But the scales differ: 98 % of vertices move apart by more than a
+millimetre while the coverage ratio spreads by at most 0.013 and the opening centroid
+by 4.4 mm. Contact with the arm suppresses divergence; free-hanging fabric amplifies
+it. This is the mechanism behind the one-decision gradient horizon and the failed
+IPC-labelled updates, and it sets the repeat count for any counterfactual label.
+
+New `uipc_manip.decision_branches` and `uipc_manip.collect_decision_branches` collect
+counterfactual recovery branches at states the saved SAC policy visits: snapshot,
+run one of seven macros (policy, policy_scaled, forward, retreat, outward, lift,
+retreat_outward) for a short window, hand back to the same policy, repeat with
+identical commands. `scripts/analyze_decision_branches.py` reports consequence
+against the policy's own continuation, repeat spread, ranking agreement, and whether
+one fixed macro would do as well as choosing per state. Eleven focused tests pass.
+Two collections are running; no result is claimed yet.
+
 ## 2026-09-18 — Full current-course text review and narrowed research question
 
 [CS 185/285 research assessment](performance/2026-09-18-cs285-research-direction.md)
