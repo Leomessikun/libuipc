@@ -84,6 +84,21 @@ scheme converges the flow *can* reproduce the macro — the error falls to 0.053
 only from noise of length 5.6, which is beyond anything the prior draws. So the useful
 action is representable by this flow and unreachable by sampling it.
 
+## The prior does not contain the trained policy's own actions either
+
+At the same branch states, reversing the action the SAC policy actually took gives a
+noise length of 5.375 at percentile 1.000, all of it beyond the 99th, with a
+reconstruction error of 0.342 and an inversion drift of 2.534 (six states, the slots
+whose executed commands were saved). Its action norm there is 0.509, half the expert
+data's median, so this is again not about how far the command reaches.
+
+That is the mechanism behind the macro result rather than a separate finding. The
+prior's data is the scripted expert's own trajectories; the states where a recovery
+matters are the ones the *policy* reaches and the expert never does. At those
+observations the flow is extrapolating, which is why everything reversed there — the
+macros and the policy's own action alike — lands in the tail. Widening the prior
+therefore means covering the states a learner visits, not only more bodies.
+
 ## Reading
 
 For this prior the answer is the second of the three that were possible: the flow can
