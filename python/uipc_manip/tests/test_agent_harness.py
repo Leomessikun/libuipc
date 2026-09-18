@@ -68,7 +68,10 @@ def test_repeat_spends_one_decision_each_and_the_budget_is_enforced():
 def test_the_response_reports_how_far_the_garment_moved_per_commanded_metre():
     s = session(max_decisions=40, commanded=0.008)
     assert s.response() is None
-    s.move(dx=0.008, repeat=9)
+    # The window needs one more centroid than commands, so it stays silent one decision longer.
+    s.move(dx=0.008, repeat=8)
+    assert s.response() is None
+    s.move(dx=0.008, repeat=1)
     # The fake environment returns a fixed observation, so the garment never moves.
     assert s.response() == pytest.approx(0.0)
 
