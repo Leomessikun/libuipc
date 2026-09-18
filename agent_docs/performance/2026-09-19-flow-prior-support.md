@@ -66,14 +66,36 @@ exceeds 0.9 in 75 % of its decisions. The macros are exactly the size of the act
 the prior was fitted on. They differ in direction, and that is enough to put them
 outside it.
 
+**Nor is it an artifact of the ten-step discretization.** Refining the inversion drives
+the reconstruction error down while the noise stays in the same place (`tshirt_26`,
+24 states, 120 pairs):
+
+| Euler steps | Noise length, median | Its percentile | Fraction beyond the 99th | Reconstruction error | Inversion drift |
+|---:|---:|---:|---:|---:|---:|
+| 2 | 3.869 | 0.979 | 0.04 | 1.368 | 3.896 |
+| 5 | 5.131 | 1.000 | 1.00 | 0.575 | 2.117 |
+| 10 | 5.483 | 1.000 | 1.00 | 0.247 | 0.833 |
+| 20 | 5.576 | 1.000 | 1.00 | 0.111 | 0.320 |
+| 40 | 5.616 | 1.000 | 1.00 | 0.053 | 0.151 |
+
+At two steps the inversion is too coarse to say anything: it lands in the bulk of the
+prior and reproduces nothing. From five steps on the answer is stable, and as the
+scheme converges the flow *can* reproduce the macro — the error falls to 0.053 — but
+only from noise of length 5.6, which is beyond anything the prior draws. So the useful
+action is representable by this flow and unreachable by sampling it.
+
 ## Reading
 
-For this prior, the answer is the unfavourable one: the behaviour that improves
-dressing is not a mode the prior already contains and could be steered toward. Latent
-steering, a noise-space behaviour-cloning policy, or reinforcement learning in the
-prior's latent space would all be searching a space that does not contain the answer.
-The prior has to be widened first — with data that contains those directions — before
-any of them is worth building.
+For this prior the answer is the second of the three that were possible: the flow can
+represent the behaviour that improves dressing, but only from noise it would never
+draw. That is worse than it sounds for latent steering. A noise-space policy may output
+any vector, so nothing forbids a latent of length 5.6; but the critic and the actor
+would then be working where the flow was never fitted, and the regularization toward a
+standard normal that the published method relies on pulls directly against it. The
+practical consequence is the same as if the action were absent: widen the prior with
+data that contains those directions, and re-run this audit, before building a latent
+learner on it. The audit costs seconds and is the natural acceptance test for a
+retrained prior.
 
 Two secondary readings are worth keeping. The prior's extrapolation to unseen bodies
 is measurably poor in a way that is independent of any task metric, which is a cheap

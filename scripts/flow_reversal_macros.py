@@ -32,6 +32,8 @@ def main():
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--device", default="cuda")
     p.add_argument("--step-m", type=float, default=0.008)
+    p.add_argument("--flow-steps", default="",
+                   help="Comma-separated Euler step counts to sweep; empty keeps the prior's own")
     args = p.parse_args()
     from uipc_manip.fql import FQLAgent
 
@@ -64,6 +66,20 @@ def main():
                                    is_best=bool(best[state]["best_macro"] == macro["name"]),
                                    consequence=float(best[state]["means"][macro["name"]] -
                                                      best[state]["means"]["policy"])))
+    sweep = [int(v) for v in args.flow_steps.split(",") if v.strip()]
+    if sweep:
+        original = int(agent.cfg.flow_steps)
+        print(f"{'Euler steps':>11s} {'|z| median':>10s} {'percentile':>10s} {'>99th':>6s} {'recon median':>12s} "
+              f"{'inversion drift':>15s}")
+        for steps in sweep:
+            agent.cfg.flow_steps = steps
+            swept = fr.reversal_report(agent, np.stack(observations), np.stack(actions))
+            s = fr.summarize(swept)
+            print(f"{steps:11d} {s['latent_norm']['median']:10.3f} {s['latent_percentile']['median']:10.3f} "
+                  f"{s['fraction_above_99th']:6.2f} {s['reconstruction_error']['median']:12.4f} "
+                  f"{s['noise_round_trip']['median']:15.4f}")
+        agent.cfg.flow_steps = original
+        print()
     report = fr.reversal_report(agent, np.stack(observations), np.stack(actions))
     rows = []
     for label, norm, percentile, error in zip(labels, report["latent_norm"], report["latent_percentile"],
