@@ -14,10 +14,24 @@ were measured, not guessed, and there are three of them:
   2 cm limit.
 
 The supervisor watches the privileged sleeve state — it is a teacher, so it may — and
-overrides the expert's command when one of those three is happening. The overrides are
-the directions the counterfactual branch study measured to help
-(`2026-09-18-recovery-decisions.md`): along the upper arm, and away from the arm's
-centreline when the ring has drifted off it.
+overrides the expert's command when one of those three is happening.
+
+**Which of the three is worth acting on was then measured**
+(`2026-09-19-teacher-supervision.md`). Over the teacher's own 25 episodes, the
+fraction of decisions each condition fires on, in the episodes that succeed against the
+ones that fail:
+
+* tracking error above 1.5 cm: 0.0 % against 40.2 % — it separates cleanly;
+* the opening's centre past 0.6 of its own radius from the centreline: 5.7 % against
+  15.0 % — it fires through successful dressings too;
+* arc progress below 0.005 per twenty decisions: 35.7 % against 33.8 % — it does not
+  separate at all, so a stall by that definition is ordinary.
+
+A first version acted on all three and turned nine successes into none: the two
+non-separating rules replaced a third of every episode. Only the grasp rule is enabled
+by default, and its response is no longer to scale the whole command down — that kept
+the grip in 21 of 25 cells but left only one dressed — but to drop the component that
+pulls the cloth across the arm while keeping the one that advances it.
 """
 from __future__ import annotations
 
@@ -87,11 +101,15 @@ class TeacherSupervisor:
     """
 
     def __init__(self, *, stall_window: int = 20, stall_arc: float = 0.02, containment: float = 0.6,
-                 grasp_cm: float = 1.2, hold: int = 8, step: float = 1.0):
+                 grasp_cm: float = 1.2, hold: int = 8, step: float = 1.0,
+                 rules: tuple[str, ...] = ("grasp",), grasp_response: str = "project"):
         if stall_window < 2 or hold < 1 or not 0 < containment:
             raise ValueError("Need a window of at least two decisions, a positive hold and containment")
+        if not set(rules) <= {"grasp", "centre", "stall"} or grasp_response not in ("project", "halve"):
+            raise ValueError("Unknown rule or grasp response")
         self.stall_window, self.stall_arc, self.containment = int(stall_window), float(stall_arc), float(containment)
         self.grasp_cm, self.hold, self.step = float(grasp_cm), int(hold), float(step)
+        self.rules, self.grasp_response = tuple(rules), str(grasp_response)
         self._arc: deque[float] = deque(maxlen=stall_window + 1)
         self._plan: list[np.ndarray] = []
         self.reasons: list[str] = []
@@ -106,15 +124,22 @@ class TeacherSupervisor:
         action = np.array(base_action, dtype=np.float64).copy()
         state = sleeve_position(privileged)
         self._arc.append(state["arc"])
-        # A strained grasp is answered first and without a plan: it scales whatever is commanded.
-        if state["tracking_cm"] > self.grasp_cm:
+        # A strained grasp is answered first and without a plan: it reshapes what is commanded.
+        if "grasp" in self.rules and state["tracking_cm"] > self.grasp_cm:
             self.reasons.append("grasp")
-            return np.clip(action * 0.5, -1.0, 1.0), "grasp"
+            if self.grasp_response == "halve":
+                return np.clip(action * 0.5, -1.0, 1.0), "grasp"
+            # Keep what advances the sleeve along the arm and drop what pulls it across:
+            # the strain comes from the transverse pull, the dressing from the axial one.
+            axis = state["axis"]
+            action[:3] = float(action[:3] @ axis) * axis
+            return np.clip(action, -1.0, 1.0), "grasp"
         if self._plan:
             self.reasons.append("plan")
             return np.clip(self._plan.pop(0), -1.0, 1.0), "plan"
-        drifting = state["on_arm"] and state["containment"] > self.containment
-        stalled = (state["on_arm"] and len(self._arc) > self.stall_window
+        drifting = ("centre" in self.rules and state["on_arm"]
+                    and state["containment"] > self.containment)
+        stalled = ("stall" in self.rules and state["on_arm"] and len(self._arc) > self.stall_window
                    and self._arc[-1] - self._arc[0] < self.stall_arc
                    and state["upperarm_ratio"] < 0.95)
         if drifting:

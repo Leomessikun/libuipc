@@ -43,16 +43,34 @@ def test_containment_is_the_lateral_offset_in_ring_radii():
     assert np.allclose(ds.sleeve_position(privileged(centre=(0.15, 0.0, 0.045)))["outward"], [0.0, 0.0, 0.045])
 
 
-def test_a_strained_grasp_halves_whatever_was_commanded():
+def test_a_strained_grasp_keeps_the_axial_command_and_drops_the_transverse_one():
     supervisor = ds.TeacherSupervisor(grasp_cm=1.2)
-    action, reason = supervisor.command(np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-                                        privileged(tracking_cm=1.5))
+    # On the forearm the arm's axis is +x, so the y and z components are the transverse pull.
+    action, reason = supervisor.command(np.array([0.6, 0.5, -0.4, 0.0, 0.2, 0.0]),
+                                        privileged(tracking_cm=1.5, centre=(0.15, 0.0, 0.0)))
     assert reason == "grasp"
+    assert action[0] == pytest.approx(0.6)
+    assert action[1] == pytest.approx(0.0) and action[2] == pytest.approx(0.0)
+    assert action[4] == pytest.approx(0.2)   # rotation is untouched
+
+
+def test_the_halving_response_is_still_available():
+    supervisor = ds.TeacherSupervisor(grasp_cm=1.2, grasp_response="halve")
+    action, _ = supervisor.command(np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0]), privileged(tracking_cm=1.5))
     assert action[0] == pytest.approx(0.5)
 
 
-def test_a_drifting_ring_is_commanded_back_toward_the_arm():
+def test_rules_that_do_not_separate_are_off_by_default():
     supervisor = ds.TeacherSupervisor(containment=0.6, hold=4)
+    assert supervisor.command(np.zeros(6), privileged(centre=(0.15, 0.0, 0.08)))[1] == "teacher"
+    enabled = ds.TeacherSupervisor(containment=0.6, hold=4, rules=("grasp", "centre"))
+    assert enabled.command(np.zeros(6), privileged(centre=(0.15, 0.0, 0.08)))[1] == "centre"
+    with pytest.raises(ValueError):
+        ds.TeacherSupervisor(rules=("nonsense",))
+
+
+def test_a_drifting_ring_is_commanded_back_toward_the_arm():
+    supervisor = ds.TeacherSupervisor(containment=0.6, hold=4, rules=("grasp", "centre"))
     action, reason = supervisor.command(np.zeros(6), privileged(centre=(0.15, 0.0, 0.08), radius=0.09))
     assert reason == "centre"
     # The ring sits above the centreline, so the override points back down toward it.
@@ -62,7 +80,7 @@ def test_a_drifting_ring_is_commanded_back_toward_the_arm():
 
 
 def test_a_stall_is_commanded_along_the_arm_and_needs_a_full_window():
-    supervisor = ds.TeacherSupervisor(stall_window=4, stall_arc=0.02, hold=3)
+    supervisor = ds.TeacherSupervisor(stall_window=4, stall_arc=0.02, hold=3, rules=("grasp", "stall"))
     row = privileged(centre=(0.15, 0.0, 0.0))
     for _ in range(4):
         assert supervisor.command(np.zeros(6), row)[1] == "teacher"
@@ -72,21 +90,21 @@ def test_a_stall_is_commanded_along_the_arm_and_needs_a_full_window():
 
 
 def test_progress_prevents_the_stall_override():
-    supervisor = ds.TeacherSupervisor(stall_window=4, stall_arc=0.02, hold=3)
+    supervisor = ds.TeacherSupervisor(stall_window=4, stall_arc=0.02, hold=3, rules=("grasp", "stall"))
     for step in range(6):
         row = privileged(centre=(0.10 + 0.02 * step, 0.0, 0.0))
         assert supervisor.command(np.zeros(6), row)[1] == "teacher"
 
 
 def test_a_nearly_dressed_sleeve_is_not_treated_as_stalled():
-    supervisor = ds.TeacherSupervisor(stall_window=3, hold=2)
+    supervisor = ds.TeacherSupervisor(stall_window=3, hold=2, rules=("grasp", "stall"))
     row = privileged(centre=(0.30, 0.24, 0.0), upperarm_ratio=0.99)
     for _ in range(5):
         assert supervisor.command(np.zeros(6), row)[1] == "teacher"
 
 
 def test_an_approach_that_has_not_reached_the_arm_is_never_overridden():
-    supervisor = ds.TeacherSupervisor(stall_window=3, hold=2, containment=0.6)
+    supervisor = ds.TeacherSupervisor(stall_window=3, hold=2, containment=0.6, rules=("grasp", "centre", "stall"))
     # Far off the axis and not advancing, but the sleeve is not on the arm yet.
     row = privileged(centre=(0.15, 0.0, 0.30), radius=0.09, on_arm=False)
     for _ in range(8):
