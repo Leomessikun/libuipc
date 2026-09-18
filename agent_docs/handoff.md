@@ -1,17 +1,37 @@
 # Handoff — Current State of the Repo
 
-## 2026-09-18 — Owner authorizes motion-pretraining comparison
+## 2026-09-18 — Motion-pretraining pilot completed: no policy improvement
 
-[Protocol and implementation](performance/2026-09-18-motion-pretraining.md).
-Existing SAC geometry captures provide six aligned material trajectories, so
-no recollection is needed. Five training episodes yield 1,480 windows; one
-held-out episode yields 296. The new module pretrains the existing actor encoder
-to reconstruct geometry or predict five-step cloth motion. Only actor.encoder
-transfers into otherwise unchanged FQL. Fourteen focused tests and CUDA smoke
-tests pass. Next: predeclared 1,500 pretraining / 3,000 RL updates for random,
-geometry and motion variants, then matched native dressing evaluation.
-Root: `output/uipc_manip/motion_pretrain_20260918/`. No robust-policy, novelty,
-full PointZero reproduction or offline-to-online claim follows from this pilot.
+[Implementation, protocol and results](performance/2026-09-18-motion-pretraining.md).
+Reused six saved SAC geometry trajectories: five training episodes / 1,480
+windows, one withheld episode / 296 windows. Only actor.encoder transfers into
+otherwise unchanged FQL; this is not a full PointZero reproduction or a new RL
+algorithm. Fourteen focused tests and CUDA smoke checks pass.
+
+All variants completed 3,000 FQL updates and eight full native evaluation
+rollouts. Coverage plus whole-episode grasp passes: **random 2/8, geometry 1/8,
+motion 0/8**. Withheld-body passes: 1/4, 1/4, 0/4. No simulator errors.
+The motion actor never reaches peak coverage .7 in any episode. Both pretraining
+runs took about 37 s; the whole sequential experiment took about 28.7 min.
+
+Motion prediction improves globally (11.74 mm versus zero-motion 15.95 mm and
+constant-velocity 12.39 mm), but near the held-out elbow it is worse than zero
+motion (5.20 versus 2.45 mm). Exact sleeve-opening query coverage is sparse.
+This pilot does not justify scaling the actor-initialization recipe. It is one
+training seed on narrow development data; the fresh baseline also differs from
+the historical 4/8 pilot due to non-bitwise GPU training. No general negative
+claim about PointZero or all dynamics pretraining is supported.
+
+Metric caveat: both withheld configurations satisfy the early-turn heuristic
+already at reset. All variants have zero paper-filter AND valid-grasp passes;
+that heuristic alone cannot diagnose a policy-caused bad cloth route. The reward's
+bounded shoulder extension also remains a limitation. No criterion was changed.
+
+Root: `output/uipc_manip/motion_pretrain_20260918/`; see `summary.json`,
+`pipeline.json`, and prediction/metric audit artifacts. **No new training running.**
+Next gate, if continued: motion supervision that covers opening/elbow behavior
+and predicts stationary contact states, plus validated task metrics, before
+another matched policy test. Do not restart abandoned IPC-gradient corrections.
 
 ## 2026-09-18 — Review of the data-efficient dressing RL plan
 
@@ -46,6 +66,7 @@ repair the teacher at the elbow, scale bodies with the scripted generator,
 then compare learners at equal total simulator time; the first mechanism
 experiment is restore-and-branch from the eight stalled states with scripted
 alternatives, measuring outcome spread and restore cost.
+
 
 ## 2026-09-17 — Owner authorizes FQL implementation and training
 

@@ -1,14 +1,23 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
-## Motion-pretraining pilot — authorized, 2026-09-18
+## Motion-pretraining pilot — completed negative result, 2026-09-18
 
-The owner approved the [bounded PointZero-inspired comparison](performance/2026-09-18-motion-pretraining.md).
-Actor-only encoder transfer is implemented with explicit material correspondence
-and provenance; source geometry already exists. Compare random initialization,
-geometry reconstruction and action-conditioned motion at the same 3,000 FQL
-updates, recording the additional pretraining cost. The first test has one
-training seed and narrow motion coverage; auxiliary prediction during RL,
-critic transfer and imagined rollouts remain outside this pilot.
+The [bounded PointZero-inspired comparison](performance/2026-09-18-motion-pretraining.md)
+is implemented, tested and complete. Each variant receives 3,000 FQL updates and
+eight full native dressing rollouts. Random / geometry / motion actor-encoder
+initialization scores **2/8 / 1/8 / 0/8** under final coverage plus whole-grasp
+validity; zero simulator errors. No motion rollout even reaches peak coverage .7.
+
+Improved whole-cloth prediction does not establish policy improvement. Near the
+held-out elbow, prediction is worse than zero motion, and opening-boundary track
+coverage is sparse. Do not scale this recipe without a new, bounded hypothesis.
+One seed and four repeated configurations cannot establish a general method ranking.
+The early-turn flag is already true at reset for both withheld configurations;
+its interpretation and the shoulder reward boundary still need validation.
+
+No new training is running. Full online continuation, critic transfer, continued
+auxiliary prediction, broader motion coverage and multi-seed confirmation remain
+untested. Fourteen focused tests pass; deployment uses only the ordinary FQL actor.
 
 ## First FQL run — authorized and implemented, 2026-09-17
 

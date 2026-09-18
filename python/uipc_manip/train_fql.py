@@ -124,7 +124,8 @@ def train(args):
         encoder_init = old.get("encoder_initialization")
     data = {name: tuple(torch.as_tensor(a, device=agent.device) for a in rows) for name, rows in arrays.items()}
     args.out.mkdir(parents=True)
-    metadata = {**identity, "seed": args.seed, "fresh_weights": not bool(args.resume),
+    metadata = {**identity, "seed": args.seed, "fresh_weights": not bool(args.resume or args.encoder_init),
+                "fresh_rl_optimizer": not bool(args.resume),
                 "encoder_initialization": encoder_init,
                 "resumed_from": str(args.resume) if args.resume else None,
                 "train_rows": len(data["train"][0]), "validation_rows": len(data["validation"][0]),

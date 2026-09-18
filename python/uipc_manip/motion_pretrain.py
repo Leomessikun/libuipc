@@ -128,7 +128,7 @@ def build(args):
     for split, parts in groups.items():
         np.savez_compressed(args.out / f"{split}.npz", **{
             k: np.concatenate([p[k] for p in parts]) for k in parts[0]})
-    manifest = dict(format="dressing_material_windows_v1", completed=True,
+    manifest = dict(format="dressing_material_windows_v1", completed=True, seed=args.seed,
                     horizon=args.horizon, queries=args.queries, point_budget=spec.point_budget,
                     action_dim=reference["action_dim"], validation_bodies=args.validation_bodies,
                     env=reference["env"], rl_dataset=str(args.rl_dataset), inventory=inventory,
