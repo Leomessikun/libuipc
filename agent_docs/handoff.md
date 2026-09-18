@@ -1,5 +1,18 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-18 — Owner authorizes motion-pretraining comparison
+
+[Protocol and implementation](performance/2026-09-18-motion-pretraining.md).
+Existing SAC geometry captures provide six aligned material trajectories, so
+no recollection is needed. Five training episodes yield 1,480 windows; one
+held-out episode yields 296. The new module pretrains the existing actor encoder
+to reconstruct geometry or predict five-step cloth motion. Only actor.encoder
+transfers into otherwise unchanged FQL. Fourteen focused tests and CUDA smoke
+tests pass. Next: predeclared 1,500 pretraining / 3,000 RL updates for random,
+geometry and motion variants, then matched native dressing evaluation.
+Root: `output/uipc_manip/motion_pretrain_20260918/`. No robust-policy, novelty,
+full PointZero reproduction or offline-to-online claim follows from this pilot.
+
 ## 2026-09-18 — Review of the data-efficient dressing RL plan
 
 Offline measurements on the completed FQL pilot plus three literature surveys;

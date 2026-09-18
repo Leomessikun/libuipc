@@ -1,5 +1,15 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Motion-pretraining pilot — authorized, 2026-09-18
+
+The owner approved the [bounded PointZero-inspired comparison](performance/2026-09-18-motion-pretraining.md).
+Actor-only encoder transfer is implemented with explicit material correspondence
+and provenance; source geometry already exists. Compare random initialization,
+geometry reconstruction and action-conditioned motion at the same 3,000 FQL
+updates, recording the additional pretraining cost. The first test has one
+training seed and narrow motion coverage; auxiliary prediction during RL,
+critic transfer and imagined rollouts remain outside this pilot.
+
 ## First FQL run — authorized and implemented, 2026-09-17
 
 The owner requested training. [Protocol and implementation](performance/2026-09-17-fql-pretraining.md)

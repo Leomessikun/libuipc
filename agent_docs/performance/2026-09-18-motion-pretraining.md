@@ -1,0 +1,109 @@
+# Bounded cloth-motion pretraining experiment
+
+The owner approved the PointZero-inspired experiment on 2026-09-18. The question
+is whether an encoder trained to predict physical cloth motion makes the same
+FQL learner a better dressing policy. This is an adaptation of a pretraining
+idea, not a reproduction of [PointZero](https://arxiv.org/abs/2609.19142), a new
+RL algorithm, or an IPC-gradient correction.
+
+## Existing geometry is sufficient for this pilot
+
+The usual FQL episode tapes have no persistent material identities. However,
+the prior SAC rollout audit saved aligned observations, commands, tool anchors
+and all material vertices at 301 frames for six complete 300-decision episodes:
+
+- `output/uipc_manip/policy_results_audit_20260917/sac_geometry/`: tshirt_26/14046,
+  tshirt_68/14046, tshirt_26/14047, tshirt_68/14048.
+- `output/uipc_manip/policy_results_audit_20260917/sac_training_cells/`:
+  tshirt_26/14038, tshirt_68/14018.
+
+No new simulation is required to prepare tracks. Bodies 14048/14049 remain
+excluded from gradient updates; 14049 has no saved motion episode. Five episodes
+give 1,480 training windows; tshirt_68/14048 gives 296 development windows.
+Overlapping windows are not independent demonstrations. These are previously
+inspected development configurations, not untouched research test data.
+The data covers two garments and does not establish broad cloth dynamics.
+
+The source physics, observations and action/controller configuration must match
+the FQL dataset, apart from run/cell identifiers and reward. Old source rewards
+are unused; no incompatible rewards enter Bellman training. Source episode
+steps, reset flags, finite values, anchors and geometry lengths are validated.
+Source files and the derived manifest carry SHA-256 identities.
+
+## Representation and correspondence
+
+`python/uipc_manip/motion_pretrain.py` builds five-decision (0.5 s) windows.
+Each start frame matches visible cloth voxel centroids to nearest material
+vertices within 3 cm, deduplicates, then samples up to 32 IDs without inspecting
+the future. Labels follow those exact vertex IDs through five successors.
+The decoder's query coordinates are exact starting material positions relative
+to the starting tool; it predicts world-axis displacements, so later tool motion
+cannot be mistaken for material motion. This is near-visible material sampling,
+not a claim that independently voxelized observations provide exact tracks.
+Mean observation-to-vertex distance is about 5 mm. Query positions are privileged
+training-only inputs. The encoder always receives the original partial observation.
+
+The existing FQL actor's segmentation encoder and tool-point readout are reused.
+A disposable MLP decoder receives that latent, the recorded command sequence,
+query positions and learned query slots. Motion uses displacement MSE scaled by
+5 cm. The geometry control receives zero query coordinates and zero commands;
+it reconstructs the current unordered query cloud using symmetric Chamfer loss,
+with coordinates scaled by 0.5 m. It cannot copy target coordinates. Its output
+heads/slots have the same shape, but its objective is intentionally different.
+Padded targets do not contribute. Geometry and motion loss numbers are not
+directly comparable.
+
+Only **actor.encoder** transfers. The behavior prior, actor trunk, dense critic,
+target critic and RL optimizer start identically from the declared RL seed.
+The critic encoder has a different action-conditioned architecture; it is not
+silently replaced or partially mapped. The decoder, future commands and material
+geometry are discarded at deployment. This first experiment tests actor-encoder
+initialization, not critic pretraining, imagined experience, or an auxiliary loss
+continued during RL. Those extensions require evidence from this bounded test.
+
+## Predeclared comparison
+
+Three variants, seed 17:
+
+1. Random actor encoder (ordinary FQL).
+2. Geometry encoder pretraining: 1,500 updates, batch 128, Adam 3e-4.
+3. Motion encoder pretraining: identical pretraining counts and learning rate.
+
+Every variant then receives 3,000 ordinary FQL updates, batch 128, alpha 100,
+with the same architecture, random seed and original `dataset_shoulder_v1`
+(4,500 RL training rows, 3,000 body-disjoint validation rows). The reward retains
+the existing declared 5 cm shoulder extension. Select final checkpoints by update
+count, never by inspected rollout outcomes. No validation samples enter updates.
+
+Evaluate each actor for two full 300-decision rounds on the same four cells as
+the previous FQL pilot: tshirt_26/14046, tshirt_68/14046, tshirt_26/14048,
+tshirt_68/14049. Report coverage plus whole-episode grasp <=2 cm, persistent final
+coverage, and the historical early-turn filter separately. Its geometry/route
+limitations remain; do not call eight repeated-cell episodes a robustness study.
+No extra behavior-prior evaluation is needed for this actor-initialization test.
+
+Motion diagnostics include non-oracle held-out track error, zero-motion error
+and a shuffled-command diagnostic. Better track fitting alone is not success:
+the transferred policy must improve dressing or learning cost. Count pretraining
+and evaluation time, derived-data preparation, and disclose the sunk costs of
+the reused datasets (240.69 s geometry collection, 662.56 s FQL reconstruction).
+The pretraining variants receive extra computation; report that overhead rather
+than claiming an equal-wall-time win from equal RL update counts.
+
+## Implementation and checks
+
+- `motion_pretrain build` creates material windows; `pretrain` supports motion
+  and geometry objectives and emits an explicit encoder-only transfer checkpoint.
+- `train_fql train --encoder-init` imports only the actor encoder and validates
+  architecture, environment and held-out body provenance. It is mutually exclusive
+  with full-state resume. A resumed FQL checkpoint retains its transfer provenance.
+- Fourteen focused tests pass: the existing seven FQL tests plus correspondence,
+  terminal-frame use, future-input isolation, geometry shortcut prevention,
+  padded-target masking, encoder gradient/transfer isolation and ordinary FQL
+  checkpoint inference after transfer.
+- CUDA smoke tests complete two prediction updates and two FQL updates after
+  transfer, with finite diagnostics. They are engineering checks, not results.
+
+Artifacts: `output/uipc_manip/motion_pretrain_20260918/`.
+Track preparation completes in 1.81 s without physics rollout. The bounded
+three-variant experiment is the next stage; results will be recorded here.

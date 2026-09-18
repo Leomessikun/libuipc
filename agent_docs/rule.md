@@ -110,6 +110,14 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Run the bounded PointZero-inspired pretraining experiment.** The owner
+  approved implementing and testing cloth-motion representation pretraining
+  using existing IPC trajectories, with matched RL controls. This authorizes
+  necessary track preparation, encoder pretraining and bounded policy training/
+  evaluation. Keep the RL interface and reward fixed; distinguish this small
+  adaptation from a PointZero reproduction or a novel RL algorithm.
+  (Set 2026-09-18.)
+
 - **Start the dressing pretraining experiment.** The owner authorized training
   and selection of the best suitable offline-pretraining method from Sergey
   Levine's work. This authorizes implementation, necessary data preparation,

@@ -112,16 +112,28 @@ def train(args):
             raise ValueError("Resume data, environment or FQL configuration differs")
     else:
         agent = FQLAgent(ObsSpec(manifest["point_budget"]), manifest["action_dim"], cfg, args.device)
+    encoder_init = None
+    if args.encoder_init:
+        from .motion_pretrain import initialize_actor_encoder
+        encoder_init = initialize_actor_encoder(agent, args.encoder_init)
+        if (encoder_init["validation_bodies"] != args.validation_bodies
+                or set(encoder_init["training_bodies"]) & set(args.validation_bodies)
+                or encoder_init["env"] != manifest["env"]):
+            raise ValueError("Encoder pretraining violates the RL environment/body split")
+    elif args.resume:
+        encoder_init = old.get("encoder_initialization")
     data = {name: tuple(torch.as_tensor(a, device=agent.device) for a in rows) for name, rows in arrays.items()}
     args.out.mkdir(parents=True)
     metadata = {**identity, "seed": args.seed, "fresh_weights": not bool(args.resume),
+                "encoder_initialization": encoder_init,
                 "resumed_from": str(args.resume) if args.resume else None,
                 "train_rows": len(data["train"][0]), "validation_rows": len(data["validation"][0]),
                 "preparation_seconds": time.perf_counter() - started,
                 "source_preparation_seconds": manifest.get("seconds"),
                 "reward_scale": 1.0, "heldout_role": "development bodies, not untouched final test",
                 "config": vars(args) | {"out": str(args.out), "dataset": str(args.dataset),
-                                         "reference": str(args.reference), "resume": str(args.resume) if args.resume else None}}
+                                         "reference": str(args.reference), "resume": str(args.resume) if args.resume else None,
+                                         "encoder_init": str(args.encoder_init) if args.encoder_init else None}}
     (args.out / "manifest.json").write_text(json.dumps(metadata, indent=2) + "\n")
     print(json.dumps({k: metadata[k] for k in ("train_rows", "validation_rows", "preparation_seconds")}), flush=True)
     learning_started = time.perf_counter()
@@ -212,7 +224,10 @@ def main(argv=None):
     t = sub.add_parser("train")
     t.add_argument("--dataset", type=Path, required=True)
     t.add_argument("--reference", type=Path, required=True)
-    t.add_argument("--resume", type=Path)
+    initialization = t.add_mutually_exclusive_group()
+    initialization.add_argument("--resume", type=Path)
+    initialization.add_argument("--encoder-init", type=Path,
+                                help="Initialize only the actor encoder from motion/geometry pretraining")
     t.add_argument("--steps", type=int, default=3000)
     t.add_argument("--batch-size", type=int, default=128)
     t.add_argument("--validation-bodies", type=int, nargs="+", default=[14048, 14049])
