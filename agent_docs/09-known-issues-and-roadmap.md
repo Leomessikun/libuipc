@@ -1,5 +1,25 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Research question after CS 185/285 review — 2026-09-18
+
+The [course/literature assessment](performance/2026-09-18-cs285-research-direction.md)
+selects a conditional direction: simulator supervision of recovery decisions
+learnable from observation/action history, evaluated by total one-GPU training
+time. The [coverage record](performance/2026-09-18-cs285-reading-review.md)
+accounts for every current PDF's extracted text and the selected visual checks.
+
+Open gates: validate physical outcomes; establish affordable repeatable action
+comparisons; compare current-frame/history/privileged decision prediction on
+held-out episodes/configurations; only then test policy improvement. Reuse existing
+history infrastructure and completed restore diagnostics. The initial new-native
+diagnostic cap remains one hour, including restores. Full online FQL remains open.
+
+Adaptive rollout allocation, history policies and informed privileged critics
+are established prior art, including closer references than the earlier local
+search found. Neither generic action-gap supervision nor a new combination name
+establishes novelty. The proposed mechanism needs a distinct learning rule and
+matched end-to-end evidence. This review changed documentation only.
+
 ## Research continuation decision — 2026-09-18
 
 The [post-pilot assessment](performance/2026-09-18-research-direction-decision.md)

@@ -1,5 +1,29 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-18 — Full current-course text review and narrowed research question
+
+[CS 185/285 research assessment](performance/2026-09-18-cs285-research-direction.md)
+and [reading record](performance/2026-09-18-cs285-reading-review.md): reviewed
+all extracted page text from 44 current-course PDFs (1,065 pages), all five
+public navigation pages, and visually checked 63 selected lecture pages.
+Videos, historical offerings and every visual element were not exhaustively
+reviewed. A committed URL/page/hash manifest records the source snapshot.
+
+Recommendation: study whether finite simulator interventions can teach better
+recovery decisions from deployment-compatible observation/action histories at
+lower total training cost. First validate outcomes and repeated action comparisons
+at existing ordinary-SAC failures, then test current-frame/history/privileged
+predictors before another policy experiment. History and counterfactual response
+models already exist here; do not rebrand them as a new algorithm.
+
+Novelty correction: adaptive allocation of rollout comparisons has direct prior
+art from 2008–2010; informed asymmetric RL also already selects privileged signals
+by value informativeness. This supersedes the narrower "not found" search claim
+in the earlier research-plan review below. A return-gap auxiliary loss alone is
+a baseline, not a contribution. The proposed learning/selection mechanism remains
+unimplemented and its novelty unproven. No training or physics run was launched
+by this review; separate predictability work was left untouched.
+
 ## 2026-09-18 — Continue/stop research assessment after the motion pilot
 
 [Decision and primary-source review](performance/2026-09-18-research-direction-decision.md):
