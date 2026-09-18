@@ -97,8 +97,14 @@ def episode_summary(trace: list[dict], sustained: int = 12, threshold: float = 0
 
 
 def run_arms(cfg, checkpoint, out, *, macro_name: str, window: int, slots: int, seed: int, step_m: float,
-             detector: dict, arms=("control", "intervene")) -> dict:
-    """Full episodes with and without the detector, from the same seeds."""
+             detector: dict, arms=("control", "intervene", "random")) -> dict:
+    """Full episodes with and without the detector, from the same seeds.
+
+    ``control`` never intervenes, ``intervene`` always runs ``macro_name`` when the
+    detector fires, and ``random`` runs a uniformly drawn direction macro instead, so
+    a gain that comes from interrupting the policy at all is separated from a gain
+    that comes from this particular recovery.
+    """
     import gc
     import json
     import time
@@ -110,6 +116,7 @@ def run_arms(cfg, checkpoint, out, *, macro_name: str, window: int, slots: int, 
     from .physics_gradient_actor import load_agent
 
     macro = next(m for m in db.MACROS if m["name"] == macro_name)
+    alternatives = [m for m in db.MACROS if m["kind"] == "direction"]
     out.mkdir(parents=True)
     started = time.perf_counter()
     env = GenesisIPCDressingEnv(replace(cfg, workspace=str(out / "assets")), num_envs=slots,
@@ -128,7 +135,8 @@ def run_arms(cfg, checkpoint, out, *, macro_name: str, window: int, slots: int, 
         for arm in arms:
             obs = env.reset(seeds)
             detectors = [StallDetector(**detector) for _ in range(slots)]
-            plans: list[tuple[int, dict] | None] = [None] * slots
+            rng = np.random.default_rng(seed)
+            plans: list[tuple[int, dict, dict] | None] = [None] * slots
             traces: list[list[dict]] = [[] for _ in range(slots)]
             triggers = [0] * slots
             for _ in range(cfg.horizon):
@@ -138,16 +146,17 @@ def run_arms(cfg, checkpoint, out, *, macro_name: str, window: int, slots: int, 
                 for i in range(slots):
                     commanded = float(np.linalg.norm(policy_action[i, :3]) * cfg.max_translation)
                     detectors[i].update(observation_centroid(obs[i], env.spec.point_budget), commanded)
-                    if plans[i] is None and arm == "intervene" and detectors[i].triggered():
+                    if plans[i] is None and arm in ("intervene", "random") and detectors[i].triggered():
                         cell = env.cells[i]
-                        plans[i] = (0, db.slot_directions(tools[i], cell.finger, cell.elbow, cell.shoulder))
+                        chosen = macro if arm == "intervene" else alternatives[int(rng.integers(len(alternatives)))]
+                        plans[i] = (0, db.slot_directions(tools[i], cell.finger, cell.elbow, cell.shoulder), chosen)
                         detectors[i].fired()
                         triggers[i] += 1
                     if plans[i] is not None:
-                        t, directions = plans[i]
-                        action[i] = db.macro_action(macro, t, window, directions, policy_action[i],
+                        t, directions, chosen = plans[i]
+                        action[i] = db.macro_action(chosen, t, window, directions, policy_action[i],
                                                     step_m, cfg.max_translation)
-                        plans[i] = (t + 1, directions) if t + 1 < window else None
+                        plans[i] = (t + 1, directions, chosen) if t + 1 < window else None
                 obs, _, done, rows = env.step(np.clip(action, -1.0, 1.0).astype(np.float32), reset_on_done=False)
                 result["physical_decisions"] += slots
                 if any(r.get("sim_error") for r in rows):
@@ -206,7 +215,7 @@ def main():
                       seed=args.seed, step_m=args.macro_step_m,
                       detector=dict(window=args.detector_window, threshold=args.detector_threshold,
                                     cooldown=args.detector_cooldown))
-    for arm in ("control", "intervene"):
+    for arm in ("control", "intervene", "random"):
         rows = [e for e in result["episodes"] if e["arm"] == arm]
         print(json.dumps(dict(arm=arm, episodes=len(rows), successes=sum(e["success"] for e in rows),
                               mean_sustained=float(np.mean([e["sustained_coverage"] for e in rows])),
