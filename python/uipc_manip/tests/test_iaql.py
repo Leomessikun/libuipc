@@ -152,7 +152,10 @@ def test_state_batch_feeds_the_actor_term_from_the_same_label():
     agent.cfg.physics_actor_action_distance = 0.0
     stats = agent.update_state_batch(state, action, torch.zeros(8, 1), nxt, torch.ones(8, 1),
                                      tangent=tangent, reward_gradient=torch.zeros(8, 2), valid=torch.ones(8))
-    assert stats["physics_actor_fraction"] == 0.0 and "physics_loss" not in stats
+    # A gated batch reports explicit zeros rather than omitting the keys, so a trainer that
+    # retains the latest metrics cannot display the previous nonempty batch's loss (236b21e8).
+    assert stats["physics_actor_fraction"] == 0.0
+    assert stats["physics_loss"] == 0.0 and stats["physics_rows"] == 0
 
 
 def test_detailed_targets_split_and_trust():
