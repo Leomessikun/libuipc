@@ -1,5 +1,28 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-19 — New branch `research/flow-latent-steering`: the helpful action is outside the prior
+
+The owner asked for a branch for the flow-reversal-steering ideas and for the
+prior-support audit before any latent-space learner.
+[Record](performance/2026-09-19-flow-prior-support.md). `uipc_manip.flow_reversal`
+carries an action back through the behavior flow's own Euler discretization and reports
+the noise it corresponds to, where that noise sits in the prior's standard normal, and
+whether a forward pass reproduces the action. Six focused tests.
+
+Measured on the FQL behavior flow (ten steps, six-dimensional action, 7,500 transitions
+from 25 scripted-expert episodes, bodies 14045-14047 fitted and 14048-14049 withheld):
+in-sample expert actions reverse to noise at percentile 0.025 with reconstruction error
+0.034; withheld-body actions to percentile 0.602 with error 0.172 and 4.5 times the
+inversion drift, so the field is rougher out of sample. The recovery macros that beat
+the policy at 43 of 48 states reverse to noise of length 5.2-5.5 at percentile 1.000,
+98-100 % beyond the 99th, with reconstruction error 0.23-0.29. That is not a magnitude
+effect: each macro commands 0.924 in normalized units and the expert data's own action
+norm has median 0.924.
+
+So the behaviour that improves dressing is not a mode this prior contains, and latent
+steering, noise-space cloning and latent-space reinforcement learning would all search
+a space without the answer. Widen the prior first, and reuse this audit to check it.
+
 ## 2026-09-19 — The policy does not stall: recovery closed, grasp and containment named, agent harness added
 
 [Record](performance/2026-09-19-intervention-and-agent-baseline.md). Three arms from
