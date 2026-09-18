@@ -9,14 +9,14 @@ from uipc_manip.dressing_privileged import PRIVILEGED_DIM
 
 
 def privileged(*, length=0.30, shoulder=(0.30, 0.25), centre=(0.15, 0.0, 0.0), radius=0.09,
-               tracking_cm=0.5, upperarm_ratio=0.0):
+               tracking_cm=0.5, upperarm_ratio=0.0, on_arm=True):
     """One privileged vector with the blocks this module reads."""
     row = np.zeros(PRIVILEGED_DIM)
     row[slice(*ds.OFFSETS["arm"])] = [length, shoulder[0], shoulder[1]]
     row[slice(*ds.OFFSETS["opening_center"])] = centre
     row[slice(*ds.OFFSETS["opening_radius"])] = [radius, 0.0]
     row[slice(*ds.OFFSETS["tracking_error"])] = tracking_cm
-    row[slice(*ds.OFFSETS["progress"])] = [0.0, upperarm_ratio, 0.0, 0.0, 0.0]
+    row[slice(*ds.OFFSETS["progress"])] = [0.0, upperarm_ratio, float(on_arm), 0.0, 0.0]
     return row
 
 
@@ -82,6 +82,14 @@ def test_a_nearly_dressed_sleeve_is_not_treated_as_stalled():
     supervisor = ds.TeacherSupervisor(stall_window=3, hold=2)
     row = privileged(centre=(0.30, 0.24, 0.0), upperarm_ratio=0.99)
     for _ in range(5):
+        assert supervisor.command(np.zeros(6), row)[1] == "teacher"
+
+
+def test_an_approach_that_has_not_reached_the_arm_is_never_overridden():
+    supervisor = ds.TeacherSupervisor(stall_window=3, hold=2, containment=0.6)
+    # Far off the axis and not advancing, but the sleeve is not on the arm yet.
+    row = privileged(centre=(0.15, 0.0, 0.30), radius=0.09, on_arm=False)
+    for _ in range(8):
         assert supervisor.command(np.zeros(6), row)[1] == "teacher"
 
 

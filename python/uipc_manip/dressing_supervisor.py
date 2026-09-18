@@ -66,9 +66,14 @@ def sleeve_position(privileged: np.ndarray) -> dict:
             best = dict(segment=name, arc=(base + along) / max(total, 1e-9), lateral=gap,
                         outward=centre - foot, axis=unit)
     radius = float(read(privileged, "opening_radius")[0])
+    progress = read(privileged, "progress")
     best.update(radius=radius, containment=best["lateral"] / max(radius, 1e-9),
                 tracking_cm=float(read(privileged, "tracking_error")[0]),
-                upperarm_ratio=float(read(privileged, "progress")[1]))
+                forearm_ratio=float(progress[0]), upperarm_ratio=float(progress[1]),
+                # Both overrides concern a sleeve that is already on the arm. Before that the
+                # opening is legitimately off the arm's axis and legitimately not advancing along
+                # it, and overriding there replaces the teacher's whole approach.
+                on_arm=bool(progress[2] > 0.5 or progress[3] > 0.5))
     return best
 
 
@@ -108,8 +113,8 @@ class TeacherSupervisor:
         if self._plan:
             self.reasons.append("plan")
             return np.clip(self._plan.pop(0), -1.0, 1.0), "plan"
-        drifting = state["containment"] > self.containment
-        stalled = (len(self._arc) > self.stall_window
+        drifting = state["on_arm"] and state["containment"] > self.containment
+        stalled = (state["on_arm"] and len(self._arc) > self.stall_window
                    and self._arc[-1] - self._arc[0] < self.stall_arc
                    and state["upperarm_ratio"] < 0.95)
         if drifting:
