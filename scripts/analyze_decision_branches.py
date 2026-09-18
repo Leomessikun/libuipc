@@ -31,6 +31,8 @@ def main():
     p.add_argument("run_dirs", type=Path, nargs="+")
     p.add_argument("--key", default="sustained_coverage")
     p.add_argument("--reference", default="policy")
+    p.add_argument("--success-threshold", type=float, default=0.7,
+                   help="Coverage counted as dressed, for reporting how much of the remaining gap a macro closes")
     args = p.parse_args()
     summary = dict(key=args.key, runs=[], states=[])
     for run in args.run_dirs:
@@ -46,18 +48,24 @@ def main():
               f"window {result['window']} follow {result['follow']} repeats {result['repeats']}")
         print(f"{'state':34s} {'up':>5s} {'policy':>7s} {'best':>16s} {'best ret':>8s} {'C':>7s} {'spread':>7s} "
               f"{'dec':>3s} {'top1':>5s} {'pair':>5s}")
-        rows = []
+        rows, skipped = [], 0
         for state, records in sorted(by_state.items()):
             returns = db.returns_by_macro(records, args.key)
-            if args.reference not in returns:
+            counts = {len(v) for v in returns.values()}
+            if args.reference not in returns or len(counts) != 1 or counts.pop() < 2:
+                skipped += 1
                 continue
             c = db.consequence(returns, args.reference)
             r = db.ranking_agreement(returns)
-            rows.append(dict(run=run.name, state=state, step=info[state]["step"],
-                             initial_upperarm=info[state]["upperarm_ratio"], **c, **{f"rank_{k}": v for k, v in r.items()}))
+            gap = max(args.success_threshold - c["reference_return"], 1e-9)
+            rows.append(dict(run=run.name, state=state, step=info[state]["step"], gap_to_success=gap,
+                             gap_closed=c["consequence"] / gap, initial_upperarm=info[state]["upperarm_ratio"],
+                             **c, **{f"rank_{k}": v for k, v in r.items()}))
             print(f"{state:34s} {info[state]['upperarm_ratio']:5.2f} {c['reference_return']:7.3f} "
                   f"{c['best_macro']:>16s} {c['best_return']:8.3f} {c['consequence']:7.3f} {c['spread']:7.3f} "
                   f"{int(c['decisive']):3d} {r['top1_agreement']:5.2f} {r['pairwise_agreement']:5.2f}")
+        if skipped:
+            print(f"  ({skipped} states skipped: their macros do not yet have the same number of repeats)")
         if not rows:
             continue
         cons = np.asarray([r["consequence"] for r in rows])
@@ -68,8 +76,11 @@ def main():
         winners = Counter(r["best_macro"] for r in rows)
         decisive_winners = Counter(r["best_macro"] for r in rows if r["decisive"])
         macro_means = {m: float(np.mean([r["means"][m] for r in rows])) for m in rows[0]["means"]}
+        closed = np.asarray([r["gap_closed"] for r in rows])
         print(f"\n  consequence: median {np.median(cons):.3f}, mean {cons.mean():.3f}, "
               f"decisive at {int(decisive.sum())}/{len(rows)} states (gain above the repeat spread)")
+        print(f"  that closes a median {100 * np.median(closed):.1f} % of the remaining gap to "
+              f"{args.success_threshold} coverage (median gap {np.median([r['gap_to_success'] for r in rows]):.3f})")
         print(f"  repeat spread: median {np.median(spread):.3f}; ranking agreement top-1 {top1.mean():.2f}, "
               f"pairwise {pair.mean():.2f}")
         print(f"  best macro per state: {dict(winners)}")
@@ -82,6 +93,7 @@ def main():
         summary["runs"].append(dict(run=run.name, states=len(rows), decisive=int(decisive.sum()),
                                     median_consequence=float(np.median(cons)), median_spread=float(np.median(spread)),
                                     top1_agreement=float(top1.mean()), pairwise_agreement=float(pair.mean()),
+                                    median_gap_closed=float(np.median(closed)),
                                     winners=dict(winners), decisive_winners=dict(decisive_winners),
                                     macro_means=macro_means, best_fixed_macro=best_fixed,
                                     oracle_return=oracle, value_of_choosing=oracle - macro_means[best_fixed]))
