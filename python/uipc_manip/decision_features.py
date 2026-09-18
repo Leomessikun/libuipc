@@ -119,13 +119,17 @@ def standardize(train: np.ndarray, *others: np.ndarray):
 
 
 def ridge_fit(x: np.ndarray, y: np.ndarray, alpha: float = 1.0) -> np.ndarray:
-    """Ridge weights for ``y ~ [x, 1]``, penalising the slopes only."""
+    """Ridge weights for ``y ~ [x, 1]``, penalising the slopes only.
+
+    Solved in the least-squares sense, so a fold with fewer rows than features, or
+    with an unidentifiable intercept, returns the minimum-norm fit instead of raising.
+    """
     x = np.asarray(x, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
     design = np.concatenate([x, np.ones((len(x), 1))], axis=1)
     penalty = alpha * np.eye(design.shape[1])
     penalty[-1, -1] = 0.0
-    return np.linalg.solve(design.T @ design + penalty, design.T @ y)
+    return np.linalg.lstsq(design.T @ design + penalty, design.T @ y, rcond=None)[0]
 
 
 def ridge_predict(weights: np.ndarray, x: np.ndarray) -> np.ndarray:

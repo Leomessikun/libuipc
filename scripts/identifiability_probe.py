@@ -57,16 +57,40 @@ def load(run_dirs: list[Path], key: str):
     return states, {k: np.stack(v) for k, v in features.items()}, np.stack(returns), macros
 
 
-def evaluate(x: np.ndarray | None, y: np.ndarray, alpha: float) -> dict:
-    """Leave-one-state-out prediction of every macro's return; ``x`` None means constant."""
+def inner_alpha(x: np.ndarray, y: np.ndarray, grid: list[float]) -> float:
+    """Pick the ridge penalty by a leave-one-out fit inside the training rows only."""
+    n = len(x)
+    if n < 4:
+        return grid[len(grid) // 2]
+    errors = []
+    for alpha in grid:
+        residual = 0.0
+        for i in range(n):
+            keep = np.ones(n, dtype=bool)
+            keep[i] = False
+            xtr, xte = df.standardize(x[keep], x[i:i + 1])
+            for j in range(y.shape[1]):
+                residual += float((df.ridge_predict(df.ridge_fit(xtr, y[keep, j], alpha), xte)[0] - y[i, j]) ** 2)
+        errors.append(residual)
+    return grid[int(np.argmin(errors))]
+
+
+def evaluate(x: np.ndarray | None, y: np.ndarray, grid: list[float]) -> dict:
+    """Leave-one-state-out prediction of every macro's return; ``x`` None means constant.
+
+    The penalty is chosen inside each fold, on the training rows only, so the held-out
+    state never influences the model that scores it.
+    """
     n, m = y.shape
-    chosen, predicted = np.zeros(n, dtype=int), np.zeros_like(y)
+    chosen, predicted, alphas = np.zeros(n, dtype=int), np.zeros_like(y), []
     for i in range(n):
         train = np.ones(n, dtype=bool)
         train[i] = False
         if x is None:
             predicted[i] = y[train].mean(axis=0)
         else:
+            alpha = inner_alpha(x[train], y[train], grid) if len(grid) > 1 else grid[0]
+            alphas.append(alpha)
             xtr, xte = df.standardize(x[train], x[i:i + 1])
             for j in range(m):
                 predicted[i, j] = df.ridge_predict(df.ridge_fit(xtr, y[train, j], alpha), xte)[0]
@@ -77,17 +101,20 @@ def evaluate(x: np.ndarray | None, y: np.ndarray, alpha: float) -> dict:
                        for i in range(n)])
     regret = y[np.arange(n), truth] - y[np.arange(n), chosen]
     return dict(top1=float(np.mean(chosen == truth)), pairwise=float(ordered), mean_regret=float(regret.mean()),
-                median_regret=float(np.median(regret)), chosen=chosen.tolist(), truth=truth.tolist())
+                median_regret=float(np.median(regret)), chosen=chosen.tolist(), truth=truth.tolist(),
+                alphas=sorted(set(alphas)))
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("run_dirs", type=Path, nargs="+")
     p.add_argument("--key", default="sustained_coverage")
-    p.add_argument("--alpha", type=float, default=1.0)
+    p.add_argument("--alphas", default="0.1,1,10,100,1000", help="Ridge penalties; chosen inside each fold")
+    p.add_argument("--permutations", type=int, default=0, help="Shuffled-label repeats for a chance level")
     p.add_argument("--min-consequence", type=float, default=0.0,
                    help="Keep only states where the best macro beats the policy by at least this much")
     args = p.parse_args()
+    grid = [float(a) for a in args.alphas.split(",") if a.strip()]
     states, features, returns, macros = load(args.run_dirs, args.key)
     reference = macros.index("policy")
     gain = returns.max(axis=1) - returns[:, reference]
@@ -98,13 +125,23 @@ def main():
     rows = {}
     for name, x in (("constant", None), ("observation", features["observation"]),
                     ("history", features["history"]), ("privileged", features["privileged"])):
-        rows[name] = evaluate(None if x is None else x[keep], returns[keep], args.alpha)
+        rows[name] = evaluate(None if x is None else x[keep], returns[keep], grid)
         rows[name]["features"] = 0 if x is None else int(x.shape[1])
-    print(f"\n{'information set':14s} {'features':>8s} {'top-1':>6s} {'pairwise':>8s} {'mean regret':>11s} {'median regret':>13s}")
+    if args.permutations:
+        rng = np.random.default_rng(0)
+        for name in ("observation", "history", "privileged"):
+            scores = []
+            for _ in range(args.permutations):
+                order = rng.permutation(int(keep.sum()))
+                scores.append(evaluate(features[name][keep], returns[keep][order], [grid[len(grid) // 2]])["top1"])
+            rows[name]["permuted_top1_mean"] = float(np.mean(scores))
+            rows[name]["permuted_top1_p95"] = float(np.percentile(scores, 95))
+    print(f"\n{'information set':14s} {'features':>8s} {'top-1':>6s} {'pairwise':>8s} {'mean regret':>11s} {'median regret':>13s} {'shuffled top-1':>14s}")
     for name, r in rows.items():
-        print(f"{name:14s} {r['features']:8d} {r['top1']:6.2f} {r['pairwise']:8.2f} {r['mean_regret']:11.3f} {r['median_regret']:13.3f}")
+        shuffled = f"{r['permuted_top1_mean']:.2f} (p95 {r['permuted_top1_p95']:.2f})" if "permuted_top1_mean" in r else "-"
+        print(f"{name:14s} {r['features']:8d} {r['top1']:6.2f} {r['pairwise']:8.2f} {r['mean_regret']:11.3f} {r['median_regret']:13.3f} {shuffled:>14s}")
     out = args.run_dirs[0].parent / "identifiability.json"
-    out.write_text(json.dumps(dict(key=args.key, alpha=args.alpha, min_consequence=args.min_consequence,
+    out.write_text(json.dumps(dict(key=args.key, alphas=grid, min_consequence=args.min_consequence,
                                    macros=macros, states=states, returns=returns.tolist(),
                                    kept=keep.tolist(), results=rows), indent=1) + "\n")
     print(f"\nwritten {out}")
