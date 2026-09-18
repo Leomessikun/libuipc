@@ -1,5 +1,37 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-18 — Counterfactual recovery decisions measured: the action exists, the decision does not
+
+[Record](performance/2026-09-18-recovery-decisions.md). The saved SAC policy is
+driven to decisions 100, 140 and 180; the world is snapshotted (restore error
+0.00e+00 m throughout) and seven macros each replace the policy for eight decisions
+before the same policy resumes for 32, three identical-command repeats per macro,
+eight seeds per snapshot. Two cells done: 24 states and 504 branches each, 21,600
+decisions in 40.8 and 43.5 minutes, no simulator error; `tshirt_68/14046` and
+`hospital_gown/14046` are running.
+
+Premise one holds: at 43 of 48 states some macro beats the policy's own continuation
+by more than the repeat spread (median +0.013 on tshirt_26, +0.027 on tshirt_392;
+10 % and 28 % of the gap to 0.7 coverage), and the ranking agrees across repeats
+(top-1 0.75 and 0.90). The fault is direction, not magnitude: the policy's own
+direction at the macros' 8 mm gains 0.001 and 0.006 against 0.012 and 0.030 for the
+best macro. The gain halves with every 40 decisions of delay.
+
+Premise two fails: the winner is nearly constant per garment (`lift` at 17 of 24
+states, `forward` at 19 of 24), and a single fixed macro is worth 0.002-0.003 less
+than a per-state oracle, inside the noise. The choice is identifiable from the
+deployment observation (leave-one-state-out top-1 0.67 against a 0.44 constant
+baseline and a 0.42 shuffled control, privileged 0.75, history 0.62), but acting on
+it saves 0.005 of coverage. So a method that spends simulation deciding which
+recovery to take at which state would solve a problem that is not there at these
+states; the open question is whether repeated interventions compound over a whole
+episode, which `uipc_manip.recovery_intervention` (stall detector reading the
+garment's motion per commanded metre, with control and random-macro arms) is built
+to answer and has not yet run.
+
+Pre-existing failure on HEAD, from another session's 236b21e8, not from this work:
+`test_iaql.py::test_state_batch_feeds_the_actor_term_from_the_same_label`.
+
 ## 2026-09-18 — Predictability of garment-arm contact measured; decision-branch collector added
 
 The owner asked for the open scientific questions of this area rather than another
