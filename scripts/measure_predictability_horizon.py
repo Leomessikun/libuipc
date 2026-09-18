@@ -76,7 +76,8 @@ def main():
         row = dict(upperarm_ratio=float(info["upperarm_ratio"]), forearm_ratio=float(info["forearm_ratio"]),
                    tracking_error=float(info["tracking_error"]), grasp_valid=bool(info["grasp_valid"]),
                    opening_center=[float(x) for x in priv[13:16]], tool=[float(x) for x in priv[3:6]])
-        row.update({k: float(v) for k, v in info.items() if k.startswith("arm_force_")})
+        row.update({k: float(v) for k, v in info.items()
+                    if k.startswith("arm_force_") and isinstance(v, (int, float, np.floating))})
         return row
 
     def run(commands, first_delta=None):
