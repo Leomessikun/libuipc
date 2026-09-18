@@ -1,5 +1,18 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Research continuation decision — 2026-09-18
+
+The [post-pilot assessment](performance/2026-09-18-research-direction-decision.md)
+recommends closing the current motion-initialization recipe and retaining the
+broader efficient dressing project conditionally. The next proposed gate is
+validated task outcomes followed by repeatable action comparisons at existing
+failures, with a one-hour cap on initial new native diagnostics. It is not a
+new training authorization or an implemented algorithm. Online FQL integration
+and matched comparisons remain open; no larger model or training extension is
+justified by the current prediction score. The missing direct grasp reward and
+the reset-time early-turn flag require task-contract review. Preserve historical
+metrics and version any later changes. This review launched no experiments.
+
 ## Motion-pretraining pilot — completed negative result, 2026-09-18
 
 The [bounded PointZero-inspired comparison](performance/2026-09-18-motion-pretraining.md)

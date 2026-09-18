@@ -1,5 +1,23 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-18 — Continue/stop research assessment after the motion pilot
+
+[Decision and primary-source review](performance/2026-09-18-research-direction-decision.md):
+stop scaling motion-encoder initialization; retain the broader data-efficient
+dressing objective under one bounded diagnostic gate. First validate the task
+contract, then test whether finite alternative actions provide repeatable useful
+information at observed failures. Do not claim another recovered trajectory,
+lower prediction error, or generic reset curriculum is a novel RL result.
+Online FQL continuation remains unimplemented and untested.
+
+Code review confirms the reward has no direct grasp-tracking term, although
+evaluation requires whole-episode tracking <=2 cm. Teacher difficulty confounds
+the held-out gap but does not prove its cause; missing alternative action labels
+do not mathematically rule out critic generalization. This qualifies stronger
+causal wording in the earlier review, which is retained below as history.
+No training or simulator run was launched by this assessment. Separate ongoing
+predictability diagnostics were left untouched; no incomplete result is claimed.
+
 ## 2026-09-18 — Motion-pretraining pilot completed: no policy improvement
 
 [Implementation, protocol and results](performance/2026-09-18-motion-pretraining.md).
