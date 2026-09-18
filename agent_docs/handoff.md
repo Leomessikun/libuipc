@@ -1,5 +1,35 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-19 — Force ruled out as a signal, the stale IAQL assertion fixed, the teacher repair under test
+
+Three results on `research/flow-latent-steering`, continuing the owner's instruction to
+keep solving rather than stop.
+
+**The contact force does not reproduce** ([record](performance/2026-09-19-force-reproducibility.md)).
+Identical commands replayed from an exactly restored state disagree by 50-126 % on
+summed and peak normal force, about 190 % on friction and 24 % on a contact count,
+while the same runs' coverage spreads by 0.007-0.037. Twelve channels are identically
+zero at that state. So a per-decision contact force cannot be a policy input, a reward
+term, a critic feature or a safety threshold here, and the "settled" channels, which
+exist to report only persistent contacts, are worse than the raw ones. Three uses
+survive: a contact count, an average over repeats for offline comparison, and a
+converged-state readout that this measurement does not test.
+
+**A repaired teacher is under test.** `uipc_manip.dressing_supervisor` overrides the
+scripted expert while it stalls with the sleeve on the arm, while the opening's centre
+drifts past 0.6 of its own radius from the arm's centreline, or while the tracking
+error exceeds 1.2 cm, using the directions the branch study measured to help. A first
+smoke run exposed the containment rule firing through the whole approach, where the
+opening is legitimately off the axis; both overrides now require the sleeve to be on
+the arm. `scripts/evaluate_supervised_teacher.py` runs the expert twice over the same
+25 cells and seeds under the corrected five-centimetre shoulder ray;
+`expert_baseline --supervised` collects with it, and `scripts/widen_flow_prior.sh`
+chains collection, replay, refit and re-audit for when it passes.
+
+**The suite is green again.** `test_iaql`'s assertion that a gated physics batch omits
+its keys predated another session's deliberate change to report explicit zeros
+(236b21e8); it now follows the new contract, and 560 tests pass.
+
 ## 2026-09-19 — New branch `research/flow-latent-steering`: the helpful action is outside the prior
 
 The owner asked for a branch for the flow-reversal-steering ideas and for the
