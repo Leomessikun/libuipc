@@ -118,6 +118,41 @@ diagnostic to reuse whenever a prior is retrained. And in the successful episode
 contact phase the expert's median action norm is 0.000: what the prior has learned to
 do there is hold still, which is what its data does.
 
+## Widening the prior with the policy's own states puts the action inside it
+
+The audit implied its own remedy: if the flow is extrapolating at the states where a
+recovery matters, give it those states with the right action on them.
+`scripts/collect_policy_state_labels.py` drives the trained policy over the 25 cells
+and records every decision with the branch study's best macro for that garment, which
+is behaviour cloning in the sense of DAgger: the states are the policy's, the actions
+are the ones measured to help. 25 episodes, 7,500 transitions, 18.2 minutes. Refitting
+the behavior flow on it for 10,000 updates and reversing the same macros at the same
+48 branch states:
+
+| Macro | Gain over the policy | Percentile in the old prior | Percentile in the refitted prior | Reconstruction, old | Reconstruction, refitted |
+|---|---:|---:|---:|---:|---:|
+| the winner at its own state | — | 1.000 | **0.036** | 0.282 | **0.040** |
+| `lift` | +0.0166 | 1.000 | **0.497** | 0.294 | **0.083** |
+| `forward` | +0.0103 | 1.000 | **0.521** | 0.265 | **0.123** |
+| `retreat_outward` | +0.0038 | 1.000 | 1.000 | 0.226 | 0.194 |
+| `outward` | −0.0025 | 1.000 | 1.000 | 0.243 | 0.225 |
+| `retreat` | −0.0027 | 1.000 | 1.000 | 0.226 | 0.194 |
+
+The action that wins at a state moves from beyond every sample the prior draws to its
+median, with the reconstruction error falling sevenfold. The macros that do not help
+stay outside. So the prior did not merely become permissive: it learned the specific
+directions that were measured to work, at the states where they work.
+
+That is the precondition for latent steering, and it is now satisfiable on demand: the
+audit is the acceptance test and a labelling run is the remedy. It also says what a
+useful prior has to contain — the states a learner visits, not only the states a
+teacher passes through.
+
+The refitted prior above was fitted to the labels alone, so it holds the recovery and
+not the dressing. A prior for actual use needs both, which is what the merged
+collection (`scripts/merge_flow_datasets.py`, 50 episodes and 15,000 transitions of
+teacher dressing plus labelled policy states) is for.
+
 ## Limits
 
 One prior, fitted to 7,500 transitions from one scripted controller; a wider prior may
