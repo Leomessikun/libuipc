@@ -13,6 +13,10 @@ import shutil
 from pathlib import Path
 
 
+BOOKKEEPING = frozenset({"cells", "human", "garments", "workspace", "seed", "show_viewer",
+                         "logging_level", "decision_watchdog", "contact_force_readout"})
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--sources", type=Path, nargs="+", required=True)
@@ -22,13 +26,28 @@ def main():
     if args.out.exists():
         raise FileExistsError(args.out)
     (args.out / "episodes").mkdir(parents=True)
-    records, manifests = [], []
+    records, manifests, shared = [], [], {}
     for source in args.sources:
         manifest = json.loads((source / "manifest.json").read_text())
         if not manifest.get("completed") or manifest.get("transition_schema") != "explicit_successors_v1":
             raise ValueError(f"{source} is not a completed explicit-successor dataset")
         manifests.append(dict(source=str(source), **{k: manifest[k] for k in
                                                      ("obs_dim", "action_dim", "transition_schema")}))
+        # The trainer also reads the environment contract and the point budget, and an encoder
+        # initialisation is refused unless they match, so the sources must agree on them.
+        for key in ("env", "point_budget"):
+            if key not in manifest:
+                raise ValueError(f"{source} has no {key}; it cannot be merged for training")
+        if "env" in shared:
+            # The same bookkeeping keys the reconstruction refuses to compare: which cells a
+            # collection happened to hold says nothing about the physics it ran.
+            differing = [k for k in set(shared["env"]) | set(manifest["env"])
+                         if k not in BOOKKEEPING
+                         and json.dumps(shared["env"].get(k), sort_keys=True)
+                         != json.dumps(manifest["env"].get(k), sort_keys=True)]
+            if differing or shared["point_budget"] != manifest["point_budget"]:
+                raise ValueError(f"Sources disagree on the physics: {differing or 'point_budget'}")
+        shared["env"], shared["point_budget"] = manifest["env"], manifest["point_budget"]
         if any(m["obs_dim"] != manifests[0]["obs_dim"] or m["action_dim"] != manifests[0]["action_dim"]
                for m in manifests):
             raise ValueError("Sources disagree on the observation or action contract")
@@ -45,7 +64,7 @@ def main():
                           source_path=str(origin), source_sha256=record.get("source_sha256", str(origin)))
             records.append(merged)
     manifest = dict(completed=True, transition_schema="explicit_successors_v1",
-                    obs_dim=manifests[0]["obs_dim"], action_dim=manifests[0]["action_dim"],
+                    obs_dim=manifests[0]["obs_dim"], action_dim=manifests[0]["action_dim"], **shared,
                     merged_from=manifests, episodes=len(records),
                     usable_for="behavior model only; a source may carry labels that do not match its successors")
     (args.out / "episode_metrics.json").write_text(json.dumps(records, indent=2) + "\n")
