@@ -99,9 +99,49 @@ observations the flow is extrapolating, which is why everything reversed there �
 macros and the policy's own action alike — lands in the tail. Widening the prior
 therefore means covering the states a learner visits, not only more bodies.
 
+## The neighbourhood of the good action is flat
+
+The third measurement of the audit asks what happens *around* the noise a good action
+reverses to: a latent policy can only find a behaviour whose neighbourhood also works.
+`scripts/latent_neighbourhood_probe.py` reverses the winning macro at a state, perturbs
+that noise by a scale, decodes it back through the prior and executes it for eight
+decisions before the policy resumes, from an exactly restored state. Eight states per
+snapshot on `tshirt_26/14046`, three snapshots, two draws per scale, 216 branches per
+prior, 21.5 minutes each.
+
+Sustained coverage by perturbation scale (mean over the eight states, decision 100):
+
+| Prior | Reference noise length | Its reconstruction | σ = 0 | 0.25 | 0.5 | 1.0 | 2.0 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| union | 1.00 | 0.012 | 0.556 | 0.562 | 0.564 | 0.560 | 0.558 |
+| old | 5.50 | 0.296 | 0.572 | 0.569 | 0.566 | 0.574 | 0.562 |
+
+The snapshots at 140 and 180 are as flat. For scale, the branch study's own figures at
+these states are 0.550 for the policy's continuation and 0.573 for the macro executed
+directly.
+
+A perturbation of σ = 2 on a six-dimensional noise randomizes it: the decoded action
+is no longer related to the reference. At the union prior the decoded action is 0.011
+from the reference at σ = 0 and the outcome does not move as σ grows; at the old prior
+the decoded action is 0.314 away — it is not the macro at all — and the outcome is the
+same. The spread across the eight states, ±0.03, is larger than anything the
+perturbation does.
+
+So the neighbourhood is neither a basin nor a needle. It is a plateau: at these states
+every action the prior can produce gives the same outcome. That is the same fact the
+branch study measured as a per-state choice being worth 0.002-0.003, now confirmed over
+a far wider range of actions, and it is what a latent learner would be optimizing over.
+
 ## Reading
 
-For this prior the answer is the second of the three that were possible: the flow can
+Three measurements, three answers. The prior did not contain the useful action; a
+labelling run put it there; and it makes no difference at these states because the
+outcome is flat in the action. The first two are a working method, reusable and cheap.
+The third is why a latent learner is not the next thing to build: steering inside a
+plateau buys what the plateau is worth.
+
+For this prior the answer to the first question was the second of the three that were
+possible: the flow can
 represent the behaviour that improves dressing, but only from noise it would never
 draw. That is worse than it sounds for latent steering. A noise-space policy may output
 any vector, so nothing forbids a latent of length 5.6; but the critic and the actor
