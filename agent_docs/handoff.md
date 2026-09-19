@@ -1,5 +1,33 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-19 — Teacher repair closed by measurement; labelling the policy's own states instead
+
+[Record](performance/2026-09-19-teacher-supervision.md). The scripted teacher scores
+9 of 25 cells under coverage-and-grasp, and its 16 failures are six complete dressings
+disqualified by a grip that slips at decision 111-130 while coverage is still 0.03-0.18,
+six that never reach the arm (four of them `tshirt_392`), and four partial.
+
+Two supervisors were built from those failures and both fail. Acting on stalls,
+containment and grasp scores 0 of 25 and breaks nine cells while raising grasp validity
+from 10 to 21. Measuring the base rates explains it: over the teacher's own episodes,
+a tracking error above 1.5 cm fires on 0.0 % of successful decisions and 40.2 % of
+failed ones, containment past 0.6 radii on 5.7 % against 15.0 %, and an arc-progress
+stall on 35.7 % against 33.8 %, which is no separation at all. A second supervisor
+acting only on the grasp, keeping the axial command and dropping the transverse pull,
+scores 8 of 25 and fixes no cell: where it fires it fires 150-209 times in 300
+decisions, because the tracking error is a state the episode enters and stays in.
+So the teacher cannot be repaired by command-level overrides on the signals it exposes.
+`scripts/separability_of_failure_signals.py` is the reusable check that should precede
+any future rule.
+
+What the prior audit implies instead is now running:
+`scripts/collect_policy_state_labels.py` drives the trained policy and records every
+decision with the branch study's best macro for that garment, so the states are the
+policy's and the actions are the ones measured to help. The manifest marks the dataset
+as fit for a behavior model only, since its successors belong to the executed action.
+Refitting the behavior flow on it and re-running the reversal audit is the direct test
+of whether the useful directions can be brought inside the prior.
+
 ## 2026-09-19 — Force ruled out as a signal, the stale IAQL assertion fixed, the teacher repair under test
 
 Three results on `research/flow-latent-steering`, continuing the owner's instruction to
