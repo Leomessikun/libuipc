@@ -73,13 +73,33 @@ threshold, a sleeve that is not advancing is as ordinary in a successful dressin
 a failed one. That also explains the earlier finding that the counterfactual branch
 study's "stalled" states were not special, and it retires the stall rule.
 
-## What the second supervisor changes
+## The second supervisor does not help either
 
 Only the grasp rule is enabled, and its response is no longer to scale the whole
 command down. It projects the teacher's translation onto the arm's own axis, keeping
 what advances the sleeve and dropping what pulls the cloth across the arm, on the
-reasoning that the strain comes from the transverse pull while the dressing comes from
-the axial one. The run is in `matrix25_v2`; its result belongs in this record.
+reasoning that the strain comes from the transverse pull and the dressing from the
+axial one.
+
+| Arm | Successes | Dressed | Grasp valid | Mean sustained coverage | Mean peak tracking |
+|---|---:|---:|---:|---:|---:|
+| teacher | 9/25 | 15 | 10 | 0.6985 | 2.24 cm |
+| supervised, three rules | 0/25 | 1 | 21 | 0.0785 | 1.46 cm |
+| supervised, grasp rule with axial projection | 8/25 | 10 | 12 | 0.5294 | 2.02 cm |
+
+It fixes no cell and breaks one. The override counts say why: where the rule fires at
+all it fires 150–209 times in a 300-decision episode. The tracking error is not a
+transient to be corrected but a state the episode enters and stays in, so the
+projection applies for the rest of the run and removes motion the teacher needs —
+the hospital gown falls from 0.975 to 0.129 sustained coverage with the grip no better
+than before.
+
+**So the teacher cannot be repaired by command-level overrides on the signals it
+exposes.** Of the three conditions, two do not separate success from failure, and the
+one that does cannot be acted on this way: by the time it fires, the episode is already
+in the state it describes, and suppressing the command that caused it also suppresses
+the dressing. A repair would have to act before the error grows — on the grip itself,
+or on the approach that leads into it — rather than on the command afterwards.
 
 ## Limits
 
