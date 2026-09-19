@@ -149,9 +149,23 @@ useful prior has to contain — the states a learner visits, not only the states
 teacher passes through.
 
 The refitted prior above was fitted to the labels alone, so it holds the recovery and
-not the dressing. A prior for actual use needs both, which is what the merged
-collection (`scripts/merge_flow_datasets.py`, 50 episodes and 15,000 transitions of
-teacher dressing plus labelled policy states) is for.
+not the dressing. A prior for actual use needs both, so the two collections were merged
+(`scripts/merge_flow_datasets.py`: 50 episodes, 15,000 transitions of teacher dressing
+and labelled policy states) and a third flow fitted to the union for 20,000 updates:
+
+| | old prior | labels only | union |
+|---|---:|---:|---:|
+| the winner at its own state, percentile | 1.000 | 0.036 | **0.027** |
+| the winner, reconstruction | 0.282 | 0.040 | **0.019** |
+| `forward`, percentile / reconstruction | 1.000 / 0.265 | 0.521 / 0.123 | 0.515 / **0.047** |
+| `lift`, percentile / reconstruction | 1.000 / 0.294 | 0.497 / 0.083 | 0.508 / 0.125 |
+| `retreat`, percentile | 1.000 | 1.000 | 1.000 |
+| `outward`, percentile | 1.000 | 1.000 | 0.999 |
+
+Holding the teacher's dressing alongside the recoveries does not cost the recoveries
+anything: the action that wins at a state sits at the prior's 0.027 percentile with a
+reconstruction error of 0.019, better than the labels-only fit on both counts, and the
+macros that do not help are still outside. That is the prior worth carrying forward.
 
 ## Limits
 
