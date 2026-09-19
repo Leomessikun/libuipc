@@ -32,7 +32,9 @@ def main():
     p.add_argument("--key", default="sustained_coverage")
     p.add_argument("--reference", default="policy")
     p.add_argument("--success-threshold", type=float, default=0.7,
-                   help="Coverage counted as dressed, for reporting how much of the remaining gap a macro closes")
+                   help="Return counted as success, for reporting how much of the remaining gap a macro closes")
+    p.add_argument("--initial-key", default="upperarm_ratio",
+                   help="The state's own progress field, reported beside each state; tasks name it differently")
     args = p.parse_args()
     summary = dict(key=args.key, runs=[], states=[])
     for run in args.run_dirs:
@@ -46,7 +48,8 @@ def main():
         print(f"\n=== {run.name}  states {len(by_state)}  branches {len(result['records'])}  "
               f"{result['physical_decisions']} decisions / {result['seconds'] / 60:.1f} min  "
               f"window {result['window']} follow {result['follow']} repeats {result['repeats']}")
-        print(f"{'state':34s} {'up':>5s} {'policy':>7s} {'best':>16s} {'best ret':>8s} {'C':>7s} {'spread':>7s} "
+        initial = {s: float(row.get(args.initial_key, float("nan"))) for s, row in info.items()}
+        print(f"{'state':34s} {args.initial_key[:5]:>5s} {'policy':>7s} {'best':>16s} {'best ret':>8s} {'C':>7s} {'spread':>7s} "
               f"{'dec':>3s} {'top1':>5s} {'pair':>5s}")
         rows, skipped = [], 0
         for state, records in sorted(by_state.items()):
@@ -59,9 +62,9 @@ def main():
             r = db.ranking_agreement(returns)
             gap = max(args.success_threshold - c["reference_return"], 1e-9)
             rows.append(dict(run=run.name, state=state, step=info[state]["step"], gap_to_success=gap,
-                             gap_closed=c["consequence"] / gap, initial_upperarm=info[state]["upperarm_ratio"],
+                             gap_closed=c["consequence"] / gap, initial_progress=initial[state],
                              **c, **{f"rank_{k}": v for k, v in r.items()}))
-            print(f"{state:34s} {info[state]['upperarm_ratio']:5.2f} {c['reference_return']:7.3f} "
+            print(f"{state:34s} {initial[state]:5.2f} {c['reference_return']:7.3f} "
                   f"{c['best_macro']:>16s} {c['best_return']:8.3f} {c['consequence']:7.3f} {c['spread']:7.3f} "
                   f"{int(c['decisive']):3d} {r['top1_agreement']:5.2f} {r['pairwise_agreement']:5.2f}")
         if skipped:

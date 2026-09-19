@@ -1,5 +1,38 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-19 — The diagnostic has a control, and it moves the question
+
+[Record](performance/2026-09-19-decision-signal-to-noise.md). Every negative result on
+dressing so far was measured by a diagnostic that had only ever been run on dressing.
+It has now been run unchanged on the cloth-drag benchmark of the closed IAQL study —
+same backend, same snapshot and restore, a SAC policy that goes from -4 to +13 return
+over 20,000 transitions — and it reports 14 of 24 states decisive, rank agreement 1.00
+and five different macros winning at different states. The diagnostic does not always
+say no.
+
+The comparison says more than the control was built for. Repeated macros with bitwise
+identical commands from a restored state do not reproduce on either task, so the seed
+is the solver's and is shared; only its amplification differs. With one outcome
+statistic on both tasks, dressing's decision *consequence* is the larger of the two and
+its eta-squared is 0.86-0.96, so telling a bad intervention from a good one is easy
+there. Telling the best from the next best is not: that gap is 193.6 repeat standard
+deviations on cloth drag against 1.31 and 1.24 on dressing, and it falls below the
+noise of a single repeat at 42 % of dressing states against 8 % of the control's. That
+is the comparison a learner must win to improve a policy that is already competent.
+
+`scripts/consequence_to_noise.py` is the reusable comparison; it reports eta-squared, F
+and the top-two margin together, because the naive consequence-over-noise ratio depends
+on where an outcome measure saturates and does not separate the two tasks.
+
+Two things follow and both are running or written. `scripts/feedback_value_profile.py`
+measures, along the whole horizon, what feedback is worth at each decision: from one
+snapshot a plan, a control replay of that plan, and four arms that take an identical
+random kick — open loop, the policy, an informed reversal, and a hold that separates
+reversing from merely pausing. The smoke run confirms the kick does not break the grasp
+(0.38-0.51 cm against the 2 cm limit). Not established yet, and named in the record as
+the next experiment: whether the shared seed is removable, which is a bounded change to
+the reductions in `spmv.cu` and `stackless_bvh.inl`, not a rewrite of the solver.
+
 ## 2026-09-19 — Teacher repair closed by measurement; labelling the policy's own states instead
 
 [Record](performance/2026-09-19-teacher-supervision.md). The scripted teacher scores
