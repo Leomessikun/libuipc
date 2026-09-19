@@ -29,3 +29,4 @@ Copy [0000-template.md](0000-template.md) for a new record. Use the next number,
 one decision per file, English prose, concrete source/test links, and the commit
 that first implemented the decision. Do not rewrite old ADRs to make history
 look cleaner.
+| [0009](0009-resolvable-advantage-learning.md) | Resolvable Advantage Learning | Proposed | A policy-improvement operator that measures whether it can tell two actions apart before stepping: short-horizon event reachability as the branch score, paired branches from one exactly restored state, best-arm identification under a fixed simulator budget, and an update gated by the within-state noise measured in the same call |
