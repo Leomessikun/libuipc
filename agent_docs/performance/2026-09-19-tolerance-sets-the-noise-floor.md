@@ -12,7 +12,23 @@ kernel.
 
 Script: `scripts/measure_predictability_horizon.py`, which now takes
 `--newton-tolerance`, `--linear-tolerance` and `--newton-max-iterations`. Artifacts:
-`output/uipc_manip/tolerance_probe_20260919/{default,tight}/`.
+`output/uipc_manip/tolerance_probe_20260919/{default,tight}/`. Neither setting emitted
+a single Newton or line-search iteration-cap warning, so "tight" means converged
+further, not capped in the same place every time.
+
+## The settings in play
+
+| | Newton velocity tol [m/s] | CG relative tol |
+|---|---|---|
+| libuipc default (`scene_default_config.cpp`) | 0.05 | 1e-3 |
+| dressing environment | 0.1 | 1e-2 |
+| cloth-drag environment (the control task) | 0.001 | 1e-3 (library default) |
+| "tight" below | 0.01 | 1e-4 |
+
+The control task on which the branch diagnostic reads clean was already running at a
+hundred times dressing's Newton tolerance and ten times its linear tolerance. That was
+not noticed when the comparison was first recorded and is corrected in
+`2026-09-19-decision-signal-to-noise.md`.
 
 ## Protocol
 
@@ -41,7 +57,8 @@ a task reinforcement learning solves from one it does not.
 ## What is not yet established
 
 * **Which knob does the work.** The two tolerances moved together. Separating them is
-  the next sweep.
+  the next sweep, and it decides the price: the control task buys its clean diagnostic
+  with the Newton tolerance alone.
 * **That the decision margin actually improves.** A branch run at the tight tolerance
   with every other setting matched to `decision_branches_20260918/t26_14046` (seed
   3301, window 8, follow 32, three repeats, eight slots) is running; the margin will be

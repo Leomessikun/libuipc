@@ -27,15 +27,30 @@ macros' magnitude): snapshot a state the policy visits, run a macro for eight
 decisions, hand back to the same policy for thirty-two, repeat every macro three times
 with identical commands. 24 states, 504 branches, 20,800 decisions, 7.2 minutes.
 
-## Result 1: the simulator is irreproducible on both tasks
+## Result 1: the simulator is irreproducible on both tasks, but they were not run alike
 
 Repeating one macro against itself with bitwise identical commands from a restored
 state never reproduces, on either task. On cloth drag the largest spread of a repeated
-macro's final distance is 5.5e-5 m and **no** group of 168 is bitwise identical. The
-seed is the same on both tasks because the solver is the same; what differs is what the
-task does with it. The dressing predictability record measured the amplification
-directly: a separation below a tenth of a millimetre reaches millimetres within ten
-decisions at most dressing states (`2026-09-18-predictability-horizon.md`).
+macro's final distance is 5.5e-5 m and **no** group of 168 is bitwise identical, so the
+source — floating-point reductions whose order is not fixed — is present in both.
+
+**The two tasks do not run the solver at the same settings, and this record originally
+said they did.** The library defaults are a Newton velocity tolerance of 0.05 m/s and a
+conjugate-gradient relative tolerance of 1e-3 (`src/core/core/scene_default_config.cpp`).
+The dressing environment loosens both for speed, to 0.1 and 1e-2
+(`python/uipc_manip/dressing_env.py`); the cloth-drag environment tightens the Newton
+tolerance to 0.001 and leaves the linear tolerance at the library default
+(`python/uipc_manip/iaql_env.py`). The control task therefore runs at a hundred times
+the Newton tolerance and ten times the linear tolerance of the task it is being
+compared with.
+
+So amplification is not the whole story and may not be most of it: the task on which
+reinforcement learning works is also the task that was run converged.
+`2026-09-19-tolerance-sets-the-noise-floor.md` measures what that setting alone is
+worth, and a branch run at matched tolerances is what decides between the two
+explanations. The dressing predictability record, which measured the amplification
+directly, was itself taken at the loose setting
+(`2026-09-18-predictability-horizon.md`).
 
 ## Result 2: the separation is in the top of the ranking, not in the variance
 
@@ -76,14 +91,22 @@ dressing, where chance over seven macros is 0.14.
   enter here. The outcome is measured directly from the simulator, the same way on both
   tasks, with no policy in the loop except as the continuation.
 
+It does **not** rule out that the whole difference is the solver tolerance, because the
+two tasks were not run at the same one. That is now the leading explanation rather than
+a caveat.
+
 ## What it does not yet establish
 
-That the amplified seed is *removable*. The solver's run-to-run non-determinism comes
-from floating-point reductions whose order is not fixed — two sites are already located
+That the two tasks differ for any reason other than the tolerance they were run at.
+The comparison above is confounded by it and cannot be read as a property of dressing
+until a dressing branch run at the control's numerics is in hand.
+
+Whether the seed itself is removable is a separate and still-open question. It comes
+from floating-point reductions whose order is not fixed — two sites are located
 (`atomicAdd` on the traversal counter in `stackless_bvh.inl`, the segmented and block
-reductions in `spmv.cu`) — but no measurement here shows that making them deterministic
-collapses the dressing noise floor. That is the experiment this record points at, and
-it is a bounded change to a handful of reductions, not a rewrite of the solver.
+reductions in `spmv.cu`) — but tightening the tolerance, which needs no code change at
+all, turns out to move the noise floor by two to three orders of magnitude on its own,
+so the kernel edit is not the next thing to try.
 
 ## Reproduce
 

@@ -10,9 +10,15 @@ over 20,000 transitions — and it reports 14 of 24 states decisive, rank agreem
 and five different macros winning at different states. The diagnostic does not always
 say no.
 
-The comparison says more than the control was built for. Repeated macros with bitwise
-identical commands from a restored state do not reproduce on either task, so the seed
-is the solver's and is shared; only its amplification differs. With one outcome
+The comparison says more than the control was built for, and one sentence of it was
+wrong when first written. Repeated macros with bitwise identical commands from a
+restored state do not reproduce on either task, so the source is the solver's and is
+shared — but the two environments do not run the solver alike. Dressing loosens the
+Newton velocity tolerance to 0.1 and the conjugate-gradient tolerance to 1e-2 against
+library defaults of 0.05 and 1e-3; the cloth-drag environment tightens Newton to 0.001
+and keeps the library's linear default. The control task was running a hundred times
+tighter in one and ten times in the other. Amplification is therefore not established
+as the difference, and the tolerance is now the leading explanation. With one outcome
 statistic on both tasks, dressing's decision *consequence* is the larger of the two and
 its eta-squared is 0.86-0.96, so telling a bad intervention from a good one is easy
 there. Telling the best from the next best is not: that gap is 193.6 repeat standard
@@ -24,14 +30,30 @@ is the comparison a learner must win to improve a policy that is already compete
 and the top-two margin together, because the naive consequence-over-noise ratio depends
 on where an outcome measure saturates and does not separate the two tasks.
 
-Two things follow and both are running or written. `scripts/feedback_value_profile.py`
-measures, along the whole horizon, what feedback is worth at each decision: from one
-snapshot a plan, a control replay of that plan, and four arms that take an identical
-random kick — open loop, the policy, an informed reversal, and a hold that separates
-reversing from merely pausing. The smoke run confirms the kick does not break the grasp
-(0.38-0.51 cm against the 2 cm limit). Not established yet, and named in the record as
-the next experiment: whether the shared seed is removable, which is a bounded change to
-the reductions in `spmv.cu` and `stackless_bvh.inl`, not a rewrite of the solver.
+[Record](performance/2026-09-19-tolerance-sets-the-noise-floor.md). The tolerance is
+measurable on its own and it moves almost everything. Replaying bitwise identical
+commands from an exactly restored state separates by 2.57 mm after twenty decisions and
+spreads final coverage by 0.00583 at dressing's settings; at 0.01 and 1e-4 the same
+replay separates by 0.019 mm and spreads coverage by 0.00001 — 139 and 583 times lower
+— for about 2.5 times the wall time, with no solver code changed and no iteration-cap
+warning at either setting. Dressing's best-to-next-best margin is 1.31 repeat standard
+deviations at the loose setting against 193.6 on the control; a floor 583 times lower
+would put it on the far side of that comparison.
+
+A branch run at the tight tolerance, every other setting matched to
+`decision_branches_20260918/t26_14046` (seed 3301, window 8, follow 32, three repeats,
+eight slots), is measuring whether the margin actually rises — and whether the raw
+consequence survives, since a more accurate solve could instead smooth the contact
+until no macro matters. `scripts/feedback_value_profile.py` is written and smoke-tested
+(the kick does not break the grasp: 0.38-0.51 cm against the 2 cm limit) but its
+default-tolerance run was stopped: it would measure feedback value against a noise
+floor now known to be an artifact of that setting.
+
+**Every earlier dressing measurement in this repository was taken at the loose
+tolerance** — the predictability horizon, the plateau, the prior-support audit, the
+teacher supervision. They are not wrong, but the task they measured includes this
+setting, and their negatives should be re-read at the control's numerics before being
+cited as properties of dressing.
 
 ## 2026-09-19 — Teacher repair closed by measurement; labelling the policy's own states instead
 
