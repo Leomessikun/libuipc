@@ -1,5 +1,45 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-19 — The feasibility question, and the one experiment that answers it
+
+The direction was set by the owner: stop researching the simulator, and decide whether
+"train dressing fast on one workstation" has any hope, at minimum cost. Two candidate
+gates were considered and one was closed by evidence already in this repository.
+
+**Closed: the metric is not corrupting the signal.** The isolated one-decision zero
+rate over 2,424 branch traces and 96,960 decisions is 0.024 %, and the six captures in
+`2026-09-19-intervention-and-agent-baseline.md` report zero isolated zeros each. The
+4-9 % figure in that record is contiguous marginal states, not spikes, and the record
+already says reading them as a measurement artifact was too strong. Nothing to fix.
+
+**Open, and never tested: what the control problem costs when perception is free.**
+The 35-float privileged state is documented as critic-only by design
+(`dressing_privileged.py`), a `StateActor` exists in `sac.py` but `--actor` did not
+accept `state`, and the one asymmetric-critic dressing run ever started died at 13,920
+transitions with no checkpoint. No dressing replay on disk carries privileged state.
+So no one has measured whether this control problem is learnable at all given perfect
+information — every negative result is confounded with a 5,383-float point cloud.
+
+`--actor state` is now reachable: the replay holds whatever the actor reads, the loop
+and the evaluator feed the privileged vector, and the terminal row pairs with the
+terminal privileged state. Verified end to end on dressing at four slots.
+
+**Pre-registered reading of the run.** Train on exactly the 25 cells it is evaluated
+on, perfect state, nothing held out — the most generous setting there is — for the
+budget of the longest SAC run on record (270,216 transitions, 26.2 h, peak 3/25, final
+0/25). Scored afterwards by the project's coverage-and-grasp rule against the scripted
+teacher's 9/25 with the 5 cm shoulder ray and 6/25 without it:
+
+* **13/25 or better** — the control problem is learnable and the remaining problem is
+  perception, which is a standard and much cheaper one. The road has hope.
+* **9-12/25** — learning with perfect information merely matches a 733-second scripted
+  controller. Weak.
+* **8/25 or worse** — with free perception and a full budget, learning does not beat
+  the script. The road as posed is closed, and that is the verdict to report.
+
+Throughput on this workstation, measured: 40-50 decisions per second, flat in the slot
+count, so about 3.5-4.2 million environment steps per 24 hours.
+
 ## 2026-09-19 — The diagnostic has a control, and it moves the question
 
 [Record](performance/2026-09-19-decision-signal-to-noise.md). Every negative result on

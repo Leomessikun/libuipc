@@ -111,7 +111,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor-lr", type=float, default=1.0e-4)
     p.add_argument("--critic-lr", type=float, default=1.0e-4)
     p.add_argument("--hidden-dim", type=int, default=1024)
-    p.add_argument("--actor", choices=("wang-flow", "flat"), default="wang-flow", help="wang-flow is the reference tool-point actor.")
+    p.add_argument("--actor", choices=("wang-flow", "flat", "state"), default="wang-flow",
+                   help="wang-flow is the reference tool-point actor; state reads the simulator's privileged "
+                        "vector instead of the point cloud, which is not deployable and is there to measure "
+                        "what the control problem costs to learn when perception is free.")
     p.add_argument("--algo", choices=("sac", "flashsac"), default="sac", help="Scalar reference critic or bounded categorical critic.")
     p.add_argument("--critic-input", choices=("points", "privileged"), default="points", help="dressing: the critic encodes the point cloud (reference) or reads the simulator's privileged state.")
     p.add_argument("--trunk-style", choices=("plain", "residual"), default="residual", help="Head architecture: pre-normalised residual is the new-run baseline; plain reproduces the earlier MLP. This is a separate architectural choice from Wang's dense action-per-point critic.")
@@ -554,7 +557,7 @@ def heuristic_actions(obs: np.ndarray, spec: ObsSpec, max_translation: float) ->
 def evaluate(
     env, policy, spec: ObsSpec, args, episodes: int, trajectory_dir: Path | None = None,
     *, slot_cells: list[tuple[str, int]] | None = None, heldout_slots=(),
-    history=None,
+    history=None, state_actor: bool = False,
 ) -> dict:
     """Play deterministic episodes and report success and distance statistics.
 
@@ -577,6 +580,8 @@ def evaluate(
     seed_base = args.seed * 1000 + 97 * int(getattr(args, "_eval_round", 0))
     args._eval_round = int(getattr(args, "_eval_round", 0)) + 1
     obs = env.reset([seed_base + i for i in range(env.num_envs)])
+    if state_actor:
+        obs = env.privileged()
     if history is not None:
         history.reset()
     finished: list[dict] = []
@@ -594,6 +599,8 @@ def evaluate(
             for i, state in enumerate(env.states()):
                 trajectories[i].append(state)
         obs, rewards, dones, infos = env.step(actions)
+        if state_actor:
+            obs = env.privileged()
         if history is not None and np.any(dones):
             # A finished slot is reset by the environment; its prefix belongs to the old physics.
             history.reset(np.asarray(dones, dtype=bool))
@@ -839,7 +846,7 @@ def main(argv: list[str] | None = None) -> None:
             _set_viewer_caption(env, f"uipc_manip {args.task} | {args.policy} policy | blue: deformable, green: goal, red: marker centroid")
         try:
             metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir, slot_cells=slot_cells, heldout_slots=heldout_slots,
-                                   history=rollout_state(agent, env.num_envs))
+                                   history=rollout_state(agent, env.num_envs), state_actor=args.actor == "state")
         except ViewerClosed:
             print("[uipc-manip] viewer closed; exiting", flush=True)
             return
@@ -857,8 +864,12 @@ def main(argv: list[str] | None = None) -> None:
     replay_priv_dim = int(getattr(env, "privileged_dim", 0)) if args.record_privileged else agent.cfg.privileged_dim
     if privileged and replay_priv_dim <= 0:
         raise ValueError("Privileged replay recording needs an environment with privileged targets")
+    # A state actor reads the simulator's privileged vector, so that is what the replay
+    # stores as an observation; the privileged critic reads the same thing through
+    # ``priv``, which costs a duplicate column and keeps every other path untouched.
+    state_actor = args.actor == "state"
     replay = FlatReplayBuffer(
-        env.obs_dim, env.action_dim, args.replay_capacity, args.batch_size, args.device, priv_dim=replay_priv_dim if privileged else 0,
+        (int(env.privileged_dim) if state_actor else env.obs_dim), env.action_dim, args.replay_capacity, args.batch_size, args.device, priv_dim=replay_priv_dim if privileged else 0,
         labelled=bool(args.teacher_checkpoints), sequence=args.sequence_replay,
     )
     reward_scale = float(payload.get("metadata", {}).get("reward_scale", wang_equivalent_reward_scale(agent.cfg.discount))) if payload is not None else wang_equivalent_reward_scale(agent.cfg.discount)
@@ -927,6 +938,8 @@ def main(argv: list[str] | None = None) -> None:
     if history is not None and not replay.sequence:
         raise SystemExit("--history-length above 1 learns from padded episode windows; add --sequence-replay")
     priv = env.privileged() if privileged else None
+    if state_actor:
+        obs = priv
     episode_return = np.zeros(env.num_envs)
     updates_started = agent.updates > 0
     best_score = None
@@ -953,6 +966,8 @@ def main(argv: list[str] | None = None) -> None:
         next_obs, rewards, dones, infos = env.step(actions)
         phase_s["env_s"] += time.time() - t_phase
         next_priv = env.privileged() if privileged else None
+        if state_actor:
+            next_obs = next_priv
         if any(info.get("sim_error") for info in infos):
             streams.close()
             env.close()
@@ -976,10 +991,13 @@ def main(argv: list[str] | None = None) -> None:
             # Time limits are not terminal states: bootstrap from the true final observation.
             terminal_obs = info.get("terminal_obs", None)
             state_pair = {}
+            terminal_priv = None
             if privileged:
                 # The terminal state pairs with the terminal observation, not with the reset one.
                 terminal_priv = info.get("terminal_privileged", None)
                 state_pair = {"priv": priv[i], "next_priv": next_priv[i] if terminal_priv is None else terminal_priv}
+            if state_actor:
+                terminal_obs = terminal_priv
             if replay.labelled:
                 state_pair["label"] = slot_region[i]
             state_pair.update(streams.fields(i, dones[i]))
@@ -1040,7 +1058,7 @@ def main(argv: list[str] | None = None) -> None:
             replay.save(ckpt_dir / f"replay_{vector_step:07d}", metadata={"step": vector_step, "reward_scale": reward_scale})
             if do_eval or finished_budget:
                 agent.train(False)
-                metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir, slot_cells=slot_cells, heldout_slots=heldout_slots,
+                metrics = evaluate(env, policy, spec, args, args.num_eval_episodes, trajectory_dir, slot_cells=slot_cells, heldout_slots=heldout_slots, state_actor=state_actor,
                                    history=rollout_state(agent, env.num_envs))
                 agent.train(True)
                 summary = {k: v for k, v in metrics.items() if k != "records"}
@@ -1055,6 +1073,8 @@ def main(argv: list[str] | None = None) -> None:
                 if history is not None:
                     history.reset()
                 priv = env.privileged() if privileged else None
+                if state_actor:
+                    obs = priv
                 episode_return[:] = 0.0
             print(f"[uipc-manip] saved {path}", flush=True)
     env.close()
