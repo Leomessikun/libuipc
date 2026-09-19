@@ -112,6 +112,49 @@ of that gap at the early states and less later. Whether repeated interventions
 compound over a whole episode is a separate question, which the full-episode arms of
 `uipc_manip.recovery_intervention` are built to answer.
 
+## The early phase, where the episode is actually decided
+
+The gain from intervening shrank the later it fired, so the same study was run at
+decisions 20, 40, 60 and 80 on both cells: 32 states each, 672 branches each, 27,520
+decisions per cell in 146-166 minutes.
+
+| | early (20-80) | late (100-180) |
+|---|---|---|
+| tshirt_26: best single fixed macro | **the policy itself**, 0.267 | `lift`, 0.579 |
+| tshirt_26: value of choosing per state | **0.046** | 0.003 |
+| tshirt_26: decisive states | 9 of 32 | 19 of 24 |
+| tshirt_392: value of choosing per state | 0.000 | 0.002 |
+| tshirt_392: decisive states | 0 of 32 | 24 of 24 |
+| repeat spread | 0.010 | 0.006-0.007 |
+
+Early, no fixed direction beats the policy's own action: the best single macro *is*
+`policy`. But on tshirt_26 the per-state oracle is worth 0.046, fifteen times the late
+figure and four times the repeat spread — the first place in this project where
+choosing per state has measurable value. On tshirt_392 there is still nothing at all.
+
+Part of 0.046 is selection noise: taking the best of seven macros at each state
+captures some of the 0.010 spread. The test that separates a real state dependence
+from that is whether the choice can be predicted, and over all 64 early states:
+
+| Information set | Top-1 | Mean regret | Top-1 on shuffled labels |
+|---|---:|---:|---:|
+| constant | 0.42 | 0.023 | – |
+| deployment observation | 0.44 | 0.009 | 0.37 (p95 0.42) |
+| observation plus five-frame history | **0.47** | **0.007** | 0.30 (p95 0.38) |
+| privileged state | 0.42 | 0.005 | 0.38 (p95 0.44) |
+
+Only the history beats its own shuffled control on top-1; the single observation and
+the privileged state do not. Top-1 barely moves while the regret falls by a factor of
+three, so the models capture the value structure without picking the argmax. That is
+the first evidence here for the partial-observability reading: telling these states
+apart needs the history, not the frame.
+
+The size, though, is what it is. Early the gap to a dressed arm is 0.443 and a perfect
+per-state choice among these seven macros is worth 0.023 of it, about five percent.
+Early or late, on either cell, the action at a state is worth a few percent of what
+separates the policy from a dressed arm. Whatever dominates that gap is not the choice
+of action at a state.
+
 ## Limits
 
 Two garment/body cells so far, one policy, one seed block per cell, three repeats,
