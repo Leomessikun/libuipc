@@ -38,6 +38,11 @@ def main():
     p.add_argument("--repeats", type=int, default=5)
     p.add_argument("--perturbations", default="0,1e-4,1e-3,1e-2", help="Normalized action units on the first command")
     p.add_argument("--seed", type=int, default=1097)
+    p.add_argument("--newton-tolerance", type=float, default=None,
+                   help="Override the Newton velocity tolerance; the default is chosen for speed")
+    p.add_argument("--linear-tolerance", type=float, default=None,
+                   help="Override the relative tolerance of the conjugate-gradient solve")
+    p.add_argument("--newton-max-iterations", type=int, default=None)
     p.add_argument("--force", action="store_true",
                    help="Also read the contact force on the arm every decision and record it")
     p.add_argument("--out", type=Path, required=True)
@@ -53,8 +58,15 @@ def main():
     train_sac.restore_resume_args(targs, ["--eval-only"], payload)
     train_sac.resolve_defaults(targs)
     g, b = args.cell.rsplit(":", 1)
+    # The solver's convergence settings are the experiment's independent variable when
+    # they are given: a looser solve stops the iteration wherever a non-deterministic
+    # residual estimate happens to fall, so it decides how large the run-to-run seed is.
+    overrides = {k: v for k, v in (("newton_tolerance", args.newton_tolerance),
+                                   ("linear_system_tolerance", args.linear_tolerance),
+                                   ("newton_max_iterations", args.newton_max_iterations))
+                 if v is not None}
     cfg = replace(train_sac.dressing_config(targs), cells=((g, int(b)),), decision_watchdog=False,
-                  contact_force_readout=bool(args.force), workspace=str(args.out / "assets"))
+                  contact_force_readout=bool(args.force), workspace=str(args.out / "assets"), **overrides)
     if steps[-1] + args.horizon >= cfg.horizon or cfg.augment_obs:
         raise ValueError("Snapshots plus horizon must end before auto-reset; observations must be unaugmented")
     args.out.mkdir(parents=True)

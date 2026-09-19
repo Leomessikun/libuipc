@@ -158,6 +158,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=3301)
     p.add_argument("--macro-step-m", type=float, default=0.008)
     p.add_argument("--history", type=int, default=5)
+    # The solver's convergence settings decide how large the run-to-run seed is, and so
+    # how fine a difference between two macros a repeat can resolve; they are an
+    # independent variable of this collection, not a fixed property of the task.
+    p.add_argument("--newton-tolerance", type=float, default=None)
+    p.add_argument("--linear-tolerance", type=float, default=None)
+    p.add_argument("--newton-max-iterations", type=int, default=None)
     return p
 
 
@@ -176,8 +182,12 @@ def main():
     train_sac.restore_resume_args(targs, ["--eval-only"], payload)
     train_sac.resolve_defaults(targs)
     garment, body = args.cell.rsplit(":", 1)
+    overrides = {k: v for k, v in (("newton_tolerance", args.newton_tolerance),
+                                   ("linear_system_tolerance", args.linear_tolerance),
+                                   ("newton_max_iterations", args.newton_max_iterations))
+                 if v is not None}
     cfg = replace(train_sac.dressing_config(targs), cells=((garment, int(body)),) * args.slots,
-                  contact_force_readout=False, decision_watchdog=False)
+                  contact_force_readout=False, decision_watchdog=False, **overrides)
     if cfg.augment_obs:
         raise ValueError("Unaugmented observations are required so that a branch input is reproducible")
     if steps[-1] + args.window + args.follow >= cfg.horizon:
