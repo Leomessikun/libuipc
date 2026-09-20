@@ -81,9 +81,10 @@ def summarize(result):
     selections = {
         "policy": np.zeros((n, repeats), dtype=int),
         "q_gradient": np.ones((n, repeats), dtype=int),
-        "q_sampled": np.repeat(np.asarray([s["sampled_index"] for s in states])[:, None], repeats, axis=1),
-        "fixed_random": np.full((n, repeats), 2, dtype=int),
     }
+    if k > 2:
+        selections["q_sampled"] = np.repeat(np.asarray([s["sampled_index"] for s in states])[:, None], repeats, axis=1)
+        selections["fixed_random"] = np.full((n, repeats), 2, dtype=int)
     coverage = np.array([[[lookup[s["id"], c, r]["valid_sustained_coverage"]
                            for r in range(repeats)] for c in range(k)] for s in states])
     selections["forward_selected"] = heldout_choices(coverage)
@@ -129,13 +130,13 @@ def main():
     parser.add_argument("--steps", type=int, nargs="+", default=[60, 140])
     parser.add_argument("--window", type=int, default=24)
     parser.add_argument("--repeats", type=int, default=4)
-    parser.add_argument("--samples", type=int, default=8)
+    parser.add_argument("--samples", type=int, default=8, help="Zero validates only the policy and Q-gradient arms")
     parser.add_argument("--radius", type=float, default=0.5)
     parser.add_argument("--iterations", type=int, default=8)
     parser.add_argument("--seed", type=int, default=9201)
     parser.add_argument("--max-seconds", type=float, default=3000)
     args = parser.parse_args()
-    if min(args.slots_per_cell, args.samples, args.iterations, *args.steps) < 1 or args.repeats < 2 or args.window < 12:
+    if min(args.slots_per_cell, args.iterations, *args.steps) < 1 or args.samples < 0 or args.repeats < 2 or args.window < 12:
         parser.error("Positive dimensions, at least two repeats and a 12-decision tail required")
     if not 0 < args.radius <= 1 or args.max_seconds <= 0:
         parser.error("radius must be in (0, 1] and max-seconds positive")
@@ -151,8 +152,8 @@ def main():
         cells.extend([(garment, int(body))] * args.slots_per_cell)
     cfg = replace(train_sac.dressing_config(targs), cells=tuple(cells),
                   contact_force_readout=False, decision_watchdog=False, workspace=str(args.out / "assets"))
-    if max(args.steps) + args.window >= cfg.horizon or cfg.augment_obs:
-        raise ValueError("Unaugmented observations and branches before automatic reset required")
+    if max(args.steps) + args.window > cfg.horizon or cfg.augment_obs:
+        raise ValueError("Unaugmented observations and branches no later than the episode horizon required")
     args.out.mkdir(parents=True)
     started = time.perf_counter()
     arguments = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
@@ -161,9 +162,11 @@ def main():
                   git_head=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
                   script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                   checkpoint_sha256=hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(),
+                  branches_reach_episode_end=all(s + args.window == cfg.horizon for s in args.steps),
                   protocol="One modified action, then unchanged deterministic SAC; 12-decision minimum coverage; "
                            "prefix plus branch grasp validity. Forward selection excludes its evaluation repeat. "
-                           "Not full episodes, independent task seeds, or infinite-horizon soft-Q calibration.")
+                           "See branches_reach_episode_end for endpoint scope. Not independent task samples "
+                           "or infinite-horizon soft-Q calibration.")
     arrays = {}
 
     def save():
@@ -190,13 +193,15 @@ def main():
         step = 0
         prefix_valid = np.ones(len(cells), dtype=bool)
 
-        def advance(action):
+        def advance(action, *, allow_terminal=False):
             if time.perf_counter() - started > args.max_seconds:
                 raise TimeoutError("Audit wall-clock budget exhausted")
             next_obs, reward, done, rows = env.step(action, reset_on_done=False)
             result["physical_decisions"] += len(cells)
-            if np.any(done) or any(r.get("sim_error") for r in rows):
+            if (np.any(done) and not allow_terminal) or any(r.get("sim_error") for r in rows):
                 raise RuntimeError("Unexpected termination inside the bounded audit")
+            if allow_terminal and not np.all(done):
+                raise RuntimeError("Expected the common time-limit endpoint")
             return next_obs, reward, rows
 
         for target in sorted(set(args.steps)):
@@ -240,7 +245,7 @@ def main():
                     for t in range(args.window):
                         action = bank[:, candidate] if t == 0 else agent.act(branch, deterministic=True)
                         commands.append(action.copy())
-                        branch, reward, info = advance(action)
+                        branch, reward, info = advance(action, allow_terminal=(target + t + 1 == cfg.horizon))
                         for i, row in enumerate(info):
                             trace = {k: row[k] for k in ("upperarm_ratio", "forearm_ratio", "threaded", "grasp_valid",
                                      "tracking_error", "collision_rejected_substeps", "tether_rejected_substeps")}

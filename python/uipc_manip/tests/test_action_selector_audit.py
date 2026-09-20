@@ -26,3 +26,12 @@ def test_holdout_selection_does_not_use_its_scoring_repeat():
     assert heldout_choices(scores)[0, 0] == 0
     with pytest.raises(ValueError):
         heldout_choices(scores[..., :1])
+
+
+def test_two_arm_validation_does_not_add_an_unrequested_random_arm():
+    base = np.zeros((2, 6), dtype=np.float32)
+    bank, q, chosen = make_bank(base, lambda a: a.sum(axis=-1), lambda a: np.ones_like(a),
+                               np.random.default_rng(2), samples=0)
+    assert bank.shape == (2, 2, 6)
+    assert (q[:, 1] > q[:, 0]).all()
+    assert chosen.tolist() == [0, 0]

@@ -283,8 +283,10 @@ demonstrated mechanism is needed; their assembly alone is insufficient.
 [completed-test map and saved-data reanalysis](2026-09-20-action-selection-evidence.md).
 Local gradient/finite-difference corrections, CEM, macro intervention, full
 recovery episodes and duration calibration already have results. Reuse them;
-the missing fixed-Q selector comparison below is now implemented as a bounded
-diagnostic. The proposed reset control also has a partial-start Newton reference
+the missing fixed-Q selector comparison and an independent full-continuation
+check are now complete. Sampled-Q selection did not establish an advantage over
+gradient extraction; one repeatable local gradient benefit did not translate to
+full dressing on fresh executions. The proposed reset control also has a partial-start Newton reference
 attempt, which did not demonstrate full-start success.
 
 Do not launch another full-grid training run to test the entire idea at once.

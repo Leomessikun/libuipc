@@ -9,10 +9,15 @@ duration calibration as untested. Existing-data held-out selection gains only
 Existing whole episodes show tshirt_26 violates grasp before reaching the upper
 arm. Do not assess a late repair as capable of undoing an earlier hard failure.
 
-A bounded frozen-Q gradient-versus-sampled action diagnostic is running at this
-stage. It separates action extraction from the value scorer without training
-another policy. Native results remain pending; the eventual criterion is
-complete, grasp-valid dressing per workstation hour, not a Q increase.
+The frozen-Q comparison and complete-continuation validation finished: 11,360
+decisions / 24.43 min. One gradient proposal improves valid sustained coverage
+by >.01 in four repeats; no sampled-Q selection does. On new seeded prefixes,
+both unchanged SAC and one gradient intervention followed by SAC score 0/8 at
+decision 300. Do not select gradient removal as the research solution or infer
+full-task improvement from local Q/coverage. All workers exited; no training.
+Next distinct question: can a joint change to subsequent decisions preserve
+grasp and completion from before the first failure? Existing one-intervention
+tests do not evaluate that, and standard policy-iteration controls remain needed.
 
 ## Replacement RL research objective — 2026-09-20
 

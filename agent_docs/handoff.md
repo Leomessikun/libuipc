@@ -1,6 +1,6 @@
 # Handoff — Current State of the Repo
 
-## 2026-09-20 — Existing tests reused; fixed-critic action comparison running
+## 2026-09-20 — Fixed-critic comparison and complete-continuation check finished
 
 The owner asked to inspect already-completed ideas and directly evaluate real
 gaps. [Evidence map](performance/2026-09-20-action-selection-evidence.md) links
@@ -15,15 +15,34 @@ decisions 32--50, before upper-arm coverage begins at 61--65; all eight controls
 have this ordering. Later instantaneous grasp validity cannot repair the
 whole-episode criterion. tshirt_392's eight controls keep grasp.
 
-New bounded native evaluation: `uipc_manip.action_selector_audit`, output
+Completed native evaluation: `uipc_manip.action_selector_audit`, output
 `output/uipc_manip/action_selector_audit_20260920/`. It freezes warm-SAC Q and
 compares projected-Q-gradient selection with sampled-Q selection in the same
 action trust region; all candidates receive repeated physical evaluation.
-Predeclared 8 states, 320 branches, 8,240 decisions, 3,000 s internal cap.
+Eight states, 320 branches, 8,240 decisions / 1,215.83 s. Gradient extraction
+increases raw sustained coverage by .000812 on average; sampled-Q selection
+changes it by -.012696, strongly influenced by one zero-ending execution.
+After zeroing grasp-invalid outcomes the gains are .002207 and .000302.
+One gradient state improves >.01 in every repeat; no sampled-Q state does.
+All short branches have zero dressing success. Four tshirt_26 snapshots have
+already-invalid prefixes, which the scorer retains rather than forgetting.
 Initial/terminal observations and commands are saved for future reanalysis.
-Two focused selector/held-out-data checks pass. At this implementation stage
-the native run is pending; do not claim a policy gain from predicted Q values.
-Only diagnostic/reanalysis code was added, with production training unchanged.
+
+Independent validation uses new seeds 9301--9304, a fresh world, the same
+gradient rule at decision 140, and continuation through decision 300. Artifact:
+`output/uipc_manip/action_selector_validation_20260920/`. SAC and gradient+SAC
+each score 0/8 (four common prefixes, two repeats); all tshirt_392 executions
+preserve grasp but finish at zero coverage. Local improvements do not secure
+terminal success under the old continuation. Validation: 3,120 decisions /
+250.13 s. Combined: 11,360 decisions / 24.43 min. All workers exited.
+
+Three focused checks and artifact integrity checks pass. Commit `7796cfba`
+contains the first collector/reanalysis stage; the completion stage adds the
+two-arm full-horizon validation and final evidence. No CEM was run this session;
+its 12-action trajectory experiment is historical. No policy was trained.
+The evidence does not select gradient removal as the solution. A future
+comparison must improve the closed-loop continuation before the relevant
+failure, rather than assuming a late single-action gain solves full dressing.
 
 ## 2026-09-20 — Owner prioritizes a replacement RL algorithm
 

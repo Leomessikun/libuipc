@@ -131,8 +131,55 @@ env PYTHONPATH=build_raw/python/src:python OMP_NUM_THREADS=1 OPENBLAS_NUM_THREAD
   --out output/uipc_manip/action_selector_audit_20260920
 ```
 
-The native result is pending at this implementation stage. Do not interpret a
-predicted Q increase as an observed task improvement. The learned Q is a soft,
+## Completed native comparison
+
+Implementation-stage commit `7796cfba` was pushed before the run finished; the
+recorded source hash matches that collector. All **320 branches / 8,240
+decisions completed in 1,215.83 s (20.26 min)**, including construction,
+approaches, restores, queries and saving. The timer starts after initial
+argument/config/checkpoint reading. Maximum recorded position restore error
+was zero; no simulator failure occurred. The process and its CUDA context exited.
+
+| Action selector | Mean predicted Q increase | Sustained coverage change, percentage points | Coverage change after zeroing grasp-invalid outcomes, percentage points | States improving valid coverage >1 point in every repeat |
+|---|---:|---:|---:|---:|
+| Projected Q gradient | +.23416 | +.0812 | +.2207 | 1/8 |
+| Best Q among eight random candidates and the base | +.11554 | -1.2696 | +.0302 | 0/8 |
+| One fixed random candidate | +.00005 | -1.3773 | -.0082 | 0/8 |
+| Select by independently repeated physical outcomes | Not the selection score | +.4940 | +.4940 | 1/8 |
+
+The physical selector uses valid sustained coverage and excludes its scoring
+repeat. All tshirt_26 prefixes are already invalid; ties therefore retain the
+base there. The raw sampled-Q decrease is strongly influenced by one execution
+whose final three coverage readings are zero. This small development set does
+not establish that sampled action optimization is generally worse.
+
+There is one useful **positive gradient result**: tshirt_392, seed 9203,
+decision 140 gains **1.94, 2.11, 2.19 and 1.56 percentage points** of sustained
+coverage over its four baseline repeats, with valid prefix and branch grasp.
+The second tshirt_392 state at 140 also has four positive differences, but two
+are below one percentage point. At decision 60, all four states' mean gradient
+effects on raw sustained coverage are negative. Thus the sign depends on the
+state; the local gradient is not universally useless, and its Q increase is
+not a dependable certificate of physical improvement.
+
+**No candidate completes dressing in the tested window: 0/320.** That is a count
+of repeated short branches, not 320 independent episodes. There are two
+garment/body cells, four seeded prefixes and two snapshots per prefix. These
+snapshots have upper-arm coverage .041--.058 at decision 60 and .563--.595 at
+decision 140; they do not diagnose the separate state-actor run that never
+reached the upper arm. The checkpoint's warm stage trains tshirt_26, resumes
+`abl_dense_s1` weights/replay, and is the same reference used by the earlier
+actor, macro and duration studies. This is not a comparison over all trained
+policies or a separation of training-distribution shift from value error.
+
+Artifacts: `result.json`, `summary.json`, `checked_results.json`,
+`observations.npz` and `runtime_metadata.json` under
+`output/uipc_manip/action_selector_audit_20260920/`. Checks confirm 8 unique
+states, 320 unique state/candidate/repeat records, 24 decisions per trace,
+finite returns, correct action bounds/trust regions/disabled axis, and no
+decrease in Q for either selected proposal relative to its base.
+
+Do not interpret a predicted Q increase as an observed task improvement. The learned Q is a soft,
 long-horizon value, whereas this diagnostic measures deterministic 24-decision
 consequences; disagreement is not by itself proof of Bellman inconsistency.
 Both action searches maximize Q without an entropy term; neither is a complete
@@ -140,5 +187,78 @@ SAC actor update or a test of every policy-gradient estimator.
 Window success is not full-episode success. Production weights, replay, reward,
 control period and solver tolerances are unchanged.
 
-Focused checks cover trust-region/action-box/disabled-axis constraints and
-preventing a held-out outcome from selecting its own winner: **2 passed**.
+## Independent continuation check of the positive gradient result
+
+The local result justifies a smaller final check, not policy training. Freeze
+the rule: at decision 140 apply one projected-Q-gradient action, then return
+to SAC through decision **300**, compared with SAC throughout. Recreate the
+same four-slot cell layout in a fresh world with **new seeds 9301--9304**; no
+validation outcome chooses the action radius, time, optimizer or weights.
+Two repeats per arm give 16 continuations from four common prefixes. The new
+seeds are not new garments/bodies or independent task draws.
+
+The collector now accepts `--samples 0` for this two-arm test and handles the
+expected time-limit termination without resetting away the final state.
+The conditional validation budget is 3,120 decisions and 1,700 internal seconds;
+combined native wall caps remain below the earlier one-hour initial budget.
+
+```bash
+# Same interpreter/native environment as above; a new output directory.
+python -m uipc_manip.action_selector_audit \
+  --checkpoint output/uipc_manip/dressing_redesign_20260916/warm_sac/checkpoints/checkpoint_00127416.pt \
+  --out output/uipc_manip/action_selector_validation_20260920 \
+  --steps 140 --window 160 --samples 0 --repeats 2 --seed 9301 --max-seconds 1700
+```
+
+Validation completed: **3,120 decisions / 250.13 s**, with zero position restore
+error and no simulation failure. The expected time-limit flag was checked at
+decision 300 without automatic reset. Four prefixes times two repeats give
+eight executions per arm:
+
+| Full-prefix-plus-continuation arm | Valid dressing successes | Whole-episode grasp valid | Mean sustained coverage, without grasp filtering |
+|---|---:|---:|---:|
+| SAC throughout | 0/8 | 4/8 | .262480 |
+| One Q-gradient action at 140, then SAC | 0/8 | 4/8 | .262730 |
+
+Both tshirt_26 prefixes already violate grasp; their final coverage is about
+.52--.54. Both tshirt_392 prefixes keep grasp, but **every continuation ends
+with zero coverage**, in both arms. In the four tshirt_392 comparisons, the
+first 24-decision sustained-coverage differences are +.00599, -.00334, +.01413
+and +.00040. The local effect is smaller/mixed on these new executions; the
+positive cases also fail to secure terminal coverage under the old policy's
+continuation. This distinguishes failure to retain useful progress from a
+claim that no differentiable action direction can help locally.
+
+Artifacts: `output/uipc_manip/action_selector_validation_20260920/`, including
+source/checkpoint hashes and the complete 160-decision continuation traces.
+Both native jobs finished, totaling **11,360 physical decisions / 1,465.96 s
+(24.43 min)** on the workstation. No training worker remains from this stage.
+
+Focused checks cover trust-region/action-box/disabled-axis constraints,
+exclusion of the scoring repeat from selection and the two-arm bank: **3 passed**.
+Integrity checks additionally verify unique/count-complete records, trace
+lengths, finite outcomes, source identity and the expected episode endpoint.
+
+## Research decision
+
+Do not make "remove action gradients" the selected contribution. In this
+limited bank, sampled-Q selection did not beat gradient extraction; a gradient
+proposal had a repeatable local positive result. Neither intervention produced
+successful full dressing. This does not compare all gradient-free optimizers,
+all training algorithms, or an iteratively improved policy.
+
+Two more concrete limitations are visible: tshirt_26 violates a whole-episode
+constraint before the late corrections begin, and a short local gain on
+tshirt_392 does not secure terminal success when the old actor resumes. The
+next algorithmic experiment should improve a **closed-loop continuation** from
+before the relevant failure, using complete grasp-valid completion as its
+outcome. Reuse existing successful trajectories and early-state branches;
+another late single-action correction or unchanged CEM pilot is not new work.
+Changing a whole continuation is a new comparison, not an established novel
+algorithm: PI2-GPS, MPO and trajectory policy-iteration controls from the
+[research assessment](2026-09-20-rl-algorithm-research-assessment.md) still apply.
+
+The current tests intervene once and then restore the old policy. They cannot
+rule out benefits from jointly changing subsequent decisions. Conversely,
+assuming small local gains will compound would also go beyond these results.
+No policy-training run or new-algorithm performance claim follows from this stage.
