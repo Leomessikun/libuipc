@@ -195,6 +195,35 @@ boundary gradient — is the finding, and it is what any query-allocating operat
 would have to exploit: the measured cost ratio between certifying feasibility and
 estimating progress is about 350x, and the measured noise ratio runs from 0 to .5.
 
+## 6. Predeclared experiment: does respecting the constraint pay at episode scale?
+
+Everything above is a 40-decision window. The open question it creates is whether a
+constraint-respecting segment at the binding state produces a better **episode**, or
+merely a feasible one that never dresses. Fixed before running:
+
+- Cell tshirt_26/14046, the same warm-SAC checkpoint `checkpoint_00127416.pt`, eight
+  seeded slots, snapshot **decision 40**, where the instantaneous tracking error is
+  .0045-.0167 m (valid) and forearm progress is already .641-.671.
+- Three arms: `policy` (the incumbent, grasp-invalid in 24/24 in-window branches),
+  `lift` (17/24 valid, the only macro achieving both in-window) and `outward`
+  (24/24 valid, near-zero in-window coverage). Eight decisions of macro, then the
+  **same policy to decision 298**, two repeats, horizon 300.
+- Reported per arm: whole-branch grasp validity, sustained coverage over the last
+  twelve decisions, valid dressing success (sustained >= .7 with grasp valid) and
+  final upper-arm ratio. Budget 12,384 physical decisions, external cap 3,600 s.
+- Reading fixed in advance. If a feasible arm ends with higher *valid* sustained
+  coverage than the incumbent, the constraint framing is supported and the binding
+  state is repairable by direction choice. If every arm ends at zero valid success,
+  direction choice at decision 40 is not sufficient and the decisions before it are
+  implicated. If the incumbent's grasp survives to the end here, the in-window
+  criterion and the episode criterion disagree and the in-window result above must be
+  restated as a transient violation.
+- This is one cell, one checkpoint, one snapshot index and two repeats: a development
+  comparison, not independent task draws, and not a dressing success claim either way.
+
+`collect_decision_branches.py` gains a `--macros` subset flag for this (the subset
+must keep `policy` as the no-intervention reference); nothing else changes.
+
 ## What this does not establish
 
 Two garment/body cells with one body seed each; the eight states per step are

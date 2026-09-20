@@ -157,6 +157,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--slots", type=int, default=8)
     p.add_argument("--seed", type=int, default=3301)
     p.add_argument("--macro-step-m", type=float, default=0.008)
+    p.add_argument("--macros", default=None,
+                   help="Comma-separated subset of the macro library; the default runs all of it. "
+                        "A subset must keep 'policy', which is the no-intervention reference.")
     p.add_argument("--history", type=int, default=5)
     # The solver's convergence settings decide how large the run-to-run seed is, and so
     # how fine a difference between two macros a repeat can resolve; they are an
@@ -194,9 +197,19 @@ def main():
         raise ValueError("The last branch must end before the episode's time limit")
     if min(steps) < args.history:
         raise ValueError("The first snapshot must leave room for the history window")
+    macros = db.MACROS
+    if args.macros:
+        wanted = [name.strip() for name in args.macros.split(",") if name.strip()]
+        known = {m["name"]: m for m in db.MACROS}
+        missing = [name for name in wanted if name not in known]
+        if missing:
+            raise ValueError(f"unknown macros: {missing}; library is {sorted(known)}")
+        if "policy" not in wanted:
+            raise ValueError("a macro subset must include 'policy' as the no-intervention reference")
+        macros = tuple(known[name] for name in wanted)
     result = collect(cfg, args.checkpoint, args.out, snapshot_steps=steps, window=args.window,
                      follow=args.follow, repeats=args.repeats, slots=args.slots, seed=args.seed,
-                     step_m=args.macro_step_m, history=args.history)
+                     step_m=args.macro_step_m, history=args.history, macros=macros)
     print(json.dumps(dict(states=len(result["states"]), branches=len(result["records"]),
                           physical_decisions=result["physical_decisions"], seconds=result["seconds"])), flush=True)
 
