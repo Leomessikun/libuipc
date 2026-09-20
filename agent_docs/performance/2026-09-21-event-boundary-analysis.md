@@ -85,6 +85,49 @@ first violation is decision 27, i.e. after the macro ends, so the outcome there 
 mostly produced by the policy continuation, not by the command under test. The
 8-decision label agrees with the whole-branch label only 52/168 times.
 
+## 2b. Feasibility is controlled at segment granularity, and the reward never sees it
+
+Per-macro grasp-kept rate across the eight seeded states of tshirt_26/14046:
+
+| macro | step 40, eight states | step 60, eight states |
+|---|---|---|
+| policy | .00 .00 .00 .00 .00 .00 .00 .00 | 1.00 x8 |
+| policy_scaled | .00 x8 | 1.00 x8 |
+| forward | .00 x8 | .00 .00 .00 .00 .33 .00 1.00 1.00 |
+| retreat / outward / retreat_outward | 1.00 x8 | 1.00 x8 |
+| lift | .67 .67 .33 1.00 .33 .67 1.00 1.00 | 1.00 x8 |
+
+The outcome is a function of the commanded direction and is nearly constant across
+states. These eight "states" are eight seeded slots of the *same* garment, body and
+decision index, so low state diversity is expected and this is not evidence that
+feasibility is state-independent in general; what it does show is that seeds and
+solver noise do not decide it, so **one repeat is enough to label a direction** at
+these states.
+
+The granularity matters. In the [selector audit](2026-09-20-action-selection-evidence.md)
+none of the ten single-action candidates (projected-Q gradient, eight random
+directions at normalised radius .5, and the base) changed the feasibility label at
+any of its eight states. Only the two tshirt_392 states are informative there — the
+tshirt_26 prefixes are already violated, so their label cannot move — but taken with
+the macro table above, the constraint is controllable by an eight-decision segment
+and not by one command inside the trust region. The same granularity conclusion the
+[RAL calibration](2026-09-20-upper-bound-and-ral-calibration.md) reached for the
+continuous score holds for the binary event, in a sharper form.
+
+Finally, `python/uipc_manip/dressing_reward.py` states in its own docstring that the
+reward is Wang's arm-progress term, a collision penalty and a centre-alignment
+term, and that "no force, topology, coverage, or strain terms enter the reward";
+the shoulder-extension option explicitly "does not ... certify grasp validity". The
+2 cm whole-episode criterion that decides success lives only in evaluation
+(`decision_branches.py:127` applies the same `max tracking error <= 0.02 m`). So at
+decision 40 on tshirt_26 the reward-maximising macro is the one that violates the
+success criterion in 24 of 24 branches, and nothing in the training signal says so.
+
+Three other cells at step 100 show the same failure mode in milder form: the
+incumbent loses grasp in 4/8 branches on both tshirt_68 and the hospital gown,
+where `forward` keeps it 8/8 and also covers more (.143 against .050 on tshirt_68).
+There the alternative dominates outright rather than trading off.
+
 ## 3. The progress event has a real jump, but its indicator is noisy and only marginally attributable
 
 | cell | step | event | rate | identical-repeat split | eta^2 | median perm. p | within-cell jump (n cells) |
