@@ -1,5 +1,37 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## The lbvh point-query check is defective — 2026-09-20
+
+`apps/tests/backends/cuda/lbvh.cu:614` fails on about half of all runs: 5 of 8 on the
+`bunny0.msh` section, 3 of 6 on the whole `uipc_test_backend_cuda` target. A single
+green `ctest` hides it, which is why it has gone unnoticed.
+
+The instability is in the test's reference, not the query under test. The GPU result is
+stable at 101,802 pairs; `brute_froce_query_point` returns 0 in the runs that pass and
+94,728 in the runs that fail. Zero is impossible — every AABB contains its own centre,
+so a correct reference has at least `num_aabb` = 15,788 pairs — so **the passing runs
+are the broken ones**, an empty reference making `CHECK(diff.empty())` vacuous. The
+same zero appears on a twelve-AABB mesh earlier in the same target. The point-query
+path has therefore never been meaningfully checked.
+
+Open: why the reference collapses, and whether it varies with anything other than run
+order. An empty `AlignedBox` carries `min = +inf`, `max = -inf` and so a NaN centre
+that `contains` rejects, which is the first thing to examine; it does not by itself
+explain run-to-run variation on one binary and one mesh. See
+[the coverage audit](performance/2026-09-20-ipc-capability-coverage.md).
+
+## Behavioural coverage of the scene-config contract — 2026-09-20
+
+Of the 40 keys in `scene_default_config.cpp`, 15 appear in no test.
+`apps/tests/core/scene_config.cpp` checks the schema exhaustively, but a key can be
+fully specified and never change a simulation. Three of the gaps are now closed by
+`sim_case` 94, 95 and 96 (`StrainLimitingBaraffWitkinShell` end to end,
+`linear_system/solver`, `contact/d_hat_relative`). Still uncovered behaviourally:
+`linear_system/check_interval`, `contact/eps_velocity` and its relative form,
+`contact/adaptive/kappa_eval_scale`, `contact/adaptive/max_kappa`, `newton/ccd_tol`,
+`newton/transrate_tol`, `newton/velocity_tol_relative`,
+`newton/semi_implicit/beta_tol`, and the four `extras/debug/dump_*` switches.
+
 ## Architecture reset for replacement RL — 2026-09-20
 
 The owner removed compatibility with current SAC/pretraining and IPC-specific
