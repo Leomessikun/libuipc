@@ -1,5 +1,38 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-20 — Owner prioritizes a replacement RL algorithm
+
+The owner clarified that the goal is a new RL structure, not another change to
+the existing pretraining pipeline, and asked whether gradients are unsuitable.
+[Research assessment](performance/2026-09-20-rl-algorithm-research-assessment.md)
+distinguishes simulator derivatives, SAC's learned action-value gradient,
+likelihood-ratio policy gradients and supervised network fitting. The evidence
+does not identify removing action gradients as the primary solution. The owner
+explicitly asked for independent assessment rather than agreement with that
+hypothesis. Useful experience, temporal credit, value accuracy and observation
+aliasing must compete as explanations; a derivative-free loop is one candidate.
+
+Closest prior art: PI2-GPS (Levine et al.), MPO, RSPI, robust MPO, iCEM and
+multi-fidelity RL. A forward-search / supervised-fit loop is established, and
+the repository's earlier CEM already failed to establish robust continuation
+gains. Wang's original dressing paper uses SAC, while RFCL supplies an
+experience-distribution counter-hypothesis. One conditional candidate is a
+replacement policy-iteration loop using finite
+behaviors, with joint allocation of duration, solver accuracy and repeats;
+sampling uncertainty, numerical discrepancy and policy-projection failures must
+be distinguished. This joint operator is an unvalidated research hypothesis,
+not a certified novel algorithm. Retain multimodal alternatives and verify the
+fitted deployable policy, not only the privileged search result.
+
+The proposed discrimination experiments separate local versus sampled action
+selection from learned-Q versus rollout scoring, and test the same gradient
+learner with valid near-progress restarts and physical-duration controls. Require
+independent full-continuation improvement before training on branch labels.
+The [previous audit](performance/2026-09-20-training-issue-review.md) supplies
+experimental controls, not the research contribution. No simulator or training
+was launched; a scalar gradient counterexample was checked on CPU. Owner's
+updated scope and request for independent judgment are recorded in `rule.md`.
+
 ## 2026-09-20 — Training issue inventory reviewed; causal claims corrected
 
 [Review](performance/2026-09-20-training-issue-review.md) checks the inventory

@@ -110,6 +110,17 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Research a replacement RL algorithm, without preserving the current learner.**
+  The owner clarified that the goal is a new dressing RL algorithm, rather than
+  the existing pretraining/RL structure, and asked whether first-order/gradient
+  methods are the wrong approach. The owner explicitly requires independent
+  assessment rather than following the proposed no-gradient explanation. Treat
+  it as a competing hypothesis, not an established result or selected solution.
+  Reuse data and simulation where useful; the earlier
+  task-specific requirements to preserve SAC/pretraining interfaces do not
+  constrain this replacement-algorithm research. Distinguish a proposed operator
+  from validated novelty or a measured policy improvement. (Set 2026-09-20.)
+
 - **Run the bounded PointZero-inspired pretraining experiment.** The owner
   approved implementing and testing cloth-motion representation pretraining
   using existing IPC trajectories, with matched RL controls. This authorizes

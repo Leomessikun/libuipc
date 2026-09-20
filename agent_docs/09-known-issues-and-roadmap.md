@@ -1,5 +1,23 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Replacement RL research objective — 2026-09-20
+
+The owner explicitly prioritizes a new learner over retaining the current
+pretraining structure and independent evaluation of the gradient hypothesis.
+The [algorithm research assessment](performance/2026-09-20-rl-algorithm-research-assessment.md)
+specifies competing explanations, a conditional replacement loop and direct prior art. Do not
+equate contact nonsmoothness with failure of every policy-gradient estimator.
+Do not present CEM + imitation, MPO, or confidence-gated rollout iteration as new.
+
+Gradient removal is not selected as the solution. Open hypothesis: a joint
+finite-behavior/query-allocation operator may improve
+dressing per workstation hour by separating sampling noise, solver discrepancy,
+action duration and fitted-policy error. First isolate search from critic-scoring
+effects and test valid state restarts with the same gradient learner, then test
+whether an independently verified gain survives policy fitting.
+Existing corrected timing/scoring contracts apply to all comparison arms. This
+assessment changes the research plan, not production learning code or results.
+
 ## Dressing inventory corrections and repair order — 2026-09-20
 
 The [evidence review](performance/2026-09-20-training-issue-review.md) corrects
