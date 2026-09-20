@@ -1,5 +1,19 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Architecture reset for replacement RL — 2026-09-20
+
+The owner removed compatibility with current SAC/pretraining and IPC-specific
+contributions as design requirements. Retain data and experimental evidence;
+develop the learning mechanism independently of those implementations.
+[New research screen](performance/2026-09-20-clean-slate-rl-research.md) gives a
+concrete weighted-branching policy-gradient formulation and a CPU reference
+probe. It also identifies extensive prior art and no added benefit for the
+proposed score-aware allocator in the oracle synthetic test. **This is not a
+selected new algorithm or a dressing result.** No expensive run was launched.
+Open requirement: a defensible mechanism beyond close prior art, followed by
+matched end-to-end policy learning and total workstation-cost evaluation.
+The earlier joint-query hypothesis below is historical, not the selected plan.
+
 ## Recovery transfer, not another trajectory search — 2026-09-20
 
 The [matched-prefix audit](performance/2026-09-20-recovery-transfer-audit.md)

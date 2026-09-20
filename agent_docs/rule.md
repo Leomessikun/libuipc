@@ -110,6 +110,15 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Do not anchor the new algorithm to SAC or IPC.** The owner explicitly
+  rejected preserving the current pure-SAC pretraining structure and making
+  IPC-specific modifications the research contribution. Develop the learning
+  mechanism independently of that architecture and simulator. Existing data,
+  completed results and benchmarks remain useful evidence; this instruction
+  does not request deleting code/data or terminating unrelated processes.
+  A renamed combination of established components is not a novelty claim.
+  (Set 2026-09-20.)
+
 - **Research a replacement RL algorithm, without preserving the current learner.**
   The owner clarified that the goal is a new dressing RL algorithm, rather than
   the existing pretraining/RL structure, and asked whether first-order/gradient

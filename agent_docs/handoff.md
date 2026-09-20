@@ -1,5 +1,24 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-20 — Owner removes SAC and IPC as research constraints
+
+The owner explicitly rejected preserving the current SAC/pretraining structure
+or making IPC modifications the contribution. Recorded in `rule.md`; existing
+data/results remain useful. No deletion, migration or process termination was
+requested. [Research screen](performance/2026-09-20-clean-slate-rl-research.md)
+specifies a simulator-independent weighted-branching policy-gradient candidate,
+its probability correction, and close GPS/DART/Go-Explore/SPO/P3O/weighted-ensemble
+prior art. **No defensible novel algorithm has been established in this pass.**
+
+CPU-only reference `scripts/probe_weighted_branching_rl.py`: exact resampling
+identity and 10,000-tree stochastic eight-gate checks. Oracle corrected branching
+has ~18x lower gradient variance than independent trajectories; the proposed
+score-aware allocation adds no measured benefit over the simpler reference.
+No learned priorities, neural training, dressing rollout or GPU job. Do not report
+these numbers as robot success or promote the known branching core as novel.
+The new-algorithm deliverable remains open; older SAC/IPC compatibility
+requirements and recommendations to fix the current learner are not binding.
+
 ## 2026-09-20 — Isolate transfer of the already-successful recovery
 
 The owner again asked to reuse completed experiments. The September 17 teacher
