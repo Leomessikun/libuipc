@@ -83,16 +83,27 @@ This is **not** the closed IAQL line. IAQL back-propagated IPC pathwise
 derivatives into the actor; this proposes a sampled boundary term with IPC
 tangents used only to propose query directions. The objections are different.
 
-1. **The event has probability zero in the learner's own distribution.** A
-   boundary estimator adds `p(b) [G(b+) - G(b-)]` for events the sampled behavior
-   actually straddles. With the privileged 35-float actor and 270,000 transitions,
-   the upper-arm event never occurred once in 25 cells, and at the states where the
-   calibration could measure it, threading probability had zero within-action
-   variance. An estimator of the gradient of `Pr(event)` has nothing to estimate
-   where the event is either never reached or already decided,
-   and the clean-slate pass already recorded that branching methods "cannot create
-   success when no sampled behavior reaches it".
-2. **The measured obstacle is a plateau, not a jump.** `wang_progress` joins are
+1. **The events it targets split into one already crossed and one never
+   reached.** A boundary estimator adds `p(b) [G(b+) - G(b-)]` only for events the
+   sampled behavior actually straddles. The proposal scopes itself to early events
+   — threading and grasp retention — and those *are* straddled: in the privileged
+   run the maximum threaded rate moves .00 -> .52 -> .72 -> 1.00 over the first
+   175,000 transitions and grasp validity moves .64/.76 -> 1.00. But ordinary SAC
+   crossed that plateau on its own, without any boundary machinery, so the best
+   available claim for direction 1 there is an acceleration of something already
+   achieved in 175,000 transitions (4.58 h of workstation time buys the whole run).
+   The plateau that actually stops the task, the elbow, has never been reached by
+   any learner here: the upper-arm event has `p(b)` measured at zero in all 22
+   evaluations, so its boundary term is unmeasured rather than refuted, and the
+   clean-slate pass already recorded that branching methods "cannot create success
+   when no sampled behavior reaches it". Where the calibration did measure a
+   threading probability — at 24 states already on the upper arm — its
+   within-action variance was zero, i.e. the milestone was decided; that says
+   nothing about threading at approach states.
+2. **The measured obstacle is a plateau, not a jump** — which is the
+   proposal's own exit criterion ("contact-set changes need not make the return
+   discontinuous; if the objective is smooth, do not add a jump term"), so this is
+   agreement with its exit rule rather than an outside objection. `wang_progress` joins are
    continuous in value (the [inventory review](2026-09-20-training-issue-review.md)
    corrected the earlier zero-slope argument); what reproduces is a region with no
    usable slope plus a success rule that reads 1.00 -> 0.00 once the opening passes
@@ -112,7 +123,7 @@ tangents used only to propose query directions. The objections are different.
    ([action selection](2026-09-20-action-selection-evidence.md)). The clean-slate
    pass already rejected thousands of simulated decisions per state target on this
    workstation budget.
-4. **Its core family was probed here last week and produced no novelty.** The
+4. **Its core family was probed here on 2026-09-20 and produced no novelty.** The
    terminal-event-weighted branching estimator in
    [clean-slate](2026-09-20-clean-slate-rl-research.md) is the nearest in-repo
    mechanism: corrected branching cut gradient variance 18x over independent
@@ -123,12 +134,12 @@ tangents used only to propose query directions. The objections are different.
    IPC-specific-contribution requirement on 2026-09-20 (`rule.md`). "We already pay
    for IPC, so exploit it" is a design option, not a reason to rank it first.
 
-Condition under which it becomes live: a policy distribution in which the decisive
-event occurs with measurable, repeat-separable probability, measured at elbow
-states over four-decision segments rather than single commands. That distribution
-does not exist yet, and producing it is the transfer/experience problem below.
-If it did exist, the estimator would still have to beat plain likelihood-ratio
-branching at equal wall time, which the in-repo probe has not shown.
+Condition under which it becomes live: a learner whose distribution straddles the
+elbow event with repeat-separable probability, measured over four-decision
+segments rather than single commands. Producing that distribution is the
+transfer/experience problem below. Once it exists, the estimator would still have
+to beat plain likelihood-ratio branching at equal wall time, which the in-repo
+probe has not shown, and beat plain SAC, which crossed the first plateau unaided.
 
 ## Direction 2: active contact identification
 
@@ -182,7 +193,8 @@ this project:
 
 Do not adopt direction 1 as the main line on the strength of this proposal. Its
 mathematics is correct and its prior-art screening is honest, but the quantity it
-estimates is measured at zero in this system, its query cost collides with the
+estimates is either already handled by ordinary SAC (threading, grasp) or
+measured at zero (the elbow) in this system, its query cost collides with the
 single-workstation budget, and its closest in-repo relative produced no defensible
 novelty. Direction 3 stays blocked. Direction 2 is worth keeping only in the form
 the transfer audit already predeclared: which deployment-available information and

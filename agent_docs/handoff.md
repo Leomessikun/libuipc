@@ -8,9 +8,10 @@ identification second, decision-relevant simulator calibration third. The
 [review](performance/2026-09-21-external-direction-review.md) accepts its
 prior-art screening — which matches this project's independent reads, and whose
 three dressing citations were verified against the arXiv API — and rejects the
-ranking on this project's measurements: the decisive event is never reached or
-has zero within-action variance where it can be measured, one displaced command
-separates at only 1.45 pooled SD, and the nearest in-repo branching probe found
+ranking on this project's measurements: the early events it targets were crossed
+by ordinary SAC unaided (threading .00->1.00, grasp .64->1.00 in the privileged
+run), the event that stops the task has probability measured at zero there, one
+displaced command separates at only 1.45 pooled SD, and the nearest in-repo branching probe found
 substantial prior art and no gain. Direction 3 is blocked at both ends; direction
 2 survives only as the transfer audit's predeclared history/privileged ablation.
 No new run, no training and no novelty claim follows from this pass.
