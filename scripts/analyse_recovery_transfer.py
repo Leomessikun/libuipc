@@ -30,6 +30,7 @@ def main():
               for r in routes if r["kind"] == "checkpoint"}
     results = dict(matrix={}, episodes=[], command_fit={}, max_actor_replay_error=0.,
                    source_hashes={})
+    traces = []
 
     def read_tape(path):
         results["source_hashes"][str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -56,9 +57,16 @@ def main():
         for record in world["records"]:
             tape = read_tape(args.root / prefix / record["path"])
             metrics = [json.loads(v) for v in tape["step_metrics"]]
+            traces.append((prefix, record["route"], metrics))
             assert len(metrics) == cfg["horizon"] - summary["approach"]
-            assert all(not m["sim_error"] for m in metrics)
+            # The normal environment path omits this optional failure flag.
+            assert not record["sim_error"] and all(not m.get("sim_error", False) for m in metrics)
+            assert metrics[-1]["time_limit"] and not any(m["time_limit"] for m in metrics[:-1])
             assert np.isclose(min(m["upperarm_ratio"] for m in metrics[-12:]), record["sustained_coverage"])
+            max_tracking = max(world["prefix_tracking_m"][record["slot"]],
+                               max(m["tracking_error"] for m in metrics))
+            assert np.isclose(max_tracking, record["max_tracking_error"])
+            assert record["whole_episode_grasp_valid"] == (max_tracking <= .02)
             actions = tape["actions"]
             assert np.linalg.norm(actions[:, :3], axis=1).max() * cfg["max_translation"] <= .00800001
             assert np.linalg.norm(actions[:, 3:], axis=1).max() * cfg["max_rotation"] <= .05000001
@@ -101,6 +109,33 @@ def main():
                     rotation_rms_deg=float(np.rad2deg(np.sqrt(np.square(delta[:, 3:]).sum(axis=1).mean()) * cfg["max_rotation"])))
             results["command_fit"][name]["actors"][actor_name] = stats
     (args.root / "analysis.json").write_text(json.dumps(results, indent=2) + "\n")
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7), sharex=True)
+    colors = {"original_bc": "#636363", "recovery_bc": "#d95f02", "expert_outward": "#1b9e77"}
+    names = {"original_bc": "Original policy", "recovery_bc": "Recovery-trained policy", "expert_outward": "Existing teacher"}
+    steps = np.arange(summary["approach"] + 1, cfg["horizon"] + 1)
+    for col, prefix in enumerate(worlds):
+        for route in colors:
+            group = [m for p, r, m in traces if p == prefix and r == route]
+            for row, key, scale in ((0, "upperarm_ratio", 1), (1, "tracking_error", 1000)):
+                values = np.array([[m[key] for m in trace] for trace in group]) * scale
+                axes[row, col].plot(steps, values.mean(axis=0), color=colors[route], label=names[route])
+                axes[row, col].fill_between(steps, values.min(axis=0), values.max(axis=0), color=colors[route], alpha=.13)
+        axes[0, col].set_title(f"Prefix: {names[prefix]}")
+        axes[0, col].axhline(.7, color="black", linestyle=":", linewidth=1)
+        axes[0, col].set_ylim(0, 1.05)
+        axes[1, col].axhline(20, color="black", linestyle=":", linewidth=1)
+        axes[1, col].set_xlabel("Episode decision")
+    axes[0, 0].set_ylabel("Upper-arm coverage")
+    axes[1, 0].set_ylabel("Grasp tracking error (mm)")
+    axes[0, 0].legend(loc="lower right", fontsize=8)
+    fig.suptitle("Frozen continuations from matched states: tshirt_68 / body 14046\nLines: means; bands: min–max across two slots × two repeats (not confidence intervals)")
+    fig.tight_layout()
+    fig.savefig(args.root / "continuations.png", dpi=160)
+    plt.close(fig)
     print(json.dumps({k: v for k, v in results.items() if k not in ("source_hashes", "episodes")}, indent=2))
 
 

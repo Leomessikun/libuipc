@@ -11,13 +11,25 @@ it is not a completed negative result.
 The [transfer audit](performance/2026-09-20-recovery-transfer-audit.md) implements
 the missing comparison: original/student prefixes crossed with frozen original,
 student and existing teacher continuations, all from matched decision-120 states
-through decision 300. Two slots, two repeats, common continuation command caps;
-4,800 decisions and a 1,500 s internal cap. Native run is currently active under
-`output/uipc_manip/recovery_transfer_audit_20260920/`. No training or CEM. The
-read-only analysis also checks correct checkpoint routing and moving versus
-stopped teacher-command errors. This BC transfer study must not substitute for
-the completed ordinary SAC diagnosis. Research links DAgger, BADMM GPS and MDGPS
-as prior art; generic search plus supervised projection is not novel.
+through decision 300. **Completed: 4,800 decisions / 682.80 s (11.38 min)**.
+On each prefix group: teacher 4/4, original BC 0/4, recovery BC 0/4. Both prefixes
+had valid grasp; teacher sustained coverage .97473--.99243. All 24 continuations
+fail the separate historical early-turn filter. Two slots and two repeats are
+not independent task draws. Approach drift is not the sole transfer explanation:
+student fails from the original prefix, and teacher recovers the student's prefix.
+
+Artifacts: `output/uipc_manip/recovery_transfer_audit_20260920/`; all workers
+exited. No training or CEM. Read-only analysis reproduces the student's .012806
+old-label MSE but finds .057100/.046372 on new teacher trajectories. Moving-command
+translation RMS error rises from 2.286 mm on old rows to 5.216/5.353 mm on new
+ones, against an 8 mm command cap. Stopped-command errors remain much smaller.
+This is a measurable fitting/generalization gap, not proof of observation
+aliasing or that lowering MSE alone solves rollout. Command routing checks agree
+within 1.15e-6; 10 focused tests and all saved-trajectory integrity checks pass.
+Collector implementation: `af120bc6`. The completion stage adds analysis/plot
+and final results. This BC transfer study must not substitute for the completed
+ordinary SAC diagnosis. DAgger, DART and GPS/MDGPS are relevant existing controls;
+generic search plus supervised projection is not novel.
 
 ## 2026-09-20 — Fixed-critic comparison and complete-continuation check finished
 

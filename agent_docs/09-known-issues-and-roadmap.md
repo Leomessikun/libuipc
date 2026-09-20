@@ -6,10 +6,16 @@ The [matched-prefix audit](performance/2026-09-20-recovery-transfer-audit.md)
 reuses the September 17 successful full-continuation teacher and failed recovery
 student. The missing measurement isolates changed approach from failed recovery
 execution by crossing both prefixes with both frozen actors and the teacher.
-The bounded run is active; do not infer final outcomes yet. No CEM or training.
-DAgger/GPS/MDGPS already cover state-distribution correction and teacher-policy
-agreement. Any replacement algorithm must improve the final deployable policy,
-not only a teacher's branch score, and show value beyond those controls.
+Completed: 4,800 decisions / 11.38 min. Teacher 4/4 on each prefix group; both
+learned continuations 0/4 on each. Student-prefix states remain recoverable by
+this teacher, and changed approach cannot alone explain failed transfer. All
+are one-cell development repetitions; the historical early-turn filter passes
+none. Frozen student moving-command error is 2.286 mm on old recovery rows but
+5.216/5.353 mm on new successful teacher trajectories, despite the 8 mm cap.
+No CEM or training; all workers exited. Next isolate fitting and learner-state
+correction using this existing controller. DAgger/DART/GPS/MDGPS already cover
+major parts of that problem. Any replacement algorithm must improve the final
+deployable policy, not only a teacher's branch score, beyond those controls.
 
 ## Reuse completed action-improvement tests — 2026-09-20
 

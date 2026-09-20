@@ -5,6 +5,12 @@ Status: literature assessment and candidate algorithm specification. No new
 dressing policy, native rollout, or training result. The scalar mathematical
 counterexample below was checked on CPU.
 
+Subsequent evidence: the [fixed-Q comparison and terminal check](2026-09-20-action-selection-evidence.md)
+completed the previously missing selector diagnostic. The
+[matched recovery-transfer audit](2026-09-20-recovery-transfer-audit.md) also
+reopens the already-successful September 17 closed-loop teacher. Read these
+follow-ups before treating the hypotheses and proposed tests below as untested.
+
 ## Owner's objective and recommendation
 
 The objective is a **new RL algorithm for efficient, robust dressing**, not another
