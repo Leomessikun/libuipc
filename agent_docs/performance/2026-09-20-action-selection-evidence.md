@@ -21,6 +21,14 @@ files were clean; unrelated untracked build logs/worktrees were preserved.
 | Does tighter numerical solving reduce repeated-trajectory spread? | [Tolerance study](2026-09-19-tolerance-sets-the-noise-floor.md): large local repeatability improvement with about 2.5x measured wall cost | Already measured locally, not a completed learning comparison; tolerance settings were changed together and cross-setting approach states differ. |
 | Have valid reverse resets solved start-to-finish dressing? | [Historical audit](2026-09-08-uipc-manip-pretraining.md): Newton reference reverse curriculum reported high intermediate-start coverage but `0/18 at the start` | Partial-state training was already attempted in the reference. The IPC garment curriculum gates replay slots; it is not the same reset mechanism. A matched IPC experience-distribution experiment remains unverified. |
 
+**Follow-up correction:** the September 17
+[recovery teacher](2026-09-17-recovery-teacher.md) already completed successful
+closed-loop continuations from one BC prefix, and its trained student failed
+from reset. Do not interpret this report's next-step discussion as evidence
+that all closed-loop recoveries remain untested. The
+[matched transfer audit](2026-09-20-recovery-transfer-audit.md) isolates that
+specific transfer failure without repeating the search.
+
 The [algorithm research assessment](2026-09-20-rl-algorithm-research-assessment.md)
 must be read with this coverage map. Existing local-gradient, CEM, macro and
 duration tests are controls to reuse, not a fresh experimental program.

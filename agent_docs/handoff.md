@@ -1,5 +1,24 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-20 — Isolate transfer of the already-successful recovery
+
+The owner again asked to reuse completed experiments. The September 17 teacher
+already completed closed-loop recovery with .976--.984 sustained coverage, while
+its trained BC student failed the target. Do not frame successful closed-loop
+recovery as untested. The SAC-plus-recovery pilot was stopped before treatment;
+it is not a completed negative result.
+
+The [transfer audit](performance/2026-09-20-recovery-transfer-audit.md) implements
+the missing comparison: original/student prefixes crossed with frozen original,
+student and existing teacher continuations, all from matched decision-120 states
+through decision 300. Two slots, two repeats, common continuation command caps;
+4,800 decisions and a 1,500 s internal cap. Native run is currently active under
+`output/uipc_manip/recovery_transfer_audit_20260920/`. No training or CEM. The
+read-only analysis also checks correct checkpoint routing and moving versus
+stopped teacher-command errors. This BC transfer study must not substitute for
+the completed ordinary SAC diagnosis. Research links DAgger, BADMM GPS and MDGPS
+as prior art; generic search plus supervised projection is not novel.
+
 ## 2026-09-20 — Fixed-critic comparison and complete-continuation check finished
 
 The owner asked to inspect already-completed ideas and directly evaluate real

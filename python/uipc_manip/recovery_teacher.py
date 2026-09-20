@@ -67,7 +67,7 @@ def verified_improvement(candidate, policy, scaled, *, margin=.05, threshold=.7)
     return True
 
 
-def branch_world(cfg, checkpoint, out, routes, approach, slots, seed):
+def branch_world(cfg, checkpoint, out, routes, approach, slots, seed, *, repeats=1, deadline=None):
     from . import physics_gradient_probe as probe
     from .dressing_env import GenesisIPCDressingEnv
     from .dressing_heuristic import HeuristicDressingPolicy
@@ -84,18 +84,36 @@ def branch_world(cfg, checkpoint, out, routes, approach, slots, seed):
     if agent.cfg.history_length != 1:
         raise ValueError("Recovery pilot requires a single-frame actor")
     result = dict(completed=False, env=cfg.to_dict(), routes=routes, approach=approach,
-                  seed=seed, records=[], physical_decisions=0, restore_errors=[])
+                  checkpoint=str(checkpoint), seed=seed, repeats=repeats,
+                  records=[], physical_decisions=0, restore_errors=[])
 
     def save():
         result["seconds"] = time.perf_counter() - started
         (out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
 
+    def check_deadline():
+        if deadline is not None and time.perf_counter() >= deadline:
+            raise TimeoutError("Recovery comparison exhausted its wall-clock budget")
+
     try:
+        if repeats < 1:
+            raise ValueError("Positive repeat count required")
+        # An alternative frozen actor can take over after the same physical
+        # prefix. This isolates prefix drift from failed recovery execution.
+        route_agents = {}
+        for idx, route in enumerate(routes):
+            if route["kind"] == "checkpoint":
+                path = Path(route["checkpoint"])
+                route_agents[idx] = agent if path.resolve() == Path(checkpoint).resolve() else load_agent(
+                    path, env.spec.point_budget, env.action_dim, "cuda")
+                if route_agents[idx].cfg.history_length != 1:
+                    raise ValueError("Checkpoint routes require a single-frame actor")
         obs = env.reset([seed + i for i in range(slots)])
         prefix_tracking = np.zeros(slots)
         prefix_early = np.zeros(slots, dtype=bool)
         prefix = []
         for _ in range(approach):
+            check_deadline()
             action = agent.act(obs, deterministic=True)
             obs, _, done, info = env.step(action)
             result["physical_decisions"] += slots
@@ -113,7 +131,9 @@ def branch_world(cfg, checkpoint, out, routes, approach, slots, seed):
         # policy control to expose improvements explained only by larger motions.
         translation_cap = min(1., .008 / cfg.max_translation)
         rotation_cap = min(1., .05 / cfg.max_rotation)
-        for _, assignment in candidate_schedule(len(routes), slots, 1):
+        for repeat, assignment in candidate_schedule(len(routes), slots, repeats):
+            if repeat % 2:
+                assignment = len(routes) - 1 - assignment
             error = probe.restore(env, snapshot)
             result["restore_errors"].append(error)
             if error > 1e-5:
@@ -132,6 +152,7 @@ def branch_world(cfg, checkpoint, out, routes, approach, slots, seed):
             command_distance = np.zeros(slots)
             accepted_distance = np.zeros(slots)
             for t in range(approach, cfg.horizon):
+                check_deadline()
                 policy_action = agent.act(obs, deterministic=True)
                 actions = policy_action.copy()
                 positions = env.positions()
@@ -140,6 +161,10 @@ def branch_world(cfg, checkpoint, out, routes, approach, slots, seed):
                     mask = assignment == idx
                     if route["kind"] == "expert":
                         actions[mask] = teachers[idx].actions(positions)[mask]
+                    elif route["kind"] == "checkpoint":
+                        # Use the complete observation batch for every actor,
+                        # retaining the baseline's point-encoder batch contract.
+                        actions[mask] = route_agents[idx].act(obs, deterministic=True)[mask]
                     elif route["kind"] == "scaled":
                         norm = np.linalg.norm(actions[mask, :3], axis=-1, keepdims=True)
                         actions[mask, :3] *= translation_cap / np.maximum(norm, 1e-12)
@@ -166,7 +191,7 @@ def branch_world(cfg, checkpoint, out, routes, approach, slots, seed):
                 record["max_tracking_error"] = max(record["max_tracking_error"], float(prefix_tracking[slot]))
                 record["early_turn"] |= bool(prefix_early[slot])
                 record["paper_filter"] = record["success"] and not record["early_turn"]
-                record.update(route=routes[assignment[slot]]["name"], kept=False,
+                record.update(route=routes[assignment[slot]]["name"], kept=False, repeat=repeat,
                     branch_step=approach, whole_episode_grasp_valid=record["max_tracking_error"] <= .02,
                     sustained_coverage=min(r["upperarm_ratio"] for r in tape.step_metrics[-12:]),
                     collision_rejections=int(rejections[slot, 0]), tether_rejections=int(rejections[slot, 1]),
@@ -181,6 +206,10 @@ def branch_world(cfg, checkpoint, out, routes, approach, slots, seed):
         result["completed"] = True
         save()
         return result
+    except BaseException as error:
+        result["error"] = repr(error)
+        save()
+        raise
     finally:
         env.close()
         del agent, env

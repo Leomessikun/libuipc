@@ -1,5 +1,16 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Recovery transfer, not another trajectory search — 2026-09-20
+
+The [matched-prefix audit](performance/2026-09-20-recovery-transfer-audit.md)
+reuses the September 17 successful full-continuation teacher and failed recovery
+student. The missing measurement isolates changed approach from failed recovery
+execution by crossing both prefixes with both frozen actors and the teacher.
+The bounded run is active; do not infer final outcomes yet. No CEM or training.
+DAgger/GPS/MDGPS already cover state-distribution correction and teacher-policy
+agreement. Any replacement algorithm must improve the final deployable policy,
+not only a teacher's branch score, and show value beyond those controls.
+
 ## Reuse completed action-improvement tests — 2026-09-20
 
 The [evidence map and new comparison](performance/2026-09-20-action-selection-evidence.md)
@@ -15,9 +26,10 @@ by >.01 in four repeats; no sampled-Q selection does. On new seeded prefixes,
 both unchanged SAC and one gradient intervention followed by SAC score 0/8 at
 decision 300. Do not select gradient removal as the research solution or infer
 full-task improvement from local Q/coverage. All workers exited; no training.
-Next distinct question: can a joint change to subsequent decisions preserve
-grasp and completion from before the first failure? Existing one-intervention
-tests do not evaluate that, and standard policy-iteration controls remain needed.
+Existing one-intervention tests do not evaluate jointly changed continuations.
+However, the September 17 recovery teacher already supplied a successful
+closed-loop continuation from one BC prefix. The matched transfer audit above
+is the narrower next measurement; do not repeat that teacher search.
 
 ## Replacement RL research objective — 2026-09-20
 
