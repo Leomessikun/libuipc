@@ -1,5 +1,19 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Reuse completed action-improvement tests — 2026-09-20
+
+The [evidence map and new comparison](performance/2026-09-20-action-selection-evidence.md)
+supersede treating local gradients, finite differences, CEM, macro recovery and
+duration calibration as untested. Existing-data held-out selection gains only
+.005493 coverage; this is not a verified success gain or a trained algorithm.
+Existing whole episodes show tshirt_26 violates grasp before reaching the upper
+arm. Do not assess a late repair as capable of undoing an earlier hard failure.
+
+A bounded frozen-Q gradient-versus-sampled action diagnostic is running at this
+stage. It separates action extraction from the value scorer without training
+another policy. Native results remain pending; the eventual criterion is
+complete, grasp-valid dressing per workstation hour, not a Q increase.
+
 ## Replacement RL research objective — 2026-09-20
 
 The owner explicitly prioritizes a new learner over retaining the current

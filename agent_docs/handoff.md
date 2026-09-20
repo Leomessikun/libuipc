@@ -1,5 +1,30 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-20 — Existing tests reused; fixed-critic action comparison running
+
+The owner asked to inspect already-completed ideas and directly evaluate real
+gaps. [Evidence map](performance/2026-09-20-action-selection-evidence.md) links
+the completed actor/FD audit, CEM, macro recovery, full episodes, duration and
+tolerance tests. Do not propose those as unrun. Reanalysis of the existing 960
+RAL branches excludes each scoring repeat from selection: joint duration/action
+choice gains only .005493 sustained coverage; holding the unmodified action
+four steps gains -.000934. No grasp fields exist in that source.
+
+Reopening existing full controls locates tshirt_26's first grasp violations at
+decisions 32--50, before upper-arm coverage begins at 61--65; all eight controls
+have this ordering. Later instantaneous grasp validity cannot repair the
+whole-episode criterion. tshirt_392's eight controls keep grasp.
+
+New bounded native evaluation: `uipc_manip.action_selector_audit`, output
+`output/uipc_manip/action_selector_audit_20260920/`. It freezes warm-SAC Q and
+compares projected-Q-gradient selection with sampled-Q selection in the same
+action trust region; all candidates receive repeated physical evaluation.
+Predeclared 8 states, 320 branches, 8,240 decisions, 3,000 s internal cap.
+Initial/terminal observations and commands are saved for future reanalysis.
+Two focused selector/held-out-data checks pass. At this implementation stage
+the native run is pending; do not claim a policy gain from predicted Q values.
+Only diagnostic/reanalysis code was added, with production training unchanged.
+
 ## 2026-09-20 — Owner prioritizes a replacement RL algorithm
 
 The owner clarified that the goal is a new RL structure, not another change to
