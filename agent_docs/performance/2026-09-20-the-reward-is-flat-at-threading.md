@@ -1,5 +1,11 @@
 # The reward is flat exactly where the sleeve has to go on — 2026-09-20
 
+Correction: the [inventory evidence review](2026-09-20-training-issue-review.md)
+provides an actual-function counterexample to this document's flatness argument.
+Equal reward values at a junction do not imply zero slope. This contaminated run
+also cannot establish a converged critic, perfect state information or a causal
+learning bottleneck. The historical interpretation below is not accepted evidence.
+
 Status: measurement from an interrupted run, with a caveat recorded below. The run it
 comes from was contaminated and has been relaunched; the numbers here are read from the
 evaluation stream, which is monotone in step and internally consistent.

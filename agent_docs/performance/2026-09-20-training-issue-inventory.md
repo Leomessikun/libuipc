@@ -1,5 +1,13 @@
 # Everything measured to be wrong with dressing training — 2026-09-20
 
+Review status: **historical inventory; several causal claims corrected** by the
+[evidence review](2026-09-20-training-issue-review.md). In particular, continuity
+does not imply a flat reward; the privileged run changes physical control timing;
+top-two action gaps are not policy advantages; and 15 peak-covered cells are not
+a reachable upper bound. Read the item-by-item disposition before using the
+claims below to select or reject an algorithm. Original wording is retained for
+provenance.
+
 Status: inventory, not new measurement. Every entry names the artifact or record it
 comes from. Entries marked **[unverified]** are read from a record and not re-measured
 in this pass.

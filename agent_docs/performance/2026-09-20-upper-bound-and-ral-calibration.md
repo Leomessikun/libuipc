@@ -1,5 +1,14 @@
 # The privileged upper bound, and what resolves — 2026-09-20
 
+Correction: the [subsequent evidence review](2026-09-20-training-issue-review.md)
+confirms the zero upper-arm evaluations and the local four-step separation, but
+rejects the flat-junction argument and the matched-upper-bound interpretation.
+The runs differ in control period, physical episode length, angular speed limit
+and discount time. The calibration's 18/24 absolute separations include 16
+improvements and two losses; its observed throughput implies about 45 seconds
+per 480 decisions, not 12. Its states are already on the upper arm. The historical
+causal conclusions and RAL feasibility claims below are not established.
+
 Status: both runs complete. `output/uipc_manip/state_ub_clean_s1/` (270,000 transitions,
 22 evaluations) and `output/uipc_manip/ral_calibration_20260920/t26_14046/` (24 states,
 960 branches, 16,800 decisions, 26.3 min).

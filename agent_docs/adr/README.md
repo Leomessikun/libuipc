@@ -16,7 +16,7 @@ owns; source code remains authoritative when implementation and prose differ.
 | [0006](0006-al-ipc-active-set-integration.md) | Accepted | Reimplement AL-IPC active-set and conditioning improvements safely on current CUDA interfaces |
 | [0007](0007-embedded-cpp-metis.md) | Accepted | Build the private C++ METIS port inside geometry and remove the external C dependency tree |
 | [0008](0008-ipc-adjoint-q-learning.md) | Benchmark prototype accepted; extensions proposed | Pair soft Bellman values and IPC action derivatives; validate replay freshness and contact-conditioned trust on small tasks |
-| [0009](0009-resolvable-advantage-learning.md) | Proposed; calibration must pass first | Measure whether two actions are distinguishable before stepping: short-horizon milestone reachability as the branch score, paired branches from one exactly restored state, fixed-budget best-arm identification, and an update gated by the within-state noise measured in the same call |
+| [0009](0009-resolvable-advantage-learning.md) | Proposed; requires revision after evidence/prior-art review | Local four-step action effects measured; milestone operator and policy improvement unvalidated. Confidence-gated rollout supervision/allocation has established prior art; reward-flatness and matched-upper-bound premises are corrected. |
 
 ## Lifecycle
 

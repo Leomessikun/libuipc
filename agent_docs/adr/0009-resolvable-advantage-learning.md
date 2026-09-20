@@ -1,10 +1,28 @@
 # ADR 0009 — Resolvable Advantage Learning
 
-- Status: Proposed; calibration experiment specified below must pass before implementation
+- Status: Proposed; requires revision after evidence and prior-art review
 - Date: 2026-09-20
 - Owners: deformable manipulation research
 - Branch: `research/flow-latent-steering`
 - Supersedes: N/A. ADR 0008 (IAQL) is closed by measurement; this does not reuse it.
+
+## Review disposition — 2026-09-20
+
+The [training inventory review](../performance/2026-09-20-training-issue-review.md)
+supersedes the causal and novelty interpretations below. A local four-step
+action-effect separation is supported; the proposed milestone-based operator and
+end-to-end policy improvement have not passed a gate. The reward-flatness proof
+is incorrect, and the state-actor run is not a matched perception ablation.
+
+Confidence-gated rollout policy supervision and budget allocation have direct
+prior art in [RSPI (2008)](https://arxiv.org/html/0805.2027) and
+[rollout allocation (2010)](https://mohammadghavamzadeh.github.io/PUBLICATIONS/icml10-rollout.pdf).
+Withdraw the claim that this core mechanism has no existing counterpart.
+Potential-shaping invariance does not apply to replacing the task reward with
+short-horizon milestone reachability. Top-two separation is not improvement
+over the incumbent; any revised gate must address mean-estimation uncertainty,
+selection bias and numerical bias separately. Preserve the original proposal
+below as history, not as an accepted algorithm or novelty justification.
 
 ## The problem, stated in quantities measured here
 

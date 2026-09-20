@@ -1,5 +1,38 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-20 — Training issue inventory reviewed; causal claims corrected
+
+[Review](performance/2026-09-20-training-issue-review.md) checks the inventory
+against code, saved configs/CSVs/branches and primary literature. No simulator,
+training or GPU job was launched. CPU-only reproduction:
+`scripts/audit_dressing_training_inventory.py`; output and source hashes:
+`output/uipc_manip/training_inventory_review_20260920/audit.json`.
+
+The clean state run is genuinely 0/25 but is not a controlled upper bound:
+decision rate changed 10 to 60 Hz, episode duration 30 to 15 s, angular-rate
+limit 50 to 300 degrees/s per enabled axis, and discount time about 20 to 10 s.
+Its 35D geometric summary is not full Markov state. The 12,500-transition
+threading figure is a trained actor's peak-event rate, not random exploration.
+An actual `wang_progress` counterexample gives task slopes 1/1/5 across the
+two joins; continuity does not establish a reward plateau.
+
+Four-step calibration has a real local positive signal: at sigma 1, 16/24 states
+improve by >3 pooled SD and two deteriorate by >3 SD. All start on the upper arm;
+this is not a diagnosis of the state actor's earlier failure. Top-two gaps do
+not measure incumbent-policy advantage. Tight-tolerance repeatability is a
+promising local measurement, not a demonstrated learning speedup. Force remains
+uncalibrated, not proven intrinsically unusable. Existing evaluator definitions
+still disagree. Historical teacher categories are 6 valid-final, 5 invalid-grasp
+final, 4 covered-then-lost and 10 never-covered; 15 is not an upper bound.
+
+ADR 0009 requires revision: confidence-gated rollout supervision and allocation
+are established prior art (RSPI 2008 / rollout allocation 2010). Do not implement
+it on the basis of the previous novelty/flatness claims. Next proposed order:
+freeze scoring and physical-time controls; bounded matched-state accuracy test;
+completion/grasp-aligned data and objective; matched single-action/held-action/
+chunked RL pilot, judged by full-episode improvement per total workstation time.
+No claim of repaired training or a new algorithm is made by this review.
+
 ## 2026-09-19 — The feasibility question, and the one experiment that answers it
 
 The direction was set by the owner: stop researching the simulator, and decide whether

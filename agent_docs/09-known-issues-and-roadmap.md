@@ -1,5 +1,25 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Dressing inventory corrections and repair order — 2026-09-20
+
+The [evidence review](performance/2026-09-20-training-issue-review.md) corrects
+reward-flatness, privileged-upper-bound, noise-impossibility and reachable-ceiling
+claims. A CPU-only reproducible audit confirms key raw results and finds changed
+control timing, angular limits, discount time and episode length in the state run.
+No production behavior, simulator configuration or training process was changed.
+
+Open work, in order: common versioned success/hold/grasp evaluator and exclusive
+run ownership; matched physical-time control contract; capped tolerance comparison
+using incumbent improvement and reference-solve agreement; consistent completion
+objective/data; bounded single-action versus held-action versus chunked-RL pilot.
+Retain held-out evaluation and charge all preparation/evaluation to workstation
+time. Existing 6/25, inferred stop-rule 9/25, coverage-only SAC and small-cell FQL
+figures are not a common-protocol leaderboard.
+
+ADR 0009 remains proposed and requires revision. Generic confidence-gated rollout
+supervision is not novel; the four-step local effect does not validate the proposed
+milestone algorithm or a robust learned dressing policy.
+
 ## Recovery-decision gate reviewed — 2026-09-18
 
 [Audit](performance/2026-09-18-recovery-decisions-review.md) of the two completed
