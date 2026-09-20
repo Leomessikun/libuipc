@@ -129,7 +129,7 @@ namespace
                                             cuda_tool::CBufferView<Vector3> Ps,
                                             cuda_tool::CBufferView<Vector3> prev_Ps,
                                             cuda_tool::CBufferView<Float> thicknesses,
-                                            Float                         eps_v,
+                                            Float eps_v,
                                             cuda_tool::CBufferView<Float> d_hats,
                                             IndexT half_plane_vertex_offset,
                                             Float  dt,
@@ -244,23 +244,21 @@ class IPCVertexHalfPlaneFrictionalContact final : public VertexHalfPlaneFriction
     {
         using namespace cuda_tool;
         auto n = (int)info.friction_PHs().size();
-        do_prev_coupling_kernel<<<cuda_tool::best_grid_dim(n, do_prev_coupling_kernel),
-                                  cuda_tool::best_block_dim(do_prev_coupling_kernel),
-                                  0,
-                                  nullptr>>>(info.prev_coupling().viewer(),
-                                             info.friction_PHs().viewer(),
-                                             half_plane->positions().viewer(),
-                                             half_plane->normals().viewer(),
-                                             info.contact_tabular().viewer(),
-                                             info.contact_element_ids().viewer(),
-                                             info.positions().viewer(),
-                                             info.prev_positions().viewer(),
-                                             info.thicknesses().viewer(),
-                                             info.eps_velocity(),
-                                             info.d_hats().viewer(),
-                                             info.half_plane_vertex_offset(),
-                                             info.dt(),
-                                             n);
+        do_prev_coupling_kernel<<<cuda_tool::best_grid_dim(n, do_prev_coupling_kernel), cuda_tool::best_block_dim(do_prev_coupling_kernel), 0, nullptr>>>(
+            info.prev_coupling().viewer(),
+            info.friction_PHs().viewer(),
+            half_plane->positions().viewer(),
+            half_plane->normals().viewer(),
+            info.contact_tabular().viewer(),
+            info.contact_element_ids().viewer(),
+            info.positions().viewer(),
+            info.prev_positions().viewer(),
+            info.thicknesses().viewer(),
+            info.eps_velocity(),
+            info.d_hats().viewer(),
+            info.half_plane_vertex_offset(),
+            info.dt(),
+            n);
     }
 
     HalfPlane* half_plane = nullptr;

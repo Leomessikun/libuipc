@@ -122,10 +122,10 @@ class VertexHalfPlaneFrictionalContact : public ContactReporter
     cuda_tool::CBufferView<Matrix3x3> prev_coupling() const noexcept;
 
   protected:
-    virtual void do_build(BuildInfo& info)                     = 0;
-    virtual void do_compute_energy(EnergyInfo& info)           = 0;
-    virtual void do_assemble(ContactInfo& info)                = 0;
-    virtual void do_compute_prev_coupling(ContactInfo& info)   = 0;
+    virtual void do_build(BuildInfo& info)                   = 0;
+    virtual void do_compute_energy(EnergyInfo& info)         = 0;
+    virtual void do_assemble(ContactInfo& info)              = 0;
+    virtual void do_compute_prev_coupling(ContactInfo& info) = 0;
 
   private:
     virtual void do_report_energy_extent(GlobalContactManager::EnergyExtentInfo& info) override final;
