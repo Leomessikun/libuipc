@@ -1,5 +1,16 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Early feasible progress does not yet produce valid completion — 2026-09-21
+
+The [completed three-arm experiment](performance/2026-09-21-feasible-segment-result.md)
+finds outward preserves the recorded branch constraint in 16/16 continuations
+with .468 sustained coverage, versus policy 0/16 and .557; every arm has zero
+valid success. Lift passes all short checks and fails 11/16 later. Future
+full-episode certification must record the approach-prefix tracking maximum,
+which the current branch collector omits. Short survival is not a viability
+certificate. Boundary-jump and universal query-cost interpretations in the old
+analysis have been narrowed; the task-level learning question remains open.
+
 ## The lbvh point-query check is defective — 2026-09-20
 
 `apps/tests/backends/cuda/lbvh.cu:614` fails on about half of all runs: 5 of 8 on the

@@ -1,33 +1,10 @@
-"""Is a task-event boundary locatable in the action neighbourhood?
+"""Describe task-event variability in existing dressing branches; no simulation.
 
-A boundary-term policy-gradient estimator adds `p(b) * [G(b+) - G(b-)]` for task
-events that the sampled behaviour straddles. Three things must hold before such a
-term can be estimated at all:
-
-1. the event must be *undecided* at the state (both outcomes occur nearby),
-2. the event indicator must be *attributable to the action* rather than to solver
-   noise -- identical commands from an exactly restored state must agree far more
-   often than different commands do,
-3. the return difference across the event, `G(b+) - G(b-)`, must be large enough
-   to matter.
-
-This script measures all three from branch collections that already exist, with no
-new simulation. It reads `decision_branches*/**/result.json`, whose records carry a
-per-branch whole-branch grasp flag and a per-decision trace, and reports, per
-collection and per snapshot step:
-
-* the fraction of (state, macro) cells whose identical repeats disagree -- the
-  within-command flip rate, i.e. the noise floor of the event indicator;
-* the fraction of states at which the event is undecided across macros;
-* a permutation test of macro identity against the event indicator per state;
-* the pooled return gap across the event;
-* the number of repeats a given event-probability difference would need, and what
-  that costs in decisions and seconds at this collection's measured throughput.
-
-Usage:
-    python scripts/analyse_event_boundaries.py \
-        --root output/uipc_manip \
-        --out output/uipc_manip/event_boundary_analysis_20260921/summary.json
+Macro dependence, mixed-repeat fractions and event-conditioned coverage gaps are
+screening statistics. They do not identify an action-space discontinuity or its
+one-sided limits. Historical JSON field names remain for compatibility; each
+collection includes interpretation metadata. Cost estimates assume independent
+Bernoulli sample means and are precision heuristics, not estimator lower bounds.
 """
 
 from __future__ import annotations
@@ -72,13 +49,12 @@ def branch_events(record: dict) -> dict[str, bool]:
 
 
 def boundary_jump(groups: list[list[tuple[int, float]]]) -> dict:
-    """Estimate G(b+) - G(b-) from commands that straddle the boundary.
+    """Event-conditioned coverage gap within repeated state/macro cells.
 
-    A (state, macro) cell whose identical repeats disagree on the event is a command
-    sitting ON the event boundary: the same command, restored from the same state,
-    lands on both sides. The within-cell difference in return is therefore a direct
-    sample of the jump the boundary term integrates, free of the macro confound that
-    contaminates a pooled event-conditioned comparison.
+    Historical function/output names are retained for artifact compatibility.
+    Different outcomes under repeated interventions do not identify an action-space
+    boundary or its one-sided limits. Conditioning on the outcome also does not
+    identify its causal effect. These are descriptive gaps, not boundary jumps.
     """
     jumps = []
     for cell in groups:
@@ -246,6 +222,12 @@ def analyse(path: str, data: dict, trials: int, rng: random.Random) -> dict:
 
     return {
         "path": path,
+        "interpretation": {
+            "boundary_jump": "within-cell event-conditioned coverage gap; not a measured discontinuity",
+            "within_command_split_fraction": "fraction of cells with mixed repeats; not pairwise flip probability",
+            "locatable_flip_states": "opposite unanimous macro labels; no continuous boundary localization",
+            "query_cost": "independent Bernoulli two-mean precision heuristic; not an estimator lower bound",
+        },
         "checkpoint": data.get("checkpoint"),
         "macros": data.get("macros"),
         "repeats": data.get("repeats"),
@@ -356,10 +338,10 @@ def main() -> None:
                     f"  step {step:>3} {event:<11} rate {values['event_rate']:.3f} | "
                     f"split cells {values['within_command_split_fraction']:.3f} | "
                     f"undecided {values['undecided_states']}/{values['states']} | "
-                    f"locatable {values['locatable_flip_states']}/{values['states']} | "
+                    f"opposite-label states {values['locatable_flip_states']}/{values['states']} | "
                     f"macro-separable {values['macro_separable_states_p05']} | "
                     f"gap {values['sustained_coverage_gap']:+.4f} | "
-                    f"jump {values['boundary_jump']['mean_jump']:+.4f}"
+                    f"within-cell gap {values['boundary_jump']['mean_jump']:+.4f}"
                     f"+-{values['boundary_jump'].get('se_jump', float('nan')):.4f}"
                     f"({values['boundary_jump']['cells']}) | "
                     f"{values['seconds_per_candidate_at_0.25']:.0f} s/candidate"

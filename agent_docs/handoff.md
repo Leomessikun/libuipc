@@ -1,5 +1,19 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-21 — Predeclared feasible-segment experiment completed and audited
+
+[Result](performance/2026-09-21-feasible-segment-result.md): 48 branches,
+12,704 total decisions, 1,111.773 s. Policy/lift/outward branch validity is
+0/16, 5/16, 16/16; sustained coverage .557/.532/.468; valid success 0/16 in every
+arm. Lift passes 16/16 eight-step checks but fails 11/16 later. Prefix validity
+was not recorded, so positive counts do not certify whole episodes. CPU audit
+script checks design completeness and recomputes scores directly from traces.
+
+Corrected the event-analysis interpretation: mixed repeats do not locate action
+boundaries; conditional coverage gaps are not measured jumps; the ~350x cost
+ratio was a heuristic comparison, not an estimator lower bound. Raw observations
+are retained. No new physics run or training was launched in this continuation.
+
 ## 2026-09-21 — Outside research proposal reviewed and re-ranked
 
 The owner brought in an external proposal ranking three directions: IPC-queried
