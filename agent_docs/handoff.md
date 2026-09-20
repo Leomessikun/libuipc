@@ -1,5 +1,23 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-21 — Interrupted literature screen completed; algorithm claim remains open
+
+The [synthesis](performance/2026-09-21-research-direction-synthesis.md) and
+[primary-source audit](performance/2026-09-21-research-literature-audit.md) replace
+the staged report. A direct nearest neighbor, AAAI 2026 constrained best-arm
+identification with separate feasibility tests, blocks novelty claims based only
+on cheap constraints versus costly performance. Zhang/Demiris 2022 supplies a
+counterexample to the broad absence-of-full-dressing-success claim. Differentiable
+simulation timing comparisons have been narrowed to their actual scope.
+
+Prioritize a matched test of executable constrained-policy improvement; active
+contact identification remains conditional on observation aliasing and feedback
+value, and real-world calibration needs physical data. No new architecture is
+selected and no new expensive run was launched. Reproduction preserves all old
+numeric outputs across **2,424** branches (the previous prose said 2,400); the new
+long-run audit also rejects incomplete/corrupt inputs. Research conclusions are
+complete for this pass; a defensible new RL mechanism and policy gain remain open.
+
 ## 2026-09-21 — Predeclared feasible-segment experiment completed and audited
 
 [Result](performance/2026-09-21-feasible-segment-result.md): 48 branches,

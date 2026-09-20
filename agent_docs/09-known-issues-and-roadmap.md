@@ -2,6 +2,13 @@
 
 ## Early feasible progress does not yet produce valid completion — 2026-09-21
 
+The [completed research synthesis](performance/2026-09-21-research-direction-synthesis.md)
+and [literature audit](performance/2026-09-21-research-literature-audit.md) now
+supersede the staged direction ranking. Separate feasibility/performance testing
+has a direct AAAI 2026 precedent; the general query-cost asymmetry is not a novel
+RL contribution. The next gate is improvement retained by an executed learned
+policy under matched constraints and total workstation cost.
+
 The [completed three-arm experiment](performance/2026-09-21-feasible-segment-result.md)
 finds outward preserves the recorded branch constraint in 16/16 continuations
 with .468 sustained coverage, versus policy 0/16 and .557; every arm has zero

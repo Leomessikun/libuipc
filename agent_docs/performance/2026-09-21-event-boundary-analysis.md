@@ -1,12 +1,13 @@
 # Are task-event boundaries locatable near the policy? — 2026-09-21
 
-Status: analysis of 2,400 previously collected branches. **Interpretation corrected
+Status: analysis of 2,424 previously collected branches. **Interpretation corrected
 on continuation of this research:** event-conditioned coverage gaps are not measured
 action-space discontinuities; mixed-repeat fractions are not flip probabilities;
 short survival is not an episode feasibility certificate. See the audit below.
 The predeclared long-horizon experiment is now [complete](2026-09-21-feasible-segment-result.md).
 
-Original data scope: read-only analysis of 2,400 branches that already exist on disk. No new
+Original data scope: read-only analysis of 2,424 branches that already exist on disk
+(the earlier narrative reported 2,400; the six input collections sum to 2,424). No new
 simulation, no training, no algorithm claim. Script `scripts/analyse_event_boundaries.py`,
 artifact `output/uipc_manip/event_boundary_analysis_20260921/summary.json`.
 
