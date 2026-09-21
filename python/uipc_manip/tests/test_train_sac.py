@@ -119,6 +119,28 @@ def test_resume_recovers_timing_reward_camera_and_temperature():
     assert env_cfg.cache.cache_path.exists()
 
 
+def test_episode_resume_restores_clock_horizon_and_dual_settings():
+    saved = _checkpoint()
+    saved["metadata"]["env"].update(constraint_objective=True, constraint_episode=True)
+    saved["sac_config"].update(constraint_episode_horizon=150, constraint_lambda_lr=1., constraint_budget=0.05)
+    args = build_parser().parse_args([])
+    cfg = restore_resume_args(args, [], saved)
+    assert args.constraint_episode and args.constraint_objective
+    assert args.horizon == cfg.constraint_episode_horizon == 150
+    assert args.constraint_lambda_lr == 1. and args.constraint_budget == 0.05
+    argv = ["--eval-only", "--horizon", "300"]
+    with pytest.raises(ValueError, match="horizon"):
+        restore_resume_args(build_parser().parse_args(argv), argv, saved)
+
+
+@pytest.mark.parametrize("option", ["--eval-freq", "--checkpoint-interval"])
+def test_episode_training_rejects_mid_episode_evaluation_or_checkpoints(option):
+    args = build_parser().parse_args(["--task", "dressing", "--constraint-objective", "--constraint-episode",
+                                    "--horizon", "300", "--eval-freq", "600", "--checkpoint-interval", "1800", option, "500"])
+    with pytest.raises(ValueError, match="multiple of --horizon"):
+        resolve_defaults(args)
+
+
 def test_new_run_uses_dense_residual_but_resume_keeps_saved_architecture():
     args = build_parser().parse_args([])
     assert (args.critic_action_mode, args.trunk_style) == ("dense", "residual")

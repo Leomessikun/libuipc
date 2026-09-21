@@ -76,6 +76,8 @@ class DressingConfig:
     clip_rotation_to_yz: bool = True
     no_move_collision_threshold: float = 0.012
     point_budget: int = 768
+    constraint_episode: bool = False
+    """Expose episode time for finite-horizon constraint optimization."""
     constraint_objective: bool = False
     """Report the absorbing grasp constraint as a per-decision cost, and show the policy
     whether it has already been violated. The reward itself is unchanged: the training
@@ -279,7 +281,8 @@ class GenesisIPCDressingEnv:
             raise ValueError("num_envs must be at least 1")
         self.cfg = cfg
         self.num_envs = int(num_envs)
-        self.spec = ObsSpec(cfg.point_budget, constraint_flag=bool(cfg.constraint_objective))
+        self.spec = ObsSpec(cfg.point_budget, constraint_flag=bool(cfg.constraint_objective),
+                            episode_clock=bool(cfg.constraint_episode))
         self.obs_dim = self.spec.dim
         # Observations can be requested before the first reset; nothing has been violated yet.
         self._violated = np.zeros(self.num_envs, dtype=bool)
@@ -807,7 +810,8 @@ class GenesisIPCDressingEnv:
             flags[: arm.shape[0], FLAG_MARKER] = 1.0
             flags[arm.shape[0] :, FLAG_DEFORMABLE] = 1.0
             out[i] = self.spec.pack_labeled(pts, flags, cell.shoulder - tool, tool, attached=True,
-                                            violated=bool(self._violated[i]) if self.spec.constraint_flag else False)
+                                            violated=bool(self._violated[i]) if self.spec.constraint_flag else False,
+                                            elapsed_fraction=self._episode_step / self.cfg.horizon)
         return out
 
     def scripted_actions(self) -> np.ndarray:

@@ -41,7 +41,10 @@ def load_agent(checkpoint: Path, point_budget: int, action_dim: int, device: str
         # Checkpoints written before the dense critic carry the latent one (the reference's rejected
         # baseline, agent_docs/performance/2026-09-12-critic-architecture-defect.md).
         cfg = SACConfig.from_dict({**cfg.to_dict(), "critic_action_mode": "latent"})
-    agent = SACAgent(ObsSpec(int(point_budget)), int(action_dim), cfg, device)
+    env_cfg = payload.get("metadata", {}).get("env", {})
+    spec = ObsSpec(int(point_budget), constraint_flag=bool(env_cfg.get("constraint_objective", saved.get("constraint_flag", False))),
+                   episode_clock=bool(env_cfg.get("constraint_episode", saved.get("episode_clock", False))))
+    agent = SACAgent(spec, int(action_dim), cfg, device)
     ours = agent.protocol()
     if any(saved.get(k) != v for k, v in ours.items() if k in saved):
         raise ValueError(f"checkpoint protocol {saved} differs from this agent's {ours} on a shared key")

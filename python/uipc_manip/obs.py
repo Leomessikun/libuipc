@@ -57,6 +57,8 @@ class ObsSpec:
     point_budget: int
     constraint_flag: bool = False
     """Append the absorbing-constraint flag to the observation tail."""
+    episode_clock: bool = False
+    """Append elapsed episode fraction for finite-horizon control (zero at reset)."""
 
     def __post_init__(self) -> None:
         if int(self.point_budget) < 3:
@@ -64,7 +66,7 @@ class ObsSpec:
 
     @property
     def extra_dim(self) -> int:
-        return EXTRA_DIM + (CONSTRAINT_FLAG_DIM if self.constraint_flag else 0)
+        return EXTRA_DIM + int(self.constraint_flag) + int(self.episode_clock)
 
     @property
     def dim(self) -> int:
@@ -83,6 +85,7 @@ class ObsSpec:
         tool_world: np.ndarray,
         attached: bool,
         violated: bool = False,
+        elapsed_fraction: float = 0.0,
     ) -> np.ndarray:
         """Build one flat observation.
 
@@ -117,6 +120,8 @@ class ObsSpec:
             extra[EXTRA_DIM] = 1.0 if violated else 0.0
         elif violated:
             raise ValueError("This observation spec has no constraint slot to record a violation in")
+        if self.episode_clock:
+            extra[-1] = elapsed_fraction
         return np.concatenate([block.reshape(-1), extra])
 
     def pack_labeled(
@@ -127,6 +132,7 @@ class ObsSpec:
         tool_world: np.ndarray,
         attached: bool,
         violated: bool = False,
+        elapsed_fraction: float = 0.0,
     ) -> np.ndarray:
         """Build one flat observation from points that carry their own segmentation flags.
 
@@ -159,6 +165,8 @@ class ObsSpec:
             extra[EXTRA_DIM] = 1.0 if violated else 0.0
         elif violated:
             raise ValueError("This observation spec has no constraint slot to record a violation in")
+        if self.episode_clock:
+            extra[-1] = elapsed_fraction
         return np.concatenate([block.reshape(-1), extra])
 
     def unpack_numpy(self, flat: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -218,3 +226,10 @@ def constraint_flag(flat, spec: ObsSpec):
         return flat[..., index]
     flat = np.asarray(flat, dtype=np.float32)
     return flat[..., index]
+
+
+def episode_fraction(flat, spec: ObsSpec):
+    """Elapsed fraction of the finite episode, for numpy or torch observations."""
+    if not spec.episode_clock:
+        raise ValueError("This observation spec does not carry an episode clock")
+    return flat[..., int(spec.point_budget) * POINT_DIM + EXTRA_DIM + int(spec.constraint_flag)]

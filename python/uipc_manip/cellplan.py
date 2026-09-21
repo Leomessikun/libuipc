@@ -143,6 +143,9 @@ def summarize(records, slot_cells, heldout_slots, metric_keys=("upperarm_ratio",
         rows = [r for r in records if labels[int(r["slot"])] == label]
         if rows:
             out[f"success_rate_{label}"] = float(np.mean([r["success"] for r in rows]))
+            if all("valid_sustained_success" in r for r in rows):
+                out[f"valid_sustained_success_rate_{label}"] = float(np.mean([r["valid_sustained_success"] for r in rows]))
+                out[f"mean_validity_weighted_coverage_{label}"] = float(np.mean([r["validity_weighted_coverage"] for r in rows]))
             if "final_upperarm_ratio" in rows[0]:
                 out[f"mean_final_upperarm_ratio_{label}"] = float(np.nanmean([r["final_upperarm_ratio"] for r in rows]))
     for garment in sorted({str(g) for g, _ in slot_cells}):

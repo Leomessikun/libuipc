@@ -1,5 +1,19 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-21 — Owner-authorized Stage 0 stop and finite-episode relaunch
+
+Stopped original PIDs 1360583/1361270 and preserved their data. The
+[relaunch protocol](performance/2026-09-21-stage0-episode-relaunch.md) supersedes
+the audit's remaining objective mismatch: the opt-in episode mode has a visible
+clock, true terminal bootstrap masks, discount-corrected first-violation cost,
+and a dual updated from complete training episodes only. Held-out slots are
+excluded, costs are checked against observation edges, and evaluation/checkpoint
+cadence must respect episode boundaries. Both arms share these semantics.
+Snapshots and analysis policy loading now preserve the new observation/history
+contract. The launcher pins repeat 6, full episodes, rate 0 versus 1 per episode
+batch, and a separate output root. 608 CPU tests passed; physical preflight and
+launch evidence are recorded in the linked protocol.
+
 ## 2026-09-21 — Stage 0 training audit: do not continue the original comparison
 
 The [audit](performance/2026-09-21-stage0-training-audit.md) verifies the saved

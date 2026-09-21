@@ -122,6 +122,12 @@ cheapest to obtain.
 
 #### Stage 0 protocol, fixed before the runs
 
+**Corrected relaunch:** the owner subsequently authorized stopping the original
+runs and rerunning after repairs. The
+[finite-episode protocol](2026-09-21-stage0-episode-relaunch.md) specifies the
+corrected cost discount, episode-based dual, visible clock, terminal masks,
+intervals and new multiplier rate. It supersedes the original settings below.
+
 **Post-launch audit:** the original runs do not implement this intended comparison.
 The [training audit](2026-09-21-stage0-training-audit.md) found repeat 1 rather
 than 6, a delayed/missing cost edge, terminal-only validity evaluation, and an

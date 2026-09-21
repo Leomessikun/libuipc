@@ -125,8 +125,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="dual ascent rate on the constraint multiplier; only used with --constraint-objective.")
     p.add_argument("--constraint-lambda-init", type=float, default=0.0)
     p.add_argument("--constraint-budget", type=float, default=0.0,
-                   help="budget for mean first-violation cost per replay transition, not per episode; zero asks for none.")
+                   help="episode violation probability budget with --constraint-episode; otherwise mean replay-transition cost.")
     p.add_argument("--constraint-lambda-max", type=float, default=50.0)
+    p.add_argument("--constraint-episode", action="store_true",
+                   help="finite-episode objective: expose time, terminate at horizon, cancel cost discount, "
+                        "and update lambda from complete training episodes (requires --constraint-objective).")
     p.add_argument("--critic-input", choices=("points", "privileged"), default="points", help="dressing: the critic encodes the point cloud (reference) or reads the simulator's privileged state.")
     p.add_argument("--trunk-style", choices=("plain", "residual"), default="residual", help="Head architecture: pre-normalised residual is the new-run baseline; plain reproduces the earlier MLP. This is a separate architectural choice from Wang's dense action-per-point critic.")
     p.add_argument("--trunk-blocks", type=int, default=2, help="Residual blocks per head under --trunk-style residual.")
@@ -177,6 +180,16 @@ def resolve_defaults(args) -> None:
         args.settle_steps = 40
     if args.num_eval_episodes is None:
         args.num_eval_episodes = args.num_envs
+    if args.constraint_episode:
+        if args.task != "dressing" or not args.constraint_objective:
+            raise ValueError("--constraint-episode requires dressing and --constraint-objective")
+        if not args.eval_only:
+            for name in ("eval_freq", "checkpoint_interval"):
+                value = getattr(args, name)
+                if value > 0 and value % args.horizon:
+                    raise ValueError(f"Episode constraints require --{name.replace('_', '-')} to be a multiple of --horizon")
+            if args.garment_curriculum_interval > 0:
+                raise ValueError("Episode constraints require all training garments to be admitted from reset")
 
 
 def check_representation_checkpoint(path) -> None:
@@ -230,6 +243,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
         # This flag sets the observation's width, so a resume that dropped it would build a
         # network of the wrong shape rather than fail.
         saved["constraint_objective"] = bool(env["constraint_objective"])
+    saved["constraint_episode"] = bool(env.get("constraint_episode", False))
     if "augment_obs" in env:
         saved["no_obs_augment"] = not env["augment_obs"]
     if isinstance(env.get("obs"), dict) and "mode" in env["obs"]:
@@ -244,7 +258,11 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     saved.update({key: getattr(cfg, name) for key, name in cfg_names.items()})
     saved.update(encoder=cfg.encoder.kind, sa_neighbors=cfg.encoder.sa_neighbors)
     saved["rlt_learning_mode"] = cfg.rlt_learning_mode
-    network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "constraint_objective", "sa_neighbors", "algo", "num_bins", "min_v", "max_v", "critic_input", "trunk_style", "trunk_blocks", "critic_action_mode"}
+    for key in ("constraint_lambda_lr", "constraint_lambda_init", "constraint_budget", "constraint_lambda_max"):
+        saved[key] = getattr(cfg, key)
+    network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "constraint_objective", "constraint_episode", "sa_neighbors", "algo", "num_bins", "min_v", "max_v", "critic_input", "trunk_style", "trunk_blocks", "critic_action_mode"}
+    if saved["constraint_episode"]:
+        network_keys.add("horizon")
     for key, value in saved.items():
         if not hasattr(args, key):
             continue
@@ -319,6 +337,7 @@ def build_sac_config(args) -> SACConfig:
         constraint_lambda_init=float(args.constraint_lambda_init),
         constraint_budget=float(args.constraint_budget),
         constraint_lambda_max=float(args.constraint_lambda_max),
+        constraint_episode_horizon=int(args.horizon) if args.constraint_episode else 0,
         critic_action_mode=args.critic_action_mode,
         trunk_style=args.trunk_style,
         trunk_blocks=args.trunk_blocks,
@@ -518,6 +537,7 @@ def dressing_config(args) -> DressingConfig:
         dt=args.dt,
         point_budget=args.point_budget,
         constraint_objective=bool(args.constraint_objective),
+        constraint_episode=bool(args.constraint_episode),
         anchor_count=args.anchor_count,
         constraint_strength=args.cuff_strength,
         **{
@@ -804,6 +824,7 @@ class CsvLogger:
 
 
 def main(argv: list[str] | None = None) -> None:
+    from .history import act_with, rollout_state
     argv = sys.argv[1:] if argv is None else argv
     args = build_parser().parse_args(argv)
     payload = None
@@ -835,7 +856,8 @@ def main(argv: list[str] | None = None) -> None:
     resolve_defaults(args)
     env = make_env(args)
     slot_cells, heldout_slots = built_cell_plan(env, getattr(args, "_cell_plan", None))
-    spec = ObsSpec(args.point_budget, constraint_flag=bool(args.constraint_objective))
+    spec = ObsSpec(args.point_budget, constraint_flag=bool(args.constraint_objective),
+                   episode_clock=bool(args.constraint_episode))
     description = env.descriptions[0]
     print(
         f"[uipc-manip] task={args.task} envs={env.num_envs} obs_dim={env.obs_dim} build={description['build_seconds']:.1f}s "
@@ -880,8 +902,6 @@ def main(argv: list[str] | None = None) -> None:
             if saved_task is not None and saved_task != args.task:
                 raise ValueError(f"Checkpoint was trained on task {saved_task!r}, not {args.task!r}")
             print(f"[uipc-manip] resumed {args.resume} at step {payload['step']}", flush=True)
-        from .history import act_with, rollout_state
-
         policy = lambda obs, deterministic, history=None: act_with(agent, obs, deterministic, history)  # noqa: E731
 
     trajectory_dir = run_dir / "trajectories" if args.save_trajectories else None
@@ -930,6 +950,8 @@ def main(argv: list[str] | None = None) -> None:
     # Held-out slots step with the policy and are evaluated, but never feed replay.
     training_slot_mask = np.ones(env.num_envs, dtype=bool)
     training_slot_mask[heldout_slots] = False
+    if args.constraint_episode and args.total_transitions % (args.horizon * int(training_slot_mask.sum())):
+        raise ValueError("Episode constraints require a transition budget spanning complete training episodes")
     # Wang's distillation: a replay row carries its slot's arm-pose region, whose teacher pulls on the actor.
     slot_region = [d.get("pose_region") for d in env.descriptions]
     teacher_regions: list[int] = []
@@ -985,6 +1007,8 @@ def main(argv: list[str] | None = None) -> None:
     if state_actor:
         obs = priv
     episode_return = np.zeros(env.num_envs)
+    episode_cost = np.zeros(env.num_envs)
+    episode_decisions = np.zeros(env.num_envs, dtype=np.int64)
     updates_started = agent.updates > 0
     best_score = None
     recent_returns: list[float] = []
@@ -1024,6 +1048,7 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"[uipc-manip] curriculum step={vector_step} active={stage}/{len(order)} garments={order[:stage]}", flush=True)
         admitted = training_rows(training_slot_mask, slot_rank, stage, [bool(info.get("sim_error")) for info in infos])
         added = 0
+        completed_costs = []
         for i, info in enumerate(infos):
             if info.get("sim_error"):
                 episode_return[i] = 0.0
@@ -1032,7 +1057,7 @@ def main(argv: list[str] | None = None) -> None:
                 recent_heldout_success.append(float(info.get("success", False)))
             if not admitted[i]:
                 continue
-            # Time limits are not terminal states: bootstrap from the true final observation.
+            # Historical runs bootstrap time limits; the finite-episode objective ends here.
             terminal_obs = info.get("terminal_obs", None)
             state_pair = {}
             terminal_priv = None
@@ -1045,13 +1070,31 @@ def main(argv: list[str] | None = None) -> None:
             if replay.labelled:
                 state_pair["label"] = slot_region[i]
             state_pair.update(streams.fields(i, dones[i]))
-            replay.add(obs[i], actions[i], float(rewards[i]) * reward_scale, next_obs[i] if terminal_obs is None else terminal_obs, False, **state_pair)
+            successor = next_obs[i] if terminal_obs is None else terminal_obs
+            if args.constraint_episode:
+                from .obs import constraint_flag
+                edge = float(constraint_flag(successor, spec) - constraint_flag(obs[i], spec))
+                if edge != float(info["constraint_cost"]):
+                    raise RuntimeError("Constraint info cost disagrees with the replay observation edge")
+                episode_cost[i] += edge
+                episode_decisions[i] += 1
+                if dones[i]:
+                    if episode_decisions[i] == args.horizon:
+                        if episode_cost[i] != float(info["constraint_violated"]):
+                            raise RuntimeError("Episode cost does not equal its absorbing violation indicator")
+                        completed_costs.append(episode_cost[i])
+                    episode_cost[i] = 0.
+                    episode_decisions[i] = 0
+            replay.add(obs[i], actions[i], float(rewards[i]) * reward_scale, successor,
+                       bool(dones[i]) if args.constraint_episode else False, **state_pair)
             added += 1
             episode_return[i] += float(rewards[i])
             if dones[i]:
                 recent_returns.append(float(episode_return[i]))
                 recent_success.append(float(info.get("success", False)))
                 episode_return[i] = 0.0
+        if completed_costs:
+            stats.update(agent.update_constraint_dual(completed_costs))
         streams.advance(dones)
         if history is not None and np.any(dones):
             history.reset(np.asarray(dones, dtype=bool))
@@ -1120,6 +1163,8 @@ def main(argv: list[str] | None = None) -> None:
                 if state_actor:
                     obs = priv
                 episode_return[:] = 0.0
+                episode_cost[:] = 0.0
+                episode_decisions[:] = 0
             print(f"[uipc-manip] saved {path}", flush=True)
     env.close()
 

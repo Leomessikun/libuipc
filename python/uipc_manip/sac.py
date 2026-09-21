@@ -24,7 +24,7 @@ import torch.nn.functional as F
 
 from .history import RolloutHistory
 from .models import Actor, CategoricalCritic, Critic, EncoderConfig, PrivilegedCritic, StateActor, WangFlowActor, _sample_head, reuse_neighbourhoods
-from .obs import FLAG_TOOL, ObsSpec, constraint_flag as obs_constraint_flag
+from .obs import FLAG_TOOL, ObsSpec, constraint_flag as obs_constraint_flag, episode_fraction
 from .rlt import RLTConfig
 
 WANG_HORIZON_STEPS = 150
@@ -136,11 +136,14 @@ class SACConfig:
     constraint_lambda_init: float = 0.0
     """Initial multiplier, in the same units as the replayed (already scaled) reward."""
     constraint_budget: float = 0.0
-    """Budget for mean first-violation cost per sampled replay transition, not per episode.
-    Zero asks for none. The current discounted penalty is not an episode chance constraint."""
+    """Episode violation probability budget in episode mode. The legacy mode instead
+    budgets mean first-violation cost per replay transition. Zero asks for none."""
     constraint_lambda_max: float = 50.0
     """Ceiling on the multiplier. Without it a constraint the policy cannot satisfy drives the
     dual variable, and with it the critic's targets, without bound."""
+    constraint_episode_horizon: int = 0
+    """Positive opts into finite-episode costs: cancel cost discount using the observed clock
+    and update the multiplier from completed training episodes, never replay minibatches."""
     trunk_style: str = "plain"
     """Shape of every head's body. ``plain`` is Linear-ReLU-Linear-ReLU-Linear, what this port has
     always used; ``residual`` is the pre-normalised residual arrangement value networks are reported
@@ -358,6 +361,18 @@ class SACAgent:
         # The constraint multiplier is a scalar dual variable, not a network parameter: it is
         # updated by ascent on the constraint violation, not by backpropagation.
         self.constraint_lambda = float(cfg.constraint_lambda_init)
+        self.constraint_episodes = 0
+        if (cfg.constraint_lambda_lr > 0 or self.constraint_lambda > 0) and cfg.history_length != 1:
+            raise ValueError("Constraint penalties are not implemented for history windows")
+        if cfg.constraint_episode_horizon > 0:
+            if not (spec.constraint_flag and spec.episode_clock and cfg.use_extra):
+                raise ValueError("Episode constraints require the violation flag and an observed episode clock")
+            if cfg.history_length != 1 or cfg.actor_type == "state" or cfg.critic_input != "points" or cfg.algo != "sac":
+                raise ValueError("Episode constraints currently require single-frame point actor/critic scalar SAC")
+            if not 0.0 < cfg.discount <= 1.0 or -cfg.constraint_episode_horizon * np.log(cfg.discount) > 10.0:
+                raise ValueError("Episode cost discount correction is ill-conditioned for this horizon/discount")
+            if not 0. <= cfg.constraint_budget <= 1.:
+                raise ValueError("Episode constraint budget must be a probability in [0, 1]")
         if (float(cfg.constraint_lambda_lr) > 0.0 or self.constraint_lambda > 0.0) and not spec.constraint_flag:
             raise ValueError(
                 "A constrained objective needs the observation's constraint flag: the cost is read "
@@ -745,24 +760,42 @@ class SACAgent:
         return obs, action, reward, next_obs, not_done, state, next_state, label, index, physics, cost
 
     def constrained_reward(self, reward, cost):
-        """Penalise the sampled reward with the current multiplier, then take one dual step.
+        """Price sampled cost at the current multiplier; only legacy mode updates it here.
 
-        The critic learns the value of ``r - lambda * c``, and ``lambda`` rises while the
-        sampled violation rate exceeds the budget and falls back towards zero below it.
+        Episode mode uses discount-corrected costs and a separate completed-episode
+        dual update. Legacy mode uses sampled transition cost for the dual step.
         Penalising at update time rather than at collection means every transition in the
         buffer is costed with one consistent multiplier, instead of the stale one that was in
         force when it happened to be recorded.
         """
         penalised = reward - self.constraint_lambda * cost.reshape(reward.shape)
         violation = float(cost.mean().item())
+        if self.cfg.constraint_episode_horizon > 0:
+            return penalised, {"constraint_lambda": self.constraint_lambda,
+                               "batch_discount_corrected_cost": violation}
         self.constraint_lambda = float(np.clip(
             self.constraint_lambda
             + float(self.cfg.constraint_lambda_lr) * (violation - float(self.cfg.constraint_budget)),
             0.0, float(self.cfg.constraint_lambda_max)))
         return penalised, {"constraint_lambda": self.constraint_lambda, "batch_constraint_cost": violation}
 
+    def update_constraint_dual(self, episode_costs) -> dict:
+        """One dual step from a fresh batch of complete training episodes only."""
+        if self.cfg.constraint_episode_horizon <= 0:
+            raise ValueError("Episode dual updates require a finite episode objective")
+        costs = np.asarray(episode_costs, dtype=np.float64)
+        if costs.ndim != 1 or not costs.size or not np.isin(costs, (0., 1.)).all():
+            raise ValueError("Completed episode costs must be a nonempty vector of zero/one indicators")
+        rate = float(costs.mean())
+        self.constraint_lambda = float(np.clip(
+            self.constraint_lambda + self.cfg.constraint_lambda_lr * (rate - self.cfg.constraint_budget),
+            0., self.cfg.constraint_lambda_max))
+        self.constraint_episodes += int(costs.size)
+        return {"constraint_lambda": self.constraint_lambda, "episode_violation_rate": rate,
+                "constraint_episodes": self.constraint_episodes}
+
     def _transition_cost(self, obs_flat, next_obs_flat):
-        """The absorbing constraint's cost, reconstructed from the stored transition.
+        """First-violation cost, discount-corrected when optimizing the episode constraint.
 
         The flag only ever rises, and it rises exactly once, on the decision that breaks the
         constraint. So the cost of a transition is the rise of its own flag, and no separate
@@ -774,7 +807,13 @@ class SACAgent:
             return None
         before = obs_constraint_flag(obs_flat, self.spec)
         after = obs_constraint_flag(next_obs_flat, self.spec)
-        return (after - before).clamp(0.0, 1.0)
+        cost = (after - before).clamp(0.0, 1.0)
+        if self.cfg.constraint_episode_horizon > 0:
+            # At zero-based decision t: gamma**t * (gamma**-t * c_t) = c_t.
+            # A late violation therefore has the same episode-start penalty as an early one.
+            step = (episode_fraction(obs_flat, self.spec) * self.cfg.constraint_episode_horizon).round()
+            cost = cost * torch.pow(self.cfg.discount, -step)
+        return cost
 
     def _sample_windows(self, replay):
         """One learning step per window: its last transition, seen through ``history_length`` frames.
@@ -892,7 +931,7 @@ class SACAgent:
         sample = self._sample_windows if int(self.cfg.history_length) > 1 else self._sample_single
         obs, action, reward, next_obs, not_done, state, next_state, label, index, physics, cost = sample(replay)
         constraint_stats = {}
-        if float(self.cfg.constraint_lambda_lr) > 0.0 or self.constraint_lambda > 0.0:
+        if self.cfg.constraint_episode_horizon > 0 or float(self.cfg.constraint_lambda_lr) > 0.0 or self.constraint_lambda > 0.0:
             if cost is None:
                 raise ValueError("The constrained objective is not implemented for history windows")
             reward, constraint_stats = self.constrained_reward(reward, cost)
@@ -1052,6 +1091,8 @@ class SACAgent:
             "max_v": float(self.cfg.max_v),
             "encoder": self.cfg.encoder.to_dict(),
         }
+        if self.spec.episode_clock:
+            protocol.update(episode_clock=True, constraint_flag=bool(self.spec.constraint_flag))
         if self.cfg.critic_input != "points":
             # Only a privileged critic adds these keys, so point-critic checkpoints saved before them still load.
             protocol.update(critic_input=str(self.cfg.critic_input), privileged_dim=int(self.cfg.privileged_dim))
@@ -1092,6 +1133,7 @@ class SACAgent:
             "protocol": self.protocol(),
             "physics_beta": self.physics_beta,
             "constraint_lambda": self.constraint_lambda,
+            "constraint_episodes": self.constraint_episodes,
             "metadata": metadata or {},
         }
         torch.save(payload, path)
@@ -1186,6 +1228,7 @@ class SACAgent:
             self.log_alpha_optimizer.load_state_dict(payload["log_alpha_optimizer"])
         self.updates = int(payload.get("updates", 0))
         self.constraint_lambda = float(payload.get("constraint_lambda", self.cfg.constraint_lambda_init))
+        self.constraint_episodes = int(payload.get("constraint_episodes", 0))
         if payload.get("physics_beta") is not None:
             self.physics_beta = float(payload["physics_beta"])
         return payload

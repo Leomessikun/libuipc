@@ -2,6 +2,12 @@
 
 ## Stage 0 original training is not the intended experiment — 2026-09-21
 
+**Resolved for the corrected relaunch:** the owner authorized stopping the old
+jobs. The [finite-episode protocol](performance/2026-09-21-stage0-episode-relaunch.md)
+adds clock/termination semantics, discount-corrected costs and complete-episode
+dual updates. The original jobs have been stopped; their data remain historical
+audit evidence. This fixes objective units, not convergence or task success.
+
 The [audit](performance/2026-09-21-stage0-training-audit.md) found a sixfold action
 duration mismatch, delayed/lost constraint labels, incomplete evaluation and an
 unsaved multiplier. These implementation defects are corrected in source, with

@@ -15,15 +15,16 @@ import torch
 from types import SimpleNamespace
 from collections import deque
 
-from uipc_manip.obs import EXTRA_DIM, POINT_DIM, ObsSpec, constraint_flag
+from uipc_manip.obs import EXTRA_DIM, POINT_DIM, ObsSpec, constraint_flag, episode_fraction
 from uipc_manip.sac import SACAgent, SACConfig
 
 
-def flat_observation(spec: ObsSpec, violated: bool) -> np.ndarray:
+def flat_observation(spec: ObsSpec, violated: bool, elapsed_fraction: float = 0.) -> np.ndarray:
     points = np.zeros((2, 3), dtype=np.float32)
     flags = np.zeros((2, 4), dtype=np.float32)
     flags[:, 0] = 1.0
-    return spec.pack_labeled(points, flags, np.zeros(3), np.zeros(3), attached=True, violated=violated)
+    return spec.pack_labeled(points, flags, np.zeros(3), np.zeros(3), attached=True,
+                             violated=violated, elapsed_fraction=elapsed_fraction)
 
 
 def test_the_slot_is_opt_in_and_one_float_wide():
@@ -52,7 +53,7 @@ def test_the_flag_round_trips_through_the_observation():
 
 
 def agent(**cfg) -> SACAgent:
-    spec = ObsSpec(8, constraint_flag=True)
+    spec = ObsSpec(8, constraint_flag=True, episode_clock=cfg.get("constraint_episode_horizon", 0) > 0)
     return SACAgent(spec, 3, SACConfig(hidden_dim=16, batch_size=4, **cfg), "cpu")
 
 
@@ -199,3 +200,123 @@ def test_update_applies_a_fixed_nonzero_penalty(monkeypatch):
     monkeypatch.setattr(a, "_finish_update", lambda stats, *args, **kwargs: stats)
     a._update(None)
     assert received[0].flatten().tolist() == [-3., 0., 0., 0.]
+
+
+def test_episode_penalty_is_independent_of_violation_time():
+    a = agent(constraint_episode_horizon=300, discount=0.995, constraint_lambda_init=2.)
+    steps = np.array([0, 40, 299])
+    before = torch.from_numpy(np.stack([flat_observation(a.spec, False, t / 300) for t in steps]))
+    after = torch.from_numpy(np.stack([flat_observation(a.spec, True, (t + 1) / 300) for t in steps]))
+    costs = a._transition_cost(before, after)
+    penalized, _ = a.constrained_reward(torch.zeros(3), costs)
+    np.testing.assert_allclose(0.995 ** steps * penalized.numpy(), [-2., -2., -2.], rtol=2e-6)
+    assert episode_fraction(before, a.spec).tolist() == pytest.approx((steps / 300).tolist())
+    assert constraint_flag(after, a.spec).tolist() == [1., 1., 1.]
+    assert a._transition_cost(after, after).sum().item() == 0.
+
+
+def test_episode_dual_uses_complete_episode_rate_not_replayed_costs(tmp_path):
+    a = agent(constraint_episode_horizon=300, constraint_lambda_lr=2., constraint_budget=0.1)
+    stats = a.update_constraint_dual([1., 0.])
+    assert stats["episode_violation_rate"] == 0.5
+    assert a.constraint_lambda == pytest.approx(0.8)
+    for _ in range(10):
+        a.constrained_reward(torch.zeros(4), torch.full((4,), 4.))
+    assert a.constraint_lambda == pytest.approx(0.8)
+    a.update_constraint_dual([0., 0.])
+    assert a.constraint_lambda == pytest.approx(0.6)
+    path = a.save(tmp_path / "episode.pt", 600)
+    other = agent(constraint_episode_horizon=300, constraint_lambda_lr=2., constraint_budget=0.1)
+    other.load(path)
+    assert other.constraint_lambda == pytest.approx(0.6)
+    assert other.constraint_episodes == 4
+    from uipc_manip.physics_gradient_actor import load_agent
+    analysis_agent = load_agent(path, 8, 3, "cpu")
+    assert analysis_agent.spec.episode_clock and analysis_agent.spec.constraint_flag
+    assert analysis_agent.constraint_lambda == pytest.approx(0.6)
+
+
+def test_episode_mode_requires_a_visible_clock():
+    with pytest.raises(ValueError, match="episode clock"):
+        SACAgent(ObsSpec(8, constraint_flag=True), 3,
+                 SACConfig(hidden_dim=16, constraint_episode_horizon=300), "cpu")
+
+
+def test_episode_collector_excludes_heldout_cost_and_terminates_bootstrap(monkeypatch, tmp_path):
+    from uipc_manip import train_sac, replay as replay_module, sac
+    spec = ObsSpec(8, constraint_flag=True, episode_clock=True)
+    recorded, dual_batches = [], []
+
+    class Env:
+        num_envs, action_dim, obs_dim = 2, 3, spec.dim
+        descriptions = [dict(garment="test", human=i, config={}, build_seconds=0., settle_displacement_m=0.) for i in range(2)]
+
+        def reset(self, seeds=None):
+            self.t = 0
+            return np.stack([flat_observation(spec, False), flat_observation(spec, False)])
+
+        def step(self, actions):
+            self.t += 1
+            done = self.t == 2
+            # The held-out slot violates; the training slot never does.
+            obs = np.stack([flat_observation(spec, True, self.t / 2), flat_observation(spec, False, self.t / 2)])
+            infos = [dict(constraint_cost=float(i == 0 and self.t == 1), constraint_violated=i == 0) for i in range(2)]
+            if done:
+                for i in range(2):
+                    infos[i]["terminal_obs"] = obs[i].copy()
+                obs = self.reset()
+            return obs, np.zeros(2), np.full(2, done), infos
+
+        def close(self):
+            pass
+
+    class Agent:
+        def __init__(self, spec, action_dim, cfg, device):
+            self.cfg, self.updates = cfg, 0
+        def act(self, obs, deterministic):
+            return np.zeros((2, 3))
+        def train(self, training):
+            pass
+        def update_constraint_dual(self, costs):
+            dual_batches.append(list(costs))
+            return {}
+        def save(self, path, step, metadata):
+            return path
+
+    class Replay(replay_module.FlatReplayBuffer):
+        def add(self, obs, action, reward, next_obs, done, **kw):
+            recorded.append((float(episode_fraction(obs, spec)), float(episode_fraction(next_obs, spec)), done))
+            super().add(obs, action, reward, next_obs, done, **kw)
+
+    monkeypatch.setattr(train_sac, "make_env", lambda args: Env())
+    monkeypatch.setattr(train_sac, "built_cell_plan", lambda *a: ([("test", 0), ("test", 1)], [0]))
+    monkeypatch.setattr(train_sac, "evaluate", lambda *a, **kw: dict(success_rate=0., mean_final_distance=1., mean_return=0.))
+    monkeypatch.setattr(sac, "SACAgent", Agent)
+    monkeypatch.setattr(replay_module, "FlatReplayBuffer", Replay)
+    train_sac.main(["--task", "dressing", "--constraint-objective", "--constraint-episode",
+                    "--horizon", "2", "--point-budget", "8", "--total-transitions", "4",
+                    "--eval-freq", "2", "--checkpoint-interval", "2", "--replay-capacity", "16",
+                    "--device", "cpu", "--work-dir", str(tmp_path)])
+    assert dual_batches == [[0.], [0.]]
+    assert recorded == [(0., 0.5, False), (0.5, 1., True)] * 2
+
+
+def test_branch_restore_restores_violation_history(monkeypatch):
+    from uipc_manip import physics_gradient_probe as probe
+    h = SimpleNamespace(**{k: np.zeros(1) for k in ("stage", "_steps", "_align_steps", "_best_upper")})
+    env = SimpleNamespace(_world=SimpleNamespace(dump=lambda: True, frame=lambda: 10,
+                                                recover=lambda frame: True, retrieve=lambda: None),
+                          _anchor=np.zeros((1, 3)), _offsets=[np.zeros((1, 3))],
+                          _last_progress=[], _privileged=np.zeros((1, 1)), _violated=np.array([True]),
+                          positions=lambda: [np.zeros((1, 3))], rngs=[np.random.default_rng(1)],
+                          _update_targets=lambda: None, _decision_times=deque(),
+                          cfg=SimpleNamespace(constraint_objective=True))
+    monkeypatch.setattr(probe, "heuristic", lambda e: h)
+    monkeypatch.setattr(probe, "measure", lambda e: {})
+    snap = probe.take_snapshot(env, "prefix", 10)
+    env._violated[:] = False
+    probe.restore(env, snap)
+    assert env._violated.tolist() == [True]
+    del snap["constraint_violated"]
+    with pytest.raises(ValueError, match="violation history"):
+        probe.restore(env, snap)

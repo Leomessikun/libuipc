@@ -177,6 +177,7 @@ def take_snapshot(env, name: str, step: int) -> dict:
         "name": name, "frame": int(env._world.frame()), "episode_step": int(step),
         "anchor": env._anchor.copy(), "offsets": [o.copy() for o in env._offsets],
         "last_progress": list(env._last_progress), "privileged": env._privileged.copy(),
+        "constraint_violated": env._violated.copy(),
         "heuristic": {k: getattr(h, k).copy() for k in ("stage", "_steps", "_align_steps", "_best_upper")},
         "positions": [p.copy() for p in env.positions()],
         "rng_states": [copy.deepcopy(r.bit_generator.state) for r in env.rngs],
@@ -197,6 +198,10 @@ def restore(env, snap: dict) -> float:
     env._last_progress = list(snap["last_progress"])
     env._privileged = snap["privileged"].copy()
     env._episode_step = int(snap["episode_step"])
+    if "constraint_violated" in snap:
+        env._violated = snap["constraint_violated"].copy()
+    elif getattr(env.cfg, "constraint_objective", False):
+        raise ValueError("A constrained branch needs a snapshot containing its violation history")
     for rng, state in zip(env.rngs, snap.get("rng_states", []), strict=False):
         rng.bit_generator.state = copy.deepcopy(state)
     env._decision_times.clear()
