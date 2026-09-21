@@ -19,7 +19,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .obs import EXTRA_DIM, FEATURE_DIM, FLAG_TOOL, ObsSpec
+from .obs import FEATURE_DIM, FLAG_TOOL, ObsSpec
 from .rlt import RLTConfig, RecurrentLoopedHistory, Run
 
 
@@ -302,7 +302,7 @@ class Actor(nn.Module):
         self.use_extra = bool(use_extra)
         self.log_std_min = float(log_std_min)
         self.log_std_max = float(log_std_max)
-        frame_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
+        frame_dim = self.encoder.feature_dim + (spec.extra_dim if self.use_extra else 0)
         self.history, in_dim = make_history(frame_dim, action_dim, history_length, history_kind, rlt)
         self.trunk = trunk_layers(in_dim, hidden_dim, 2 * action_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
@@ -504,7 +504,7 @@ class Critic(nn.Module):
         self.use_extra = bool(use_extra)
         # Under ``dense`` the action is already inside the encoding, so the head does not take it again.
         frame_dim = self.encoder.feature_dim + (0 if self.action_mode == "dense" else self.action_dim)
-        frame_dim += EXTRA_DIM if self.use_extra else 0
+        frame_dim += spec.extra_dim if self.use_extra else 0
         # Past commands enter each earlier frame the way the candidate enters the current one, so the
         # history layout carries no separate command block.
         self.history, in_dim = make_history(frame_dim, 0, history_length, history_kind, rlt)
@@ -753,7 +753,7 @@ class WangFlowActor(nn.Module):
         self.use_extra = bool(use_extra)
         self.log_std_min = float(log_std_min)
         self.log_std_max = float(log_std_max)
-        frame_dim = self.encoder.feature_dim + (EXTRA_DIM if self.use_extra else 0)
+        frame_dim = self.encoder.feature_dim + (spec.extra_dim if self.use_extra else 0)
         self.history, in_dim = make_history(frame_dim, action_dim, history_length, history_kind, rlt)
         self.trunk = trunk_layers(in_dim, hidden_dim, 2 * action_dim, trunk_style, trunk_blocks)
         self.apply(_weight_init)
@@ -841,7 +841,7 @@ class CategoricalCritic(nn.Module):
         self.use_extra = bool(use_extra)
         self.num_bins, self.min_v, self.max_v = int(num_bins), float(min_v), float(max_v)
         in_dim = self.encoder.feature_dim + (0 if self.action_mode == "dense" else self.action_dim)
-        in_dim += EXTRA_DIM if self.use_extra else 0
+        in_dim += spec.extra_dim if self.use_extra else 0
         self.Q1 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v, trunk_style, trunk_blocks)
         self.Q2 = CategoricalQHead(in_dim, hidden_dim, num_bins, min_v, max_v, trunk_style, trunk_blocks)
         self.apply(_weight_init)

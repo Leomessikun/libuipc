@@ -35,6 +35,15 @@ FEATURE_DIM = 4
 EXTRA_DIM = 7
 """Per-graph scalars appended after the point block."""
 
+CONSTRAINT_FLAG_DIM = 1
+"""Optional extra scalar: whether the episode's absorbing constraint is already violated.
+
+A trajectory-level criterion is absorbing -- once the grasp has left its tolerance the
+episode can no longer be a valid success, and the decision problem after that point is a
+different one. A policy that cannot see the flag cannot represent that difference, and a
+critic that cannot see it must average two incompatible continuations. The slot is opt-in
+so every observation, checkpoint and replay written before it keeps its exact width."""
+
 FLAG_DEFORMABLE = 0
 FLAG_MARKER = 1
 FLAG_GOAL = 2
@@ -46,14 +55,20 @@ class ObsSpec:
     """Dimensions of the flat observation for a fixed point budget."""
 
     point_budget: int
+    constraint_flag: bool = False
+    """Append the absorbing-constraint flag to the observation tail."""
 
     def __post_init__(self) -> None:
         if int(self.point_budget) < 3:
             raise ValueError("point_budget must hold at least the tool, the goal, and one deformable point")
 
     @property
+    def extra_dim(self) -> int:
+        return EXTRA_DIM + (CONSTRAINT_FLAG_DIM if self.constraint_flag else 0)
+
+    @property
     def dim(self) -> int:
-        return int(self.point_budget) * POINT_DIM + EXTRA_DIM
+        return int(self.point_budget) * POINT_DIM + self.extra_dim
 
     @property
     def deformable_budget(self) -> int:
@@ -67,6 +82,7 @@ class ObsSpec:
         goal_rel: np.ndarray,
         tool_world: np.ndarray,
         attached: bool,
+        violated: bool = False,
     ) -> np.ndarray:
         """Build one flat observation.
 
@@ -93,10 +109,14 @@ class ObsSpec:
         block[count, 3 + FLAG_GOAL] = 1.0
         # The tool sits at the origin of the tool-relative frame.
         block[count + 1, 3 + FLAG_TOOL] = 1.0
-        extra = np.zeros(EXTRA_DIM, dtype=np.float32)
+        extra = np.zeros(self.extra_dim, dtype=np.float32)
         extra[0:3] = np.asarray(tool_world, dtype=np.float32).reshape(3)
         extra[3:6] = np.asarray(goal_rel, dtype=np.float32).reshape(3)
         extra[6] = 1.0 if attached else 0.0
+        if self.constraint_flag:
+            extra[EXTRA_DIM] = 1.0 if violated else 0.0
+        elif violated:
+            raise ValueError("This observation spec has no constraint slot to record a violation in")
         return np.concatenate([block.reshape(-1), extra])
 
     def pack_labeled(
@@ -106,6 +126,7 @@ class ObsSpec:
         goal_rel: np.ndarray,
         tool_world: np.ndarray,
         attached: bool,
+        violated: bool = False,
     ) -> np.ndarray:
         """Build one flat observation from points that carry their own segmentation flags.
 
@@ -130,16 +151,20 @@ class ObsSpec:
         block[count, :3] = np.asarray(goal_rel, dtype=np.float32).reshape(3)
         block[count, 3 + FLAG_GOAL] = 1.0
         block[count + 1, 3 + FLAG_TOOL] = 1.0
-        extra = np.zeros(EXTRA_DIM, dtype=np.float32)
+        extra = np.zeros(self.extra_dim, dtype=np.float32)
         extra[0:3] = np.asarray(tool_world, dtype=np.float32).reshape(3)
         extra[3:6] = np.asarray(goal_rel, dtype=np.float32).reshape(3)
         extra[6] = 1.0 if attached else 0.0
+        if self.constraint_flag:
+            extra[EXTRA_DIM] = 1.0 if violated else 0.0
+        elif violated:
+            raise ValueError("This observation spec has no constraint slot to record a violation in")
         return np.concatenate([block.reshape(-1), extra])
 
     def unpack_numpy(self, flat: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Split a flat observation (or a batch of them) into arrays.
 
-        Returns ``(pos [.., N, 3], feat [.., N, 4], valid [.., N], extra [.., EXTRA_DIM])``.
+        Returns ``(pos [.., N, 3], feat [.., N, 4], valid [.., N], extra [.., extra_dim])``.
         """
         flat = np.asarray(flat, dtype=np.float32)
         squeeze = flat.ndim == 1
@@ -178,3 +203,18 @@ def goal_rel(flat: np.ndarray, spec: ObsSpec) -> np.ndarray:
     """Tool-relative goal position stored in the observation tail."""
     _, _, _, extra = spec.unpack_numpy(flat)
     return extra[3:6]
+
+
+def constraint_flag(flat, spec: ObsSpec):
+    """The absorbing-constraint flag of one flat observation, or of a batch of them.
+
+    Accepts numpy arrays and torch tensors, and returns the same kind. Raises when the
+    spec has no constraint slot, so a silent zero can never stand in for "not violated".
+    """
+    if not spec.constraint_flag:
+        raise ValueError("This observation spec does not carry a constraint flag")
+    index = int(spec.point_budget) * POINT_DIM + EXTRA_DIM
+    if hasattr(flat, "ndim") and not isinstance(flat, np.ndarray):  # torch tensor
+        return flat[..., index]
+    flat = np.asarray(flat, dtype=np.float32)
+    return flat[..., index]

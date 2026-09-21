@@ -1,5 +1,24 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-21 — Stage 0 implemented: the success criterion becomes a training signal
+
+The dressing reward never contained the criterion that decides success. The
+environment now reports a per-decision cost that fires once, on the decision where
+the anchor tracking maximum first passes 2 cm, so an episode's expected cost is the
+probability it violates; the observation gains one float, the absorbing "already
+violated" flag; and the critic learns `r - lambda * c` with `lambda` a dual variable.
+All of it is opt-in behind `--constraint-objective`, so every existing checkpoint,
+replay and observation keeps its exact width.
+
+The penalty is applied at update time rather than folded into the stored reward: the
+cost is reconstructed from a transition as the rise of its own flag, which is exact
+because the flag is absorbing, and priced with the multiplier in force for that
+update instead of the stale one from collection time.
+
+Protocol and the three readings are preregistered in
+[the plan](performance/2026-09-21-research-plan-and-contribution.md); tests in
+`python/uipc_manip/tests/test_constraint_objective.py`; 588 CPU tests pass.
+
 ## 2026-09-21 — Interrupted literature screen completed; algorithm claim remains open
 
 The [synthesis](performance/2026-09-21-research-direction-synthesis.md) and

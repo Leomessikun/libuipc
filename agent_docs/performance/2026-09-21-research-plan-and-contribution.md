@@ -120,6 +120,47 @@ objective/benchmark repair and must be reported as such. Re-scope before claimin
 any estimator or allocator contribution. This is the most likely outcome and the
 cheapest to obtain.
 
+#### Stage 0 protocol, fixed before the runs
+
+Implemented in `obs.py`, `dressing_env.py`, `sac.py`, `train_sac.py`; tests in
+`python/uipc_manip/tests/test_constraint_objective.py`.
+
+- **What changes.** The environment reports a per-decision cost that is 1 on the
+  decision where the anchor tracking maximum first exceeds 2 cm and 0 for ever
+  after, so the expected cost of an episode is exactly the probability that it
+  violates. The observation gains one float, the flag saying the episode has
+  already failed the criterion, which is what makes the absorbing state
+  representable at all. The critic learns the value of `r - lambda * c`, and
+  `lambda` is a dual variable raised while the sampled violation rate exceeds the
+  budget. The reward itself is untouched.
+- **Why the penalty is applied at update time, not at collection.** A multiplier
+  folded into the stored reward is frozen at the moment a transition was recorded,
+  so a buffer spanning a rising `lambda` would hold inconsistent targets. The cost
+  is instead reconstructed from the stored transition as the rise of its own flag,
+  which is exact because the flag is absorbing, and priced with the multiplier in
+  force for that update.
+- **Two arms, differing only in the objective.** Both carry the extra observation
+  slot (constant zero in the control), both start from scratch, same seed, same
+  25 cells, same 270,000 transitions, same everything else. Control:
+  `--constraint-objective` with `--constraint-lambda-lr 0`. Treatment:
+  `--constraint-objective` with lambda lr .02, budget 0, cap 50.
+- **Metrics reported per evaluation:** valid grasp success, grasp valid rate
+  (its complement is the violation rate), final and peak upper-arm ratio,
+  and the `lambda` trajectory.
+- **The three readings, fixed in advance.**
+  1. Treatment produces valid completions where the control produces none: the
+     finding is an objective/benchmark repair. Report it as that, and re-scope the
+     rest of this plan before claiming any estimator or allocator contribution.
+  2. Treatment stops moving — validity high, coverage collapsing toward the
+     `retreat` behaviour already measured at .000 coverage with 24/24 validity.
+     That is the known failure mode of pricing the constraint alone, and it is
+     reported as a negative result, not hidden.
+  3. Neither: the constraint alone is not the binding obstacle, and Stage 1's
+     representation question carries the weight.
+- **What makes the run uninformative:** if `lambda` never leaves its initial value
+  the penalty never bit and nothing was tested. It is logged every update and
+  checked at the first evaluation rather than at the end.
+
 ### Stage 1 — move the decision to the relation, keep the executor we have (about a day)
 
 Replace `point cloud -> 6-DoF command` with `observation -> desired garment-body

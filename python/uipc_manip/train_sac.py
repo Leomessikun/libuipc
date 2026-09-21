@@ -116,6 +116,16 @@ def build_parser() -> argparse.ArgumentParser:
                         "vector instead of the point cloud, which is not deployable and is there to measure "
                         "what the control problem costs to learn when perception is free.")
     p.add_argument("--algo", choices=("sac", "flashsac"), default="sac", help="Scalar reference critic or bounded categorical critic.")
+    p.add_argument("--constraint-objective", action="store_true",
+                   help="dressing: train against the absorbing whole-episode grasp constraint. The "
+                        "observation gains a violated flag and the critic learns r - lambda * cost, "
+                        "with lambda raised by dual ascent while the violation rate exceeds the budget.")
+    p.add_argument("--constraint-lambda-lr", type=float, default=0.02,
+                   help="dual ascent rate on the constraint multiplier; only used with --constraint-objective.")
+    p.add_argument("--constraint-lambda-init", type=float, default=0.0)
+    p.add_argument("--constraint-budget", type=float, default=0.0,
+                   help="tolerated per-episode violation probability; zero asks for none.")
+    p.add_argument("--constraint-lambda-max", type=float, default=50.0)
     p.add_argument("--critic-input", choices=("points", "privileged"), default="points", help="dressing: the critic encodes the point cloud (reference) or reads the simulator's privileged state.")
     p.add_argument("--trunk-style", choices=("plain", "residual"), default="residual", help="Head architecture: pre-normalised residual is the new-run baseline; plain reproduces the earlier MLP. This is a separate architectural choice from Wang's dense action-per-point critic.")
     p.add_argument("--trunk-blocks", type=int, default=2, help="Residual blocks per head under --trunk-style residual.")
@@ -215,6 +225,10 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
                 saved.pop(key, None)
     if "constraint_strength" in env and metadata.get("task") == "dressing":
         saved["cuff_strength"] = env["constraint_strength"]
+    if "constraint_objective" in env:
+        # This flag sets the observation's width, so a resume that dropped it would build a
+        # network of the wrong shape rather than fail.
+        saved["constraint_objective"] = bool(env["constraint_objective"])
     if "augment_obs" in env:
         saved["no_obs_augment"] = not env["augment_obs"]
     if isinstance(env.get("obs"), dict) and "mode" in env["obs"]:
@@ -229,7 +243,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     saved.update({key: getattr(cfg, name) for key, name in cfg_names.items()})
     saved.update(encoder=cfg.encoder.kind, sa_neighbors=cfg.encoder.sa_neighbors)
     saved["rlt_learning_mode"] = cfg.rlt_learning_mode
-    network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "sa_neighbors", "algo", "num_bins", "min_v", "max_v", "critic_input", "trunk_style", "trunk_blocks", "critic_action_mode"}
+    network_keys = {"actor", "encoder", "hidden_dim", "point_budget", "constraint_objective", "sa_neighbors", "algo", "num_bins", "min_v", "max_v", "critic_input", "trunk_style", "trunk_blocks", "critic_action_mode"}
     for key, value in saved.items():
         if not hasattr(args, key):
             continue
@@ -300,6 +314,10 @@ def build_sac_config(args) -> SACConfig:
         min_v=args.min_v,
         max_v=args.max_v,
         critic_input=args.critic_input,
+        constraint_lambda_lr=float(args.constraint_lambda_lr) if args.constraint_objective else 0.0,
+        constraint_lambda_init=float(args.constraint_lambda_init),
+        constraint_budget=float(args.constraint_budget),
+        constraint_lambda_max=float(args.constraint_lambda_max),
         critic_action_mode=args.critic_action_mode,
         trunk_style=args.trunk_style,
         trunk_blocks=args.trunk_blocks,
@@ -498,6 +516,7 @@ def dressing_config(args) -> DressingConfig:
         action_repeat=args.action_repeat,
         dt=args.dt,
         point_budget=args.point_budget,
+        constraint_objective=bool(args.constraint_objective),
         anchor_count=args.anchor_count,
         constraint_strength=args.cuff_strength,
         **{
@@ -791,7 +810,7 @@ def main(argv: list[str] | None = None) -> None:
     resolve_defaults(args)
     env = make_env(args)
     slot_cells, heldout_slots = built_cell_plan(env, getattr(args, "_cell_plan", None))
-    spec = ObsSpec(args.point_budget)
+    spec = ObsSpec(args.point_budget, constraint_flag=bool(args.constraint_objective))
     description = env.descriptions[0]
     print(
         f"[uipc-manip] task={args.task} envs={env.num_envs} obs_dim={env.obs_dim} build={description['build_seconds']:.1f}s "

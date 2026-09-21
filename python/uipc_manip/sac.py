@@ -24,7 +24,7 @@ import torch.nn.functional as F
 
 from .history import RolloutHistory
 from .models import Actor, CategoricalCritic, Critic, EncoderConfig, PrivilegedCritic, StateActor, WangFlowActor, _sample_head, reuse_neighbourhoods
-from .obs import FLAG_TOOL, ObsSpec
+from .obs import FLAG_TOOL, ObsSpec, constraint_flag as obs_constraint_flag
 from .rlt import RLTConfig
 
 WANG_HORIZON_STEPS = 150
@@ -130,6 +130,16 @@ class SACConfig:
     min_v: float = -50.0
     max_v: float = 50.0
     critic_input: str = "points"
+    constraint_lambda_lr: float = 0.0
+    """Dual ascent rate on the absorbing-constraint multiplier. Zero leaves the objective
+    unconstrained, which is the control arm and every earlier checkpoint's behaviour."""
+    constraint_lambda_init: float = 0.0
+    """Initial multiplier, in the same units as the replayed (already scaled) reward."""
+    constraint_budget: float = 0.0
+    """Tolerated probability that an episode violates the constraint. Zero asks for none."""
+    constraint_lambda_max: float = 50.0
+    """Ceiling on the multiplier. Without it a constraint the policy cannot satisfy drives the
+    dual variable, and with it the critic's targets, without bound."""
     trunk_style: str = "plain"
     """Shape of every head's body. ``plain`` is Linear-ReLU-Linear-ReLU-Linear, what this port has
     always used; ``residual`` is the pre-normalised residual arrangement value networks are reported
@@ -344,6 +354,14 @@ class SACAgent:
         )
         self.log_alpha.requires_grad_(True)
         self.target_entropy = -float(cfg.target_entropy_scale) * float(action_dim)
+        # The constraint multiplier is a scalar dual variable, not a network parameter: it is
+        # updated by ascent on the constraint violation, not by backpropagation.
+        self.constraint_lambda = float(cfg.constraint_lambda_init)
+        if float(cfg.constraint_lambda_lr) > 0.0 and not spec.constraint_flag:
+            raise ValueError(
+                "A constrained objective needs the observation's constraint flag: the cost is read "
+                "from the transition, and an unflagged observation cannot report it"
+            )
         # The fused kernel keeps Adam on the device; the default path reads two scalars per
         # parameter tensor back to the host every step, over a hundred synchronisations per update.
         fused = self.device.type == "cuda"
@@ -720,9 +738,42 @@ class SACAgent:
             physics_valid = rest.pop()
             physics = (rest.pop(), physics_valid)
         label = rest[0] if getattr(replay, "labelled", False) else None
+        cost = self._transition_cost(obs_flat, next_obs_flat)
         obs = self._unpack(obs_flat, augment=True)
         next_obs = self._unpack(next_obs_flat, augment=True)
-        return obs, action, reward, next_obs, not_done, state, next_state, label, index, physics
+        return obs, action, reward, next_obs, not_done, state, next_state, label, index, physics, cost
+
+    def constrained_reward(self, reward, cost):
+        """Penalise the sampled reward with the current multiplier, then take one dual step.
+
+        The critic learns the value of ``r - lambda * c``, and ``lambda`` rises while the
+        sampled violation rate exceeds the budget and falls back towards zero below it.
+        Penalising at update time rather than at collection means every transition in the
+        buffer is costed with one consistent multiplier, instead of the stale one that was in
+        force when it happened to be recorded.
+        """
+        penalised = reward - self.constraint_lambda * cost.reshape(reward.shape)
+        violation = float(cost.mean().item())
+        self.constraint_lambda = float(np.clip(
+            self.constraint_lambda
+            + float(self.cfg.constraint_lambda_lr) * (violation - float(self.cfg.constraint_budget)),
+            0.0, float(self.cfg.constraint_lambda_max)))
+        return penalised, {"constraint_lambda": self.constraint_lambda, "batch_constraint_cost": violation}
+
+    def _transition_cost(self, obs_flat, next_obs_flat):
+        """The absorbing constraint's cost, reconstructed from the stored transition.
+
+        The flag only ever rises, and it rises exactly once, on the decision that breaks the
+        constraint. So the cost of a transition is the rise of its own flag, and no separate
+        replay field is needed -- which also means every replayed transition is costed with the
+        multiplier in force at the time of the update, not the one in force when it was
+        collected.
+        """
+        if not self.spec.constraint_flag:
+            return None
+        before = obs_constraint_flag(obs_flat, self.spec)
+        after = obs_constraint_flag(next_obs_flat, self.spec)
+        return (after - before).clamp(0.0, 1.0)
 
     def _sample_windows(self, replay):
         """One learning step per window: its last transition, seen through ``history_length`` frames.
@@ -743,7 +794,7 @@ class SACAgent:
         next_valid = torch.cat([batch.valid[:, 1:], torch.ones_like(batch.valid[:, :1])], dim=1)
         next_obs = self._unpack_window(batch.obs[:, 1:], next_valid, batch.actions[:, 1:])
         label = batch.labels[:, -1] if getattr(replay, "labelled", False) else None
-        return obs, batch.actions[:, -1], batch.rewards[:, -1], next_obs, batch.not_dones[:, -1], None, None, label, index, None
+        return obs, batch.actions[:, -1], batch.rewards[:, -1], next_obs, batch.not_dones[:, -1], None, None, label, index, None, None
 
     def _update_rlt(self, replay) -> dict:
         """One update on windows whose every recorded position is a learning step.
@@ -838,13 +889,19 @@ class SACAgent:
                 and self.cfg.rlt_learning_mode == "prefix"):
             return self._update_rlt(replay)
         sample = self._sample_windows if int(self.cfg.history_length) > 1 else self._sample_single
-        obs, action, reward, next_obs, not_done, state, next_state, label, index, physics = sample(replay)
+        obs, action, reward, next_obs, not_done, state, next_state, label, index, physics, cost = sample(replay)
+        constraint_stats = {}
+        if float(self.cfg.constraint_lambda_lr) > 0.0:
+            if cost is None:
+                raise ValueError("The constrained objective is not implemented for history windows")
+            reward, constraint_stats = self.constrained_reward(reward, cost)
         if self.cfg.algo == "flashsac":
             stats = self._update_critic_categorical(obs, action, reward, next_obs, not_done, index)
         else:
             stats = self._update_critic(obs, action, reward, next_obs, not_done, state, next_state, index)
         stats["batch_reward"] = float(reward.mean().item())
         stats["learning_positions"] = int(action.shape[0])
+        stats.update(constraint_stats)
         # Physics labels are local to the recorded command, including in point-cloud
         # dressing replay. Without its anchor the distance gate is silently bypassed.
         return self._finish_update(stats, obs, state, label, index, physics,

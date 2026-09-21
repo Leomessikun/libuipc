@@ -76,6 +76,10 @@ class DressingConfig:
     clip_rotation_to_yz: bool = True
     no_move_collision_threshold: float = 0.012
     point_budget: int = 768
+    constraint_objective: bool = False
+    """Report the absorbing grasp constraint as a per-decision cost, and show the policy
+    whether it has already been violated. The reward itself is unchanged: the training
+    signal for the constraint is the cost, not a new reward term."""
     anchor_count: int = 48
     """Cuff vertices held by the picker: its own vertices plus the grasp-patch vertices
     nearest it. On live cells with 48 the scripted expert gets the sleeve over the hand on
@@ -275,8 +279,10 @@ class GenesisIPCDressingEnv:
             raise ValueError("num_envs must be at least 1")
         self.cfg = cfg
         self.num_envs = int(num_envs)
-        self.spec = ObsSpec(cfg.point_budget)
+        self.spec = ObsSpec(cfg.point_budget, constraint_flag=bool(cfg.constraint_objective))
         self.obs_dim = self.spec.dim
+        # Observations can be requested before the first reset; nothing has been violated yet.
+        self._violated = np.zeros(self.num_envs, dtype=bool)
         self.rngs = [np.random.default_rng(cfg.seed * 1000 + i) for i in range(self.num_envs)]
         # Genesis must come up before this process does any CUDA matrix work: once cuBLAS is
         # initialised, Quadrants cannot materialise its runtime and ``gs.init`` dies on a
@@ -647,6 +653,7 @@ class GenesisIPCDressingEnv:
             self._sim_step()
         self._check_world()
         self._episode_step = 0
+        self._violated = np.zeros(self.num_envs, dtype=bool)
         if getattr(self, "_heuristic", None) is not None:
             self._heuristic.reset()
         for tracker in self._force_trackers or ():
@@ -713,6 +720,7 @@ class GenesisIPCDressingEnv:
         except ViewerClosed:
             raise
         except RuntimeError as exc:
+            # reset() clears the violation flags; the next episode must not inherit them.
             obs = self.reset()
             infos = [{"sim_error": True, "error": repr(exc), "success": False, "distance": float("nan")} for _ in range(n)]
             return obs, np.zeros(n, dtype=np.float32), np.ones(n, dtype=bool), infos
@@ -729,6 +737,10 @@ class GenesisIPCDressingEnv:
         for i, (cell, pr, p) in enumerate(zip(self.cells, progress, positions, strict=True)):
             threaded, _ = opening_threaded(p, cell.opening_idx, cell.finger, cell.shoulder)
             grasp_valid = bool(tracking_max[i] <= self.grasp_tracking_tolerance_m)
+            # The constraint is absorbing: it is paid once, at the decision that breaks it.
+            constraint_cost = float(not grasp_valid and not self._violated[i])
+            if not grasp_valid:
+                self._violated[i] = True
             infos.append(
                 {
                     "success": bool(pr.upperarm_ratio >= cfg.reward.success_upperarm_ratio),
@@ -743,6 +755,8 @@ class GenesisIPCDressingEnv:
                     "on_upperarm": bool(pr.on_upperarm),
                     "collision": float(pr.collision),
                     "tracking_error": float(tracking_max[i]),
+                    "constraint_cost": constraint_cost,
+                    "constraint_violated": bool(self._violated[i]),
                     "final_tracking_error": self._tracking_error(i, positions),
                     "tool_translation_error": float(np.linalg.norm(self._actual_tcp(i, positions) - self._anchor[i])),
                     "early_turn": early_turn(self._anchor[i], cell.finger, cell.elbow, cell.shoulder),
@@ -790,7 +804,8 @@ class GenesisIPCDressingEnv:
             flags = np.zeros((pts.shape[0], FEATURE_DIM), dtype=np.float32)
             flags[: arm.shape[0], FLAG_MARKER] = 1.0
             flags[arm.shape[0] :, FLAG_DEFORMABLE] = 1.0
-            out[i] = self.spec.pack_labeled(pts, flags, cell.shoulder - tool, tool, attached=True)
+            out[i] = self.spec.pack_labeled(pts, flags, cell.shoulder - tool, tool, attached=True,
+                                            violated=bool(self._violated[i]) if self.spec.constraint_flag else False)
         return out
 
     def scripted_actions(self) -> np.ndarray:
