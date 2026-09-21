@@ -94,7 +94,45 @@ terminal observations and bootstrap masks, episode-boundary configuration,
 checkpoint protocol restoration, and violation history during branch restore.
 A pre-existing missing-distance warning in the simulator-error test remains.
 
-The physical preflight runs the existing geometric controller on all 25 cells
-with the corrected launcher, writing `preflight_heuristic/eval.json`. Training
-launch and physical validation results are appended after verification; no
-policy improvement is claimed from implementation tests.
+The physical preflight completed the existing geometric controller on all 25
+cells with the corrected launcher, writing `preflight_heuristic/eval.json`:
+
+| Metric | Result |
+| --- | ---: |
+| Simulator errors | 0 |
+| Cells with positive peak upper-arm coverage | 24/25 |
+| Mean final upper-arm coverage | .511388 |
+| Geometric final success | 11/25 |
+| Whole-episode tracking validity | 11/25 |
+| Valid sustained completion | 6/25 |
+| Mean validity-weighted sustained coverage | .234110 |
+
+Every reported episode validity flag agreed with its recorded whole-episode
+maximum tracking error. These results establish attainable progress and some
+valid completions in the corrected environment; they are controller validation,
+not results of the newly trained policies. The 21 constraint contract tests also
+passed after adding an analysis-loader round-trip for the new clock protocol.
+
+The two corrected jobs were launched at **2026-09-21 18:57:44 UTC**, from commit
+`57dfa87d`, fresh and without old replay/checkpoint initialization:
+
+- Control PID **2316255**, log `stage0_20260921_episode/control.log`.
+- Treatment PID **2316256**, log `stage0_20260921_episode/treatment.log`.
+
+Paths above are relative to `output/uipc_manip`. `launch.json` in that root records
+the exact command, commit, PIDs, timestamp and budget; each arm writes its own
+resolved configuration and CSVs. Both run detached and have a finite 270,000
+admitted-transition budget. Their first learning updates are checked before the
+handoff; episode rates and lambda changes become available after decision 300.
+
+Startup verification: both reached decision 20, 300 admitted transitions and
+235 learner updates with finite critic losses, Q values and temperatures. Lambda
+is still zero in both, as expected before the first completed episode. Resolved
+environment configurations match exactly, and learner configurations differ only
+in dual rate. Elapsed training time was 197.1/195.5 seconds, of which 176.6/175.2
+seconds were physics and 20.2/20.1 seconds learning. Extrapolating this very early
+concurrent throughput gives roughly 49 hours before evaluation overhead for the
+18,000-decision budget; this is not a stable ETA, since physics cost changes with
+policy/contact state, but it makes clear that the earlier 4.6-hour estimate does
+not apply. No simulator failures or nonfinite learning statistics were observed
+at this startup check.

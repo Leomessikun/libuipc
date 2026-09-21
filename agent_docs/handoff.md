@@ -11,8 +11,12 @@ excluded, costs are checked against observation edges, and evaluation/checkpoint
 cadence must respect episode boundaries. Both arms share these semantics.
 Snapshots and analysis policy loading now preserve the new observation/history
 contract. The launcher pins repeat 6, full episodes, rate 0 versus 1 per episode
-batch, and a separate output root. 608 CPU tests passed; physical preflight and
-launch evidence are recorded in the linked protocol.
+batch, and a separate output root. 608 CPU tests passed. The 25-cell physical
+preflight had zero simulator errors, progress in 24 cells and 6 valid sustained
+completions. Fresh jobs launched from `57dfa87d` at 18:57:44 UTC: control PID
+2316255, treatment PID 2316256, under `output/uipc_manip/stage0_20260921_episode`.
+Each has a 270,000-transition budget; `launch.json` and the arm logs preserve the
+launch evidence. No learned-policy improvement is claimed yet.
 
 ## 2026-09-21 — Stage 0 training audit: do not continue the original comparison
 
