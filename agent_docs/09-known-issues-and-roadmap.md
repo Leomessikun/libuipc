@@ -1,5 +1,20 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Stage 0 original training is not the intended experiment — 2026-09-21
+
+The [audit](performance/2026-09-21-stage0-training-audit.md) found a sixfold action
+duration mismatch, delayed/lost constraint labels, incomplete evaluation and an
+unsaved multiplier. These implementation defects are corrected in source, with
+regressions, but the already-running processes and saved replay retain them.
+The corrected launcher preserves old artifacts in a separate directory. Do not
+resume those runs as clean evidence or infer Stage 1/2 necessity from their zero
+coverage. First validate the corrected task/controller and transition costs.
+
+The current constraint learner still uses discounted penalty targets and mean
+replay-transition cost, not episode violation probability. Choose and name that
+baseline honestly or specify compatible finite-episode constraint estimation
+before allocating another long run; changing a dual rate does not fix the units.
+
 ## Early feasible progress does not yet produce valid completion — 2026-09-21
 
 The [completed research synthesis](performance/2026-09-21-research-direction-synthesis.md)

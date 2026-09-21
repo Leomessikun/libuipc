@@ -56,6 +56,55 @@ def test_evaluation_keeps_grasp_valid_success_separate_from_geometric_success():
     assert result["valid_grasp_success_rate"] == result["grasp_valid_rate"] == 0.5
 
 
+def test_evaluation_remembers_a_recovered_violation_and_resets_between_episodes():
+    class Env:
+        num_envs = 1
+        grasp_tracking_tolerance_m = 0.02
+        metric_keys = ("upperarm_ratio",)
+
+        def reset(self, seeds):
+            self.tick = 0
+            return np.zeros((1, 1))
+
+        def step(self, actions):
+            self.tick += 1
+            tracking = 0.03 if self.tick == 1 else 0.001
+            valid = tracking <= self.grasp_tracking_tolerance_m
+            info = dict(success=True, distance=0.2, tracking_error=tracking, grasp_valid=valid,
+                        valid_grasp_success=valid, upperarm_ratio=0.8)
+            return np.zeros((1, 1)), np.zeros(1), np.array([self.tick % 12 == 0]), [info]
+
+    result = evaluate(Env(), lambda obs, deterministic: obs, ObsSpec(3), SimpleNamespace(seed=0), 2)
+    assert result["success_rate"] == 1.
+    assert result["grasp_valid_rate"] == result["valid_grasp_success_rate"] == 0.5
+    assert [r["grasp_valid"] for r in result["records"]] == [False, True]
+    assert result["valid_sustained_success_rate"] == 0.5
+    assert result["mean_validity_weighted_coverage"] == pytest.approx(0.4)
+
+
+@pytest.mark.parametrize("length", [1, 12])
+def test_final_coverage_alone_does_not_certify_sustained_success(length):
+    class Env:
+        num_envs = 1
+        grasp_tracking_tolerance_m = 0.02
+        metric_keys = ("upperarm_ratio",)
+
+        def reset(self, seeds):
+            self.tick = 0
+            return np.zeros((1, 1))
+
+        def step(self, actions):
+            self.tick += 1
+            final = self.tick == length
+            info = dict(success=final, distance=0.2, tracking_error=0.001, grasp_valid=True,
+                        valid_grasp_success=final, upperarm_ratio=0.8 if final else 0.1)
+            return np.zeros((1, 1)), np.zeros(1), np.array([final]), [info]
+
+    result = evaluate(Env(), lambda obs, deterministic: obs, ObsSpec(3), SimpleNamespace(seed=0), 1)
+    assert result["valid_grasp_success_rate"] == 1.
+    assert result["valid_sustained_success_rate"] == 0.
+
+
 def test_resume_recovers_timing_reward_camera_and_temperature():
     args = build_parser().parse_args([])
     cfg = restore_resume_args(args, [], _checkpoint())

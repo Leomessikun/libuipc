@@ -122,6 +122,18 @@ cheapest to obtain.
 
 #### Stage 0 protocol, fixed before the runs
 
+**Post-launch audit:** the original runs do not implement this intended comparison.
+The [training audit](2026-09-21-stage0-training-audit.md) found repeat 1 rather
+than 6, a delayed/missing cost edge, terminal-only validity evaluation, and an
+unsaved multiplier. Corrections and regression tests are now in tree; the running
+processes retain the old code. The original protocol below is retained as history,
+not as validation. Both arms actually observe the same violation flag (the control
+is not constant zero), and the saved discount is .995, not .998333. The implemented
+dual uses mean replay-transition cost and a discounted penalty, so it must not be
+claimed to optimize an exact episode violation probability. Corrected selection
+also reports and prioritizes valid sustained completion. Resolve the objective
+interpretation and run a short validation before another long experiment.
+
 Implemented in `obs.py`, `dressing_env.py`, `sac.py`, `train_sac.py`; tests in
 `python/uipc_manip/tests/test_constraint_objective.py`.
 

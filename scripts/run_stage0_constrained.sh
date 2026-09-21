@@ -16,9 +16,9 @@ exec env PYTHONPATH=build_raw/python/src:python OMP_NUM_THREADS=1 OPENBLAS_NUM_T
   --task dressing --cell-source live \
   --garments hospital_gown tshirt_26 tshirt_392 tshirt_4 tshirt_68 \
   --body-seeds 14045,14046,14047,14048,14049 \
-  --num-envs 25 --horizon 300 --total-transitions 270000 \
+  --num-envs 25 --horizon 300 --action-repeat 6 --total-transitions 270000 \
   --num-eval-episodes 25 --eval-freq 500 --checkpoint-interval 2000 \
   --obs-mode visible_dual --no-obs-augment --seed 1 \
   --constraint-objective --constraint-lambda-lr "$LAMBDA_LR" \
   --constraint-budget 0.0 --constraint-lambda-max 50.0 \
-  --work-dir output/uipc_manip/stage0_20260921 --run-name "$ARM"
+  --work-dir output/uipc_manip/stage0_20260921_corrected --run-name "$ARM"

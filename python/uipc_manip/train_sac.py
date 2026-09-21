@@ -23,6 +23,7 @@ import csv
 import json
 import sys
 import time
+from collections import deque
 from dataclasses import fields, is_dataclass, replace
 from pathlib import Path
 
@@ -117,14 +118,14 @@ def build_parser() -> argparse.ArgumentParser:
                         "what the control problem costs to learn when perception is free.")
     p.add_argument("--algo", choices=("sac", "flashsac"), default="sac", help="Scalar reference critic or bounded categorical critic.")
     p.add_argument("--constraint-objective", action="store_true",
-                   help="dressing: train against the absorbing whole-episode grasp constraint. The "
-                        "observation gains a violated flag and the critic learns r - lambda * cost, "
-                        "with lambda raised by dual ascent while the violation rate exceeds the budget.")
+                   help="dressing: add an absorbing violation flag and a discounted first-violation "
+                        "penalty r - lambda * cost; lambda adapts to mean replay cost. "
+                        "This is not an exact episode chance-constraint optimizer.")
     p.add_argument("--constraint-lambda-lr", type=float, default=0.02,
                    help="dual ascent rate on the constraint multiplier; only used with --constraint-objective.")
     p.add_argument("--constraint-lambda-init", type=float, default=0.0)
     p.add_argument("--constraint-budget", type=float, default=0.0,
-                   help="tolerated per-episode violation probability; zero asks for none.")
+                   help="budget for mean first-violation cost per replay transition, not per episode; zero asks for none.")
     p.add_argument("--constraint-lambda-max", type=float, default=50.0)
     p.add_argument("--critic-input", choices=("points", "privileged"), default="points", help="dressing: the critic encodes the point cloud (reference) or reads the simulator's privileged state.")
     p.add_argument("--trunk-style", choices=("plain", "residual"), default="residual", help="Head architecture: pre-normalised residual is the new-run baseline; plain reproduces the earlier MLP. This is a separate architectural choice from Wang's dense action-per-point critic.")
@@ -607,9 +608,11 @@ def evaluate(
     returns = np.zeros(env.num_envs)
     max_tracking = np.zeros(env.num_envs)
     early_turn_seen = np.zeros(env.num_envs, dtype=bool)
+    grasp_invalid_seen = np.zeros(env.num_envs, dtype=bool)
     metric_keys = tuple(getattr(env, "metric_keys", ()))
     running_max = {k: np.full(env.num_envs, -np.inf) for k in metric_keys}
     last_seen = {k: np.full(env.num_envs, np.nan) for k in metric_keys}
+    coverage_tails = [deque(maxlen=12) for _ in range(env.num_envs)]
     trajectories = [[] for _ in range(env.num_envs)] if trajectory_dir is not None else None
     episode_index = 0
     while len(finished) < episodes:
@@ -625,7 +628,15 @@ def evaluate(
             history.reset(np.asarray(dones, dtype=bool))
         returns += rewards
         for i, info in enumerate(infos):
+            if "upperarm_ratio" in metric_keys:
+                coverage_tails[i].append(float(info.get("upperarm_ratio", np.nan)))
             max_tracking[i] = max(max_tracking[i], float(info.get("tracking_error", 0.0)))
+            grasp_invalid_seen[i] |= bool(info.get("constraint_violated", False))
+            if "grasp_valid" in info:
+                grasp_invalid_seen[i] |= not bool(info["grasp_valid"])
+            if "tracking_error" in info and hasattr(env, "grasp_tracking_tolerance_m"):
+                tracking = float(info["tracking_error"])
+                grasp_invalid_seen[i] |= not (np.isfinite(tracking) and tracking <= env.grasp_tracking_tolerance_m)
             early_turn_seen[i] |= bool(info.get("early_turn", False))
             for k in metric_keys:
                 if k in info:
@@ -645,8 +656,17 @@ def evaluate(
                 if hasattr(env, "grasp_tracking_tolerance_m") or "valid_grasp_success" in info:
                     # Geometry-only success can survive a lost/overstretched grasp.
                     # Missing metrics on a simulator failure must not count as valid.
-                    record["grasp_valid"] = bool(info.get("grasp_valid", False))
-                    record["valid_grasp_success"] = bool(info.get("valid_grasp_success", False))
+                    record["grasp_valid"] = bool(info.get("grasp_valid", False) and not grasp_invalid_seen[i]
+                                                 and not record["sim_error"])
+                    record["valid_grasp_success"] = bool(record["grasp_valid"] and record["success"])
+                    if "upperarm_ratio" in metric_keys:
+                        # Match decision_branches' final 12-decision minimum. A short
+                        # or interrupted episode cannot certify sustained completion.
+                        tail = coverage_tails[i]
+                        coverage = float(np.min(tail)) if len(tail) == tail.maxlen else float("nan")
+                        record["sustained_coverage"] = coverage
+                        record["valid_sustained_success"] = bool(record["grasp_valid"] and coverage >= 0.7)
+                        record["validity_weighted_coverage"] = coverage if record["grasp_valid"] and np.isfinite(coverage) else 0.0
                 # A simulator error ends the episode without metrics; it is scored as of its last completed decision.
                 for k in metric_keys:
                     record[f"final_{k}"] = float(info[k]) if k in info else float(last_seen[k][i])
@@ -673,6 +693,8 @@ def evaluate(
                 returns[i] = 0.0
                 max_tracking[i] = 0.0
                 early_turn_seen[i] = False
+                grasp_invalid_seen[i] = False
+                coverage_tails[i].clear()
                 if trajectories is not None:
                     trajectories[i] = []
     distances = np.array([r["distance"] for r in finished])
@@ -693,6 +715,9 @@ def evaluate(
     if all("valid_grasp_success" in r for r in finished):
         summary["valid_grasp_success_rate"] = float(np.mean([r["valid_grasp_success"] for r in finished]))
         summary["grasp_valid_rate"] = float(np.mean([r["grasp_valid"] for r in finished]))
+    if all("valid_sustained_success" in r for r in finished):
+        summary["valid_sustained_success_rate"] = float(np.mean([r["valid_sustained_success"] for r in finished]))
+        summary["mean_validity_weighted_coverage"] = float(np.mean([r["validity_weighted_coverage"] for r in finished]))
     if slot_cells is None:
         slot_cells = _cells_from_records(finished, env.num_envs)
     if slot_cells is not None:
@@ -1083,7 +1108,7 @@ def main(argv: list[str] | None = None) -> None:
                 summary = {k: v for k, v in metrics.items() if k != "records"}
                 eval_logger.log({"step": vector_step, **summary})
                 print(f"[uipc-manip] eval step={vector_step} " + json.dumps(summary), flush=True)
-                score = checkpoint_score(metrics)
+                score = checkpoint_score(metrics, constraint_objective=args.constraint_objective)
                 if best_score is None or score > best_score:
                     best_score = score
                     agent.save(ckpt_dir / "best.pt", vector_step, {**metadata, "eval": summary})

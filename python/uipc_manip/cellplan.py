@@ -130,6 +130,9 @@ def summarize(records, slot_cells, heldout_slots, metric_keys=("upperarm_ratio",
         out[f"{p}zero_cell_count"] = sum(1 for r in cell_rates if r == 0.0)
         out[f"{p}paper_filter_rate"] = float(np.mean([r["paper_filter"] for r in rows]))
         out[f"{p}mean_return"] = float(np.mean([r["return"] for r in rows]))
+        if all("valid_sustained_success" in r for r in rows):
+            out[f"{p}valid_sustained_success_rate"] = float(np.mean([r["valid_sustained_success"] for r in rows]))
+            out[f"{p}mean_validity_weighted_coverage"] = float(np.mean([r["validity_weighted_coverage"] for r in rows]))
         for k in metric_keys:
             out[f"{p}mean_final_{k}"] = float(np.nanmean([r[f"final_{k}"] for r in rows]))
 
@@ -153,7 +156,7 @@ def summarize(records, slot_cells, heldout_slots, metric_keys=("upperarm_ratio",
 
 
 # --------------------------------------------------------------- checkpoint score
-def checkpoint_score(metrics: dict) -> tuple:
+def checkpoint_score(metrics: dict, *, constraint_objective: bool = False) -> tuple:
     """Lexicographic best-checkpoint key: held-out first, each block led by the dressed ratio.
 
     When a held-out subset was scored its keys lead, as in the reference's
@@ -178,6 +181,9 @@ def checkpoint_score(metrics: dict) -> tuple:
     tie-break: its voided round at 205,000 transitions averaged 0.302 that way, above
     the 0.283 of the best honest round, and took ``best.pt`` with `success_rate` 0 and
     every cell scored zero.
+
+    Stage 0 explicitly opts into valid sustained success and validity-weighted
+    coverage before the historical geometry keys. Both arms use that same score.
     """
 
     def value(key: str, floor: float = 0.0) -> float:
@@ -188,8 +194,14 @@ def checkpoint_score(metrics: dict) -> tuple:
         return v if np.isfinite(v) else floor
 
     p = "heldout_" if value("heldout_episode_count") > 0.0 else ""
+    constrained = ()
+    if constraint_objective:
+        constrained = (value(f"{p}valid_sustained_success_rate"),
+                       value(f"{p}mean_validity_weighted_coverage"),
+                       value("valid_sustained_success_rate"), value("mean_validity_weighted_coverage"))
     return (
         0.0 if value("sim_errors") > 0.0 else 1.0,
+        *constrained,
         value(f"{p}mean_final_upperarm_ratio"),
         value(f"{p}success_rate"),
         value(f"{p}worst_cell_success_rate"),

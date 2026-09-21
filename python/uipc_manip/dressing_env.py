@@ -730,7 +730,6 @@ class GenesisIPCDressingEnv:
         self._episode_step += 1
         done = self._episode_step >= cfg.horizon
         rewards = np.array([pr.reward for pr in progress], dtype=np.float32)
-        obs = self.observation(positions)
         self._privileged = self._privileged_state(positions, progress)
         force_summaries = self._arm_force_summaries() if cfg.contact_force_readout else None
         infos = []
@@ -778,6 +777,9 @@ class GenesisIPCDressingEnv:
             )
             if force_summaries is not None:
                 infos[-1].update({f"arm_force_{k}": v for k, v in force_summaries[i].items()})
+        # Encode the successor only after its absorbing flags have been updated.
+        # Replay reconstructs cost from this edge, including the terminal edge.
+        obs = self.observation(positions)
         dones = np.full(n, done, dtype=bool)
         if done:
             for i in range(n):

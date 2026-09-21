@@ -1,5 +1,28 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-21 — Stage 0 training audit: do not continue the original comparison
+
+The [audit](performance/2026-09-21-stage0-training-audit.md) verifies the saved
+configs, CSVs and 30,000-transition replay of each running arm. Both had only two
+stored first-violation edges, no evaluated arm coverage, and treatment lambda
+.24219. The launcher omitted repeat 6: it ran five-second episodes with 1.44 mm
+per-axis actions instead of thirty seconds and 8.66 mm in the motivating experiment.
+
+Fixed successor-flag timing (including lost terminal costs), whole-episode grasp
+evaluation, explicit 12-decision sustained-success metrics and Stage 0 checkpoint
+selection, multiplier persistence, and fixed-positive-penalty application. The
+launcher now pins repeat 6 and preserves the original output directory. Old
+constrained checkpoints lacking lambda are rejected for exact training resume.
+The original processes were not stopped/restarted, and no GPU training was launched.
+They still hold the old code. Do not reinterpret them as a corrected comparison.
+
+The remaining learner is a discounted first-violation penalty with replay-mean
+dual ascent, not an exact episode chance-constraint optimizer; CLI/config help
+now states those units. This requires an explicit experimental choice before a
+long rerun. CPU regressions reproduce the implementation failures and test their
+fixes; related SAC, offline initialization, Wang pretraining and cell-resume tests
+also pass. See the audit for the measured limits and short-run validation gate.
+
 ## 2026-09-21 — Stage 0 implemented: the success criterion becomes a training signal
 
 The dressing reward never contained the criterion that decides success. The

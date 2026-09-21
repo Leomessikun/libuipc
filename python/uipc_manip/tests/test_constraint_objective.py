@@ -12,6 +12,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from types import SimpleNamespace
+from collections import deque
 
 from uipc_manip.obs import EXTRA_DIM, POINT_DIM, ObsSpec, constraint_flag
 from uipc_manip.sac import SACAgent, SACConfig
@@ -116,3 +118,84 @@ def test_the_penalty_scales_with_the_multiplier():
     a = agent(constraint_lambda_lr=0.0, constraint_lambda_init=3.0)
     penalised, _ = a.constrained_reward(torch.zeros(2), torch.tensor([1.0, 0.0]))
     assert penalised.tolist() == [-3.0, 0.0]
+
+
+@pytest.mark.parametrize("violation_decision", [1, 2])
+@pytest.mark.parametrize("reset_on_done", [True, False])
+def test_step_records_cost_on_the_breaking_decision_including_terminal(monkeypatch, violation_decision, reset_on_done):
+    from uipc_manip import dressing_env as module
+
+    # Exercise the real step/terminal-observation wiring without a GPU solver.
+    env = module.GenesisIPCDressingEnv.__new__(module.GenesisIPCDressingEnv)
+    env.cfg = module.DressingConfig(horizon=2, action_repeat=2, constraint_objective=True, anchor_tether_m=None)
+    env.num_envs = 1
+    env.spec = ObsSpec(8, constraint_flag=True)
+    env._anchor = np.zeros((1, 3))
+    env._offsets = np.zeros((1, 1, 3))
+    env._violated = np.zeros(1, dtype=bool)
+    env._episode_step = 0
+    env._decision_times = deque()
+    env._test_tick = 0
+    cell = SimpleNamespace(arm_points=np.ones((1, 3)), opening_idx=[0], finger=np.zeros(3),
+                           shoulder=np.ones(3), elbow=np.ones(3), garment="test", human=0, name="test")
+    env.cells = [cell]
+    positions = [np.zeros((1, 3))]
+    env.positions = lambda: positions
+    env._update_targets = env._check_world = lambda: None
+    env._sim_step = lambda: setattr(env, "_test_tick", env._test_tick + 1)
+    # Only the first substep exceeds tolerance; the final position has recovered.
+    env._tracking_error = lambda i, p: 0.03 if env._test_tick == 2 * violation_decision - 1 else 0.001
+    env._actual_tcp = lambda i, p: np.zeros(3)
+    env._progress = lambda p: [SimpleNamespace(reward=0., upperarm_ratio=0., forearm_ratio=0.,
+                                              task_reward=0., on_forearm=False, on_upperarm=False, collision=0.)]
+    env._privileged_state = lambda p, pr: np.zeros((1, 1))
+    env.observation = lambda p=None: np.stack([flat_observation(env.spec, bool(env._violated[0]))])
+    def reset():
+        env._violated[:] = False
+        env._episode_step = env._test_tick = 0
+        return env.observation()
+    env.reset = reset
+    monkeypatch.setattr(module, "opening_threaded", lambda *a: (False, None))
+    monkeypatch.setattr(module, "early_turn", lambda *a: False)
+    obs = env.observation()
+    for decision in (1, 2):
+        next_obs, _, done, infos = env.step(np.zeros((1, 6)), reset_on_done=reset_on_done)
+        after = infos[0].get("terminal_obs", next_obs[0])
+        reconstructed = float(constraint_flag(after, env.spec) - constraint_flag(obs[0], env.spec))
+        assert reconstructed == infos[0]["constraint_cost"] == float(decision == violation_decision)
+        obs = next_obs
+    assert bool(done[0])
+    assert float(constraint_flag(infos[0]["terminal_obs"], env.spec)) == 1.
+    assert float(constraint_flag(next_obs[0], env.spec)) == float(not reset_on_done)
+
+
+def test_checkpoint_preserves_the_learned_multiplier(tmp_path):
+    a = agent(constraint_lambda_lr=0.1)
+    a.constraint_lambda = 7.25
+    path = a.save(tmp_path / "agent.pt", step=10)
+    restored = agent(constraint_lambda_lr=0.1)
+    restored.load(path)
+    assert restored.constraint_lambda == 7.25
+
+
+def test_legacy_constrained_checkpoint_cannot_silently_reset_the_multiplier(tmp_path):
+    a = agent(constraint_lambda_lr=0.1)
+    path = a.save(tmp_path / "agent.pt", step=10)
+    payload = a.read_checkpoint(path)
+    del payload["constraint_lambda"]
+    torch.save(payload, path)
+    with pytest.raises(ValueError, match="requires the saved constraint_lambda"):
+        a.load(path)
+    a.load(path, load_optimizers=False)  # Actor-only evaluation remains possible.
+
+
+def test_update_applies_a_fixed_nonzero_penalty(monkeypatch):
+    a = agent(constraint_lambda_lr=0.0, constraint_lambda_init=3.0)
+    cost = torch.tensor([1., 0., 0., 0.])
+    sample = (None, torch.zeros(4, 3), torch.zeros(4, 1), None, None, None, None, None, None, None, cost)
+    monkeypatch.setattr(a, "_sample_single", lambda replay: sample)
+    received = []
+    monkeypatch.setattr(a, "_update_critic", lambda obs, action, reward, *args: received.append(reward.clone()) or {})
+    monkeypatch.setattr(a, "_finish_update", lambda stats, *args, **kwargs: stats)
+    a._update(None)
+    assert received[0].flatten().tolist() == [-3., 0., 0., 0.]

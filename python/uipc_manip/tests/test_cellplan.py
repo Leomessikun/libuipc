@@ -19,6 +19,15 @@ GARMENTS = ["hospital_gown", "tshirt_26", "tshirt_4", "tshirt_68"]
 CELLS = [(g, b) for b in range(8) for g in GARMENTS]  # 4 garments x 8 bodies = 32 cells
 
 
+def test_stage0_checkpoint_selection_prefers_valid_progress_to_invalid_geometry():
+    invalid = dict(mean_final_upperarm_ratio=0.9, success_rate=1.,
+                   valid_sustained_success_rate=0., mean_validity_weighted_coverage=0.)
+    valid = dict(mean_final_upperarm_ratio=0.5, success_rate=0.,
+                 valid_sustained_success_rate=0., mean_validity_weighted_coverage=0.5)
+    assert checkpoint_score(invalid) > checkpoint_score(valid)
+    assert checkpoint_score(valid, constraint_objective=True) > checkpoint_score(invalid, constraint_objective=True)
+
+
 def _records(slots, succeeds):
     rows = []
     for slot in range(len(slots)):
@@ -28,6 +37,19 @@ def _records(slots, succeeds):
             "final_upperarm_ratio": 0.8 if ok else 0.05, "final_forearm_ratio": 0.9 if ok else 0.4,
         })
     return rows
+
+
+def test_constraint_summary_keeps_training_and_heldout_outcomes_separate():
+    slots = [("tshirt_26", 0), ("tshirt_26", 1)]
+    rows = _records(slots, lambda slot: True)
+    rows[0].update(valid_sustained_success=False, validity_weighted_coverage=0.)
+    rows[1].update(valid_sustained_success=True, validity_weighted_coverage=0.8)
+    result = summarize(rows, slots, heldout_slots=[0])
+    assert result["valid_sustained_success_rate"] == 0.5
+    assert result["heldout_valid_sustained_success_rate"] == 0.
+    assert result["heldout_mean_validity_weighted_coverage"] == 0.
+    assert result["training_valid_sustained_success_rate"] == 1.
+    assert result["training_mean_validity_weighted_coverage"] == 0.8
 
 
 def test_heldout_bodies_are_the_greatest_complete_rows():
@@ -166,4 +188,3 @@ def test_voided_rounds_still_rank_against_each_other():
     worse = {"heldout_episode_count": 25, "heldout_mean_final_upperarm_ratio": 0.1, "sim_errors": 25}
     better = {**worse, "heldout_mean_final_upperarm_ratio": 0.3}
     assert checkpoint_score(better) > checkpoint_score(worse)
-

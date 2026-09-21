@@ -131,12 +131,13 @@ class SACConfig:
     max_v: float = 50.0
     critic_input: str = "points"
     constraint_lambda_lr: float = 0.0
-    """Dual ascent rate on the absorbing-constraint multiplier. Zero leaves the objective
-    unconstrained, which is the control arm and every earlier checkpoint's behaviour."""
+    """Dual ascent rate on the absorbing-constraint multiplier. Zero fixes the multiplier;
+    with zero initialization this is the unconstrained control."""
     constraint_lambda_init: float = 0.0
     """Initial multiplier, in the same units as the replayed (already scaled) reward."""
     constraint_budget: float = 0.0
-    """Tolerated probability that an episode violates the constraint. Zero asks for none."""
+    """Budget for mean first-violation cost per sampled replay transition, not per episode.
+    Zero asks for none. The current discounted penalty is not an episode chance constraint."""
     constraint_lambda_max: float = 50.0
     """Ceiling on the multiplier. Without it a constraint the policy cannot satisfy drives the
     dual variable, and with it the critic's targets, without bound."""
@@ -357,7 +358,7 @@ class SACAgent:
         # The constraint multiplier is a scalar dual variable, not a network parameter: it is
         # updated by ascent on the constraint violation, not by backpropagation.
         self.constraint_lambda = float(cfg.constraint_lambda_init)
-        if float(cfg.constraint_lambda_lr) > 0.0 and not spec.constraint_flag:
+        if (float(cfg.constraint_lambda_lr) > 0.0 or self.constraint_lambda > 0.0) and not spec.constraint_flag:
             raise ValueError(
                 "A constrained objective needs the observation's constraint flag: the cost is read "
                 "from the transition, and an unflagged observation cannot report it"
@@ -891,7 +892,7 @@ class SACAgent:
         sample = self._sample_windows if int(self.cfg.history_length) > 1 else self._sample_single
         obs, action, reward, next_obs, not_done, state, next_state, label, index, physics, cost = sample(replay)
         constraint_stats = {}
-        if float(self.cfg.constraint_lambda_lr) > 0.0:
+        if float(self.cfg.constraint_lambda_lr) > 0.0 or self.constraint_lambda > 0.0:
             if cost is None:
                 raise ValueError("The constrained objective is not implemented for history windows")
             reward, constraint_stats = self.constrained_reward(reward, cost)
@@ -1090,6 +1091,7 @@ class SACAgent:
             "sac_config": self.cfg.to_dict(),
             "protocol": self.protocol(),
             "physics_beta": self.physics_beta,
+            "constraint_lambda": self.constraint_lambda,
             "metadata": metadata or {},
         }
         torch.save(payload, path)
@@ -1144,6 +1146,10 @@ class SACAgent:
     def load(self, path: str | Path, *, load_optimizers: bool = True, strict_protocol: bool = True,
              allow_runtime_config_mismatch: bool = False) -> dict:
         payload = self.read_checkpoint(path)
+        if (load_optimizers and "constraint_lambda" not in payload
+                and (self.cfg.constraint_lambda_lr > 0.0 or self.cfg.constraint_lambda_init > 0.0)):
+            raise ValueError("Constrained training resume requires the saved constraint_lambda; "
+                             "legacy Stage 0 checkpoints omitted it and cannot resume exactly")
         if strict_protocol and payload["protocol"] != self.protocol():
             raise ValueError(
                 f"Checkpoint protocol {json.dumps(payload['protocol'], sort_keys=True)} does not match "
@@ -1179,6 +1185,7 @@ class SACAgent:
             self.critic_optimizer.load_state_dict(payload["critic_optimizer"])
             self.log_alpha_optimizer.load_state_dict(payload["log_alpha_optimizer"])
         self.updates = int(payload.get("updates", 0))
+        self.constraint_lambda = float(payload.get("constraint_lambda", self.cfg.constraint_lambda_init))
         if payload.get("physics_beta") is not None:
             self.physics_beta = float(payload["physics_beta"])
         return payload
