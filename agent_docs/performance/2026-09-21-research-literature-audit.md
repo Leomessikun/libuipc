@@ -152,6 +152,33 @@ cloth action rankings or failure probabilities are calibrated. Direction 3 needs
 held-out physical interaction data and repeated action consequences. Existing
 simulator-to-itself checks cannot supply that evidence.
 
+## Independent re-verification of the two load-bearing citations
+
+The two citations that carry the most weight in this audit — one retracts a
+negative claim, the other is the closest precedent to the operator the local data
+suggests — were re-checked from the publisher pages rather than taken from the
+screen:
+
+- **Cai and Kandasamy, "Constrained Best Arm Identification with Tests for
+  Feasibility", AAAI-26, Vol. 40 No. 24** (University of Wisconsin-Madison). The
+  publisher record confirms the setting: the learner chooses a tuple `(i, l)` of an
+  arm and *whether to test performance or one of N feasibility constraints*, and
+  the motivating example is that "safety experiments can be conducted separately
+  from the potency measurement". One qualification worth recording: its abstract
+  does **not** make differing cost or noise between the two tests its object, so
+  the measured asymmetry here is inside its problem class but is not what it
+  optimises. That narrows, without removing, the room for a contribution, and any
+  such contribution must be about the sequential, policy-learning version.
+- **Zhang and Demiris, "Learning garment manipulation policies toward
+  robot-assisted dressing", Science Robotics 7(65):eabm6010, 2022**
+  ([doi 10.1126/scirobotics.abm6010](https://www.science.org/doi/10.1126/scirobotics.abm6010)).
+  Confirmed: a dual-arm robot takes a back-opening hospital gown from a rail,
+  unfolds it, navigates to the bed and dresses a medical manikin at **over 90 %**
+  success. The retraction above stands. It is a modular pipeline on a manikin with
+  a back-opening gown, not an end-to-end learned policy on our task, so it bounds
+  the claim "nobody completes dressing" rather than the claim "nobody trains a
+  single policy to grasp-valid completion on held-out garments and bodies".
+
 ## Search coverage and residual uncertainty
 
 Searches covered the named papers, IPA/SPA/GLR, parametric discontinuities,
