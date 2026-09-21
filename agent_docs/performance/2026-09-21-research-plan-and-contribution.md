@@ -143,7 +143,16 @@ Implemented in `obs.py`, `dressing_env.py`, `sac.py`, `train_sac.py`; tests in
   slot (constant zero in the control), both start from scratch, same seed, same
   25 cells, same 270,000 transitions, same everything else. Control:
   `--constraint-objective` with `--constraint-lambda-lr 0`. Treatment:
-  `--constraint-objective` with lambda lr .02, budget 0, cap 50.
+  `--constraint-objective` with lambda lr **.1**, budget 0, cap 50.
+
+  The rate was raised from .02 before launching, for a scale reason rather than a
+  result: at discount .998333 a return is worth about 600 rewards, so the critic's
+  values run to the hundreds, and a one-off penalty only competes with them at
+  lambda in the tens. An episode of 300 decisions contributes at most one unit of
+  cost, so a batch's mean cost is about .003 even when every episode violates; at
+  .02 the multiplier would need some 170,000 updates to reach 10, which is most of
+  the run. At .1 it reaches about 20 in 67,000. With budget 0 the multiplier never
+  decays, which is the intended behaviour and the reason the cap matters.
 - **Metrics reported per evaluation:** valid grasp success, grasp valid rate
   (its complement is the violation rate), final and peak upper-arm ratio,
   and the `lambda` trajectory.
