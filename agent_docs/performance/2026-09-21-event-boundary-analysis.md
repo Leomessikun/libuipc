@@ -88,6 +88,13 @@ tshirt_392) and it is decided **near the 8-decision command window**, so an
 8-decision query reproduces the 40-decision label 168/168 times at three of the five
 rows above. Zero mixed cells with three repeats does not justify certainty from one future repeat.
 
+**The completed continuation refutes reading any of this as a feasibility
+certificate.** In the [episode-scale run](2026-09-21-feasible-segment-result.md),
+`lift` passes the eight-decision check in 16/16 branches and then violates the same
+2 cm criterion in 11/16 of them, first at relative decisions 17-21. An eight-decision
+label agrees with a forty-decision label at these states; it does not bound survival
+over 258 decisions, and the cheap-certificate reading of this section is withdrawn.
+
 Step 20 is different and must not be read as a grasp-determinism number: the median
 first violation is decision 27, i.e. after the macro ends, so the outcome there is
 mostly produced by the policy continuation, not by the command under test. The
