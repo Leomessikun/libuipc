@@ -20,8 +20,10 @@ What the reference expects, read off `dressing/curl` and confirmed against the c
 * Positions centred on the gripper (`dress_env.py:790`, `center_pointcloud_at_gripper=True`),
   which is what `obs.py::pack_labeled` already does.
 * **Their world is y-up** (`gravity = np.array([0, 1, 0])`, `dress_env.py:643`) and ours is z-up.
-  The yaw about that axis is not determined by the code and is left to `--yaw`; `probe_yaw`
-  measures it instead of guessing.
+  The yaw about that axis is 267 degrees, measured against FMVP's PyBullet deployment of this
+  checkpoint, whose first observation puts the forearm on model +x and the upper arm on +z
+  (agent_docs/performance/2026-09-23-wang-checkpoint-frame-and-placement.md). Alignment with the
+  gripper-to-shoulder chord picked 330, which is 63 degrees off.
 * Voxel-downsampled at `voxel_size = 0.00625 * 10` m (`launch_train_curl.py:239`). The encoder's
   ball-query radii (0.05, 0.1 m) are absolute, so feeding our denser cloud changes what each query
   sees; `--voxel` reproduces their density.
@@ -257,7 +259,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--self-test", action="store_true")
     p.add_argument("--serve", action="store_true", help="Answer action requests on stdin; see serve().")
     p.add_argument("--device", default="cpu")
-    p.add_argument("--yaw", type=float, default=0.0, help="Rotation about the vertical, in degrees.")
+    p.add_argument("--yaw", type=float, default=267.0, help="Rotation about the vertical, in degrees.")
     p.add_argument("--voxel", type=float, default=VOXEL_SIZE)
     a = p.parse_args(argv)
     if a.self_test:

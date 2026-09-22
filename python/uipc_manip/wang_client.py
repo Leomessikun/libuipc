@@ -22,7 +22,7 @@ DEFAULT_CHECKPOINT = "/home/ge47gax/Desktop/vision_based_policy.pt"
 class WangPolicyClient:
     """A subprocess running their actor, driven one observation at a time."""
 
-    def __init__(self, checkpoint: str = DEFAULT_CHECKPOINT, *, yaw_deg: float = 0.0,
+    def __init__(self, checkpoint: str = DEFAULT_CHECKPOINT, *, yaw_deg: float = 267.0,
                  device: str = "cpu", voxel: float | None = None,
                  python: str = CURL_PYTHON, package_root: str | Path | None = None) -> None:
         root = str(Path(package_root or Path(__file__).resolve().parent.parent))
