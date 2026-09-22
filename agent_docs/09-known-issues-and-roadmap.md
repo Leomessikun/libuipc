@@ -1,5 +1,28 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Backless-chair bilateral RL design — 2026-09-23
+
+The chair has **no backrest**. The owner is now considering a narrowed task
+with both hands already in the corresponding sleeve cuffs and two robot arms
+advancing one connected garment from behind, possibly one sleeve before the
+other. The endpoint still includes both shoulders and torso after release. The
+[read-only training design](performance/2026-09-23-backless-bilateral-rl-training-design.md)
+recommends first building the bilateral scene and training one centralized
+continuous off-policy actor with body-relative two-gripper actions, valid
+bilateral/torso task signals and an actor observation available at deployment.
+That actor is a **baseline**, not the research contribution. The candidate
+contribution is a budgeted coupled-consequence learning operator that compares
+joint and unilateral pulls from matched states, learns how each action affects
+both sleeves and torso, and selects extra queries only when they could change
+the feasible action choice or eventual completion estimate. This must beat
+existing counterfactual-credit and cloth-aware planning baselines at matched
+total cost before any novelty claim.
+An SMDP mode selector and hindsight relabeling are conditional extensions,
+not required first-stage ingredients. This is an unvalidated research design;
+no dual-arm training cost or result is established, and no new simulation or
+training has been run. The rear-opening gown remains a proposed first garment,
+not an owner-selected garment type.
+
 ## Current dressing research scope — 2026-09-22
 
 The owner rejected new tests and the teacher/student direction and requested a

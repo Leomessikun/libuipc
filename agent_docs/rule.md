@@ -113,16 +113,24 @@ record it here in the same commit.**
 - **Selected task: dress both arms and the torso of a seated person.**
   The owner explicitly abandoned the single-human-arm research direction and
   selected dressing a person sitting in a chair with both human arms raised
-  forward. The garment must be put on the body; two sleeve insertions alone
+  forward. The owner clarified that **the chair has no backrest**. The current
+  RL-training candidate starts with both hands already inside their respective
+  sleeves and asks two robot arms to advance the connected garment from behind;
+  one sleeve may advance before the other. The garment must be put on the body;
+  two sleeve insertions alone
   do not define completion. Do not substitute one sleeve manipulated by two
   robots, a standing recipient, or a robot-commanded human arm trajectory.
   Research concrete implementation and deployment, starting from the owner's
   PA-BiCoop paper (https://arxiv.org/pdf/2606.28192) and broader primary sources.
   The owner explicitly permits a non-RL approach; the older new-RL-algorithm
-  requirement is no longer mandatory for this task. Garment type and initial
-  presentation are not yet specified; distinguish proposed assumptions from
-  owner decisions. Continue the research-only and no-teacher/student
-  constraints below. (Supersedes the single-arm priority, 2026-09-22.)
+  requirement is no longer mandatory for this task, but now requests a concrete
+  RL-training route and emphasizes that this is **research requiring a potential
+  method contribution**, not merely a workable TD3 baseline. Garment type and
+  exact initial drape are not yet specified;
+  distinguish proposed assumptions from owner decisions. Continue the
+  research-only and no-teacher/student constraints below. (Supersedes the
+  single-arm priority, 2026-09-22; chair and training scope clarified
+  2026-09-23.)
 
 - **Research only; abandon the teacher/student route.**
   The owner explicitly instructed: no more tests, abandon the Yufei-inspired

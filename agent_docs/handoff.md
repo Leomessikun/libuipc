@@ -1,5 +1,33 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-23 — Backless seated bilateral pull-up: RL-training design
+
+The owner clarified that the chair has no backrest and asked for a concrete RL
+route for a simplified two-human-arm dressing task. Both hands start inside
+their corresponding sleeve cuffs; two robot arms advance the connected garment
+from behind, potentially advancing one side first. Whole-garment shoulder and
+torso placement after release remains the endpoint. Garment type and exact
+initial drape remain unspecified; a rear-opening gown is a working assumption.
+
+The [source-grounded design](performance/2026-09-23-backless-bilateral-rl-training-design.md)
+replaces the earlier speculative SMDP + TD3 + HER stack as the first learner
+with a single centralized continuous off-policy actor using body-relative
+two-gripper actions. A twin-critic TD3 implementation is **only a baseline**;
+asymmetric critic inputs may use simulator state, but the actor must use
+deployable observations. Physically valid starts, actual grasp/threading
+failures, bilateral progress, torso placement and post-release completion are
+essential. HER and discrete options are conditional later tools, not defaults.
+The unvalidated research candidate is a budgeted coupled-consequence operator:
+compare joint, left-only, right-only and hold commands from matched states,
+learn their cross-effects on both sleeves/torso and after-release completion,
+and spend additional physics only where that can change the policy's choice.
+COMA-like credit assignment and cloth-aware staged control are direct prior art;
+novelty requires executed gains per matched total cost over those baselines.
+The current source only provides right-arm collision, one grasp and one-sleeve
+metrics, so no existing launcher can train this task. The design does not claim
+novelty or a runtime estimate. Only source and primary literature were read;
+no tests, simulation, training or new empirical reanalysis were run.
+
 ## 2026-09-22 — Selected seated bilateral dressing; non-RL implementation researched
 
 The owner abandoned single-arm research and selected dressing both human arms

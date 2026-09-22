@@ -3,6 +3,12 @@
 Date: 2026-09-22. Primary-source research and read-only code inspection.
 No tests, simulation, training or empirical re-analysis were run.
 
+**Historical scope correction (2026-09-23):** the owner specified a chair with
+**no backrest** and is now considering an RL task that starts with both hands
+already inside the sleeves. The backrest obstruction and from-empty-sleeve
+start discussed below are superseded for this candidate. See the
+[current RL research design](2026-09-23-backless-bilateral-rl-training-design.md).
+
 ## Selected task and recommendation
 
 The owner selected a person sitting in a chair with **both human arms raised
