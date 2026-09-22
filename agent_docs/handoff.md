@@ -1,6 +1,30 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-22 — Corrected scope: one human arm first, both sleeves as an alternative
+
+The owner explicitly corrected the task interpretation: two-arm dressing means
+both human arms in the same garment, not two robot arms manipulating one sleeve.
+The previous support-transfer recommendation is withdrawn and marked historical.
+Do not treat its TD3 reference learner as a selected implementation.
+
+The [corrected research review](performance/2026-09-22-single-arm-and-two-sleeve-research.md)
+finds a worthwhile single-arm question in entry while the hand moves before
+insertion. It distinguishes a proposed learning mechanism from existing
+predictive tracking, garment-opening MPC and temporal value learning. The
+two-sleeve alternative is adaptive interleaving under garment coupling; direct
+TOORAD and Wearing A Coat precedents rule out claiming the basic sequence or
+first-sleeve restraint as new. Literature supports these research questions,
+not a validated new RL algorithm or a training-time estimate.
+
+Research constraints remain unchanged: no teacher/student, DAgger, new tests,
+simulation, training or empirical re-analysis. Only documentation was changed;
+the old Stage 0–3 schedule remains retired. The current priority is a research
+recommendation, not an owner-approved task switch or execution plan.
+
 ## 2026-09-22 — Task choice reopened; bimanual research review completed
+
+**Superseded by the scope correction above.** This entry records the assistant's
+earlier interpretation, which the owner subsequently rejected.
 
 The owner permitted changing the task, including two-arm dressing, and requested
 deep research from Lin Shao's publication page and broader literature. The

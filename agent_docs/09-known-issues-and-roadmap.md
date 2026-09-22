@@ -8,14 +8,23 @@ plan. Do not restart from-scratch IPC SAC, teacher goal imitation, distillation 
 DAgger as prerequisites. Older proposed experiments below are no longer the
 active plan. Existing data and objective fixes remain.
 
-The owner reopened the task choice, including bimanual dressing. The
-[current review](performance/2026-09-22-bimanual-dressing-research.md) recommends
-investigating support/grasp changes during body-constrained insertion. It checks
-direct dressing, regrasp, stabilization, affordance and RL precedents, and
-specifies a TD3-based reference learner plus an unvalidated support-transfer
-representation hypothesis. Neither new-algorithm status nor a training-time
-advantage is established. Hardware is unconfirmed. No implementation or new
-empirical work is authorized by this research-only request.
+The owner clarified that two-arm dressing means dressing **both human arms in
+one garment**, as an alternative to finding a worthwhile single-human-arm
+research question. It does not mean two manipulators dressing one sleeve. The
+[corrected review](performance/2026-09-22-single-arm-and-two-sleeve-research.md)
+recommends retaining single-arm scope and investigating insertion when the hand
+moves before entry, with learning focused on the joint timing and geometry of
+successful entry. Motion prediction, temporal value functions and garment
+dynamics MPC all have close precedents; the proposed method is a hypothesis,
+not an established new RL algorithm or an owner-approved implementation plan.
+
+The alternative concerns adaptive progress allocation between two connected
+sleeves. TOORAD already considers alternative partial-dressing sequences, and
+Wearing A Coat explicitly manages interference from the first inserted sleeve.
+Neither two-sleeve completion nor postponing first-side progress is new by itself.
+The earlier [support-transfer recommendation](performance/2026-09-22-bimanual-dressing-research.md)
+is withdrawn because it misinterpreted the task scope. No tests, simulation,
+training or new empirical analysis are authorized by this research-only request.
 
 The [action-order derivation](performance/2026-09-22-learning-action-order.md)
 is not the selected route: its physical bottleneck, useful completion signal

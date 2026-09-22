@@ -1,5 +1,13 @@
 # Research reset: dressing with changing grasps and supports
 
+**Recommendation withdrawn after the owner's scope correction.** Two-arm
+dressing meant both human arms in one garment, considered only as an alternative
+to a substantive single-arm research direction. This report instead recommended
+two robot manipulators dressing one human arm. That was the assistant's
+misinterpretation, not the owner's selected task. Its literature notes remain
+historical; its learner and hardware assumptions are not an execution plan.
+See the [corrected review](2026-09-22-single-arm-and-two-sleeve-research.md).
+
 Date: 2026-09-22. Primary-source literature review and existing-document
 inspection only. No tests, simulation, training, numerical probes, or new
 empirical analysis. The owner permits changing the task, including bimanual

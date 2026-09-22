@@ -110,14 +110,19 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
-- **Reopen the task choice, including bimanual dressing.** The owner requested
-  deep research starting from the previously supplied Lin Shao publication page
-  and expanding beyond it where needed. The task itself may change; do not
-  preserve the single-arm fixed-grasp benchmark or the latest action-order
-  proposal as requirements. Continue the research-only and no-teacher/student
-  constraints below. Explain candidate methods, training cost/scaling and
-  deployment, and separate research hypotheses from established novelty.
-  (Set 2026-09-22.)
+- **Research single-human-arm dressing first; two-arm means both human arms.**
+  The owner requested deep research from the previously supplied Lin Shao
+  publication page and broader literature. Seek substantive ideas for dressing
+  one human arm first. Dressing both human arms in the two sleeves of one
+  garment is an alternative if the single-arm direction lacks a worthwhile
+  research question. The number of robot manipulators is a separate design
+  choice. The owner did not select two manipulators regrasping one sleeve;
+  withdraw that interpretation as the recommended task. Neither the old
+  fixed-grasp benchmark nor the action-order proposal is a requirement.
+  Explain the physical problem, proposed learning mechanism, training/scaling
+  and deployment in concrete terms; distinguish hypotheses from established
+  novelty. Continue the research-only and no-teacher/student constraints below.
+  (Set and clarified 2026-09-22.)
 
 - **Research only; abandon the teacher/student route.**
   The owner explicitly instructed: no more tests, abandon the Yufei-inspired
