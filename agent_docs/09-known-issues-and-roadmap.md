@@ -8,23 +8,23 @@ plan. Do not restart from-scratch IPC SAC, teacher goal imitation, distillation 
 DAgger as prerequisites. Older proposed experiments below are no longer the
 active plan. Existing data and objective fixes remain.
 
-The owner clarified that two-arm dressing means dressing **both human arms in
-one garment**, as an alternative to finding a worthwhile single-human-arm
-research question. It does not mean two manipulators dressing one sleeve. The
-[corrected review](performance/2026-09-22-single-arm-and-two-sleeve-research.md)
-recommends retaining single-arm scope and investigating insertion when the hand
-moves before entry, with learning focused on the joint timing and geometry of
-successful entry. Motion prediction, temporal value functions and garment
-dynamics MPC all have close precedents; the proposed method is a hypothesis,
-not an established new RL algorithm or an owner-approved implementation plan.
+The owner has now selected **both-arm and torso dressing for a seated person
+with both arms raised forward**, and permits a non-RL solution. The
+[implementation review](performance/2026-09-22-seated-bilateral-dressing-plan.md)
+recommends reactive task/motion planning with joint cloth-aware feedback control
+for the first implementation, rather than carrying over the current RL learner.
+The review checks PA-BiCoop's demonstration-trained formulation and long-task
+limitation, direct garment-dressing precedents, and GoC-MPC/ReKep-style control.
+These are implementation references, not a claim of a newly invented planner.
 
-The alternative concerns adaptive progress allocation between two connected
-sleeves. TOORAD already considers alternative partial-dressing sequences, and
-Wearing A Coat explicitly manages interference from the first inserted sleeve.
-Neither two-sleeve completion nor postponing first-side progress is new by itself.
-The earlier [support-transfer recommendation](performance/2026-09-22-bimanual-dressing-research.md)
-is withdrawn because it misinterpreted the task scope. No tests, simulation,
-training or new empirical analysis are authorized by this research-only request.
+The existing task has one grasp patch, right-arm collision geometry and one
+sleeve's semantics. A new scene must represent the complete connected garment,
+both arms, torso, chair, two grasp states and whole-garment completion. Garment
+type is pending clarification; the documented rear-opening-gown example is a
+proposed default, not an owner selection. Coat and pullover requirements are
+also distinguished. The previous single-arm priority is superseded; the older
+two-manipulator/one-sleeve recommendation remains withdrawn. This is a research
+and implementation specification only: no tests, simulation or training ran.
 
 The [action-order derivation](performance/2026-09-22-learning-action-order.md)
 is not the selected route: its physical bottleneck, useful completion signal

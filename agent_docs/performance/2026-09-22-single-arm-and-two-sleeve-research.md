@@ -1,5 +1,11 @@
 # Dressing research: one human arm first, both sleeves as an alternative
 
+**Task priority superseded by the owner's next instruction.** The owner selected
+both-arm and torso dressing for a seated person with both arms raised forward,
+and explicitly allowed a non-RL approach. The single-arm recommendation below
+is historical, not the current plan. See the
+[seated dressing implementation review](2026-09-22-seated-bilateral-dressing-plan.md).
+
 Date: 2026-09-22. Literature review and reasoning only. No tests, simulation,
 training, numerical probes or new empirical analysis were performed.
 

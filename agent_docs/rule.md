@@ -110,19 +110,19 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
-- **Research single-human-arm dressing first; two-arm means both human arms.**
-  The owner requested deep research from the previously supplied Lin Shao
-  publication page and broader literature. Seek substantive ideas for dressing
-  one human arm first. Dressing both human arms in the two sleeves of one
-  garment is an alternative if the single-arm direction lacks a worthwhile
-  research question. The number of robot manipulators is a separate design
-  choice. The owner did not select two manipulators regrasping one sleeve;
-  withdraw that interpretation as the recommended task. Neither the old
-  fixed-grasp benchmark nor the action-order proposal is a requirement.
-  Explain the physical problem, proposed learning mechanism, training/scaling
-  and deployment in concrete terms; distinguish hypotheses from established
-  novelty. Continue the research-only and no-teacher/student constraints below.
-  (Set and clarified 2026-09-22.)
+- **Selected task: dress both arms and the torso of a seated person.**
+  The owner explicitly abandoned the single-human-arm research direction and
+  selected dressing a person sitting in a chair with both human arms raised
+  forward. The garment must be put on the body; two sleeve insertions alone
+  do not define completion. Do not substitute one sleeve manipulated by two
+  robots, a standing recipient, or a robot-commanded human arm trajectory.
+  Research concrete implementation and deployment, starting from the owner's
+  PA-BiCoop paper (https://arxiv.org/pdf/2606.28192) and broader primary sources.
+  The owner explicitly permits a non-RL approach; the older new-RL-algorithm
+  requirement is no longer mandatory for this task. Garment type and initial
+  presentation are not yet specified; distinguish proposed assumptions from
+  owner decisions. Continue the research-only and no-teacher/student
+  constraints below. (Supersedes the single-arm priority, 2026-09-22.)
 
 - **Research only; abandon the teacher/student route.**
   The owner explicitly instructed: no more tests, abandon the Yufei-inspired

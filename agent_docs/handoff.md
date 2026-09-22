@@ -1,6 +1,33 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-22 — Selected seated bilateral dressing; non-RL implementation researched
+
+The owner abandoned single-arm research and selected dressing both human arms
+and the torso while the recipient sits in a chair with both arms raised forward.
+They supplied PA-BiCoop (arXiv:2606.28192) and explicitly asked whether a non-RL
+solution is preferable. This supersedes the earlier single-arm recommendation
+and the task-scoped requirement to produce a new RL algorithm.
+
+The [implementation review](performance/2026-09-22-seated-bilateral-dressing-plan.md)
+recommends reactive task/motion planning plus joint garment feedback control.
+It verifies that PA-BiCoop trains from demonstrations and annotated arm roles;
+its stated limitation is extremely long tasks/extended pauses, not a demonstrated
+dressing failure. GoC-MPC supplies a close non-RL planning precedent with public
+code; Wearing A Coat and the 2022 hospital-gown pipeline are direct task precedents.
+Task graphs, dynamic arm assignment and memory alone are not novelty claims.
+
+Read-only source inspection confirms that the current scene registers right-arm
+collision geometry and one grasp patch. The new specification covers full-body
+and chair contact, bilateral garment semantics, two grasp states and completion
+of the garment on the torso. Garment type was asked asynchronously; no answer
+had arrived when this note was drafted. A rear-opening gown is a documented
+working example, with coat/pullover alternatives and chair-access consequences.
+No runtime source, tests, simulation, training or new empirical analysis were
+executed or modified. The old Stage 0–3 jobs remain outside the active plan.
+
 ## 2026-09-22 — Corrected scope: one human arm first, both sleeves as an alternative
+
+**Priority superseded by the owner's task selection above.**
 
 The owner explicitly corrected the task interpretation: two-arm dressing means
 both human arms in the same garment, not two robot arms manipulating one sleeve.
