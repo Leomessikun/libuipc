@@ -1,5 +1,9 @@
 # The research plan, and what the RL contribution would have to be
 
+**Superseded 2026-09-22:** the owner rejected further tests and the teacher/student
+route. The stages below are historical, not an instruction to launch or resume
+them. See the [replacement research assessment](2026-09-22-segment-decision-research.md).
+
 Date: 2026-09-21. Branch `research/joint-policy-query`. **This is a proposal with
 preregistered gates, not a result.** No novelty is established here; every stage
 below can end the line. It is written against the measurements in

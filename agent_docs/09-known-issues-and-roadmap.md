@@ -1,5 +1,20 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Current dressing research scope — 2026-09-22
+
+The owner rejected new tests and the teacher/student direction and requested a
+new approach. The resulting research reset retires the old Stage 0–3 execution
+plan. Do not restart from-scratch IPC SAC, teacher goal imitation, distillation or
+DAgger as prerequisites. Older proposed experiments below are no longer the
+active plan. Existing data and objective fixes remain.
+
+The [current research assessment](performance/2026-09-22-segment-decision-research.md)
+specifies direct planning from operation consequences and identifies its close
+prior art. A new algorithmic contribution is not established. In particular,
+branch outcomes under an old continuation are not intrinsic operation labels,
+and the saved branch format lacks the full successor observations needed for
+compositional dynamics learning. No new empirical work was run for this review.
+
 ## Stage 0 original training is not the intended experiment — 2026-09-21
 
 **Resolved for the corrected relaunch:** the owner authorized stopping the old

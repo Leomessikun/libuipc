@@ -110,6 +110,16 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Research only; abandon the teacher/student route.**
+  The owner explicitly instructed: no more tests, abandon the Yufei-inspired
+  teacher/student idea, and develop a new way to solve the task. Continue
+  literature review, reasoning and inspection of existing evidence without
+  asking again. Do not run tests, simulation, training, or restart Stage 0 under
+  this research request. Do not reintroduce the rejected route through teacher
+  goal imitation, distillation or DAgger. Preserve existing data/code; SAC and IPC are not design
+  requirements. This supersedes earlier experiment authorizations for this
+  research task. (Set 2026-09-22.)
+
 - **Do not anchor the new algorithm to SAC or IPC.** The owner explicitly
   rejected preserving the current pure-SAC pretraining structure and making
   IPC-specific modifications the research contribution. Develop the learning

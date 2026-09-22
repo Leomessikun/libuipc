@@ -1,5 +1,27 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-22 — Research reset: no new tests or training, no teacher/student route
+
+The owner explicitly rejected further tests and the teacher/student direction,
+then instructed continued research. The old Stage 0–3 plan is no longer the
+execution plan; do not restart its from-scratch IPC SAC jobs. Preserve their
+artifacts and objective/evaluation corrections. Earlier launch entries below
+are historical, not a claim that those jobs are still running.
+
+The [new assessment](performance/2026-09-22-segment-decision-research.md)
+checks primary sources for Q-chunking, temporal MBRL, MAC, D-MPC, VINE, adaptive
+replanning, whole-chunk barriers and constrained identification. Generic segment
+planning and failure-aware composition have direct precedents. The alternative
+specified here is direct planning with joint within-operation validity and
+successor-history models, with no policy distillation. The narrower research
+mechanism remains unestablished; standard reach–avoid equations are not novelty.
+
+Existing branch collectors save starting observations and metric traces, but not
+full successor histories; commands are saved for slot 0 only. Do not assume the
+2,424 branch records form a complete compositional dynamics dataset. Delayed
+failures under the incumbent do not determine outcomes under a new continuation.
+This pass changed documentation only and ran no tests, training, or simulation.
+
 ## 2026-09-21 — Owner-authorized Stage 0 stop and finite-episode relaunch
 
 Stopped original PIDs 1360583/1361270 and preserved their data. The
