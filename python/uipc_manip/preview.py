@@ -1,8 +1,12 @@
-"""Render saved evaluation trajectories to a GIF and a final PNG with matplotlib.
+"""Render saved evaluation trajectories to a video and a final PNG with matplotlib.
 
 Usage::
 
     PYTHONPATH=python python -m uipc_manip.preview runs/uipc_manip/<run>/trajectories/episode_000.npz
+
+MP4 is the default because a GIF of a 300-decision episode is a 256-colour, 3 MB file at a third
+of the frame rate. It needs ffmpeg, which this project does not install: ``imageio-ffmpeg`` ships
+a binary and :func:`_ffmpeg` hands matplotlib that one whenever the system has none.
 """
 
 from __future__ import annotations
@@ -13,7 +17,24 @@ from pathlib import Path
 import numpy as np
 
 
-def render(path: Path, output: Path | None = None, stride: int = 3) -> Path:
+def _ffmpeg() -> str | None:
+    """The ffmpeg matplotlib should use, preferring the system one; None when there is neither."""
+    import shutil
+
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+    except ImportError:
+        return None
+    try:
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:       # a wheel without its binary, or a platform it has none for
+        return None
+
+
+def render(path: Path, output: Path | None = None, stride: int = 3, fmt: str = "mp4", fps: int = 15) -> Path:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -56,21 +77,37 @@ def render(path: Path, output: Path | None = None, stride: int = 3) -> Path:
         ax.legend(loc="upper left")
 
     output = path.with_suffix("") if output is None else output
-    animation = FuncAnimation(fig, draw, frames=frames, interval=60)
-    animation.save(output.with_suffix(".gif"), writer=PillowWriter(fps=15))
+    animation = FuncAnimation(fig, draw, frames=frames, interval=1000 // max(1, fps))
+    if fmt == "mp4":
+        exe = _ffmpeg()
+        if exe is None:
+            raise RuntimeError("mp4 needs ffmpeg; install it or `pip install imageio-ffmpeg`, or pass --format gif")
+        matplotlib.rcParams["animation.ffmpeg_path"] = exe
+        from matplotlib.animation import FFMpegWriter
+
+        writer = FFMpegWriter(fps=fps, bitrate=4000, codec="libx264",
+                              extra_args=["-pix_fmt", "yuv420p"])   # the profile browsers and slides play
+    elif fmt == "gif":
+        writer = PillowWriter(fps=fps)
+    else:
+        raise ValueError(f"{fmt!r} is neither 'mp4' nor 'gif'")
+    out = output.with_suffix(f".{fmt}")
+    animation.save(out, writer=writer)
     draw(len(positions) - 1)
     fig.savefig(output.with_suffix(".png"), dpi=140)
     plt.close(fig)
-    return output.with_suffix(".gif")
+    return out
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trajectory", type=Path, nargs="+")
-    parser.add_argument("--stride", type=int, default=3)
+    parser.add_argument("--stride", type=int, default=3, help="Keep every nth decision; 1 renders them all.")
+    parser.add_argument("--format", choices=("mp4", "gif"), default="mp4", dest="fmt")
+    parser.add_argument("--fps", type=int, default=15)
     args = parser.parse_args(argv)
     for path in args.trajectory:
-        print(render(path, stride=args.stride))
+        print(render(path, stride=args.stride, fmt=args.fmt, fps=args.fps))
 
 
 if __name__ == "__main__":
