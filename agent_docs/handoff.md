@@ -1,5 +1,22 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-22 — Direct learning of action order specified; no empirical work
+
+The [continued research](performance/2026-09-22-learning-action-order.md) defines
+a candidate policy over two translation pulses and their order, matched in
+commanded endpoint, duration and path length. It derives the order contrast,
+both policy-factor updates and the conditional estimator variance. The policy
+learns from consequences directly; no teacher/student or goal imitation returns.
+
+BBRL, TCE, factorized baselines, manipulation-primitive sequencing and
+nonholonomic RL constrain the novelty claim. The specific matched-order benefit
+is an unverified hypothesis, not an established new algorithm or explanation of
+our failures. Existing macro results do not isolate ordering; all 48 long branches
+have zero valid completion. Fewer policy decisions do not guarantee cheaper
+physics. No tests, simulation, training, numerical probes or empirical re-analysis
+were run. Generic operation-model planning is withdrawn as a selected new route;
+its previous assessment remains a useful related-work and data-support audit.
+
 ## 2026-09-22 — Research reset: no new tests or training, no teacher/student route
 
 The owner explicitly rejected further tests and the teacher/student direction,
@@ -11,10 +28,11 @@ are historical, not a claim that those jobs are still running.
 The [new assessment](performance/2026-09-22-segment-decision-research.md)
 checks primary sources for Q-chunking, temporal MBRL, MAC, D-MPC, VINE, adaptive
 replanning, whole-chunk barriers and constrained identification. Generic segment
-planning and failure-aware composition have direct precedents. The alternative
-specified here is direct planning with joint within-operation validity and
-successor-history models, with no policy distillation. The narrower research
-mechanism remains unestablished; standard reach–avoid equations are not novelty.
+planning and failure-aware composition have direct precedents. The architecture
+examined here uses joint within-operation validity and successor-history models,
+with no policy distillation. Its selection as a new route was subsequently
+withdrawn (see the later entry above); standard reach–avoid equations are not
+novelty.
 
 Existing branch collectors save starting observations and metric traces, but not
 full successor histories; commands are saved for slot 0 only. Do not assume the

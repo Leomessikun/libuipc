@@ -8,12 +8,17 @@ plan. Do not restart from-scratch IPC SAC, teacher goal imitation, distillation 
 DAgger as prerequisites. Older proposed experiments below are no longer the
 active plan. Existing data and objective fixes remain.
 
-The [current research assessment](performance/2026-09-22-segment-decision-research.md)
-specifies direct planning from operation consequences and identifies its close
-prior art. A new algorithmic contribution is not established. In particular,
-branch outcomes under an old continuation are not intrinsic operation labels,
-and the saved branch format lacks the full successor observations needed for
-compositional dynamics learning. No new empirical work was run for this review.
+The [current derivation](performance/2026-09-22-learning-action-order.md) specifies
+direct policy learning of movement order at fixed command inventory, endpoint
+and duration. Its policy updates and estimator limits are explicit. The physical
+order effect, cost benefit and a defensible new algorithm remain unestablished;
+movement primitives, correlated exploration and factorized baselines already
+have close precedents. No new empirical work was run.
+
+Generic operation-model planning is withdrawn as a selected new route. Its
+[assessment](performance/2026-09-22-segment-decision-research.md) remains relevant:
+old-continuation outcomes are not intrinsic operation labels, and the saved
+branch format lacks full successor observations for compositional dynamics.
 
 ## Stage 0 original training is not the intended experiment — 2026-09-21
 

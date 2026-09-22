@@ -5,6 +5,11 @@ Status: literature and existing-code review; no tests, simulation, training, or
 new empirical analysis. This supersedes the old Stage 0–3 execution plan. It
 specifies a possible task-solving architecture, not a validated new RL algorithm.
 
+**Selection withdrawn in the continued review:** the generic architecture below
+is retained as related-work and formulation analysis, not the chosen new research
+route. See the [concrete action-order candidate](2026-09-22-learning-action-order.md)
+for the subsequent derivation and its unresolved evidence/novelty limits.
+
 ## Decision
 
 Retire the prerequisite of training a unified visual SAC policy from scratch in
@@ -12,7 +17,7 @@ IPC. Retire the teacher/student, goal-prediction imitation and distillation rout
 Keep historical data and objective/evaluation repairs. Neither SAC nor IPC is a
 required component of the replacement method.
 
-The replacement architecture worth developing on paper is **direct planning with
+The alternative architecture examined on paper is **direct planning with
 learned operation consequences**: learn what executable gripper operations do,
 including whether they violate the criterion during execution, and use that model
 to choose the next operation at deployment. The planner itself makes decisions;
@@ -236,8 +241,9 @@ The following limits can be established without another experiment:
    failures. A tracking proxy is not a physical grasp/safety claim.
 
 These limits narrow a viable research claim; they do not disprove model-based
-planning. This pass selects a concrete alternative architecture and rejects
-overbroad novelty claims. It does not establish the narrower new mechanism.
+planning. This pass specifies an alternative architecture and rejects overbroad
+novelty claims. It does not establish the narrower new mechanism, and the
+subsequent review withdraws its selection as the new research route.
 
 ## Disposition of the old stages
 
