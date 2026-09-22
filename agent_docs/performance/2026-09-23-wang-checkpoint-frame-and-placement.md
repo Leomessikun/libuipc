@@ -67,10 +67,13 @@ The policy is doing the same thing in both. The garment is not.
 
 The grasp (Wang's 121 `grasping_particle_indices`) and the opening polygon are the same vertices of
 the same 3,889-vertex mesh in both; PyBullet lets the garment hang from the grasp, our socket
-placement holds the opening coaxial with the forearm. The policy lifts about 11 cm in both. In
-PyBullet that brings the opening from 13.5 cm below the fingertip to 2.4 cm below it at t = 30,
-the hand enters and the lift command falls to zero. In ours the same lift carries the opening to
-14 cm *above* the fingertip, it passes over the hand, and the policy keeps lifting and stalls.
+placement holds the opening coaxial with the forearm. In PyBullet the gripper rises 7 cm over
+the first 30 decisions, which brings the opening from 13.5 cm below the fingertip to 2.4 cm below
+it; the hand enters and the lift command falls to zero. In ours the same early commands carry the
+opening to 8.5 cm above the fingertip by decision 30, it passes over the hand, the hand never
+enters, and the policy keeps lifting: 13 cm by decision 40, the opening 14 cm above the fingertip,
+then it stalls. The asymmetry is the finding: the lift stops when the hand is inside the opening,
+and in ours it never is.
 
 Three tests, rotation off throughout (`act[3:] = 0`):
 
@@ -83,10 +86,10 @@ Three tests, rotation off throughout (`act[3:] = 0`):
   about the picker toward straight down, 9 cm further out along the forearm and 6 cm lower (the
   closest legal start: larger swings put the garment's body through the arm):
 
-| body, seed | threaded | forearm (best) | upper arm | expert upper arm |
+| body, seed | threaded | forearm (best) | upper arm | expert upper arm, same start |
 |---|---:|---:|---:|---:|
-| 14045, 1000 | 1 | 0.415 | 0 | 0.985 (default placement) |
-| 14045, 2000 | 1 | 0.433 | 0 | – |
+| 14045, 1000 | 1 | 0.415 | 0 | not run (0.985 from the default placement) |
+| 14045, 2000 | 1 | 0.433 | 0 | not run |
 | 14048, 1000 | 1 | 0.61 | 0 | 0.196 |
 | 14046, 1000 | 0 | 0 | 0 | 0.958 |
 
@@ -105,6 +108,19 @@ differences that could explain the missing turn were not separated:
 * **Arm proportion.** PyBullet's "finger" is the wrist less a hand radius and its forearm 28.4 cm;
   ours is the fingertip and 38 cm on body 14045. The policy turned near PyBullet's elbow, which in
   ours is 60 to 70 per cent of the way along the forearm.
+
+The swung start is also not PyBullet's start, so three of four threading is a proxy for a
+matched start. The opening ends 20 to 26 cm outside the fingertip against PyBullet's 8.5, and the
+fixed 6 cm drop leaves the gripper only 2.3 to 4 cm above the fingertip where PyBullet's is 10.6;
+on 14046, the body that failed, it is 2.3 cm. The principled test is the one both references use:
+pin the grasp patch at PyBullet's offset from the fingertip (3.3 cm out, 10.6 cm up), let the
+garment hang and settle under gravity with the arm present, compare the opening with PyBullet's
+(8.5 cm out, 13.5 cm down), then run the policy. Our socket placement imposes an orientation that
+the 48-vertex hold keeps through the settle; `gravity_aligned_socket` only re-rolls it.
+
+The camera is untested as well. `wang_static_arm` uses the port's camera, about 19 degrees below
+horizontal, against Wang's 35, and cropping the garment cloud at 0.30 m sent the gripper straight
+along the arm axis, so the low-hanging garment points steer the policy strongly.
 
 `fmvp_sim.pt`, the PyBullet-adapted weights, was not tried: the bridge's encoder has no FiLM path.
 FMVP needed 20,000 IQL steps to adapt this policy to PyBullet; a comparable fine-tune in our
