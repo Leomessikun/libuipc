@@ -1,5 +1,11 @@
 # Wang's released policy in our simulator: it reads the scene and then leaves the arm
 
+> **Revised 2026-09-23** in [2026-09-23-wang-checkpoint-frame-and-placement.md](2026-09-23-wang-checkpoint-frame-and-placement.md):
+> the checkpoint is FMVP's FleX-pretrained policy and dresses zero-shot in FMVP's PyBullet (upper arm
+> 0.991); the yaw below (330) is 63 degrees off (267 is measured), and the "12 steps = their 0.1 m"
+> row misread `max_translation` (a unit action moves about 1 cm in softgym, 2.5 cm in FMVP's PyBullet).
+> The route is not closed.
+
 Date: 2026-09-22. Checkpoint `vision_based_policy.pt` (750,137 steps, best test return 0.750),
 bridge `python/uipc_manip/wang_bridge.py` and `wang_client.py` (commit 09d30fca).
 

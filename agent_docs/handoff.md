@@ -3843,3 +3843,15 @@ counts as better only if it beats its matched SAC arm in at least four of five
 seeds and on the mean of the final evaluation, and the random control does not.
 The SAC continuation arms' final-evaluation collapse (periodic ≈ 8, final −16 /
 −11) is not yet explained.
+
+## 2026-09-23 — The released dressing checkpoint works in PyBullet; our frame and placement were off
+
+The desktop checkpoints are FMVP's (CoRL 2025): `vision_based_policy.pt` is the FleX-pretrained
+vision policy, `fmvp_sim.pt` its PyBullet fine-tune. Built Zackory's bullet fork and ran the former
+in FMVP's own PyBullet env: it dresses zero-shot (upper arm 0.991). Its geometry fixes the bridge
+yaw at 267 (330 was 63 degrees off). At 267 the gripper path matches PyBullet's; the failure is the
+opening starting level with the fingertip in our socket placement instead of 13.5 cm below it, so
+the policy's 11 cm lift carries it over the hand. Lowering and swinging the garment threads the
+sleeve on 3 of 4 runs (forearm 0.42 to 0.61), upper arm still 0. Record and open questions:
+`agent_docs/performance/2026-09-23-wang-checkpoint-frame-and-placement.md`; scripts in
+`scripts/wang_transfer/`.
