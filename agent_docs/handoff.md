@@ -1,5 +1,23 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-22 — Task choice reopened; bimanual research review completed
+
+The owner permitted changing the task, including two-arm dressing, and requested
+deep research from Lin Shao's publication page and broader literature. The
+[review](performance/2026-09-22-bimanual-dressing-research.md) recommends studying
+support-changing recovery during insertion, initially two robot arms dressing
+one mannequin arm. It distinguishes this from existing bimanual coat dressing,
+learned restabilization, dynamic arm roles and foresightful cloth affordances.
+
+The concrete reference learner is spatially grounded off-policy TD3; the proposed
+research concerns support-conditioned insertion retention and continuation
+representation. The combination is not claimed to be a validated new RL
+algorithm. Training/scaling and deployment are specified, with no invented cost
+estimate. Existing branches are not a complete bimanual transition dataset.
+The action-order candidate is no longer the selected route. Old Stage 0–3 jobs
+and teacher/student methods remain excluded. This change is documentation only;
+no tests, simulation, training or new empirical analysis were run.
+
 ## 2026-09-22 — Direct learning of action order specified; no empirical work
 
 The [continued research](performance/2026-09-22-learning-action-order.md) defines

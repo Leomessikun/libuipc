@@ -4,6 +4,12 @@ Date: 2026-09-22. Branch: `research/expo-ft-dressing`.
 Scope: literature, existing-source inspection and analytic derivation only.
 No tests, numerical probes, simulation, training or empirical re-analysis.
 
+Status update, 2026-09-22: **not the selected research route**. The owner reopened
+the task choice, including bimanual dressing. This derivation remains a candidate
+analysis; a relevant physical bottleneck, useful completion-learning signal and
+total training-cost advantage are unestablished. See the subsequent
+[task and literature review](2026-09-22-bimanual-dressing-research.md).
+
 ## Research decision
 
 The old Stage 0–3 execution plan remains retired. Correct objective semantics

@@ -8,12 +8,18 @@ plan. Do not restart from-scratch IPC SAC, teacher goal imitation, distillation 
 DAgger as prerequisites. Older proposed experiments below are no longer the
 active plan. Existing data and objective fixes remain.
 
-The [current derivation](performance/2026-09-22-learning-action-order.md) specifies
-direct policy learning of movement order at fixed command inventory, endpoint
-and duration. Its policy updates and estimator limits are explicit. The physical
-order effect, cost benefit and a defensible new algorithm remain unestablished;
-movement primitives, correlated exploration and factorized baselines already
-have close precedents. No new empirical work was run.
+The owner reopened the task choice, including bimanual dressing. The
+[current review](performance/2026-09-22-bimanual-dressing-research.md) recommends
+investigating support/grasp changes during body-constrained insertion. It checks
+direct dressing, regrasp, stabilization, affordance and RL precedents, and
+specifies a TD3-based reference learner plus an unvalidated support-transfer
+representation hypothesis. Neither new-algorithm status nor a training-time
+advantage is established. Hardware is unconfirmed. No implementation or new
+empirical work is authorized by this research-only request.
+
+The [action-order derivation](performance/2026-09-22-learning-action-order.md)
+is not the selected route: its physical bottleneck, useful completion signal
+and total training-cost benefit remain unestablished.
 
 Generic operation-model planning is withdrawn as a selected new route. Its
 [assessment](performance/2026-09-22-segment-decision-research.md) remains relevant:

@@ -110,6 +110,15 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Reopen the task choice, including bimanual dressing.** The owner requested
+  deep research starting from the previously supplied Lin Shao publication page
+  and expanding beyond it where needed. The task itself may change; do not
+  preserve the single-arm fixed-grasp benchmark or the latest action-order
+  proposal as requirements. Continue the research-only and no-teacher/student
+  constraints below. Explain candidate methods, training cost/scaling and
+  deployment, and separate research hypotheses from established novelty.
+  (Set 2026-09-22.)
+
 - **Research only; abandon the teacher/student route.**
   The owner explicitly instructed: no more tests, abandon the Yufei-inspired
   teacher/student idea, and develop a new way to solve the task. Continue
