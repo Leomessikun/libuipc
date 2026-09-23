@@ -1,0 +1,390 @@
+"""Record FMVP rollouts from the already verified gravity-hung start.
+
+Keep the simulator, checkpoint, zero FiLM input, frame and grasp unchanged.
+Compare the policy, a handoff to the existing expert after threading, and the
+expert; optionally test slowing before the shoulder. Hold for a complete
+validation window. Save failed attempts too; only stable, valid-grasp episodes
+enter accepted.json. No network training is performed here. Forces are recorded
+for ranking, not certified against an absolute real-world safety threshold.
+"""
+from __future__ import annotations
+
+import argparse
+from dataclasses import replace
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+import numpy as np
+
+
+ROOT = Path(__file__).resolve().parents[2]
+VARIANTS = {"baseline": 1.0, "half": 0.5, "quarter": 0.25, "handoff": 1.0, "expert": 1.0}
+
+
+def sha256(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def revision(path):
+    return subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
+
+
+def save_json(path, obj):
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(obj, indent=2) + "\n")
+    temporary.replace(path)
+
+
+def parser():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--package-root", type=Path, default=ROOT / ".claude/worktrees/residual-rl/python")
+    p.add_argument("--checkpoint", type=Path, default=Path("/home/ge47gax/Desktop/fmvp_sim.pt"))
+    p.add_argument("--hang", type=Path, required=True)
+    p.add_argument("--hang-key", default="k300")
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--bodies", type=int, nargs="+", default=None)
+    p.add_argument("--preflight-manifest", type=Path, default=None,
+                   help="Use legal body IDs from a matching full-body preflight; --bodies can select a subset.")
+    p.add_argument("--variants", nargs="+", choices=VARIANTS, default=["baseline", "handoff", "expert"])
+    p.add_argument("--replicas", type=int, default=1,
+                   help="Run identical controllers in separate IPC slots for repeated evaluation.")
+    p.add_argument("--seed", type=int, default=1000)
+    p.add_argument("--steps", type=int, default=500,
+                   help="Maximum decisions to first reach success; the hold window is allowed on top.")
+    p.add_argument("--hold", type=int, default=30)
+    p.add_argument("--autonomous-hold", action="store_true",
+                   help="Continue querying the controller after first success to test whether it learned to stop.")
+    p.add_argument("--success", type=float, default=0.7)
+    p.add_argument("--slow-along", type=float, default=0.9,
+                   help="Slow when gripper projection reaches this fraction of the hand-shoulder chord.")
+    p.add_argument("--handoff-forearm", type=float, default=0.5,
+                   help="Hand off to the existing expert's forearm stage after this coverage.")
+    p.add_argument("--yaw", type=float, default=267.0)
+    p.add_argument("--collision-geometry", choices=("arm", "full_body"), default="arm",
+                   help="IPC cloth collider: historical right arm or the complete SMPL-X body.")
+    p.add_argument("--placement-offset-mm", type=float, nargs=3, default=[0., 0., 0.],
+                   metavar=("DX", "DY", "DZ"),
+                   help="Move the gravity-hung gripper and garment relative to the fingertip in the FMVP frame; record exact millimetres.")
+    p.add_argument("--show-viewer", action="store_true", help="Show slot zero live in the native Genesis viewer.")
+    p.add_argument("--abort-gripper-force", type=float, default=None,
+                   help="Optional simulator-load cutoff to end clearly unusable attempts early; not a real-world safety threshold.")
+    p.add_argument("--cloth-density", type=float, default=None,
+                   help="Optional kg/m^3 material-density override; save and extract separately from default physics.")
+    return p
+
+
+def main():
+    args = parser().parse_args()
+    if args.hold < 1 or args.steps < 1:
+        raise ValueError("Need positive search and hold windows")
+    if args.replicas < 1 or (args.replicas > 1 and len(args.variants) != 1):
+        raise ValueError("--replicas >1 requires exactly one variant")
+    if args.replicas == 1 and len(set(args.variants)) != len(args.variants):
+        raise ValueError("Duplicate variants require --replicas so output names stay unique")
+    if args.abort_gripper_force is not None and args.abort_gripper_force <= 0:
+        raise ValueError("--abort-gripper-force must be positive")
+    if args.cloth_density is not None and args.cloth_density <= 0:
+        raise ValueError("--cloth-density must be positive")
+    hang_hash = sha256(args.hang)
+    if args.preflight_manifest is not None:
+        preflight = json.loads(args.preflight_manifest.read_text())
+        if (args.collision_geometry != "full_body" or preflight["collision_geometry"] != "full_body"
+                or preflight["garment"] != "tshirt_26" or preflight["min_gap_m"] != 0.003
+                or preflight["turn_increment_degrees"] != 5):
+            raise ValueError("Preflight geometry does not match full-body tshirt_26 collector settings")
+        if (preflight["hang_sha256"] != hang_hash or preflight["hang_key"] != args.hang_key
+                or not np.allclose(preflight["placement_offset_mm"], args.placement_offset_mm, atol=1e-12)
+                or not np.isclose(preflight["yaw"], args.yaw, atol=1e-12)):
+            raise ValueError("Preflight hang, key, yaw, or placement offset differs from collector")
+        legal_bodies = set(preflight["legal_bodies"])
+        if args.bodies is None:
+            args.bodies = preflight["legal_bodies"]
+        else:
+            if not set(args.bodies) <= legal_bodies:
+                raise ValueError(f"Requested body IDs are not all legal in preflight: {sorted(set(args.bodies) - legal_bodies)}")
+        if not args.bodies:
+            raise ValueError("Preflight found no legal body starts")
+    elif args.bodies is None:
+        args.bodies = [14046, 14045, 14048]
+    if len(set(args.bodies)) != len(args.bodies):
+        raise ValueError("Duplicate body IDs would overwrite rollout outputs")
+    args.out.mkdir(parents=True, exist_ok=True)
+    if (args.out / "run.json").exists():
+        raise FileExistsError(f"Choose a new output directory: {args.out}")
+    sys.path.insert(0, str(args.package_root.resolve()))
+    from uipc_manip import dressing_live, pretrain_wang, train_sac
+    from uipc_manip.dressing_body import smplx_faces
+    from uipc_manip.contact_force import vertex_forces_multi
+    from uipc_manip.dressing_env import GenesisIPCDressingEnv
+    from uipc_manip.obs import ObsSpec
+    from uipc_manip.wang_bridge import up_axis_rotation
+    from uipc_manip.wang_client import WangPolicyClient
+
+    metadata = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+    metadata.update(checkpoint_sha256=sha256(args.checkpoint), hang_sha256=hang_hash,
+                    preflight_sha256=sha256(args.preflight_manifest) if args.preflight_manifest is not None else None,
+                    collector_sha256=sha256(__file__),
+                    collector_revision=revision(ROOT), package_revision=revision(args.package_root),
+                    policy_force_input="zero", force_sampling="end of decision, not substep peak",
+                    observations="obs[t] -> actions[t] -> obs[t+1]; force arrays align with obs",
+                    controller_id="0 FMVP, 1 scripted expert, 2 hold; policy_actions are the active controller's proposals",
+                    accepted_rule="upper >= success throughout hold, valid grasp throughout, no sim error")
+    save_json(args.out / "run.json", metadata)
+    with np.load(args.hang) as source:
+        hang = source[args.hang_key].copy()
+    np.savez_compressed(args.out / "hang.npz", **{args.hang_key: hang})
+    rotation = up_axis_rotation(args.yaw)
+    full_body_faces = smplx_faces() if args.collision_geometry == "full_body" else None
+    variants = args.variants * args.replicas
+    labels = [f"{v}_rep{i}" if args.replicas > 1 else v for i, v in enumerate(variants)]
+    build_original = dressing_live.LiveCellFactory.build
+    placements = {}
+
+    def hung_build(factory, garment, human):
+        cell = build_original(factory, garment, human)
+        finger = np.asarray(cell.finger, float)
+        target = finger + (np.array([-0.033, 0.106, -0.003])
+                           + np.asarray(args.placement_offset_mm, float) / 1000.) @ rotation
+        desired_opening = np.array([-0.085, -0.135, -0.050])
+        best = None
+        for degrees in range(0, 360, 5):
+            c, s = np.cos(np.radians(degrees)), np.sin(np.radians(degrees))
+            turn = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.]])
+            cloth = hang @ turn.T + target
+            if full_body_faces is None:
+                gap = dressing_live.garment_arm_gap(cloth, cell.faces, cell.arm_points, cell.arm_faces)
+            else:
+                gap = dressing_live.garment_arm_gap(cloth, cell.faces, cell.human_points, full_body_faces)
+            if gap < 0.003:
+                continue
+            opening = (cloth[cell.opening_idx].mean(0) - finger) @ rotation.T
+            error = float(np.linalg.norm(opening - desired_opening))
+            if best is None or error < best[0]:
+                best = (error, degrees, gap, opening, cloth)
+        if best is None:
+            raise RuntimeError(f"No legal gravity-hung placement for body {human}")
+        error, degrees, gap, opening, cloth = best
+        placements[str(human)] = dict(turn_degrees=degrees, gap_m=gap,
+                                      collision_geometry=args.collision_geometry,
+                                      placement_offset_mm=args.placement_offset_mm,
+                                      opening_model=opening.tolist(), opening_error_m=error)
+        return replace(cell, cloth=cloth, picker_pos=target,
+                       pull_waypoints=np.stack([target, cell.pull_waypoints[-1]]))
+
+    dressing_live.LiveCellFactory.build = hung_build
+    all_records = []
+    skipped = []
+    client = WangPolicyClient(checkpoint=str(args.checkpoint), yaw_deg=args.yaw)
+    try:
+        for body in args.bodies:
+            _, training_args, _ = pretrain_wang.prepare(
+                ["teacher", "--region", "13", "--seed", "1", "--obs-mode", "wang_static_arm", "--no-obs-augment"])
+            n = len(variants)
+            material = {} if args.cloth_density is None else {"cloth_density": args.cloth_density}
+            cfg = replace(train_sac.dressing_config(training_args),
+                          cells=tuple(("tshirt_26", body) for _ in range(n)), cell_source="live",
+                          collision_geometry=args.collision_geometry,
+                          horizon=args.steps + args.hold + 10, seed=1, show_viewer=args.show_viewer, decision_watchdog=False,
+                          clip_rotation_to_yz=False, anchor_count=48, contact_force_readout=True,
+                          **material)
+            print(f"[collect] building body={body} variants={labels}", flush=True)
+            try:
+                env = GenesisIPCDressingEnv(cfg, num_envs=n)
+            except RuntimeError as exc:
+                if "No legal gravity-hung placement" not in str(exc):
+                    raise
+                row = {"body": body, "reason": str(exc)}
+                skipped.append(row)
+                save_json(args.out / "skipped.json", skipped)
+                print(f"[skip] {json.dumps(row)}", flush=True)
+                continue
+            try:
+                obs = env.reset([args.seed] * n)
+                env._arm_force_summaries()  # Initializes the lazy contact exporter before state zero.
+                spec = ObsSpec(training_args.point_budget)
+                cell = env.cells[0]
+                finger, shoulder = np.asarray(cell.finger), np.asarray(cell.shoulder)
+                axis = shoulder - finger
+                triangles = cell.cloth[cell.faces]
+                areas = .5 * np.linalg.norm(np.cross(triangles[:, 1] - triangles[:, 0],
+                                                     triangles[:, 2] - triangles[:, 0]), axis=1)
+                masses = np.zeros(len(cell.cloth))
+                np.add.at(masses, cell.faces.ravel(), np.repeat(areas / 3, 3))
+                masses *= 2 * cfg.cloth_thickness * cfg.cloth_density
+                body_dir = args.out / f"body_{body}_seed_{args.seed}"
+                body_dir.mkdir()
+                save_json(body_dir / "config.json", dict(config=cfg.to_dict(), placement=placements[str(body)],
+                                                         mass_kg=float(masses.sum())))
+                buffers = [{k: [] for k in ["obs", "positions", "tcp", "gripper_force", "arm_force", "body_force",
+                            "upperarm_ratio", "forearm_ratio", "actions", "policy_actions", "rewards",
+                            "executed_translation", "tracking_error", "early_turn", "grasp_valid", "speed_scale", "controller_id"]}
+                           for _ in range(n)]
+                success_at, finish_at = [None] * n, [None] * n
+                handoff_at = [None] * n
+                completed = np.zeros(n, bool)
+                slowed = np.zeros(n, bool)
+                failures = [None] * n
+
+                def record_state():
+                    positions = env.positions()
+                    pairs = vertex_forces_multi(env._force_feature, cfg.dt, env._force_blocks)
+                    for i in range(n):
+                        if completed[i]:
+                            continue
+                        indices = env._pickers[i]["anchor_idx"]
+                        target = env._anchor[i][None, :] + env._offsets[i]
+                        stiffness = cfg.constraint_strength * masses[indices] / cfg.dt ** 2
+                        grip = -(stiffness[:, None] * (target - positions[i][indices])).sum(0)
+                        progress = env._last_progress[i]
+                        body_force = pairs[i][0] + pairs[i][1]
+                        values = dict(obs=obs[i].copy(), positions=positions[i].astype(np.float32),
+                                      tcp=np.asarray(env._anchor[i], np.float32).copy(), gripper_force=grip,
+                                      arm_force=body_force[env._force_arm_indices[i]].sum(0),
+                                      body_force=body_force.sum(0),
+                                      upperarm_ratio=float(progress.upperarm_ratio),
+                                      forearm_ratio=float(progress.forearm_ratio))
+                        for key, value in values.items():
+                            buffers[i][key].append(value)
+
+                record_state()
+                started = time.monotonic()
+                for step in range(args.steps + args.hold):
+                    actions = np.zeros((n, env.action_dim), np.float32)
+                    proposed = np.zeros_like(actions)
+                    scales = np.zeros(n)
+                    controllers = np.full(n, 2, dtype=np.int8)  # 0 FMVP, 1 scripted expert, 2 hold
+                    need_expert = any(v in ("expert", "handoff") for v in variants)
+                    if need_expert:
+                        if getattr(env, "_heuristic", None) is None:
+                            from uipc_manip.dressing_heuristic import HeuristicDressingPolicy
+                            env._heuristic = HeuristicDressingPolicy(env)
+                        for i, variant in enumerate(variants):
+                            if variant == "handoff" and handoff_at[i] is None and buffers[i]["forearm_ratio"][-1] >= args.handoff_forearm:
+                                handoff_at[i] = step
+                                # Start from the sleeve's current state on the forearm. The
+                                # expert's shadow counters must not advance without its actions.
+                                env._heuristic.stage[i] = 2
+                                env._heuristic._steps[i] = 0
+                                env._heuristic._align_steps[i] = 0
+                                env._heuristic._best_upper[i] = buffers[i]["upperarm_ratio"][-1]
+                                print(f"[handoff] body={body} state={step} forearm={buffers[i]['forearm_ratio'][-1]:.3f}", flush=True)
+                        expert = env.scripted_actions()
+                    else:
+                        expert = None
+                    for i, variant in enumerate(variants):
+                        if completed[i] or (success_at[i] is not None and not args.autonomous_hold):
+                            continue
+                        if variant == "expert" or (variant == "handoff" and handoff_at[i] is not None):
+                            proposed[i] = actions[i] = expert[i]
+                            scales[i] = 1.
+                            controllers[i] = 1
+                        else:
+                            controllers[i] = 0
+                            pos, feat, valid, _ = (x[i] for x in spec.unpack_numpy(obs))
+                            valid = valid.astype(bool)
+                            action = client.act(pos[valid], feat[valid])
+                            action[3:] = 0.
+                            proposed[i] = action
+                            along = float((env._anchor[i] - finger) @ axis / (axis @ axis))
+                            slowed[i] |= along >= args.slow_along
+                            scales[i] = VARIANTS[variant] if slowed[i] else 1.
+                            actions[i] = action * scales[i]
+                    actions = np.clip(actions, -1, 1)
+                    anchors = np.stack(env._anchor).copy()
+                    obs, rewards, dones, infos = env.step(actions)
+                    if any(info.get("sim_error") for info in infos) or np.any(dones):
+                        for i in range(n):
+                            if not completed[i]:
+                                failures[i] = infos[i].get("error", "unexpected environment reset")
+                        break
+                    record_state()
+                    for i in range(n):
+                        if completed[i]:
+                            continue
+                        values = dict(actions=actions[i].copy(), policy_actions=proposed[i].copy(), controller_id=controllers[i],
+                                      rewards=float(rewards[i]), speed_scale=float(scales[i]),
+                                      executed_translation=np.asarray(env._anchor[i]) - anchors[i],
+                                      tracking_error=float(infos[i]["tracking_error"]),
+                                      early_turn=bool(infos[i]["early_turn"]), grasp_valid=bool(infos[i]["grasp_valid"]))
+                        for key, value in values.items():
+                            buffers[i][key].append(value)
+                        if args.abort_gripper_force is not None:
+                            load = float(np.linalg.norm(buffers[i]["gripper_force"][-1]))
+                            if load > args.abort_gripper_force:
+                                failures[i] = f"simulated gripper load {load:.1f} N exceeded collection cutoff {args.abort_gripper_force:.1f} N"
+                                completed[i] = True
+                                continue
+                        if success_at[i] is None and infos[i]["upperarm_ratio"] >= args.success:
+                            success_at[i] = step + 1  # state index, after this transition
+                            finish_at[i] = success_at[i] + args.hold
+                        if finish_at[i] is not None and step + 1 >= finish_at[i]:
+                            completed[i] = True
+                        elif success_at[i] is None and step + 1 >= args.steps:
+                            completed[i] = True
+                    if step % 20 == 0 or np.all(completed):
+                        status = " | ".join(f"{v}: upper={buffers[i]['upperarm_ratio'][-1]:.3f} "
+                                            f"grip={np.linalg.norm(buffers[i]['gripper_force'][-1]):.1f}N "
+                                            f"{'done' if completed[i] else 'hold' if success_at[i] is not None else 'run'}"
+                                            for i, v in enumerate(labels))
+                        print(f"[collect] body={body} step={step+1} {time.monotonic()-started:.0f}s | {status}", flush=True)
+                    if np.all(completed):
+                        break
+                records = []
+                for i, variant in enumerate(variants):
+                    data = {k: np.asarray(v) for k, v in buffers[i].items()}
+                    t = len(data["actions"])
+                    if not t:
+                        raise RuntimeError(f"No valid transitions for {body}/{variant}: {failures[i]}")
+                    held = data["upperarm_ratio"][success_at[i]:] if success_at[i] is not None else np.array([])
+                    hold_complete = bool(success_at[i] is not None and finish_at[i] is not None
+                                         and t >= finish_at[i])
+                    stable = bool(hold_complete and held.size >= args.hold + 1 and np.min(held) >= args.success)
+                    valid = bool(np.all(data["grasp_valid"]))
+                    accepted = stable and valid and failures[i] is None
+                    force = np.linalg.norm(data["gripper_force"][1:], axis=1)
+                    arm_force = np.linalg.norm(data["arm_force"][1:], axis=1)
+                    record = dict(body=body, variant=variant, replica=i if args.replicas > 1 else None,
+                                  collision_geometry=args.collision_geometry,
+                                  seed=args.seed, transitions=t, success_state=success_at[i],
+                                  handoff_state=handoff_at[i],
+                                  hold_complete=hold_complete, timed_out=bool(success_at[i] is None and t >= args.steps),
+                                  stable_success=stable, valid_grasp=valid,
+                                  accepted=accepted, sim_error=failures[i], final_upper=float(data["upperarm_ratio"][-1]),
+                                  peak_upper=float(data["upperarm_ratio"].max()),
+                                  hold_min_upper=float(held.min()) if held.size else None,
+                                  gripper_p90_N=float(np.percentile(force, 90)), gripper_peak_N=float(force.max()),
+                                  arm_p90_N=float(np.percentile(arm_force, 90)), arm_peak_N=float(arm_force.max()),
+                                  early_turn=bool(data["early_turn"].any()),
+                                  duration_sim_s=t * cfg.dt * cfg.action_repeat,
+                                  path=str((body_dir / f"{labels[i]}.npz").relative_to(args.out)))
+                    full_body = (dict(human_vertices=env.collider_meshes[i][0],
+                                      human_faces=env.collider_meshes[i][1])
+                                 if args.collision_geometry == "full_body" else {})
+                    np.savez_compressed(body_dir / f"{labels[i]}.npz", **data, **full_body,
+                                        faces=cell.faces, arm_vertices=cell.arm_points, arm_faces=cell.arm_faces,
+                                        opening_idx=cell.opening_idx, finger=finger, shoulder=shoulder,
+                                        elbow=np.asarray(cell.elbow), metadata_json=json.dumps(record))
+                    records.append(record)
+                    print("[result] " + json.dumps(record), flush=True)
+                save_json(body_dir / "metrics.json", records)
+                all_records.extend(records)
+                save_json(args.out / "metrics.json", all_records)
+                save_json(args.out / "accepted.json", [r for r in all_records if r["accepted"]])
+            finally:
+                env.close()
+    finally:
+        client.close()
+        dressing_live.LiveCellFactory.build = build_original
+    save_json(args.out / "skipped.json", skipped)
+    if not (args.out / "metrics.json").exists():
+        save_json(args.out / "metrics.json", [])
+        save_json(args.out / "accepted.json", [])
+    print(f"[complete] accepted {sum(r['accepted'] for r in all_records)}/{len(all_records)} -> {args.out}", flush=True)
+
+
+if __name__ == "__main__":
+    main()
