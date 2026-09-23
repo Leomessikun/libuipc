@@ -58,6 +58,8 @@ def parser():
     p.add_argument("--hold", type=int, default=30)
     p.add_argument("--autonomous-hold", action="store_true",
                    help="Continue querying the controller after first success to test whether it learned to stop.")
+    p.add_argument("--freeze-from-state", type=int, default=None,
+                   help="Diagnostic: record FMVP proposals but execute zero actions once this recorded state is reached.")
     p.add_argument("--success", type=float, default=0.7)
     p.add_argument("--slow-along", type=float, default=0.9,
                    help="Slow when gripper projection reaches this fraction of the hand-shoulder chord.")
@@ -85,6 +87,8 @@ def main():
     args = parser().parse_args()
     if args.hold < 1 or args.steps < 1:
         raise ValueError("Need positive search and hold windows")
+    if args.freeze_from_state is not None and not 0 <= args.freeze_from_state < args.steps:
+        raise ValueError("--freeze-from-state must be within the rollout window")
     if args.replicas < 1 or (args.replicas > 1 and len(args.variants) != 1):
         raise ValueError("--replicas >1 requires exactly one variant")
     if args.replicas == 1 and len(set(args.variants)) != len(args.variants):
@@ -307,6 +311,10 @@ def main():
                             slowed[i] |= along >= args.slow_along
                             scales[i] = VARIANTS[variant] if slowed[i] else 1.
                             actions[i] = action * scales[i]
+                            if args.freeze_from_state is not None and step >= args.freeze_from_state:
+                                actions[i] = 0.
+                                scales[i] = 0.
+                                controllers[i] = 2
                     actions = np.clip(actions, -1, 1)
                     anchors = np.stack(env._anchor).copy()
                     obs, rewards, dones, infos = env.step(actions)

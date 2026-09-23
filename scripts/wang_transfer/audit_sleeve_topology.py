@@ -34,6 +34,23 @@ def first_held(progress: np.ndarray, threshold: float, hold: int) -> int | None:
     return None
 
 
+def retention_hold(indices: list[int], hold: int) -> tuple[int | None, int]:
+    """First start with ``hold`` transitions of retention, and longest state run."""
+    if not indices:
+        return None, 0
+    starts = [indices[0]]
+    lengths = [1]
+    for previous, current in zip(indices[:-1], indices[1:]):
+        if current == previous + 1:
+            lengths[-1] += 1
+        else:
+            starts.append(current)
+            lengths.append(1)
+    first = next((s for s, length in zip(starts, lengths)
+                  if length >= hold + 1), None)
+    return first, max(lengths)
+
+
 def tensor_list(value: torch.Tensor) -> list[float]:
     return [round(float(x), 5) for x in value.detach().cpu().tolist()]
 
@@ -60,6 +77,63 @@ def topology_at(module, positions: torch.Tensor, rings: list[np.ndarray],
     }
 
 
+def upper_sleeve_at(module, positions: torch.Tensor, rings: list[np.ndarray],
+                    wrist: torch.Tensor, elbow: torch.Tensor, shoulder: torch.Tensor) -> dict:
+    """Check upper-arm retention without an abrupt frame flip at the elbow.
+
+    A ring close to both arm segments may wrap the forearm but not the upper-arm
+    tangent. Accept either nearby segment; still require three consecutive
+    semantic rings, a 0.15 arm span, and the cuff past 0.70 for this task.
+    """
+    fore = elbow - wrist
+    upper = shoulder - elbow
+    length_fore, length_upper = torch.linalg.vector_norm(fore), torch.linalg.vector_norm(upper)
+    total = length_fore + length_upper
+    points = (wrist, elbow, shoulder)
+    selected = []
+    for ring_idx in rings:
+        ring = positions[ring_idx]
+        center = ring.mean(dim=0)
+        candidates = []
+        for seg in range(2):
+            start, end = points[seg], points[seg + 1]
+            direction = end - start
+            fraction = (torch.dot(center - start, direction) /
+                        torch.dot(direction, direction)).clamp(0., 1.)
+            closest = start + fraction * direction
+            distance = torch.linalg.vector_norm(center - closest)
+            winding = module.winding_number_ring_around_axis(ring, closest, direction)
+            coverage = module.ring_coverage(ring, closest, direction)
+            clearance = module.ring_clearance(ring, closest, direction)
+            radial_mean, radial_max = module.ring_radial_extent(ring, closest, direction)
+            s = (fraction * (length_fore if seg == 0 else length_upper) +
+                 (0. if seg == 0 else length_fore)) / total
+            wrapped = (winding >= .75 and coverage >= .65 and clearance <= .12
+                       and radial_mean <= .18 and radial_max <= .30)
+            candidates.append((s, float(distance), bool(wrapped)))
+        # A 1 cm tie margin avoids switching the arm tangent because of a
+        # millimetre of cloth motion near the bent elbow.
+        usable = [j for j in range(2) if candidates[j][2]
+                  and candidates[j][1] <= candidates[1 - j][1] + .01]
+        if usable:
+            choice = min(usable, key=lambda j: candidates[j][1])
+            wrapped = True
+        else:
+            choice = min(range(2), key=lambda j: candidates[j][1])
+            wrapped = False
+        selected.append((float(candidates[choice][0]), wrapped, choice))
+    prefix = 0
+    while prefix < len(selected) and selected[prefix][1]:
+        prefix += 1
+    s_values = [value[0] for value in selected]
+    span = max(s_values[:prefix]) - min(s_values[:prefix]) if prefix else 0.
+    cuff_s = s_values[0] if s_values else 0.
+    return {"retained_upper": bool(prefix >= 3 and cuff_s >= .7 and span >= .15),
+            "contiguous_wrapped_rings": prefix, "cuff_s": round(cuff_s, 5),
+            "progress_span": round(span, 5), "s": [round(s, 5) for s in s_values],
+            "axis_segments": [value[2] for value in selected]}
+
+
 @torch.no_grad()
 def audit_episode(path: Path, semantics_path: Path, module, rings: list[np.ndarray],
                   cuff: np.ndarray, hold: int) -> dict:
@@ -81,24 +155,46 @@ def audit_episode(path: Path, semantics_path: Path, module, rings: list[np.ndarr
                       "upperarm_ratio_held": upper, "final": len(positions) - 1}
         examined = {}
         retained_states = []
+        upper_retained_states = []
         max_engaged = 0
         max_engaged_span = 0.
+        max_upper_cuff_with_three_rings = 0.
         for k in range(len(positions)):
-            result = topology_at(module, torch.as_tensor(positions[k]), rings, wrist, elbow, shoulder)
+            cloth = torch.as_tensor(positions[k])
+            result = topology_at(module, cloth, rings, wrist, elbow, shoulder)
+            upper_result = upper_sleeve_at(module, cloth, rings, wrist, elbow, shoulder)
             if result["retained"]:
                 retained_states.append(k)
+            if upper_result["retained_upper"]:
+                upper_retained_states.append(k)
+            if upper_result["contiguous_wrapped_rings"] >= 3:
+                max_upper_cuff_with_three_rings = max(max_upper_cuff_with_three_rings,
+                                                     upper_result["cuff_s"])
             max_engaged = max(max_engaged, result["engaged_ring_count"])
             max_engaged_span = max(max_engaged_span, result["engaged_span"])
             if k in milestones.values():
-                examined[k] = result
+                examined[k] = {**result, "elbow_aware_upper": upper_result}
+        retained_hold_start, longest_retained_run = retention_hold(retained_states, hold)
+        upper_hold_start, upper_longest_run = retention_hold(upper_retained_states, hold)
         return {
             "source": str(path.resolve()),
             "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             "body": metadata["body"],
+            "source_embodiment": "virtual_gripper_anchor",
+            "franka_reachability_checked": False,
             "rotation_mode": metadata.get("rotation_mode", "off"),
             "cloth_strain_rate_override": metadata.get("cloth_strain_rate_override"),
             "states": len(positions),
             "retained_state_count": len(retained_states),
+            "retained_states": retained_states,
+            "retained_hold_start": retained_hold_start,
+            "longest_retained_run_states": longest_retained_run,
+            "strict_retained_held": retained_hold_start is not None,
+            "elbow_aware_upper_retained_states": upper_retained_states,
+            "elbow_aware_upper_hold_start": upper_hold_start,
+            "elbow_aware_upper_longest_run_states": upper_longest_run,
+            "elbow_aware_upper_held": upper_hold_start is not None,
+            "max_cuff_s_with_three_elbow_aware_rings": round(max_upper_cuff_with_three_rings, 5),
             "first_retained_state": retained_states[0] if retained_states else None,
             "retained_through_upper_hold": (all(k in retained_states for k in range(upper, upper + hold + 1))
                                             if upper is not None else False),
@@ -133,18 +229,71 @@ def audit_newton_raw(path: Path, module, rings: list[np.ndarray]) -> dict:
             "episodes": rows}
 
 
+@torch.no_grad()
+def audit_pybullet_episode(path: Path, module, rings: list[np.ndarray], cuff: np.ndarray,
+                           hold: int) -> dict:
+    """Apply the same multi-ring gate to a recorded FMVP PyBullet episode."""
+    with np.load(path, allow_pickle=False) as data:
+        metadata = json.loads(str(data["metadata_json"]))
+        if metadata["garment"] != 1:
+            raise ValueError(f"Expected tshirt_26 (garment=1): {path}")
+        cloth, line = data["cloth"], data["line"]
+        if cloth.ndim != 3 or line.shape != (len(cloth), 3, 3):
+            raise ValueError(f"Misaligned cloth and arm states: {path}")
+        if max(int(r.max()) for r in rings) >= cloth.shape[1]:
+            raise ValueError(f"Sleeve semantics exceed cloth mesh: {path}")
+        if not np.array_equal(data["opening_idx"], cuff):
+            raise ValueError(f"FMVP opening polygon differs from the cuff: {path}")
+        upper = first_held(data["upperarm_ratio"], .7, hold)
+        milestones = {"initial": 0, "upperarm_ratio_held": upper, "final": len(cloth) - 1}
+        examined, retained = {}, []
+        max_engaged = 0
+        for k in range(len(cloth)):
+            wrist, elbow, shoulder = [torch.as_tensor(x) for x in line[k]]
+            result = topology_at(module, torch.as_tensor(cloth[k]), rings, wrist, elbow, shoulder)
+            if result["retained"]:
+                retained.append(k)
+            max_engaged = max(max_engaged, result["engaged_ring_count"])
+            if k in milestones.values():
+                examined[k] = result
+        retained_hold_start, longest_retained_run = retention_hold(retained, hold)
+        return {
+            "source": str(path.resolve()),
+            "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "states": len(cloth),
+            "source_robot": metadata.get("robot", "Sawyer"),
+            "robot_joint_trajectory_saved": "robot_q" in data,
+            "franka_reachability_checked": False,
+            "robot_cloth_collision": metadata.get("robot_cloth_collision"),
+            "retained_state_count": len(retained),
+            "retained_states": retained,
+            "retained_hold_start": retained_hold_start,
+            "longest_retained_run_states": longest_retained_run,
+            "strict_retained_held": retained_hold_start is not None,
+            "first_retained_state": retained[0] if retained else None,
+            "max_engaged_ring_count": max_engaged,
+            "retained_through_upper_hold": (
+                all(k in retained for k in range(upper, upper + hold + 1))
+                if upper is not None else False),
+            "milestones": {name: ({"state": k, **examined[k]} if k is not None else None)
+                           for name, k in milestones.items()},
+        }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("episodes", type=Path, nargs="*")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--newton-raw", type=Path, default=None,
                         help="Also audit final cloth states in Newton collect_demos raw_states.pt.")
+    parser.add_argument("--pybullet", type=Path, nargs="*", default=[],
+                        help="Also audit saved FMVP PyBullet tshirt_26 robot trajectories.")
     parser.add_argument("--newton-root", type=Path, default=NEWTON_ROOT)
     parser.add_argument("--semantics", type=Path, default=None)
     parser.add_argument("--hold", type=int, default=5)
     args = parser.parse_args()
-    if not args.episodes and args.newton_raw is None:
-        parser.error("Provide IPC episodes, --newton-raw, or both")
+    if not args.episodes and args.newton_raw is None and not args.pybullet:
+        parser.error("Provide IPC episodes, --newton-raw, --pybullet, or a combination")
     if args.hold < 1:
         parser.error("--hold must be positive")
     semantics_path = (args.semantics or args.newton_root / "exts/newton_isaaclab_tasks/"
@@ -174,6 +323,14 @@ def main() -> None:
         report["newton_raw"] = audit_newton_raw(args.newton_raw, module, rings)
         print(f"[audit] Newton saved={report['newton_raw']['saved_episodes']} "
               f"strict_retained_final={report['newton_raw']['strict_retained_final']}", flush=True)
+    if args.pybullet:
+        report["pybullet"] = [audit_pybullet_episode(path, module, rings, cuff, args.hold)
+                              for path in args.pybullet]
+        for row in report["pybullet"]:
+            upper = row["milestones"]["upperarm_ratio_held"]
+            print(f"[audit] PyBullet upper_ratio_held={upper is not None} "
+                  f"retained_at_upper={upper['retained'] if upper else None} "
+                  f"retained_states={row['retained_state_count']}/{row['states']}", flush=True)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2) + "\n")
     print(f"[complete] {len(episodes)} episodes -> {args.out}", flush=True)
