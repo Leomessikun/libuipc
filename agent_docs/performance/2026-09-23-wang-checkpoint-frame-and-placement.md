@@ -181,14 +181,14 @@ this start but never reaches the upper arm (forearm 0.59 to 0.71).
 
 * *It pulls too far and too hard.* At the crossing the gripper is 1.5 to 2.1 fingertip-to-shoulder
   chords from the fingertip, where the expert is at 1.15 to 1.45, and the contact force on the arm
-  is 26 to 837 N, where the expert's is 1 to 233 N and mostly under 35. A policy trained on cloth
+  is 37 to 837 N, where the expert's is 1 to 233 N and mostly under 35. A policy trained on cloth
   that stretches learned to over-travel; ours transmits it as force.
-* *It does not stop.* PyBullet ends the episode at 0.99. Held still after crossing 0.7, 5 of 8
+* *It does not stop.* PyBullet ends the episode at 0.99. Held still after crossing 0.7, 5 of 7
   successes on the second body set did not stay: the taut sleeve snaps past the shoulder in one or
   two decisions (5045: 0.33, 0.81, 0.995, then 0), after which the progress metric reads zero. The
   expert's held ratio stays where it was.
 
-**Force as the FiLM input hurt**: 2 of 7 with any non-zero scale against 8 of 8 on the same
+**Force as the FiLM input hurt**: 2 of 10 with any non-zero scale against 8 of 8 on the same
 bodies at zero. FMVP's force is PyBullet's soft-body contact force times 10; over the successful
 PyBullet episode it is zero on 73 per cent of decisions and at most 0.077 in norm. It is not in
 newtons in any calibrated sense, and our readings run from tens to hundreds of newtons, so no
@@ -198,6 +198,6 @@ exposes the over-pull above.
 
 **Next.** Stopping on success is not enough while the snap happens within a decision of the
 crossing. The route FMVP itself took is to fine-tune these weights in the target simulator; ours
-would add the arm force as a cost, which is what the 26 to 837 N says it needs. A cheaper probe
+would add the arm force as a cost, which is what the 37 to 837 N says it needs. A cheaper probe
 first: slow the policy near the shoulder (scale the translation once the forearm ratio is 1) and
 see whether the held ratio survives.

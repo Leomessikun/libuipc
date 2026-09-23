@@ -3863,5 +3863,5 @@ gripper offset, lets `fmvp_sim.pt` (force input zero) cross upper-arm 0.7 on 15 
 eight bodies and three regions; the expert on the same starts: 9 of 10. It over-pulls (1.5 to 2.1
 chords, 26 to 837 N on the arm against the expert's mostly under 35 N) and does not stop, so 5 of 8
 held successes snap past the shoulder. Feeding the IPC contact force to its FiLM made it worse (2
-of 7). Bridge FiLM support: fa6c0949 on `sac-stability`. Record updated; scripts in
+of 10). Bridge FiLM support: fa6c0949 on `sac-stability`. Record updated; scripts in
 `scripts/wang_transfer/`.
