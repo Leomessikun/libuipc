@@ -201,3 +201,33 @@ crossing. The route FMVP itself took is to fine-tune these weights in the target
 would add the arm force as a cost, which is what the 37 to 837 N says it needs. A cheaper probe
 first: slow the policy near the shoulder (scale the translation once the forearm ratio is 1) and
 see whether the held ratio survives.
+
+## The gripper load is the force channel to use, and it is reliable
+
+FMVP's real system conditions on the **end-effector force** of its Sawyer (from joint torques,
+smoothed by an exponential moving average), not on force on the person; FleX gave no usable force,
+so force entered only in the real-world IQL fine-tune (reward: a learned preference model plus a
+force penalty normalised by 8 N; safety stop at 18 N). The PyBullet release substitutes summed cloth
+contact force.
+
+Our analogue is the hold itself: each held vertex is a spring of stiffness
+`constraint_strength * m_i / dt^2`, so `F = -sum k_i (target_i - x_i)` is the force the garment puts on
+the gripper, what a wrist sensor would read (`scripts/wang_transfer/wang_force_probe.py`; vertex mass
+from `2 * cloth_thickness * cloth_density` per area, since `thickness` is a half-thickness). At rest it
+reads 9 to 10 N against the garment's weight of 8.8 N (0.896 kg).
+
+Same commands in two slots of one world, 260 decisions, gravity-hung start:
+
+| run | gripper load within 20 % | arm contact within 20 % | gripper p90 / max (N) |
+|---|---:|---:|---|
+| fmvp_sim, 14046 | 0.98 | 0.85 | 206 / 474 |
+| fmvp_sim, 14045 | 1.00 | 0.85 | 1218 / 1987 |
+| expert, 14046 | 0.78 | 0.71 | 335 / 878 |
+| expert, 14045 | 0.72 | 0.59 | 387 / 648 |
+
+The gripper load reproduces per decision where the arm contact force does not, and it is the
+quantity a real robot measures. Its magnitude is the problem: the expert itself runs at a p90 of
+335 to 387 N against FMVP's 18 N stop. The garment weighs 0.9 kg and the IPC cloth barely stretches,
+so before any absolute force threshold is meaningful the garment's mass and stretch must be checked
+against a real T-shirt; until then a force term can only be relative (for example, against the
+expert's load at the same progress).
