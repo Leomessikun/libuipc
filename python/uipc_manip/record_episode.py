@@ -53,12 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _body_mesh(cell) -> tuple[np.ndarray, np.ndarray] | None:
-    """The rest of the person, for the picture only.
+    """The rest of the person, for arm-only recordings' picture.
 
-    The simulation holds the right arm alone: ``DressingEnv`` adds ``cell.arm_points`` as the one
-    fixed affine body, and the garment never touches a torso. The cell still carries the full
-    SMPL-X vertices, and the topology is the model's fixed one, so the body can be drawn behind the
-    arm to show where the person is. Nothing here changes the physics.
+    An arm-only world adds ``cell.arm_points`` as its fixed affine body. The cell
+    still carries the full SMPL-X vertices, so those can be drawn for context.
+    A full-body collision world already draws its complete simulated collider.
     """
     points = getattr(cell, "human_points", None)
     if points is None:
@@ -126,7 +125,7 @@ def main(argv: list[str] | None = None) -> None:
     # train_sac.evaluate's rule, so the episode is the one that round scored.
     seed = a.seed * 1000 + 97 * int(a.eval_round) + int(a.slot)
     obs = env.reset([seed])
-    body = None if a.no_body else _body_mesh(env.cells[0])
+    body = None if a.no_body or env.cfg.collision_geometry == "full_body" else _body_mesh(env.cells[0])
 
     # Look at the arm broadside. A direction fixed in world axes shows a differently posed arm
     # end-on, and the sleeve's progress up the forearm is exactly what an end-on view hides.
