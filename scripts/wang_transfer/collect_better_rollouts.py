@@ -64,6 +64,8 @@ def parser():
     p.add_argument("--handoff-forearm", type=float, default=0.5,
                    help="Hand off to the existing expert's forearm stage after this coverage.")
     p.add_argument("--yaw", type=float, default=267.0)
+    p.add_argument("--rotation", choices=("off", "fmvp"), default="off",
+                   help="Keep the historical zero rotation or apply FMVP's vertical-only PyBullet rotation rule.")
     p.add_argument("--collision-geometry", choices=("arm", "full_body"), default="arm",
                    help="IPC cloth collider: historical right arm or the complete SMPL-X body.")
     p.add_argument("--placement-offset-mm", type=float, nargs=3, default=[0., 0., 0.],
@@ -74,6 +76,8 @@ def parser():
                    help="Optional simulator-load cutoff to end clearly unusable attempts early; not a real-world safety threshold.")
     p.add_argument("--cloth-density", type=float, default=None,
                    help="Optional kg/m^3 material-density override; save and extract separately from default physics.")
+    p.add_argument("--cloth-strain-rate", type=float, default=None,
+                   help="Optional Baraff-Witkin over-stretch coefficient; an experimental material parameter, not allowable strain.")
     return p
 
 
@@ -89,6 +93,8 @@ def main():
         raise ValueError("--abort-gripper-force must be positive")
     if args.cloth_density is not None and args.cloth_density <= 0:
         raise ValueError("--cloth-density must be positive")
+    if args.cloth_strain_rate is not None and args.cloth_strain_rate <= 0:
+        raise ValueError("--cloth-strain-rate must be positive")
     hang_hash = sha256(args.hang)
     if args.preflight_manifest is not None:
         preflight = json.loads(args.preflight_manifest.read_text())
@@ -185,6 +191,8 @@ def main():
                 ["teacher", "--region", "13", "--seed", "1", "--obs-mode", "wang_static_arm", "--no-obs-augment"])
             n = len(variants)
             material = {} if args.cloth_density is None else {"cloth_density": args.cloth_density}
+            if args.cloth_strain_rate is not None:
+                material["cloth_strain_rate"] = args.cloth_strain_rate
             cfg = replace(train_sac.dressing_config(training_args),
                           cells=tuple(("tshirt_26", body) for _ in range(n)), cell_source="live",
                           collision_geometry=args.collision_geometry,
@@ -287,7 +295,13 @@ def main():
                             pos, feat, valid, _ = (x[i] for x in spec.unpack_numpy(obs))
                             valid = valid.astype(bool)
                             action = client.act(pos[valid], feat[valid])
+                            model_vertical_rotation = float((rotation @ action[3:])[1])
                             action[3:] = 0.
+                            if args.rotation == "fmvp":
+                                delta = abs(model_vertical_rotation)
+                                if delta > np.deg2rad(5.):
+                                    delta *= np.deg2rad(5.) / np.sqrt(3.)
+                                action[5] = np.sign(model_vertical_rotation) * delta / cfg.max_rotation
                             proposed[i] = action
                             along = float((env._anchor[i] - finger) @ axis / (axis @ axis))
                             slowed[i] |= along >= args.slow_along

@@ -20,10 +20,24 @@ def main():
     p.add_argument("--paused", action="store_true")
     p.add_argument("--start-frame", type=int, default=0,
                    help="Initial frame of the first episode; -1 opens at the last recorded state.")
+    p.add_argument("--camera-offset", type=float, nargs=3, default=[1., -1.3, .6],
+                   metavar=("DX", "DY", "DZ"),
+                   help="Genesis viewer camera position relative to the elbow-centered look-at point.")
+    p.add_argument("--show-ring-centers", action="store_true",
+                   help="Overlay the seven semantic sleeve-ring centers in the Genesis viewer.")
+    p.add_argument("--semantics", type=Path, default=(Path(__file__).resolve().parents[3] / "newton/"
+                   "exts/newton_isaaclab_tasks/newton_isaaclab_tasks/dressing/data/"
+                   "garment_semantics/tshirt_26__s4.0000_auto_semantics.npz"))
     args = p.parse_args()
     import genesis as gs
     import trimesh
     from genesis.vis.keybindings import Key, Keybind
+
+    rings = []
+    if args.show_ring_centers:
+        with np.load(args.semantics, allow_pickle=False) as source:
+            rings = [source[f"right_sleeve_ring_{i:02d}"].astype(np.int64)
+                     for i in range(int(source["right_ring_count"][0]))]
 
     data = []
     for path in args.episodes:
@@ -34,6 +48,8 @@ def main():
                 episode["human_vertices"] = source["human_vertices"]
                 episode["human_faces"] = source["human_faces"]
         episode["meta"] = json.loads(str(episode.pop("metadata_json")))
+        if rings and max(int(r.max()) for r in rings) >= episode["positions"].shape[1]:
+            raise ValueError(f"Sleeve-ring semantics do not match cloth mesh: {path}")
         episode["label"] = f"{path.parent.parent.name}/{path.stem}"
         data.append(episode)
     first = data[0]
@@ -42,7 +58,7 @@ def main():
     scene = gs.Scene(
         sim_options=gs.options.SimOptions(dt=.1, gravity=(0, 0, 0)),
         viewer_options=gs.options.ViewerOptions(
-            res=(1200, 900), camera_pos=tuple(lookat + np.array([1.0, -1.3, .6])),
+            res=(1200, 900), camera_pos=tuple(lookat + np.asarray(args.camera_offset)),
             camera_lookat=tuple(lookat), camera_fov=40, refresh_rate=30,
             run_in_thread=False, realtime_factor=None),
         vis_options=gs.options.VisOptions(ambient_light=(.35, .35, .35), show_world_frame=False),
@@ -101,13 +117,19 @@ def main():
                         meshes.append(drawing)
                     meshes.append(scene.draw_debug_sphere(d["tcp"][k], radius=.012, color=(.15, .15, .15, 1)))
                     meshes.append(scene.draw_debug_sphere(d["shoulder"], radius=.01, color=(.2, .85, .3, 1)))
+                    for i, ring in enumerate(rings):
+                        center = d["positions"][k, ring].mean(axis=0)
+                        frac = i / max(1, len(rings) - 1)
+                        color = (1. - .65 * frac, .12 + .65 * frac, .15 + .65 * frac, 1.)
+                        meshes.append(scene.draw_debug_sphere(center, radius=.007, color=color))
                 m = d["meta"]
                 if "stage" in m:
-                    phase = f"{m['stage'].upper()} PREFIX"
+                    phase = f"{m['stage'].upper()} PREFIX / {m.get('quality_class', 'TOPOLOGY UNVERIFIED')}"
                     if k == m["milestone_state"]:
                         phase += " / MILESTONE"
                 else:
-                    phase = "HOLD" if m["success_state"] is not None and k >= m["success_state"] else "DRESS"
+                    phase = ("RATIO HOLD / SLEEVE UNVERIFIED"
+                             if m["success_state"] is not None and k >= m["success_state"] else "DRESS")
                 caption = (f"Genesis | {d['label']} | body {m['body']} | {k}/{len(d['positions'])-1} {phase} | "
                            f"{m.get('collision_geometry', 'arm')} collision | "
                            f"upper {d['upperarm_ratio'][k]:.3f} | grip {np.linalg.norm(d['gripper_force'][k]):.1f} N | "
@@ -128,6 +150,8 @@ def main():
                     end_hold_until = None
                 next_frame = now + 1. / args.fps
             time.sleep(.005)
+    except KeyboardInterrupt:
+        pass
     finally:
         scene.destroy()
 

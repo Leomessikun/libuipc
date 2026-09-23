@@ -1,5 +1,12 @@
 # FMVP checkpoint with the complete SMPL-X body in Genesis+IPC
 
+> Endpoint correction: the later [seven-ring sleeve audit](2026-09-23-ipc-vbd-sleeve-audit.md)
+> found **zero** strict full-sleeve trajectories among the two 14046
+> upper-arm-ratio crossings or four new crossings. The upper-arm prefixes
+> reported below reached a scalar travel threshold; they are not verified
+> complete dressing demonstrations. The current full-body extractor requires
+> a topology audit to prevent that label from propagating into new datasets.
+
 > Later same-day update: these rollouts used the default
 > `cloth_strain_rate=100` with FMVP rotation suppressed. Follow-up experiments
 > found upper-arm crossings on previously failed bodies at `strain_rate=10`
@@ -103,8 +110,14 @@ OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 "$PY" \
   --abort-gripper-force 1000 \
   --out output/uipc_manip/full_body_raw_example
 
+"/home/ge47gax/kun/newton/.venv/bin/python" \
+  scripts/wang_transfer/audit_sleeve_topology.py \
+  output/uipc_manip/full_body_raw_example/body_*/*.npz \
+  --out output/uipc_manip/full_body_raw_example/topology_audit.json
+
 python3 scripts/wang_transfer/extract_checkpoint_prefixes.py \
   --sources output/uipc_manip/full_body_raw_example \
+  --topology-audit output/uipc_manip/full_body_raw_example/topology_audit.json \
   --out output/uipc_manip/full_body_prefixes_example \
   --hold 5 --max-gripper-peak-N 1000
 
@@ -114,9 +127,11 @@ bash scripts/wang_transfer/view_checkpoint_prefixes.sh \
 
 `--bodies` can select a subset of legal body IDs from the preflight manifest.
 The extractor keeps only the FMVP-controlled actions through the first
-*verified* forearm or upper-arm milestone. A five-decision validation window
-must retain the milestone and grasp; these later decisions are excluded from
-the training clip. The force cutoff is a simulation-only gross-outlier screen,
+held forearm or upper-arm ratio milestone. For new full-body datasets it also
+requires the saved-state ring audit: an upper-arm prefix needs multi-ring
+retention throughout its five-decision hold; a forearm prefix is explicitly
+labeled partial cuff progress. The validation decisions are excluded from the
+training clip. The force cutoff is a simulation-only gross-outlier screen,
 not a real-world safety value. Inspect selected clips in the **native Genesis
 viewer**; no Matplotlib plot represents garment geometry here. Keep different
 cloth meshes, checkpoints, or collision geometry in distinct datasets.
