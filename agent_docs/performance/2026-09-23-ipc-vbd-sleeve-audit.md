@@ -1,5 +1,55 @@
 # Full-body FMVP rollouts: IPC versus Newton VBD sleeve audit
 
+## Correction, 2026-09-24: the old rings are on the torso
+
+**The topology-based rejections in the historical sections below are
+superseded.** On `tshirt_26`, `right_cuff_loop_ordered` is the six-point
+**armhole seam**, not the actual free cuff. The generated rings proceed
+from that seam toward the neckline/torso, on the wrong side of the seam.
+Matching six indices between two simulators did not validate their meaning.
+The earlier conclusion that no complete sleeve trajectory existed, and
+that a grasp change was necessary, was therefore unsupported.
+
+`scripts/wang_transfer/physical_sleeve.py` now extracts the actual 32-vertex
+free cuff from mesh boundary edges, then traces three closed triangle/plane
+intersection contours at 25%, 50%, and 75% of the cuff-to-armhole distance.
+Each contour follows connected triangles and retains its barycentric
+locations during cloth deformation. These sections are on the sleeve side
+of the seam. The task threshold remains the original upper-arm ratio >=0.7;
+all four physical sleeve sections must wrap the arm during the hold, and
+the grasp must stay valid throughout the trajectory.
+
+The first re-audit confirmed **3 complete, grasp-valid simulation runs**
+among seven baseline/speed recordings on four bodies: two original
+baselines (14046, 14047) and the repeated speed-study baseline (14046).
+Their peak simulated gripper loads were 78.2, 136.2, and 191.9 N.
+Their cloth-edge p99 maxima relative to state zero were 1.90, 2.01, and
+2.01: completion is established, but textile calibration is still absent.
+These are single-sleeve simulation trajectories, not certified robot
+demonstrations. See
+`output/uipc_manip/fmvp_actual_sleeve_audit_20260924.json` and the native
+Genesis view `output/uipc_manip/genesis_physical_sleeve_body14046_20260924.png`.
+The real cuff is red; the three sleeve cross-sections are yellow.
+
+The old seven-ring rejection must also not be used to dismiss the Newton
+or PyBullet episodes. Their separately measured material deformation and
+initial-state differences remain valid observations.
+
+Two transfer-interface changes were tested together on body 14046:
+disable a second voxel pass in the bridge, and scale yaw by 0.3464 to match
+the reduced translation step relative to FMVP's 0.025 m reference.
+All three speed variants failed and exceeded the 1000 N simulator cutoff.
+This combined test does not isolate either change. The working historical
+interface is retained for collection; the new options are experimental.
+
+Fresh collection now uses `--success-geometry physical_sleeve --hold 20`
+to require a two-second held endpoint. The prior half/quarter-speed test
+was also too short to finish the same travel, so an extended-horizon test
+is recorded separately. No network fine-tuning or post-training is needed
+to establish this rollout route.
+
+## Historical diagnostic (incorrect sleeve-region interpretation)
+
 The recorded upper-arm travel ratio is **not** sufficient to label a rollout
 as a complete dressing demonstration. A valid endpoint must retain several
 successive semantic sleeve rings around a nonzero span of the arm. This audit

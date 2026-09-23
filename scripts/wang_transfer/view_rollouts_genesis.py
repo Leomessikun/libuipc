@@ -25,6 +25,8 @@ def main():
                    help="Genesis viewer camera position relative to the elbow-centered look-at point.")
     p.add_argument("--show-ring-centers", action="store_true",
                    help="Overlay the seven semantic sleeve-ring centers in the Genesis viewer.")
+    p.add_argument("--show-physical-sleeve", action="store_true",
+                   help="Overlay the true free cuff and three connected cross-sections on the sleeve.")
     p.add_argument("--semantics", type=Path, default=(Path(__file__).resolve().parents[3] / "newton/"
                    "exts/newton_isaaclab_tasks/newton_isaaclab_tasks/dressing/data/"
                    "garment_semantics/tshirt_26__s4.0000_auto_semantics.npz"))
@@ -34,6 +36,11 @@ def main():
     from genesis.vis.keybindings import Key, Keybind
 
     rings = []
+    physical_template = None
+    if args.show_physical_sleeve:
+        from physical_sleeve import DEFAULT_OBJ, SleeveSections, measure as measure_sleeve, read_obj
+        rest, rest_faces = read_obj(DEFAULT_OBJ)
+        physical_template = (rest * 4., rest_faces)
     if args.show_ring_centers:
         with np.load(args.semantics, allow_pickle=False) as source:
             rings = [source[f"right_sleeve_ring_{i:02d}"].astype(np.int64)
@@ -47,6 +54,9 @@ def main():
             if "human_vertices" in source and "human_faces" in source:
                 episode["human_vertices"] = source["human_vertices"]
                 episode["human_faces"] = source["human_faces"]
+            if physical_template is not None:
+                episode["sleeve_sections"] = SleeveSections(*physical_template, source["opening_idx"])
+                episode["finger"] = source["finger"]
         episode["meta"] = json.loads(str(episode.pop("metadata_json")))
         if rings and max(int(r.max()) for r in rings) >= episode["positions"].shape[1]:
             raise ValueError(f"Sleeve-ring semantics do not match cloth mesh: {path}")
@@ -122,6 +132,11 @@ def main():
                         frac = i / max(1, len(rings) - 1)
                         color = (1. - .65 * frac, .12 + .65 * frac, .15 + .65 * frac, 1.)
                         meshes.append(scene.draw_debug_sphere(center, radius=.007, color=color))
+                    if "sleeve_sections" in d:
+                        for i, points in enumerate(d["sleeve_sections"].points(d["positions"][k])):
+                            color = ((1., .2, .1, 1.) if i == 0 else (1., .85, .1, 1.))
+                            for start, end in zip(points, np.roll(points, -1, axis=0)):
+                                meshes.append(scene.draw_debug_line(start, end, radius=.0015, color=color))
                 m = d["meta"]
                 if "stage" in m:
                     phase = f"{m['stage'].upper()} PREFIX / {m.get('quality_class', 'TOPOLOGY UNVERIFIED')}"
@@ -130,6 +145,10 @@ def main():
                 else:
                     phase = ("RATIO HOLD / SLEEVE UNVERIFIED"
                              if m["success_state"] is not None and k >= m["success_state"] else "DRESS")
+                if "sleeve_sections" in d:
+                    physical = measure_sleeve(d["sleeve_sections"], d["positions"][k],
+                                              np.stack([d["finger"], d["elbow"], d["shoulder"]]))
+                    phase = "SLEEVE WRAPPED" if physical["sleeve_wrapped"] else "SLEEVE NOT FULLY THREADED"
                 caption = (f"Genesis | {d['label']} | body {m['body']} | {k}/{len(d['positions'])-1} {phase} | "
                            f"{m.get('collision_geometry', 'arm')} collision | "
                            f"upper {d['upperarm_ratio'][k]:.3f} | grip {np.linalg.norm(d['gripper_force'][k]):.1f} N | "

@@ -61,6 +61,8 @@ def parser():
     p.add_argument("--freeze-from-state", type=int, default=None,
                    help="Diagnostic: record FMVP proposals but execute zero actions once this recorded state is reached.")
     p.add_argument("--success", type=float, default=0.7)
+    p.add_argument("--success-geometry", choices=("legacy_ratio", "physical_sleeve"), default="legacy_ratio",
+                   help="physical_sleeve additionally requires the real cuff and three sleeve sections to wrap the arm.")
     p.add_argument("--slow-along", type=float, default=0.9,
                    help="Slow when gripper projection reaches this fraction of the hand-shoulder chord.")
     p.add_argument("--handoff-forearm", type=float, default=0.5,
@@ -68,6 +70,10 @@ def parser():
     p.add_argument("--yaw", type=float, default=267.0)
     p.add_argument("--rotation", choices=("off", "fmvp"), default="off",
                    help="Keep the historical zero rotation or apply FMVP's vertical-only PyBullet rotation rule.")
+    p.add_argument("--rotation-gain", type=float, default=1.,
+                   help="Scale the reference yaw increment; max_translation/0.025 preserves FMVP's rotation per metre.")
+    p.add_argument("--bridge-voxel", type=float, default=None,
+                   help="Override the policy bridge voxel size; 0 avoids downsampling an already voxelized observation twice.")
     p.add_argument("--collision-geometry", choices=("arm", "full_body"), default="arm",
                    help="IPC cloth collider: historical right arm or the complete SMPL-X body.")
     p.add_argument("--placement-offset-mm", type=float, nargs=3, default=[0., 0., 0.],
@@ -99,6 +105,10 @@ def main():
         raise ValueError("--cloth-density must be positive")
     if args.cloth_strain_rate is not None and args.cloth_strain_rate <= 0:
         raise ValueError("--cloth-strain-rate must be positive")
+    if not np.isfinite(args.rotation_gain) or args.rotation_gain < 0:
+        raise ValueError("--rotation-gain must be finite and nonnegative")
+    if args.bridge_voxel is not None and (not np.isfinite(args.bridge_voxel) or args.bridge_voxel < 0):
+        raise ValueError("--bridge-voxel must be finite and nonnegative")
     hang_hash = sha256(args.hang)
     if args.preflight_manifest is not None:
         preflight = json.loads(args.preflight_manifest.read_text())
@@ -149,6 +159,11 @@ def main():
     np.savez_compressed(args.out / "hang.npz", **{args.hang_key: hang})
     rotation = up_axis_rotation(args.yaw)
     full_body_faces = smplx_faces() if args.collision_geometry == "full_body" else None
+    sleeve_template = None
+    if args.success_geometry == "physical_sleeve":
+        from physical_sleeve import DEFAULT_OBJ, SleeveSections, measure as measure_sleeve, read_obj
+        rest_vertices, rest_faces = read_obj(DEFAULT_OBJ)
+        sleeve_template = (rest_vertices * 4., rest_faces)
     variants = args.variants * args.replicas
     labels = [f"{v}_rep{i}" if args.replicas > 1 else v for i, v in enumerate(variants)]
     build_original = dressing_live.LiveCellFactory.build
@@ -188,7 +203,8 @@ def main():
     dressing_live.LiveCellFactory.build = hung_build
     all_records = []
     skipped = []
-    client = WangPolicyClient(checkpoint=str(args.checkpoint), yaw_deg=args.yaw)
+    client = WangPolicyClient(checkpoint=str(args.checkpoint), yaw_deg=args.yaw,
+                              voxel=args.bridge_voxel, package_root=args.package_root)
     try:
         for body in args.bodies:
             _, training_args, _ = pretrain_wang.prepare(
@@ -219,6 +235,8 @@ def main():
                 env._arm_force_summaries()  # Initializes the lazy contact exporter before state zero.
                 spec = ObsSpec(training_args.point_budget)
                 cell = env.cells[0]
+                sleeve = SleeveSections(*sleeve_template, cell.opening_idx) if sleeve_template is not None else None
+                sleeve_landmarks = np.stack([cell.finger, cell.elbow, cell.shoulder])
                 finger, shoulder = np.asarray(cell.finger), np.asarray(cell.shoulder)
                 axis = shoulder - finger
                 triangles = cell.cloth[cell.faces]
@@ -235,6 +253,9 @@ def main():
                             "upperarm_ratio", "forearm_ratio", "actions", "policy_actions", "rewards",
                             "executed_translation", "tracking_error", "early_turn", "grasp_valid", "speed_scale", "controller_id"]}
                            for _ in range(n)]
+                if sleeve is not None:
+                    for buffer in buffers:
+                        buffer.update(sleeve_wrapped=[], sleeve_cuff_s=[], sleeve_proximal_upper_fraction=[])
                 success_at, finish_at = [None] * n, [None] * n
                 handoff_at = [None] * n
                 completed = np.zeros(n, bool)
@@ -259,6 +280,11 @@ def main():
                                       body_force=body_force.sum(0),
                                       upperarm_ratio=float(progress.upperarm_ratio),
                                       forearm_ratio=float(progress.forearm_ratio))
+                        if sleeve is not None:
+                            geometry = measure_sleeve(sleeve, positions[i], sleeve_landmarks)
+                            values.update(sleeve_wrapped=geometry["sleeve_wrapped"],
+                                          sleeve_cuff_s=geometry["cuff_s"],
+                                          sleeve_proximal_upper_fraction=geometry["proximal_upper_fraction"])
                         for key, value in values.items():
                             buffers[i][key].append(value)
 
@@ -305,7 +331,7 @@ def main():
                                 delta = abs(model_vertical_rotation)
                                 if delta > np.deg2rad(5.):
                                     delta *= np.deg2rad(5.) / np.sqrt(3.)
-                                action[5] = np.sign(model_vertical_rotation) * delta / cfg.max_rotation
+                                action[5] = args.rotation_gain * np.sign(model_vertical_rotation) * delta / cfg.max_rotation
                             proposed[i] = action
                             along = float((env._anchor[i] - finger) @ axis / (axis @ axis))
                             slowed[i] |= along >= args.slow_along
@@ -340,7 +366,8 @@ def main():
                                 failures[i] = f"simulated gripper load {load:.1f} N exceeded collection cutoff {args.abort_gripper_force:.1f} N"
                                 completed[i] = True
                                 continue
-                        if success_at[i] is None and infos[i]["upperarm_ratio"] >= args.success:
+                        sleeve_ok = sleeve is None or buffers[i]["sleeve_wrapped"][-1]
+                        if success_at[i] is None and infos[i]["upperarm_ratio"] >= args.success and sleeve_ok:
                             success_at[i] = step + 1  # state index, after this transition
                             finish_at[i] = success_at[i] + args.hold
                         if finish_at[i] is not None and step + 1 >= finish_at[i]:
@@ -365,12 +392,15 @@ def main():
                     hold_complete = bool(success_at[i] is not None and finish_at[i] is not None
                                          and t >= finish_at[i])
                     stable = bool(hold_complete and held.size >= args.hold + 1 and np.min(held) >= args.success)
+                    if sleeve is not None and success_at[i] is not None:
+                        stable = stable and bool(data["sleeve_wrapped"][success_at[i]:].all())
                     valid = bool(np.all(data["grasp_valid"]))
                     accepted = stable and valid and failures[i] is None
                     force = np.linalg.norm(data["gripper_force"][1:], axis=1)
                     arm_force = np.linalg.norm(data["arm_force"][1:], axis=1)
                     record = dict(body=body, variant=variant, replica=i if args.replicas > 1 else None,
                                   collision_geometry=args.collision_geometry,
+                                  success_geometry=args.success_geometry,
                                   seed=args.seed, transitions=t, success_state=success_at[i],
                                   handoff_state=handoff_at[i],
                                   hold_complete=hold_complete, timed_out=bool(success_at[i] is None and t >= args.steps),
