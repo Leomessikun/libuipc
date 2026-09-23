@@ -3861,7 +3861,7 @@ sleeve on 3 of 4 runs (forearm 0.42 to 0.61), upper arm still 0. Record and open
 Hanging the garment from Wang's two picker vertices in libuipc, then placing it at FMVP-PyBullet's
 gripper offset, lets `fmvp_sim.pt` (force input zero) cross upper-arm 0.7 on 15 of 18 runs across
 eight bodies and three regions; the expert on the same starts: 9 of 10. It over-pulls (1.5 to 2.1
-chords, 26 to 837 N on the arm against the expert's mostly under 35 N) and does not stop, so 5 of 8
+chords, 37 to 837 N on the arm against the expert's mostly under 35 N) and does not stop, so 5 of 7
 held successes snap past the shoulder. Feeding the IPC contact force to its FiLM made it worse (2
 of 10). Bridge FiLM support: fa6c0949 on `sac-stability`. Record updated; scripts in
 `scripts/wang_transfer/`.
