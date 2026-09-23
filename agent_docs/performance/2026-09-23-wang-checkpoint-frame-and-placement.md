@@ -231,3 +231,39 @@ quantity a real robot measures. Its magnitude is the problem: the expert itself 
 so before any absolute force threshold is meaningful the garment's mass and stretch must be checked
 against a real T-shirt; until then a force term can only be relative (for example, against the
 expert's load at the same progress).
+
+## With the complete body: every controller jams at the shoulder, unless the cloth may stretch
+
+The arm-only successes above do not survive a torso. The Codex session's full-body collider
+(complete SMPL-X surface, `collision_geometry="full_body"`, uncommitted in both checkouts at the time;
+record `2026-09-23-fmvp-full-body-rollout.md`) turns them into forearm prefixes: the arm-only wins
+over-pulled 1.5 to 2.1 chords, through where the chest is. The runs below use its collector with
+three added options (rotation handling, `cloth_strain_rate`, `cloth_youngs`), gravity-hung start,
+5 mm up offset, success at upper arm 0.7 held for 5 decisions, 1,000 N gripper-load abort.
+
+**Rotation.** The PyBullet success turns the gripper about the vertical by up to 119 degrees and back
+(t = 100 to 222, mostly in the upper-arm phase); every IPC run so far had dropped rotation. Restoring
+FMVP's vertical-only, clamped rotation: 2 of 9 against 1 of 9 without (14046 at 90 N against 301 N;
+14047 rescued; 14045, 14048, 14049, 14050 still fail). It helps, it is not the cause.
+
+**The scene is jammed, not the policy.** The scripted expert with the full body: 0 of 6 (peak upper
+arm 0.08 to 0.57). Without the abort, expert and policy both plateau at upper arm 0.5 to 0.7 while
+the gripper load climbs to 2 to 8.7 kN and tears the held patch away.
+
+**The strain limit decides it.** Same bodies that jammed (14045, 14049), rotation on:
+
+| `cloth_strain_rate` | fmvp_sim 14045 | fmvp_sim 14049 | expert 14045 | expert 14049 |
+|---|---|---|---|---|
+| 100 (default) | fail x2 | fail x2 | fail | fail |
+| 10 | 0.79, peak 451 N | 0.70, peak 621 N | fail | fail |
+| 1 | 0.74, peak 510 N | 0.73, peak 550 N | 0.72 | fail |
+
+At 10 the garment's median edge length stays at 1.00 to 1.06 of the start, as at 100; at 1 it
+shrinks to 0.85 to 0.89, which is not physical, so 1 is rejected. All three settings end with
+p99 edge stretch 2.2 to 2.6 and single edges at 3 to 12 times, near the hold; that local distortion
+is its own open problem.
+
+Reading: the checkpoint was trained on cloth that stretches (FleX, then PyBullet's mass-spring), and
+a knit T-shirt stretches too; the default strain limit makes the armhole unable to pass the shoulder
+with a torso present, for the expert as much as for the policy. One run per cell; before `10` becomes
+a default it needs a force-extension calibration against real jersey and replication over more bodies.
