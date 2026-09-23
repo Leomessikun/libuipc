@@ -63,6 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--task", choices=[*sorted(TASKS), "dressing"], default="dressing")
     p.add_argument("--cell-source", choices=("cache", "live"), default="live", help="dressing: 'live' drapes each garment in libuipc and places it on a generated body, so every (garment, body) cell exists; 'cache' reads the Newton bake's 23 pre-worn cells over bodies 0-7.")
+    p.add_argument("--collision-geometry", choices=("arm", "full_body"), default="arm",
+                   help="dressing: IPC contact uses the right arm or complete fixed SMPL-X body; observations still use the right arm.")
     body_axis = p.add_mutually_exclusive_group()
     body_axis.add_argument("--human", type=int, default=0, help="dressing: the single body whose cells fill every slot (a regional teacher); holds no body out.")
     body_axis.add_argument("--body-seeds", type=_int_list, default=None, help="dressing: comma-separated bodies, SMPL-X seeds for live cells or cached ids for cache cells; every (garment, body) cell gets a slot.")
@@ -229,6 +231,7 @@ def restore_resume_args(args, argv: list[str], payload: dict) -> SACConfig:
     if metadata.get("task") == "dressing":
         # Checkpoints from before the cell plan all trained on the bake cache.
         saved["cell_source"] = env.get("cell_source", "cache")
+        saved["collision_geometry"] = env.get("collision_geometry", "arm")
         args._resume_cell_plan = {key: metadata[key] for key in ("cells", "heldout_cells", "heldout_bodies", "live") if key in metadata}
         if args.eval_only and explicit & {"human", "body_seeds", "garments", "cell_source"}:
             # Playback on another cell axis plans that axis from its own defaults: an
@@ -532,6 +535,7 @@ def dressing_config(args) -> DressingConfig:
         human=args.human,
         garments=tuple(args.garments),
         cell_source=args.cell_source,
+        collision_geometry=args.collision_geometry,
         horizon=args.horizon,
         action_repeat=args.action_repeat,
         dt=args.dt,
@@ -972,7 +976,7 @@ def main(argv: list[str] | None = None) -> None:
         "num_envs": env.num_envs,
         "training_args": {key: getattr(args, key) for key in (
             "garment_curriculum_interval", "garment_curriculum_order", "updates_per_step", "replay_capacity", "init_steps", "sequence_replay", "record_privileged",
-            "cell_source", "body_seeds", "heldout_bodies", "heldout_body_seeds", "allow_partial_cell_coverage", "teacher_checkpoints",
+            "cell_source", "collision_geometry", "body_seeds", "heldout_bodies", "heldout_body_seeds", "allow_partial_cell_coverage", "teacher_checkpoints",
         )},
         "curriculum_order": order,
         "teacher_regions": teacher_regions,

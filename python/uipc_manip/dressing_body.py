@@ -205,6 +205,14 @@ def _model(model_dir: str, gender: str, num_betas: int):
 
 
 @lru_cache(maxsize=8)
+def smplx_faces(model_dir: str | None = None, gender: str = "neutral", num_betas: int = 10) -> np.ndarray:
+    """The SMPL-X triangle topology shared by generated bodies of this model."""
+    model = _model(str(model_dir or _DEFAULT_MODEL_DIR), gender, int(num_betas))
+    faces = getattr(model, "faces_tensor", model.faces)
+    return np.asarray(faces.cpu() if hasattr(faces, "cpu") else faces, dtype=np.int32)
+
+
+@lru_cache(maxsize=8)
 def right_arm_vertex_indices(model_dir: str, gender: str, num_betas: int) -> tuple[int, ...]:
     """Vertices whose dominant skinning joint is on the right collar-to-fingertip chain."""
     from smplx.joint_names import JOINT_NAMES

@@ -2,8 +2,8 @@
 
 This is the Newton cloth-dressing teacher's environment rebuilt on the IPC
 solver. Each of the ``num_envs`` slots holds one pre-worn (garment, human)
-cell from the Newton bake cache; the human's right-arm mesh is a fixed rigid
-collider in Genesis, the garment is a native libuipc shell in its own IPC
+cell from the Newton bake cache; the human's right arm or complete SMPL-X mesh
+is a fixed rigid collider in Genesis, the garment is a native libuipc shell in its own IPC
 subscene, and a small patch of cuff vertices is held by a soft position
 constraint driven by the 6-D gripper action, translation and rotation.
 Unlike Newton's kinematic cuff pin, this penalty participates in the IPC
@@ -66,6 +66,10 @@ class DressingConfig:
     cell_source: str = "cache"
     """``cache`` reads the Newton bake's pre-worn states; ``live`` drapes each garment in
     libuipc and places it on a generated body, which admits any (garment, body) pair."""
+    collision_geometry: str = "arm"
+    """``arm`` preserves the historical right-arm-only collider. ``full_body`` collides the
+    garment with the fixed complete SMPL-X surface while keeping right-arm observations,
+    progress and arm-specific force summaries."""
     live: "LiveCellConfig" = field(default_factory=lambda: __import__("uipc_manip.dressing_live", fromlist=["LiveCellConfig"]).LiveCellConfig())
     """How live cells are baked and placed; ignored when ``cell_source`` is ``cache``."""
     horizon: int = 900
@@ -360,13 +364,37 @@ class GenesisIPCDressingEnv:
         # the garment a clearance step outside the fingertip and must not be eroded.
         erosion_m = cfg.arm_erosion_m if cfg.cell_source == "cache" else 0.0
         erosion = int(round(erosion_m * 1000))
+        if cfg.collision_geometry not in ("arm", "full_body"):
+            raise ValueError(f"Unknown collision geometry {cfg.collision_geometry!r}")
         self.arm_meshes: list[tuple[np.ndarray, np.ndarray]] = []
+        self.collider_meshes: list[tuple[np.ndarray, np.ndarray]] = []
+        self._force_arm_indices: list[np.ndarray] = []
         arm_paths: list[str] = []
+        full_faces = None
+        if cfg.collision_geometry == "full_body":
+            from .dressing_body import SMPLX_VERTEX_COUNT, smplx_faces
+            from scipy.spatial import cKDTree
+
+            full_faces = smplx_faces()
         for cell in self.cells:
             eroded = erode_arm_mesh(cell.arm_points, cell.arm_faces, erosion_m, cell.finger, cell.shoulder)
             self.arm_meshes.append((eroded, cell.arm_faces))
+            if full_faces is None:
+                self.collider_meshes.append((eroded, cell.arm_faces))
+                self._force_arm_indices.append(np.arange(len(eroded), dtype=np.int64))
+            else:
+                body = np.asarray(cell.human_points, dtype=np.float64)
+                if len(body) != SMPLX_VERTEX_COUNT or full_faces.max() >= len(body):
+                    raise ValueError(f"Body {cell.human} does not have the SMPL-X full-mesh topology")
+                distance, index = cKDTree(body).query(np.asarray(cell.arm_points, dtype=np.float64))
+                if float(np.max(distance)) > 1e-5 or len(np.unique(index)) != len(index):
+                    raise ValueError(f"Body {cell.human}'s right arm is not a subset of its full mesh")
+                self.collider_meshes.append((body, full_faces))
+                self._force_arm_indices.append(np.asarray(index, dtype=np.int64))
+            collider, faces = self.collider_meshes[-1]
+            name = "body" if full_faces is not None else "arm"
             arm_paths.append(
-                str(write_obj(Path(cfg.workspace) / f"arm_human_{cell.human}_eroded_{erosion}mm.obj", eroded, cell.arm_faces))
+                str(write_obj(Path(cfg.workspace) / f"{name}_human_{cell.human}_eroded_{erosion}mm.obj", collider, faces))
             )
         self.arm_collider_paths = arm_paths
         self.arm_collider_path = arm_paths[0]
@@ -402,9 +430,10 @@ class GenesisIPCDressingEnv:
         # The arm is a native libuipc fixed affine body rather than a Genesis mesh entity:
         # Genesis re-tessellates imported meshes (1307 vertices became 4885 with duplicates),
         # and the duplicated vertices produced NaN distances in the IPC trajectory filter.
-        # The native body is the exact cached ``right_arm_faces`` collider, eroded.
-        # These two are the viewer's and the trajectory export's slot-0 aliases.
+        # The native body is the exact cached arm mesh or full SMPL-X surface.
+        # Keep the arm aliases for arm-specific observations and trajectory export.
         self.arm_vertices, self.arm_faces = self.arm_meshes[0]
+        self.collider_vertices, self.collider_faces = self.collider_meshes[0]
         coupler = self.scene.sim.coupler
         self.coupler = coupler
         coupler._ipc_contact_tabular.default_model(cfg.friction, cfg.contact_resistance)
@@ -429,14 +458,14 @@ class GenesisIPCDressingEnv:
         def add_objects_with_garments() -> None:
             original_add_objects()
             for env_idx, cell in enumerate(self.cells):
-                arm = ipc_trimesh(*self.arm_meshes[env_idx])
+                arm = ipc_trimesh(*self.collider_meshes[env_idx])
                 label_surface(arm)
                 # Open surface: use the explicit mass overload, the body is fixed anyway.
                 AffineBodyConstitution().apply_to(arm, 1e8, np.eye(12), 1.0)
                 uipc.view(arm.instances().find(builtin.is_fixed))[:] = 1
                 coupler._ipc_contact_tabular.default_element().apply_to(arm)
                 coupler._ipc_subscenes[env_idx].apply_to(arm)
-                # The slot is kept so the arm's own global vertex offset can select its contact rows.
+                # Keep the collider slot so its global vertex block can select contact rows.
                 self.arm_slots.append(
                     coupler._ipc_objects.create(f"arm_human_{cell.human}_{env_idx}").geometries().create(arm)[0]
                 )
@@ -569,9 +598,9 @@ class GenesisIPCDressingEnv:
     def _arm_force_summaries(self) -> list[dict]:
         """Contact force on each slot's arm this decision, in newtons, one summary per slot.
 
-        The arm is an affine body whose vertices occupy one contiguous block of the solver's global
-        index space, which its own geometry reports, so a cloth's self-contact never reaches an
-        arm's total. One export serves every slot.
+        The fixed collider occupies one contiguous solver vertex block. For a full-body
+        collider, select only the right-arm vertices from that block before tracking
+        forces and pressure. Cloth self-contact never enters this block.
         """
         from .contact_force import ForceTracker, find_contact_feature, geometry_vertex_block, vertex_forces_multi
         from .contact_pressure import PressureMap
@@ -586,7 +615,7 @@ class GenesisIPCDressingEnv:
             else:
                 self._force_feature = feature
                 self._force_blocks = [geometry_vertex_block(slot.geometry()) for slot in self.arm_slots]
-                self._force_trackers = [ForceTracker(n, first_vertex=first) for first, n in self._force_blocks]
+                self._force_trackers = [ForceTracker(len(indices)) for indices in self._force_arm_indices]
                 # The arm is fixed, so its areas, bands and patches are built once.
                 self._pressure_maps = [
                     PressureMap(self.arm_meshes[i][0], self.arm_meshes[i][1], cell.finger, cell.elbow, cell.shoulder)
@@ -596,11 +625,13 @@ class GenesisIPCDressingEnv:
             return [{} for _ in range(self.num_envs)]
         pairs = vertex_forces_multi(self._force_feature, self.cfg.dt, self._force_blocks)
         out = []
-        for tracker, field, pair in zip(self._force_trackers, self._pressure_maps, pairs, strict=True):
-            summary = tracker.update(self._force_feature, self.cfg.dt, forces=pair)
-            summary.update(field.summarise(pair[0]))
+        for tracker, field, pair, indices in zip(self._force_trackers, self._pressure_maps,
+                                                 pairs, self._force_arm_indices, strict=True):
+            arm_pair = (pair[0][indices], pair[1][indices])
+            summary = tracker.update(self._force_feature, self.cfg.dt, forces=arm_pair)
+            summary.update(field.summarise(arm_pair[0]))
             # The same bands over the settled vertices alone, which is what a gate would read.
-            summary.update(field.summarise(np.where(tracker.settled[:, None], pair[0], 0.0), prefix="settled_"))
+            summary.update(field.summarise(np.where(tracker.settled[:, None], arm_pair[0], 0.0), prefix="settled_"))
             out.append(summary)
         return out
 
@@ -860,6 +891,8 @@ class GenesisIPCDressingEnv:
             "faces": cell.faces.tolist(),
             "edges": [],
             "radius": float(self.cfg.cloth_thickness),
+            "collision_geometry": self.cfg.collision_geometry,
+            "collider": self.arm_collider_paths[slot],
             "arm_collider": self.arm_collider_path,
             "build_seconds": float(self.build_seconds),
             "settle_displacement_m": float(self.settle_displacement),
@@ -909,8 +942,8 @@ class GenesisIPCDressingEnv:
         for primitive in drawing.primitives:
             primitive.material.doubleSided = True
         self._debug_objects.append(drawing)
-        arm_visual = trimesh.Trimesh(self.arm_vertices, self.arm_faces, process=False)
-        arm_visual.visual.vertex_colors = np.tile([222, 184, 150, 255], (len(self.arm_vertices), 1))
+        arm_visual = trimesh.Trimesh(self.collider_vertices, self.collider_faces, process=False)
+        arm_visual.visual.vertex_colors = np.tile([222, 184, 150, 255], (len(self.collider_vertices), 1))
         self._debug_objects.append(self.scene.draw_debug_mesh(arm_visual))
         self._debug_objects.append(self.scene.draw_debug_sphere(self._anchor[0], radius=0.012, color=(0.2, 0.2, 0.2, 1)))
         self._debug_objects.append(self.scene.draw_debug_sphere(cell.shoulder, radius=0.012, color=(0.2, 0.85, 0.3, 1)))
