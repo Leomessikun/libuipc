@@ -1,5 +1,8 @@
 # The released policy dresses in PyBullet; in ours the frame was wrong and the opening starts too high
 
+> **Update, same day: `fmvp_sim.pt` dresses in our simulator from a gravity-hung start** (upper arm
+> at least 0.7 on 15 of 18 runs; see the last two sections). The earlier sections are the path there.
+
 Date: 2026-09-23. Revises [2026-09-22-wang-checkpoint-transfer.md](2026-09-22-wang-checkpoint-transfer.md),
 whose conclusion ("reads the scene and still does not dress; closed as a route") rested on a
 frame that was 63 degrees off and on a placement nobody had compared against a running reference.
@@ -136,3 +139,65 @@ from the `residual-rl` worktree (branch `sac-stability`, `python/uipc_manip/wang
 * `wang_trace.py`: our env, policy beside the expert, per-decision model-frame trace.
 * `wang_tilt.py`: the swung placement (`--tilt 15 --out-shift 0.09 --drop 0.06`), with a legality
   check against `garment_arm_gap`.
+
+## Update: the gravity-hung start, and `fmvp_sim.pt` dresses
+
+**The start.** The garment is hung from Wang's two picker vertices (968, 2896) in libuipc, far from
+the arm, with zero actions; it is still after 100 decisions (`hang_bake.py`). Hanging freely, the
+opening sits 21.6 cm from the picker and 55 degrees below horizontal, against the socket
+placement's 18.5 cm and 45 degrees and PyBullet's 24.6 cm and 78 degrees; the rest is stretch our
+strain-limited cloth does not have. That shape is placed with the picker at PyBullet's offset from
+the fingertip (3.3 cm out, 10.6 cm up, model frame) and turned about the vertical to the legal
+turn nearest PyBullet's opening, then held by the usual 48 vertices (`wang_hang_run.py`). The
+opening starts 7 cm below the fingertip and 16 cm out on every body tried; rigid re-posing could
+not get there, because every turn that points the opening straight down puts the garment's body
+through the hand.
+
+**The bridge** now loads FMVP's FiLM fine-tunes (commit fa6c0949 on `sac-stability`) and takes an
+optional force. The force fed to FiLM is minus the summed IPC contact force on the arm (the force
+on the garment, as FMVP sums it), rotated into the model frame, times a scale.
+
+**Results**, tshirt_26, yaw 267, rotation off, success = upper-arm ratio at least 0.7 (our env's
+`success_upperarm_ratio`), two identical `fmvp_sim` slots per world where listed:
+
+| body | vision | fmvp_sim, force 0 | fmvp_sim, force x0.003 / 0.01 / 0.03 | expert, same start |
+|---|---|---|---|---|
+| 14045 | 0 of 2 | 3 of 3 | 0 / 0 / 0 | 2 of 2 |
+| 14046 | 0 of 1 | 2 of 2 | 1 / - / 0 | 1 of 1 |
+| 14048 | 0 of 2 | 3 of 3 | 0 / 0 / 1 | 2 of 2 |
+| 14047 | - | 1 of 2 | - | 1 of 1 |
+| 14049 | - | 2 of 2 | - | 1 of 1 |
+| 14010 (training pose) | - | 2 of 2 | - | 1 of 1 |
+| 5045 (region 4) | - | 2 of 2 | - | 1 of 1 |
+| 23045 (region 22) | - | 0 of 2 | - | 0 of 1 (peak 0.16) |
+
+`fmvp_sim` with zero force: **15 of 18**, crossing 0.7 at decisions 182 to 262, when the expert
+crosses at 147 to 238; on the seven bodies the expert can dress, 15 of 16. The two identical slots
+of a world do not follow identical trajectories (14045: peaks 0.979 and 0.999; 14047: 0.635 and
+0.983), so single runs are samples, not measurements. The FleX vision policy threads the sleeve on
+this start but never reaches the upper arm (forearm 0.59 to 0.71).
+
+**What is wrong with these successes.**
+
+* *It pulls too far and too hard.* At the crossing the gripper is 1.5 to 2.1 fingertip-to-shoulder
+  chords from the fingertip, where the expert is at 1.15 to 1.45, and the contact force on the arm
+  is 26 to 837 N, where the expert's is 1 to 233 N and mostly under 35. A policy trained on cloth
+  that stretches learned to over-travel; ours transmits it as force.
+* *It does not stop.* PyBullet ends the episode at 0.99. Held still after crossing 0.7, 5 of 8
+  successes on the second body set did not stay: the taut sleeve snaps past the shoulder in one or
+  two decisions (5045: 0.33, 0.81, 0.995, then 0), after which the progress metric reads zero. The
+  expert's held ratio stays where it was.
+
+**Force as the FiLM input hurt**: 2 of 7 with any non-zero scale against 8 of 8 on the same
+bodies at zero. FMVP's force is PyBullet's soft-body contact force times 10; over the successful
+PyBullet episode it is zero on 73 per cent of decisions and at most 0.077 in norm. It is not in
+newtons in any calibrated sense, and our readings run from tens to hundreds of newtons, so no
+single scale maps one distribution onto the other; per-decision IPC forces also reproduce poorly
+(2026-09-12 contact-force records). The IPC force is useful here as a measurement: it is what
+exposes the over-pull above.
+
+**Next.** Stopping on success is not enough while the snap happens within a decision of the
+crossing. The route FMVP itself took is to fine-tune these weights in the target simulator; ours
+would add the arm force as a cost, which is what the 26 to 837 N says it needs. A cheaper probe
+first: slow the policy near the shoulder (scale the translation once the forearm ratio is 1) and
+see whether the held ratio survives.
