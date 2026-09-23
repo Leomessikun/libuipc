@@ -41,11 +41,15 @@ class WangPolicyClient:
             raise RuntimeError(f"The policy process did not come up: {ready!r}\n"
                                f"{self.proc.stderr.read(4000).decode(errors='replace')}")
 
-    def act(self, pos_rel: np.ndarray, flags: np.ndarray) -> np.ndarray:
-        """The deterministic six-dimensional action for one observation, in our frame."""
+    def act(self, pos_rel: np.ndarray, flags: np.ndarray, force: np.ndarray | None = None) -> np.ndarray:
+        """The deterministic six-dimensional action for one observation, in our frame.
+
+        ``force`` (our frame) feeds the FiLM layers of FMVP's fine-tunes; see ``ReferencePolicy.act``.
+        """
         buffer = io.BytesIO()
+        extra = {} if force is None else {"force": np.asarray(force, dtype=np.float32).reshape(3)}
         np.savez(buffer, pos=np.asarray(pos_rel, dtype=np.float32),
-                 flags=np.asarray(flags, dtype=np.float32))
+                 flags=np.asarray(flags, dtype=np.float32), **extra)
         payload = buffer.getvalue()
         self.proc.stdin.write(struct.pack("<Q", len(payload)) + payload)
         self.proc.stdin.flush()

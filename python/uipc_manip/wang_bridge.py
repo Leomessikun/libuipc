@@ -60,6 +60,7 @@ HIDDEN_DIM = 1024
 ACTION_DIM = 6
 VOXEL_SIZE = 0.00625 * 10
 GRIPPER_FEATURE = 2
+FMVP_ROOT = "/home/ge47gax/kun/fmvp_pb/dressing_pb"
 
 ARM, CLOTH, GRIPPER = 0, 1, 2
 
@@ -152,7 +153,6 @@ class ReferencePolicy:
         import torch.nn as nn
 
         _install_compat()
-        from dressing.curl.encoder import make_encoder
 
         self.torch = torch
         self.device = device
@@ -162,12 +162,28 @@ class ReferencePolicy:
 
         payload = torch.load(str(checkpoint), map_location="cpu", weights_only=False)
         state = payload["model_state_dict"]
+        # FMVP's fine-tunes (fmvp_sim.pt, fmvp_real.pt) add FiLM layers on a 3-vector force; only
+        # FMVP's encoder has them, and with FiLM off it is Wang's encoder under the same key names.
+        self.film = any("film_layers" in k for k in state)
         self.step = int(payload.get("step", -1))
         self.best_return = payload.get("best_avg_return_test")
 
         args = types.SimpleNamespace(**ENCODER_ARGS)
-        self.encoder = make_encoder("pointcloud_flow", None, FEATURE_DIM, ENCODER_ARGS["pc_num_layers"],
-                                    32, args, output_logits=True, residual=False)
+        if self.film:
+            import sys
+
+            sys.path.insert(0, FMVP_ROOT)
+            from models.encoder import make_encoder as make_fmvp_encoder
+
+            fmvp_args = types.SimpleNamespace(**ENCODER_ARGS, film_force=True, use_force_hist=False,
+                                              freeze_weights=False, freeze_encoder_only=False)
+            self.encoder = make_fmvp_encoder("pointcloud_flow", None, FEATURE_DIM, ENCODER_ARGS["pc_num_layers"],
+                                             32, fmvp_args, output_logits=True, residual=False)
+        else:
+            from dressing.curl.encoder import make_encoder
+
+            self.encoder = make_encoder("pointcloud_flow", None, FEATURE_DIM, ENCODER_ARGS["pc_num_layers"],
+                                        32, args, output_logits=True, residual=False)
         self.trunk = nn.Sequential(
             nn.Linear(FEATURE_DIM, HIDDEN_DIM), nn.ReLU(),
             nn.Linear(HIDDEN_DIM, HIDDEN_DIM), nn.ReLU(),
@@ -181,15 +197,24 @@ class ReferencePolicy:
         self.encoder.to(device).eval()
         self.trunk.to(device).eval()
 
-    def act(self, pos_rel: np.ndarray, flags: np.ndarray) -> np.ndarray:
-        """The deterministic action for one observation, in *our* frame."""
+    def act(self, pos_rel: np.ndarray, flags: np.ndarray, force: np.ndarray | None = None) -> np.ndarray:
+        """The deterministic action for one observation, in *our* frame.
+
+        ``force`` is the FiLM input of FMVP's fine-tunes, a 3-vector in our frame (the force on the
+        garment from the arm, as FMVP sums it); it is rotated into the model frame and ignored by a
+        checkpoint without FiLM. None means zero.
+        """
         from torch_geometric.data import Batch, Data
 
         torch = self.torch
         pos, x = to_reference_cloud(pos_rel, flags, yaw_deg=self.yaw_deg, voxel=self.voxel)
         batch = Batch.from_data_list([Data(x=torch.as_tensor(x), pos=torch.as_tensor(pos))]).to(self.device)
         with torch.no_grad():
-            feature, _ = self.encoder(batch)
+            if self.film:
+                f = np.zeros(3) if force is None else np.asarray(force, dtype=np.float64).reshape(3) @ self.rotation.T
+                feature, _ = self.encoder(batch, torch.as_tensor(f, dtype=torch.float32).reshape(1, 3))
+            else:
+                feature, _ = self.encoder(batch)
             mu, _ = self.trunk(feature).chunk(2, dim=-1)
             action = torch.tanh(mu)[batch.x[:, GRIPPER] == 1]
         action = action.cpu().numpy().reshape(ACTION_DIM)
@@ -224,7 +249,7 @@ def serve(policy: "ReferencePolicy") -> None:
                 return
             payload += chunk
         request = np.load(io.BytesIO(payload))
-        action = policy.act(request["pos"], request["flags"])
+        action = policy.act(request["pos"], request["flags"], request["force"] if "force" in request.files else None)
         stdout.write(np.asarray(action, dtype=np.float32).tobytes())
         stdout.flush()
 
