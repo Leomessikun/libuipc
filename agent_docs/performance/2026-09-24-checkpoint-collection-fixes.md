@@ -167,6 +167,39 @@ compiled architectures do not support this sm_120 Blackwell GPU, although
 these tested operations execute. The large first-call delay was observed;
 its exact internal cause was not profiled. With a fresh policy subprocess per
 batch and inference only around 5–6% of measured rollout time, this is not a
-verified end-to-end improvement, so production keeps CPU inference and CUDA
-physics. No environment upgrade or additional long-running benchmark was
-started.
+verified end-to-end improvement, so that comparison initially kept CPU
+inference and CUDA physics. The subsequent resident GPU service below replaces
+that deployment choice without upgrading the environment.
+
+## Resident GPU inference enabled
+
+At the user's request, `policy_service.py` now keeps the checkpoint loaded on
+CUDA across worker/batch lifetimes. A private Unix socket accepts observations
+and returns actions; workers verify checkpoint hash, yaw, voxel size and device
+before using it. The dataset-local `policy_runtime.json` activates it for new
+workers without interrupting a batch. An explicit CLI device overrides that
+runtime setting. Each new worker records device, socket and server identity.
+
+Server PID 1409532 warmed once in 8.58 seconds in its inherited environment.
+Before activation, 18 saved states across bodies 14045, 14046 and 14053 matched
+the CPU actor within 9.54e-7. Reconnecting preserved the server PID, and a client
+with a mismatched yaw was rejected. Three transport tests cover fragmented
+messages, truncated messages and oversized frames. The verification artifact
+is `fmvp_dataset_v2_500_20260924/policy_gpu_validation.json`.
+
+Production batch 14 (body 14059) is the first to use the resident server: its
+`run.json` records `policy_device=cuda` and server PID 1409532. The server
+confirmed all model parameters are on `cuda:0`, and its request count increased
+during the batch. An initial sample during actual collection measured median
+server inference of 3.55 ms. This is a server-call measurement, not a claimed
+end-to-end rollout speedup. Both physics and policy inference now use the GPU;
+CPU scene/observation work and file writing remain. Batch 14 completed and added
+one independently accepted trajectory; batch 15 then connected to the same
+GPU server PID, confirming model reuse across actual collection batches.
+
+The service handles successive rollout workers without reloading weights and
+exits after 15 minutes without requests. Status and logs are in
+`policy_gpu_status.json` and `policy_gpu.log` beside the dataset. The actual
+socket is under a private `/tmp/fmvp-gpu-*` directory to stay within Unix socket
+path-length limits. It makes no model/API calls beyond local checkpoint
+inference and does not fall back silently to CPU.

@@ -45,8 +45,10 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--package-root", type=Path, default=ROOT / ".claude/worktrees/residual-rl/python")
     p.add_argument("--checkpoint", type=Path, default=Path("/home/ge47gax/Desktop/fmvp_sim.pt"))
-    p.add_argument("--policy-device", choices=("cpu", "cuda"), default="cpu",
+    p.add_argument("--policy-device", choices=("cpu", "cuda"), default=None,
                    help="Checkpoint inference device; independent of the IPC CUDA physics backend.")
+    p.add_argument("--policy-socket", type=Path,
+                   help="Reuse a resident policy server instead of loading a model in each worker.")
     p.add_argument("--hang", type=Path, required=True)
     p.add_argument("--hang-key", default="k300")
     p.add_argument("--out", type=Path, required=True)
@@ -101,6 +103,16 @@ def parser():
 
 def main():
     args = parser().parse_args()
+    # An atomic dataset-local setting can switch future workers without
+    # interrupting the current batch or rewriting its data/configuration.
+    runtime_path = args.out.parent / 'policy_runtime.json'
+    args.policy_runtime = None
+    if args.policy_socket is None and args.policy_device is None and runtime_path.exists():
+        runtime = json.loads(runtime_path.read_text())
+        args.policy_socket = Path(runtime['socket_path'])
+        args.policy_device = runtime['device']
+        args.policy_runtime = runtime_path
+    args.policy_device = args.policy_device or ('cuda' if args.policy_socket is not None else 'cpu')
     if args.hold < 1 or args.steps < 1:
         raise ValueError("Need positive search and hold windows")
     if args.freeze_from_state is not None and not 0 <= args.freeze_from_state < args.steps:
@@ -241,14 +253,23 @@ def main():
     GenesisIPCDressingEnv._prepare_start = prepare_with_profiles
     all_records = []
     skipped = []
-    client = WangPolicyClient(checkpoint=str(args.checkpoint), yaw_deg=args.yaw,
-                              device=args.policy_device, voxel=args.bridge_voxel, package_root=args.package_root)
+    def make_client(voxel):
+        kwargs = dict(checkpoint=str(args.checkpoint), yaw_deg=args.yaw,
+                      device=args.policy_device, voxel=voxel, package_root=args.package_root)
+        if args.policy_socket is not None:
+            from policy_service import PersistentPolicyClient
+            return PersistentPolicyClient(args.policy_socket, **kwargs)
+        return WangPolicyClient(**kwargs)
+
+    client = make_client(args.bridge_voxel)
+    if args.policy_socket is not None:
+        metadata['policy_server'] = client.info
+        save_json(args.out / 'run.json', metadata)
     clients = {args.bridge_voxel: client}
     for profile in profiles:
         voxel = profile.bridge_voxel if profile.bridge_voxel is not None else args.bridge_voxel
         if voxel not in clients:
-            clients[voxel] = WangPolicyClient(checkpoint=str(args.checkpoint), yaw_deg=args.yaw,
-                                            device=args.policy_device, voxel=voxel, package_root=args.package_root)
+            clients[voxel] = make_client(voxel)
     policy_clients = [clients[p.bridge_voxel if p.bridge_voxel is not None else args.bridge_voxel] for p in profiles]
     try:
         for body in args.bodies:
@@ -503,6 +524,8 @@ def main():
                     record = dict(body=body, variant=variant, replica=i if args.replicas > 1 else None,
                                   profile=profile_dict(profiles[i]),
                                   checkpoint_sha256=metadata["checkpoint_sha256"], simulator="Genesis+IPC",
+                                  policy_device=args.policy_device,
+                                  policy_server_pid=metadata.get('policy_server', {}).get('pid'),
                                   max_translation_m=cfg.max_translation, max_rotation_rad=cfg.max_rotation,
                                   decision_dt_s=cfg.dt * cfg.action_repeat,
                                   tcp_rotation_convention="world rotation relative to initial virtual tool orientation; identity at reset",
