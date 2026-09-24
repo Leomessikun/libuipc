@@ -56,6 +56,19 @@ def accepted_episodes(datasets: list[Path]) -> list[dict]:
     return out
 
 
+def dagger_episodes(dirs: list[Path]) -> list[dict]:
+    """Every recorded attempt under ``dirs`` that ran the IPC lookahead, accepted or not. Only the
+    states the lookahead evaluated are labelled: their executed action is its choice."""
+    out = []
+    for root in dirs:
+        for log in sorted(Path(root).rglob("lookahead.jsonl")):
+            states = sorted({json.loads(line)["state"] for line in log.read_text().splitlines() if line.strip()})
+            for path in sorted(log.parent.glob("*.npz")):
+                out.append(dict(path=str(path), body=int(log.parent.name.split("_")[1]), sha256=digest(path),
+                                labels=states))
+    return out
+
+
 def encode_worker(args) -> str:
     episodes, out_path, checkpoint, yaw = args
     os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -75,7 +88,9 @@ def encode_worker(args) -> str:
             obs = np.asarray(data["obs"][:-1], np.float32)
             actions = np.asarray(data["actions"], np.float32)
             controller = np.asarray(data["controller_id"], np.int8)
-        for t in range(len(actions)):
+        labels = episode.get("labels")
+        steps = range(len(actions)) if labels is None else [t for t in labels if t < len(actions)]
+        for t in steps:
             pos, flags, valid, _ = spec.unpack_numpy(obs[t])
             ref_pos, ref_flags = to_reference_cloud(pos[valid], flags[valid], yaw_deg=yaw, voxel=policy.voxel)
             batch = Batch.from_data_list([Data(x=torch.from_numpy(ref_flags), pos=torch.from_numpy(ref_pos))])
@@ -85,12 +100,14 @@ def encode_worker(args) -> str:
                 out = policy.trunk(row)[0]
             feats.append(row[0].numpy())
             logits.append(out.numpy())
-            if controller[t] == 2:                          # verified hold: stand still
+            if labels is not None:                          # IPC lookahead's choice at a visited state
+                targets.append(np.clip(actions[t, :3] @ rotation.T, -1, 1)); kinds.append(6)
+            elif controller[t] == 2:                        # verified hold: stand still
                 targets.append(np.zeros(3, np.float32)); kinds.append(2)
             else:                                           # executed translation, model frame
                 targets.append(np.clip(actions[t, :3] @ rotation.T, -1, 1)); kinds.append(int(controller[t]))
             bodies.append(episode["body"])
-        print(f"[features] body={episode['body']} states={len(actions)}", flush=True)
+        print(f"[features] body={episode['body']} states={len(steps)}", flush=True)
     np.savez(out_path, feats=np.stack(feats), logits=np.stack(logits), targets=np.stack(targets),
              bodies=np.asarray(bodies), kinds=np.asarray(kinds, np.int8))
     return str(out_path)
@@ -99,7 +116,7 @@ def encode_worker(args) -> str:
 def features(args) -> None:
     from multiprocessing import get_context
 
-    episodes = accepted_episodes(args.datasets)
+    episodes = accepted_episodes(args.datasets) + dagger_episodes(args.dagger)
     if args.exclude_bodies:
         episodes = [e for e in episodes if e["body"] not in set(args.exclude_bodies)]
     args.out.mkdir(parents=True, exist_ok=True)
@@ -123,14 +140,17 @@ def train(args) -> None:
     per_body = dict(zip(bodies.tolist(), counts.tolist()))
     weight = np.array([1.0 / per_body[b] for b in cat["bodies"]], np.float32)
     weight *= np.where(cat["kinds"] == 2, args.hold_weight, 1.0)
+    weight *= np.where(cat["kinds"] == 6, args.dagger_weight, 1.0)
     weight /= weight.mean()
-    print(f"[train] {n} states, {len(bodies)} bodies, holds {int((cat['kinds'] == 2).sum())}", flush=True)
+    print(f"[train] {n} states, {len(bodies)} bodies, holds {int((cat['kinds'] == 2).sum())}, "
+          f"lookahead labels {int((cat['kinds'] == 6).sum())}", flush=True)
 
     payload = torch.load(str(args.checkpoint), map_location="cpu", weights_only=False)
     state = payload["model_state_dict"]
     trunk = torch.nn.Sequential(torch.nn.Linear(50, 1024), torch.nn.ReLU(), torch.nn.Linear(1024, 1024),
                                 torch.nn.ReLU(), torch.nn.Linear(1024, 12))
-    trunk.load_state_dict({k[len("trunk."):]: v for k, v in state.items() if k.startswith("trunk.")}, strict=True)
+    start = state if args.init is None else torch.load(str(args.init), map_location="cpu", weights_only=False)["model_state_dict"]
+    trunk.load_state_dict({k[len("trunk."):]: v for k, v in start.items() if k.startswith("trunk.")}, strict=True)
     x = torch.from_numpy(cat["feats"]).float()
     base = torch.from_numpy(cat["logits"]).float()[:, :6].tanh()
     target = torch.from_numpy(cat["targets"]).float()
@@ -182,6 +202,8 @@ def main() -> None:
     sub = p.add_subparsers(dest="stage", required=True)
     f = sub.add_parser("features")
     f.add_argument("--datasets", type=Path, nargs="+", required=True)
+    f.add_argument("--dagger", type=Path, nargs="*", default=[],
+                   help="Directories of lookahead-labelled attempts (accepted or not).")
     f.add_argument("--exclude-bodies", type=int, nargs="*", default=[])
     f.add_argument("--checkpoint", type=Path, default=Path("/home/ge47gax/Desktop/fmvp_sim.pt"))
     f.add_argument("--yaw", type=float, default=267.0)
@@ -195,6 +217,8 @@ def main() -> None:
     t.add_argument("--lr", type=float, default=1e-4)
     t.add_argument("--trust", type=float, default=0.5)
     t.add_argument("--hold-weight", type=float, default=2.0)
+    t.add_argument("--dagger-weight", type=float, default=3.0)
+    t.add_argument("--init", type=Path, default=None, help="Start the trunk from this checkpoint instead.")
     t.add_argument("--seed", type=int, default=0)
     t.add_argument("--out", type=Path, required=True)
     a = p.parse_args()

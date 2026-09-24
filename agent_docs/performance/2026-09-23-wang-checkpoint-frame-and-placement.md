@@ -345,3 +345,27 @@ no external slowdown, no lookahead, stop at proximal 0.7 while wrapped, 2 replic
 It learned the collector's slowdown (slower, about half the load) and nothing new: the data contain
 no recovery from a jam, so the hard bodies stay at zero. Their states have to enter the data with
 better actions attached, which is what a DAgger round with the IPC lookahead as labeller does.
+
+## DAgger round 1: the IPC lookahead as labeller moves the failure from the hand to the elbow
+
+Collection (`fmvp_dagger_r1_20260924`): the behaviour-cloned model with Codex's one-decision filter,
+triggered from decision 20 at any load over 5 N, on eight never-accepted bodies (14045, 14050,
+14056, 9046, 13046, 21046, 19046, 18047), one attempt each: 2 accepted (14050, 18047), about 1,500
+lookahead-evaluated states. Every evaluated state, failed attempts included, became a label (the
+executed choice, weight 3), added to the accepted data; the trunk continued from the round-0 model
+(`fmvp_ipc_dagger_r1_20260924/model`).
+
+Held-out hard bodies (never in any training set; 23047 and 16046 had no legal start at the 5 mm
+offset), no lookahead, 2 replicas, seed 2026092441:
+
+| body | original | behaviour-cloned | DAgger r1 |
+|---|---|---|---|
+| 22046, max forearm / wrapped states | 0.16, 0.50 / 0, 21 | 0.05, 0.15 / 0, 0 | 0.66, 0.63 / 84, 66 |
+| 14058, max forearm / wrapped states | 0.26, 0.51 / 0, 49 | 0.61, 0.58 / 77, 96 | 0.61, 0.61 / 110, 124 |
+| 9047 | grasp lost at 23 | at 23 | at 36 |
+| accepted | 0/6 | 0/6 | 0/6 |
+
+The easy excluded bodies stay at 6/8 with DAgger r1. No new successes yet, but on unseen hard bodies
+the sleeve now threads and stays wrapped on the forearm where the original snagged on the hand; the
+failure has moved to the elbow, where round 2 collects labels. 9047 loses the grasp within 36
+decisions under every model and looks like a start problem.
