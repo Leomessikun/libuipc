@@ -389,3 +389,27 @@ yet tested: the encoder is frozen and its force input is zero, so a jammed state
 look alike in the 6.25 cm cloud get contradictory targets (the lookahead's choice against the
 policy's own action) and the trunk averages them. Two replicas per cell and diverging IPC runs make
 every difference here small against noise; r1 is the best model so far on both groups.
+
+## Gripper load through FiLM: no measurable gain yet
+
+`scripts/wang_transfer/finetune_fmvp_force.py` feeds the gripper load (collector profile
+`force_source="gripper"`, scale 0.01 per N, norm clip 3, EMA 0.3, model frame) to fmvp_sim's FiLM
+layers. FiLM weights start at zero (the released zero-force behaviour), FiLM and trunk train on GPU,
+the rest of the encoder is frozen; FMVP's batch-averaged FiLM is replaced by a per-cloud forward that
+matches the released one exactly at batch size one (max difference 0.0). Data: accepted episodes plus
+both DAgger rounds, 291 episodes, 42 bodies, evaluation bodies excluded. FiLM weight norm 0 -> 1.97.
+
+Same evaluation as r1 (seed 2026092461, 2 replicas, no lookahead):
+
+| model | hard held-out (22046, 14058, 9047, 22047) | easy held-out |
+|---|---|---|
+| original | 1/8 | 6/8 |
+| r1 (frozen encoder, one DAgger round) | 3/8 | 6/8 |
+| force-conditioned | 2/8 | 4/8 |
+
+9047, which lost the grasp within 36 decisions under every earlier model, threads and stays wrapped
+on the forearm (0.62, 116 to 134 wrapped states) before failing at the elbow; 22046 regresses to
+forearm 0.07. With two replicas per cell every model difference in this section and the two before
+is within noise: none of the fine-tunes has shown a reliable gain over the original on hard bodies.
+A powered comparison (more bodies, at least four replicas) is needed before another training round
+can be judged.
