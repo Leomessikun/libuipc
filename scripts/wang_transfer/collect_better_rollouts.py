@@ -63,6 +63,8 @@ def parser():
     p.add_argument("--success", type=float, default=0.7)
     p.add_argument("--success-geometry", choices=("legacy_ratio", "physical_sleeve"), default="legacy_ratio",
                    help="physical_sleeve additionally requires the real cuff and three sleeve sections to wrap the arm.")
+    p.add_argument("--stop-proximal-upper", type=float, default=None,
+                   help="Diagnostic endpoint: replace the legacy ratio with the proximal sleeve section's upper-arm fraction; requires physical_sleeve.")
     p.add_argument("--slow-along", type=float, default=0.9,
                    help="Slow when gripper projection reaches this fraction of the hand-shoulder chord.")
     p.add_argument("--handoff-forearm", type=float, default=0.5,
@@ -109,6 +111,9 @@ def main():
         raise ValueError("--rotation-gain must be finite and nonnegative")
     if args.bridge_voxel is not None and (not np.isfinite(args.bridge_voxel) or args.bridge_voxel < 0):
         raise ValueError("--bridge-voxel must be finite and nonnegative")
+    if args.stop_proximal_upper is not None and (args.success_geometry != "physical_sleeve"
+                                               or not 0 < args.stop_proximal_upper <= 1):
+        raise ValueError("--stop-proximal-upper requires physical_sleeve and a fraction in (0, 1]")
     hang_hash = sha256(args.hang)
     if args.preflight_manifest is not None:
         preflight = json.loads(args.preflight_manifest.read_text())
@@ -152,7 +157,9 @@ def main():
                     policy_force_input="zero", force_sampling="end of decision, not substep peak",
                     observations="obs[t] -> actions[t] -> obs[t+1]; force arrays align with obs",
                     controller_id="0 FMVP, 1 scripted expert, 2 hold; policy_actions are the active controller's proposals",
-                    accepted_rule="upper >= success throughout hold, valid grasp throughout, no sim error")
+                    accepted_rule=("proximal sleeve fraction >= stop_proximal_upper, real sleeve wrapped throughout hold, valid grasp, no sim error"
+                                   if args.stop_proximal_upper is not None else
+                                   "upper >= success throughout hold, valid grasp throughout, no sim error"))
     save_json(args.out / "run.json", metadata)
     with np.load(args.hang) as source:
         hang = source[args.hang_key].copy()
@@ -367,7 +374,10 @@ def main():
                                 completed[i] = True
                                 continue
                         sleeve_ok = sleeve is None or buffers[i]["sleeve_wrapped"][-1]
-                        if success_at[i] is None and infos[i]["upperarm_ratio"] >= args.success and sleeve_ok:
+                        endpoint_reached = (infos[i]["upperarm_ratio"] >= args.success
+                                            if args.stop_proximal_upper is None else
+                                            buffers[i]["sleeve_proximal_upper_fraction"][-1] >= args.stop_proximal_upper)
+                        if success_at[i] is None and endpoint_reached and sleeve_ok:
                             success_at[i] = step + 1  # state index, after this transition
                             finish_at[i] = success_at[i] + args.hold
                         if finish_at[i] is not None and step + 1 >= finish_at[i]:
@@ -392,6 +402,11 @@ def main():
                     hold_complete = bool(success_at[i] is not None and finish_at[i] is not None
                                          and t >= finish_at[i])
                     stable = bool(hold_complete and held.size >= args.hold + 1 and np.min(held) >= args.success)
+                    if args.stop_proximal_upper is not None:
+                        proximal_hold = (data["sleeve_proximal_upper_fraction"][success_at[i]:]
+                                         if success_at[i] is not None else np.array([]))
+                        stable = bool(hold_complete and proximal_hold.size >= args.hold + 1
+                                      and proximal_hold.min() >= args.stop_proximal_upper)
                     if sleeve is not None and success_at[i] is not None:
                         stable = stable and bool(data["sleeve_wrapped"][success_at[i]:].all())
                     valid = bool(np.all(data["grasp_valid"]))
@@ -401,6 +416,7 @@ def main():
                     record = dict(body=body, variant=variant, replica=i if args.replicas > 1 else None,
                                   collision_geometry=args.collision_geometry,
                                   success_geometry=args.success_geometry,
+                                  stop_proximal_upper=args.stop_proximal_upper,
                                   seed=args.seed, transitions=t, success_state=success_at[i],
                                   handoff_state=handoff_at[i],
                                   hold_complete=hold_complete, timed_out=bool(success_at[i] is None and t >= args.steps),
