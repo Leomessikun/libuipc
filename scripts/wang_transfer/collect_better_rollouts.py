@@ -88,6 +88,8 @@ def parser():
     p.add_argument("--show-viewer", action="store_true", help="Show slot zero live in the native Genesis viewer.")
     p.add_argument("--abort-gripper-force", type=float, default=None,
                    help="Optional simulator-load cutoff to end clearly unusable attempts early; not a real-world safety threshold.")
+    p.add_argument("--continue-invalid-grasp", action="store_true",
+                   help="Diagnostic only: keep simulating after a grasp failure. By default save and end an already-invalid attempt.")
     p.add_argument("--cloth-density", type=float, default=None,
                    help="Optional kg/m^3 material-density override; save and extract separately from default physics.")
     p.add_argument("--cloth-strain-rate", type=float, default=None,
@@ -340,6 +342,7 @@ def main():
 
                 record_state()
                 started = time.monotonic()
+                timing = dict(policy_s=0., environment_s=0., recording_s=0., lookahead_s=0.)
                 for step in range(args.steps + args.hold):
                     actions = np.zeros((n, env.action_dim), np.float32)
                     proposed = np.zeros_like(actions)
@@ -376,7 +379,9 @@ def main():
                             controllers[i] = 0
                             pos, feat, valid, _ = (x[0] for x in spec.unpack_numpy(buffers[i]["obs"][-1][None]))
                             valid = valid.astype(bool)
+                            policy_started = time.monotonic()
                             action = policy_clients[i].act(pos[valid], feat[valid], policy_forces[i])
+                            timing["policy_s"] += time.monotonic() - policy_started
                             model_vertical_rotation = float((rotation @ action[3:])[1])
                             action[3:] = 0.
                             if args.rotation == "fmvp":
@@ -408,20 +413,26 @@ def main():
                     if planner is not None and success_at[0] is None and not completed[0] and step >= 80:
                         load = float(np.linalg.norm(buffers[0]["gripper_force"][-1]))
                         if step % profiles[0].lookahead_interval == 0 and load > 15.:
+                            lookahead_started = time.monotonic()
                             actions[0], diagnostic = planner.improve(actions[0])
+                            timing["lookahead_s"] += time.monotonic() - lookahead_started
                             planner_choices[0] = diagnostic["selected"]
                             if diagnostic["selected"] != 0:
                                 controllers[0] = 4
                             with (body_dir / "lookahead.jsonl").open("a") as log:
                                 log.write(json.dumps(dict(state=step, **diagnostic)) + "\n")
                     anchors = np.stack(env._anchor).copy()
+                    environment_started = time.monotonic()
                     obs, rewards, dones, infos = env.step(actions)
+                    timing["environment_s"] += time.monotonic() - environment_started
                     if any(info.get("sim_error") for info in infos) or np.any(dones):
                         for i in range(n):
                             if not completed[i]:
                                 failures[i] = infos[i].get("error", "unexpected environment reset")
                         break
+                    recording_started = time.monotonic()
                     record_state()
+                    timing["recording_s"] += time.monotonic() - recording_started
                     for i in range(n):
                         if completed[i]:
                             continue
@@ -440,6 +451,10 @@ def main():
                                 failures[i] = f"simulated gripper load {load:.1f} N exceeded collection cutoff {args.abort_gripper_force:.1f} N"
                                 completed[i] = True
                                 continue
+                        if not args.continue_invalid_grasp and not infos[i]["grasp_valid"]:
+                            failures[i] = "grasp tracking exceeded validity limit; ended at first invalid transition"
+                            completed[i] = True
+                            continue
                         sleeve_ok = sleeve is None or buffers[i]["sleeve_wrapped"][-1]
                         endpoint_reached = (infos[i]["upperarm_ratio"] >= args.success
                                             if args.stop_proximal_upper is None else
@@ -459,6 +474,9 @@ def main():
                         print(f"[collect] body={body} step={step+1} {time.monotonic()-started:.0f}s | {status}", flush=True)
                     if np.all(completed):
                         break
+                timing["rollout_wall_s"] = time.monotonic() - started
+                timing["decisions"] = step + 1
+                save_json(body_dir / "timing.json", timing)
                 records = []
                 for i, variant in enumerate(variants):
                     data = {k: np.asarray(v) for k, v in buffers[i].items()}

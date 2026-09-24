@@ -117,3 +117,23 @@ Eight regression tests pass: sleeve topology/wrapping, rejection of moving
 target crossings as holds, force sign/clipping/smoothing, observation cropping,
 rotation-aware grasp guarding, and virtual-tool rotation recovery. The multi-body simulations above provide
 the end-to-end check. Visualization remains in the native Genesis viewer.
+
+## Collection cost and early rejection
+
+The completed original job accepted 75 of 351 attempts (21.4%). Across its
+113 new batches, median rollout-loop wall time was 442 seconds for a median
+650 decisions, with three controller slots. Each decision contains six IPC
+substeps. This is measured batch time, not per-episode neural-network latency.
+
+New workers stop and save an attempt at its first invalid grasp, since the
+existing acceptance rule already rejects any such episode. An explicit
+`--continue-invalid-grasp` option retains the old behavior for diagnostics.
+Replaying the saved grasp-validity flags gives 44,427 individual transitions
+after first failure; accounting for concurrent slots gives 12,113 avoidable
+batch decisions out of 64,972 (18.6%). This is an offline estimate of avoidable
+steps, not a measured speedup or a promise of identical IPC trajectories.
+
+Each new worker writes `timing.json` separating policy calls, environment
+steps, state recording, and optional lookahead. Production uses zero lookahead.
+The remaining isolated lookahead diagnostic exits at its finite step limit
+and is not automatically repeated.
