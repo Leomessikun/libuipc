@@ -212,7 +212,7 @@ class ReferencePolicy:
         with torch.no_grad():
             if self.film:
                 f = np.zeros(3) if force is None else np.asarray(force, dtype=np.float64).reshape(3) @ self.rotation.T
-                feature, _ = self.encoder(batch, torch.as_tensor(f, dtype=torch.float32).reshape(1, 3))
+                feature, _ = self.encoder(batch, torch.as_tensor(f, dtype=torch.float32, device=self.device).reshape(1, 3))
             else:
                 feature, _ = self.encoder(batch)
             mu, _ = self.trunk(feature).chunk(2, dim=-1)

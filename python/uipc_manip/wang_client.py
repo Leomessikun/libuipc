@@ -36,10 +36,18 @@ class WangPolicyClient:
             env={"PYTHONPATH": f"{REFERENCE_ROOT}:{root}", "PATH": "/usr/bin:/bin",
                  "CUDA_VISIBLE_DEVICES": "" if device == "cpu" else "0"},
         )
-        ready = self.proc.stderr.readline()
-        if b"ready" not in ready:
-            raise RuntimeError(f"The policy process did not come up: {ready!r}\n"
-                               f"{self.proc.stderr.read(4000).decode(errors='replace')}")
+        # CUDA/library warnings can precede the readiness marker. Preserve them
+        # for a startup error without treating the first warning as a failure.
+        startup = bytearray()
+        while True:
+            line = self.proc.stderr.readline()
+            startup.extend(line)
+            if line.strip() == b"[bridge] ready":
+                break
+            if not line:
+                self.proc.wait()
+                raise RuntimeError("The policy process did not come up:\n"
+                                   + startup.decode(errors="replace"))
 
     def act(self, pos_rel: np.ndarray, flags: np.ndarray, force: np.ndarray | None = None) -> np.ndarray:
         """The deterministic six-dimensional action for one observation, in our frame.
