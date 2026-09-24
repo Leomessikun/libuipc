@@ -267,3 +267,36 @@ Reading: the checkpoint was trained on cloth that stretches (FleX, then PyBullet
 a knit T-shirt stretches too; the default strain limit makes the armhole unable to pass the shoulder
 with a torso present, for the expert as much as for the policy. One run per cell; before `10` becomes
 a default it needs a force-extension calibration against real jersey and replication over more bodies.
+
+## Why large-scale collection stalls, and what the IPC lookahead fixes (2026-09-24)
+
+The Codex collection `fmvp_dataset_multiregion_500_20260924` (full body, strain rate 10, density 750,
+FMVP rotation, zero force, no lookahead) had accepted 165 of 708 attempts, with whole pose regions at
+0. Of the 84 failures in its own run: 47 stall at the elbow (forearm 0.4 to 0.9, the gripper runs on
+to 2.4 chords and tears the hold past the 20 mm limit), 23 snag on the hand within 30 to 50
+decisions, 14 reach the upper arm partly. Per body, success correlates with elbow opening (+0.51)
+and against forearm length (-0.47). The policy never met a jam in training and its force input is
+zero, so it keeps pulling.
+
+A second defect is in acceptance: it needs "sleeve wrapped" and "proximal section at 0.9 of the upper
+arm" in the same state, but the taut sleeve snaps over the shoulder before 0.9 (the lookahead pilot on
+14045: wrapped at 0.74, then cuff 0.79 to 1.0 within 25 decisions, unwrapped), so the two never
+coincide.
+
+Codex's `ipc_action_filter` (10 candidates, every 3 decisions, 18 mm tracking budget) plus stopping at
+proximal 0.7 while wrapped, on five bodies that were 0 in production, quarter speed, seed 2026092411:
+
+| body | lookahead + stop 0.7 | no lookahead, stop 0.7 |
+|---|---|---|
+| 14045 | accepted, grip peak 121 N | grasp lost |
+| 14050 | accepted, 145 N | grasp lost |
+| 9046 | grasp held, sleeve slid off at the elbow | grasp lost |
+| 13046 | grasp lost | grasp lost |
+| 22046 | grasp held, stuck on the hand (forearm 0.13 from decision 75) | grasp lost |
+
+(4046 had no legal placement at the 5 mm offset.) The lookahead keeps the grasp on 4 of 5 where
+nothing else did and converts 2 to accepted episodes. Its candidates are small perturbations of the
+policy action, so a hand snag, which needs backing out and re-threading, is out of its reach.
+Caveat: the two accepted episodes pass the physical-sleeve test (wrapped, proximal at least 0.7) with
+the legacy upper-arm ratio at 0.39 and 0.55; the two progress measures disagree and one must be chosen.
+Cost: about 20 to 25 minutes per 750-decision episode with lookahead, slot 0 only.
