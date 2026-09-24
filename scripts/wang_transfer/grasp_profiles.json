@@ -1,0 +1,6 @@
+[
+  {"name": "mass_matched_48", "grasp_strength_gain": 4.444},
+  {"name": "mass_matched_48_single", "grasp_strength_gain": 4.444, "bridge_voxel": 0},
+  {"name": "firm_12_single", "grasp_strength_gain": 100, "anchor_count": 12, "bridge_voxel": 0},
+  {"name": "mass_matched_rotation", "grasp_strength_gain": 4.444, "bridge_voxel": 0, "rotation_gain": 0.3464101615}
+]

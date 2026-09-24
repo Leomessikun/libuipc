@@ -117,8 +117,12 @@ been no IPC network fine-tuning in this collection route. Its force input is
 explicitly zero (`policy_force_input` in run metadata and `WangPolicyClient.act`
 called without force). Thus force conditioning cannot respond to measured
 IPC resistance. The observation route is `wang_static_arm`, which retains a
-pre-captured arm cloud, whereas FMVP Section 5.1 describes observing the
-unoccluded part of the arm at each step. Material, grasp constraints, human
+pre-captured arm cloud. FMVP Section 5.1 describes observing the unoccluded part
+of the arm at each step, but the released PyBullet implementation actually
+hides the cloth while rendering its arm cloud (`assistive_gym/dressing.py`,
+lines 320–323). Therefore bare-arm visibility itself is not a verified mismatch
+to this released simulation checkpoint. Camera geometry and sampling still
+differ. Material, grasp constraints, human
 geometry (full SMPL-X here), initialization and executed action scale also
 differ. These are verified setup differences, not individually proven causes
 of each failed body. The local official FMVP README additionally states that

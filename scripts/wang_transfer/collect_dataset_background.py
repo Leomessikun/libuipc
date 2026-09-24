@@ -39,6 +39,11 @@ def main():
     p.add_argument('--wait-pid', type=int)
     p.add_argument('--seed', type=int, default=20260924)
     p.add_argument('--seed-runs', type=Path, nargs='*', default=[])
+    p.add_argument('--bodies', type=int, nargs='+')
+    p.add_argument('--variants', nargs='+', default=['baseline', 'half', 'quarter'])
+    p.add_argument('--profiles-json', type=Path)
+    p.add_argument('--endpoint', choices=('legacy_ratio', 'proximal_sleeve'), default='legacy_ratio')
+    p.add_argument('--steps', type=int, default=650)
     a = p.parse_args()
     os.chdir(ROOT)
     a.out = a.out.resolve()
@@ -47,16 +52,27 @@ def main():
         raise ValueError('Need a positive target and a sufficient attempt budget')
     config_path = a.out / 'config.json'
     config = dict(target=a.target, max_attempts=a.max_attempts, seed=a.seed,
-                  bodies=list(range(14045, 14061)), variants=['baseline', 'half', 'quarter'],
+                  bodies=a.bodies or list(range(14045, 14061)), variants=a.variants,
                   hold_decisions=20, max_edge_p99=2.25, max_single_edge_ratio=4.,
                   deformation_note='Empirical simulation guardrails, not calibrated textile limits.',
                   start_jitter_mm=[7., 5., 7.], force_cutoff_N=1000.,
                   seed_runs=[str(x.resolve()) for x in a.seed_runs],
                   policy='/home/ge47gax/Desktop/fmvp_sim.pt', simulator='Genesis+IPC',
                   agent_or_api_calls=False)
+    if a.endpoint != 'legacy_ratio' or a.profiles_json is not None or a.steps != 650:
+        config.update(endpoint=a.endpoint, endpoint_threshold=.9 if a.endpoint == 'proximal_sleeve' else .7,
+                      steps=a.steps)
+    profile_path = None
+    if a.profiles_json is not None:
+        from rollout_controls import load_profiles, profile_dict
+        profiles = [profile_dict(x) for x in load_profiles(a.profiles_json, len(a.variants))]
+        config['profiles'] = profiles
+        profile_path = a.out / 'profiles.json'
     if config_path.exists() and json.loads(config_path.read_text()) != config:
         raise ValueError('Existing collection config differs; choose a new output directory')
     atomic_json(config_path, config)
+    if profile_path is not None:
+        atomic_json(profile_path, config['profiles'])
     rows = []
     checked = set()
     state_path = a.out / 'manifest.json'
@@ -78,6 +94,8 @@ def main():
         atomic_json(state_path, manifest)
         atomic_json(a.out / 'status.json', dict(pid=os.getpid(), phase=phase, target=a.target,
                     accepted=len(rows), attempts=attempts, updated_unix=time.time(),
+                    transitions=manifest['transitions'], body_ids=manifest['body_ids'],
+                    endpoint=a.endpoint,
                     elapsed_s=round(time.time() - started), **extra))
 
     def inspect(run):
@@ -87,7 +105,7 @@ def main():
             if key in checked:
                 continue
             try:
-                result = audit(path, rest, faces, 20)
+                result = audit(path, rest, faces, 20, endpoint=a.endpoint)
                 result['collection_accepted'] = bool(result['accepted']
                     and result['edge_p99_peak_vs_initial'] <= config['max_edge_p99']
                     and result['edge_max_peak_vs_initial'] <= config['max_single_edge_ratio'])
@@ -137,12 +155,16 @@ def main():
         cmd = [PYTHON, str(ROOT / 'scripts/wang_transfer/collect_better_rollouts.py'),
                '--hang', str(ROOT / 'output/uipc_manip/fmvp_better_rollouts_20260923/hang2.npz'),
                '--hang-key', 'k300', '--bodies', str(body), '--variants', *config['variants'],
-               '--seed', str(a.seed + batch), '--steps', '650', '--hold', '20',
+               '--seed', str(a.seed + batch), '--steps', str(a.steps), '--hold', '20',
                '--success', '.7', '--success-geometry', 'physical_sleeve', '--slow-along', '.85',
                '--yaw', '267', '--rotation', 'fmvp', '--collision-geometry', 'full_body',
                '--placement-offset-mm', *[str(float(x)) for x in offset],
                '--abort-gripper-force', '1000', '--cloth-density', '750', '--cloth-strain-rate', '10',
                '--out', str(destination)]
+        if a.endpoint == 'proximal_sleeve':
+            cmd += ['--stop-proximal-upper', '.9']
+        if profile_path is not None:
+            cmd += ['--profiles-json', str(profile_path)]
         atomic_json(a.out / 'current_command.json', dict(command=cmd, body=body, offset_mm=offset.tolist()))
         status('collecting', batch=batch, body=body)
         before = attempts
@@ -161,7 +183,7 @@ def main():
         inspect(destination)
         consecutive_errors = consecutive_errors + 1 if code != 0 and attempts == before else 0
         if attempts == before:
-            attempts += 3
+            attempts += len(config['variants'])
             with ledger_path.open('a') as f:
                 for variant in config['variants']:
                     f.write(json.dumps(dict(batch=batch, body=body, variant=variant,

@@ -143,7 +143,20 @@ def first_window(mask, hold):
     return None
 
 
-def audit(path, vertices, faces, hold):
+def first_stationary_window(mask, actions, hold):
+    if len(actions) + 1 != len(mask):
+        raise ValueError('Expected one more state than action')
+    return next((k for k in range(len(mask) - hold)
+                 if np.all(mask[k:k + hold + 1])
+                 and np.max(np.abs(actions[k:k + hold])) <= 1e-8), None)
+
+
+def audit(path, vertices, faces, hold, *, endpoint='legacy_ratio', threshold=None):
+    if endpoint not in ('legacy_ratio', 'proximal_sleeve'):
+        raise ValueError(f'Unknown endpoint: {endpoint}')
+    threshold = (.7 if endpoint == 'legacy_ratio' else .9) if threshold is None else threshold
+    if not 0 < threshold <= 1 or hold < 1:
+        raise ValueError('Need a positive hold and endpoint threshold in (0, 1]')
     with np.load(path, allow_pickle=False) as data:
         metadata = json.loads(str(data['metadata_json']))
         if metadata.get('collision_geometry') != 'full_body' or 'human_vertices' not in data:
@@ -159,10 +172,14 @@ def audit(path, vertices, faces, hold):
         cloth = data['positions']
         measurements = [measure(sections, p, landmarks) for p in cloth]
         wrapped = np.asarray([m['sleeve_wrapped'] for m in measurements])
-        # Retain the original task completion threshold, while checking the
-        # real sleeve tube rather than rings on the shirt torso.
-        complete = wrapped & (data['upperarm_ratio'] >= .7)
+        values = (data['upperarm_ratio'] if endpoint == 'legacy_ratio' else
+                  np.asarray([m['proximal_upper_fraction'] for m in measurements]))
+        complete = wrapped & (values >= threshold)
         start = first_window(complete, hold)
+        if endpoint == 'proximal_sleeve':
+            # A moving interval at the shoulder is not evidence of stopping.
+            # Verify the actual zero-command hold, not the collector's label.
+            start = first_stationary_window(complete, data['actions'], hold)
         valid = bool(data['grasp_valid'].all())
         failure = metadata.get('sim_error')
         edges = sections.edges
@@ -170,6 +187,7 @@ def audit(path, vertices, faces, hold):
         ratio = np.linalg.norm(cloth[:, edges[:, 0]] - cloth[:, edges[:, 1]], axis=2) / initial
         peak = np.linalg.norm(data['gripper_force'], axis=1)
         return dict(path=str(path.resolve()), sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                    endpoint=endpoint, endpoint_threshold=threshold,
                     body=metadata['body'], transitions=len(data['actions']),
                     held_complete_start=start, held_complete=start is not None,
                     valid_grasp=valid, geometry_and_grasp_pass=bool(start is not None and valid),
@@ -186,11 +204,13 @@ def main():
     p.add_argument('episodes', nargs='+', type=Path)
     p.add_argument('--obj', type=Path, default=DEFAULT_OBJ)
     p.add_argument('--hold', type=int, default=5)
+    p.add_argument('--endpoint', choices=('legacy_ratio', 'proximal_sleeve'), default='legacy_ratio')
+    p.add_argument('--threshold', type=float)
     p.add_argument('--out', type=Path, required=True)
     a = p.parse_args()
     vertices, faces = read_obj(a.obj)
     vertices *= 4.
-    rows = [audit(path, vertices, faces, a.hold) for path in a.episodes]
+    rows = [audit(path, vertices, faces, a.hold, endpoint=a.endpoint, threshold=a.threshold) for path in a.episodes]
     report = dict(method='actual free cuff plus three connected mesh-plane sections on the sleeve side of the armhole',
                   previous_error='legacy right_cuff_loop_ordered is the armhole seam; its generated rings extend into the torso',
                   geometry_and_grasp_passes=sum(r['geometry_and_grasp_pass'] for r in rows),

@@ -1,8 +1,8 @@
 """Record FMVP rollouts from the already verified gravity-hung start.
 
-Keep the simulator, checkpoint, zero FiLM input, frame and grasp unchanged.
-Compare the policy, a handoff to the existing expert after threading, and the
-expert; optionally test slowing before the shoulder. Hold for a complete
+The default keeps checkpoint inputs and grasp unchanged. Explicit profiles
+record experimental input, grasp or action interventions separately. Compare
+controllers or test slowing before the shoulder. Hold for a complete
 validation window. Save failed attempts too; only stable, valid-grasp episodes
 enter accepted.json. No network training is performed here. Forces are recorded
 for ranking, not certified against an absolute real-world safety threshold.
@@ -19,6 +19,8 @@ import sys
 import time
 
 import numpy as np
+
+from rollout_controls import crop_observation, force_input, load_profiles, profile_dict, rigid_rotation, tracking_scale
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +54,8 @@ def parser():
     p.add_argument("--variants", nargs="+", choices=VARIANTS, default=["baseline", "handoff", "expert"])
     p.add_argument("--replicas", type=int, default=1,
                    help="Run identical controllers in separate IPC slots for repeated evaluation.")
+    p.add_argument("--profiles-json", type=Path,
+                   help="One explicit policy-input/control profile per variant, for controlled comparisons.")
     p.add_argument("--seed", type=int, default=1000)
     p.add_argument("--steps", type=int, default=500,
                    help="Maximum decisions to first reach success; the hold window is allowed on top.")
@@ -99,7 +103,7 @@ def main():
         raise ValueError("--freeze-from-state must be within the rollout window")
     if args.replicas < 1 or (args.replicas > 1 and len(args.variants) != 1):
         raise ValueError("--replicas >1 requires exactly one variant")
-    if args.replicas == 1 and len(set(args.variants)) != len(args.variants):
+    if args.profiles_json is None and args.replicas == 1 and len(set(args.variants)) != len(args.variants):
         raise ValueError("Duplicate variants require --replicas so output names stay unique")
     if args.abort_gripper_force is not None and args.abort_gripper_force <= 0:
         raise ValueError("--abort-gripper-force must be positive")
@@ -114,6 +118,9 @@ def main():
     if args.stop_proximal_upper is not None and (args.success_geometry != "physical_sleeve"
                                                or not 0 < args.stop_proximal_upper <= 1):
         raise ValueError("--stop-proximal-upper requires physical_sleeve and a fraction in (0, 1]")
+    profiles = load_profiles(args.profiles_json, len(args.variants)) * args.replicas
+    if any(p.lookahead_interval for p in profiles) and (len(profiles) != 1 or args.success_geometry != "physical_sleeve"):
+        raise ValueError("IPC lookahead requires one slot and physical_sleeve geometry")
     hang_hash = sha256(args.hang)
     if args.preflight_manifest is not None:
         preflight = json.loads(args.preflight_manifest.read_text())
@@ -153,10 +160,14 @@ def main():
     metadata.update(checkpoint_sha256=sha256(args.checkpoint), hang_sha256=hang_hash,
                     preflight_sha256=sha256(args.preflight_manifest) if args.preflight_manifest is not None else None,
                     collector_sha256=sha256(__file__),
+                    controls_sha256=sha256(Path(__file__).with_name("rollout_controls.py")),
+                    bridge_sha256=sha256(args.package_root / "uipc_manip/wang_bridge.py"),
+                    environment_sha256=sha256(args.package_root / "uipc_manip/dressing_env.py"),
                     collector_revision=revision(ROOT), package_revision=revision(args.package_root),
-                    policy_force_input="zero", force_sampling="end of decision, not substep peak",
+                    policy_force_input="zero" if args.profiles_json is None else "per_profile; stored in policy_force",
+                    profiles=[profile_dict(p) for p in profiles], force_sampling="end of decision, not substep peak",
                     observations="obs[t] -> actions[t] -> obs[t+1]; force arrays align with obs",
-                    controller_id="0 FMVP, 1 scripted expert, 2 hold; policy_actions are the active controller's proposals",
+                    controller_id="0 FMVP, 1 scripted expert, 2 hold, 3 tracking-limited FMVP, 4 IPC-improved FMVP; policy_actions are proposals",
                     accepted_rule=("proximal sleeve fraction >= stop_proximal_upper, real sleeve wrapped throughout hold, valid grasp, no sim error"
                                    if args.stop_proximal_upper is not None else
                                    "upper >= success throughout hold, valid grasp throughout, no sim error"))
@@ -173,8 +184,23 @@ def main():
         sleeve_template = (rest_vertices * 4., rest_faces)
     variants = args.variants * args.replicas
     labels = [f"{v}_rep{i}" if args.replicas > 1 else v for i, v in enumerate(variants)]
+    if args.profiles_json is not None:
+        labels = [f"{v}_{profiles[i].name}_slot{i}" for i, v in enumerate(variants)]
     build_original = dressing_live.LiveCellFactory.build
+    prepare_original = GenesisIPCDressingEnv._prepare_start
     placements = {}
+
+    def prepare_with_profiles(environment):
+        # Apply explicitly requested grasp changes before settling and snapshot
+        # creation, so reset reproduces the same constraint definition.
+        import uipc
+        for i, profile in enumerate(profiles):
+            if profile.anchor_count is not None:
+                environment._pickers[i]["anchor_idx"] = environment.cells[i].anchor_indices(profile.anchor_count)
+            if profile.grasp_strength_gain != 1:
+                slot = environment.slots[i].geometry().vertices().find("strength_ratio")
+                uipc.view(slot)[:] = environment.cfg.constraint_strength * profile.grasp_strength_gain
+        prepare_original(environment)
 
     def hung_build(factory, garment, human):
         cell = build_original(factory, garment, human)
@@ -208,10 +234,18 @@ def main():
                        pull_waypoints=np.stack([target, cell.pull_waypoints[-1]]))
 
     dressing_live.LiveCellFactory.build = hung_build
+    GenesisIPCDressingEnv._prepare_start = prepare_with_profiles
     all_records = []
     skipped = []
     client = WangPolicyClient(checkpoint=str(args.checkpoint), yaw_deg=args.yaw,
                               voxel=args.bridge_voxel, package_root=args.package_root)
+    clients = {args.bridge_voxel: client}
+    for profile in profiles:
+        voxel = profile.bridge_voxel if profile.bridge_voxel is not None else args.bridge_voxel
+        if voxel not in clients:
+            clients[voxel] = WangPolicyClient(checkpoint=str(args.checkpoint), yaw_deg=args.yaw,
+                                            voxel=voxel, package_root=args.package_root)
+    policy_clients = [clients[p.bridge_voxel if p.bridge_voxel is not None else args.bridge_voxel] for p in profiles]
     try:
         for body in args.bodies:
             _, training_args, _ = pretrain_wang.prepare(
@@ -252,14 +286,20 @@ def main():
                 masses = np.zeros(len(cell.cloth))
                 np.add.at(masses, cell.faces.ravel(), np.repeat(areas / 3, 3))
                 masses *= 2 * cfg.cloth_thickness * cfg.cloth_density
+                planner = None
+                if profiles[0].lookahead_interval:
+                    from ipc_action_filter import IPCActionFilter
+                    planner = IPCActionFilter(env, sleeve, masses, strength_gain=profiles[0].grasp_strength_gain)
                 body_dir = args.out / f"body_{body}_seed_{args.seed}"
                 body_dir.mkdir()
                 save_json(body_dir / "config.json", dict(config=cfg.to_dict(), placement=placements[str(body)],
                                                          mass_kg=float(masses.sum())))
-                buffers = [{k: [] for k in ["obs", "positions", "tcp", "gripper_force", "arm_force", "body_force",
+                buffers = [{k: [] for k in ["obs", "positions", "tcp", "tcp_rotation", "gripper_force", "arm_force", "body_force",
                             "upperarm_ratio", "forearm_ratio", "actions", "policy_actions", "rewards",
-                            "executed_translation", "tracking_error", "early_turn", "grasp_valid", "speed_scale", "controller_id"]}
+                            "executed_translation", "tracking_error", "early_turn", "grasp_valid", "speed_scale", "controller_id",
+                            "policy_force", "tracking_scale", "planner_choice"]}
                            for _ in range(n)]
+                policy_forces = np.zeros((n, 3), np.float32)
                 if sleeve is not None:
                     for buffer in buffers:
                         buffer.update(sleeve_wrapped=[], sleeve_cuff_s=[], sleeve_proximal_upper_fraction=[])
@@ -277,12 +317,15 @@ def main():
                             continue
                         indices = env._pickers[i]["anchor_idx"]
                         target = env._anchor[i][None, :] + env._offsets[i]
-                        stiffness = cfg.constraint_strength * masses[indices] / cfg.dt ** 2
+                        stiffness = cfg.constraint_strength * profiles[i].grasp_strength_gain * masses[indices] / cfg.dt ** 2
                         grip = -(stiffness[:, None] * (target - positions[i][indices])).sum(0)
                         progress = env._last_progress[i]
                         body_force = pairs[i][0] + pairs[i][1]
-                        values = dict(obs=obs[i].copy(), positions=positions[i].astype(np.float32),
+                        policy_forces[i] = force_input(profiles[i], body_force.sum(0), grip, policy_forces[i])
+                        values = dict(obs=crop_observation(obs[i], spec, profiles[i]).copy(),
+                                      policy_force=policy_forces[i].copy(), positions=positions[i].astype(np.float32),
                                       tcp=np.asarray(env._anchor[i], np.float32).copy(), gripper_force=grip,
+                                      tcp_rotation=rigid_rotation(env._initial_offsets[i], env._offsets[i]),
                                       arm_force=body_force[env._force_arm_indices[i]].sum(0),
                                       body_force=body_force.sum(0),
                                       upperarm_ratio=float(progress.upperarm_ratio),
@@ -301,6 +344,8 @@ def main():
                     actions = np.zeros((n, env.action_dim), np.float32)
                     proposed = np.zeros_like(actions)
                     scales = np.zeros(n)
+                    tracking_scales = np.ones(n)
+                    planner_choices = np.full(n, -1, dtype=np.int16)
                     controllers = np.full(n, 2, dtype=np.int8)  # 0 FMVP, 1 scripted expert, 2 hold
                     need_expert = any(v in ("expert", "handoff") for v in variants)
                     if need_expert:
@@ -329,16 +374,17 @@ def main():
                             controllers[i] = 1
                         else:
                             controllers[i] = 0
-                            pos, feat, valid, _ = (x[i] for x in spec.unpack_numpy(obs))
+                            pos, feat, valid, _ = (x[0] for x in spec.unpack_numpy(buffers[i]["obs"][-1][None]))
                             valid = valid.astype(bool)
-                            action = client.act(pos[valid], feat[valid])
+                            action = policy_clients[i].act(pos[valid], feat[valid], policy_forces[i])
                             model_vertical_rotation = float((rotation @ action[3:])[1])
                             action[3:] = 0.
                             if args.rotation == "fmvp":
                                 delta = abs(model_vertical_rotation)
                                 if delta > np.deg2rad(5.):
                                     delta *= np.deg2rad(5.) / np.sqrt(3.)
-                                action[5] = args.rotation_gain * np.sign(model_vertical_rotation) * delta / cfg.max_rotation
+                                gain = args.rotation_gain if profiles[i].rotation_gain is None else profiles[i].rotation_gain
+                                action[5] = gain * np.sign(model_vertical_rotation) * delta / cfg.max_rotation
                             proposed[i] = action
                             along = float((env._anchor[i] - finger) @ axis / (axis @ axis))
                             slowed[i] |= along >= args.slow_along
@@ -348,7 +394,26 @@ def main():
                                 actions[i] = 0.
                                 scales[i] = 0.
                                 controllers[i] = 2
+                            if profiles[i].tracking_budget_m is not None and controllers[i] == 0:
+                                tracking_scales[i] = tracking_scale(
+                                    np.clip(actions[i], -1, 1), anchor=env._anchor[i], offsets=env._offsets[i],
+                                    held=buffers[i]["positions"][-1][env._pickers[i]["anchor_idx"]],
+                                    max_translation=cfg.max_translation, max_rotation=cfg.max_rotation,
+                                    budget=profiles[i].tracking_budget_m)
+                                actions[i] *= tracking_scales[i]
+                                scales[i] *= tracking_scales[i]
+                                if tracking_scales[i] < 1:
+                                    controllers[i] = 3
                     actions = np.clip(actions, -1, 1)
+                    if planner is not None and success_at[0] is None and not completed[0] and step >= 80:
+                        load = float(np.linalg.norm(buffers[0]["gripper_force"][-1]))
+                        if step % profiles[0].lookahead_interval == 0 and load > 15.:
+                            actions[0], diagnostic = planner.improve(actions[0])
+                            planner_choices[0] = diagnostic["selected"]
+                            if diagnostic["selected"] != 0:
+                                controllers[0] = 4
+                            with (body_dir / "lookahead.jsonl").open("a") as log:
+                                log.write(json.dumps(dict(state=step, **diagnostic)) + "\n")
                     anchors = np.stack(env._anchor).copy()
                     obs, rewards, dones, infos = env.step(actions)
                     if any(info.get("sim_error") for info in infos) or np.any(dones):
@@ -361,6 +426,8 @@ def main():
                         if completed[i]:
                             continue
                         values = dict(actions=actions[i].copy(), policy_actions=proposed[i].copy(), controller_id=controllers[i],
+                                      tracking_scale=tracking_scales[i],
+                                      planner_choice=planner_choices[i],
                                       rewards=float(rewards[i]), speed_scale=float(scales[i]),
                                       executed_translation=np.asarray(env._anchor[i]) - anchors[i],
                                       tracking_error=float(infos[i]["tracking_error"]),
@@ -414,6 +481,11 @@ def main():
                     force = np.linalg.norm(data["gripper_force"][1:], axis=1)
                     arm_force = np.linalg.norm(data["arm_force"][1:], axis=1)
                     record = dict(body=body, variant=variant, replica=i if args.replicas > 1 else None,
+                                  profile=profile_dict(profiles[i]),
+                                  checkpoint_sha256=metadata["checkpoint_sha256"], simulator="Genesis+IPC",
+                                  max_translation_m=cfg.max_translation, max_rotation_rad=cfg.max_rotation,
+                                  decision_dt_s=cfg.dt * cfg.action_repeat,
+                                  tcp_rotation_convention="world rotation relative to initial virtual tool orientation; identity at reset",
                                   collision_geometry=args.collision_geometry,
                                   success_geometry=args.success_geometry,
                                   stop_proximal_upper=args.stop_proximal_upper,
@@ -433,6 +505,7 @@ def main():
                                       human_faces=env.collider_meshes[i][1])
                                  if args.collision_geometry == "full_body" else {})
                     np.savez_compressed(body_dir / f"{labels[i]}.npz", **data, **full_body,
+                                        grasp_indices=env._pickers[i]["anchor_idx"], initial_grasp_offsets=env._initial_offsets[i],
                                         faces=cell.faces, arm_vertices=cell.arm_points, arm_faces=cell.arm_faces,
                                         opening_idx=cell.opening_idx, finger=finger, shoulder=shoulder,
                                         elbow=np.asarray(cell.elbow), metadata_json=json.dumps(record))
@@ -445,8 +518,10 @@ def main():
             finally:
                 env.close()
     finally:
-        client.close()
+        for policy_client in clients.values():
+            policy_client.close()
         dressing_live.LiveCellFactory.build = build_original
+        GenesisIPCDressingEnv._prepare_start = prepare_original
     save_json(args.out / "skipped.json", skipped)
     if not (args.out / "metrics.json").exists():
         save_json(args.out / "metrics.json", [])

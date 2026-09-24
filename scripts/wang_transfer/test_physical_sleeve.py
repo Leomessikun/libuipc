@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from physical_sleeve import SleeveSections, measure
+from physical_sleeve import SleeveSections, first_stationary_window, measure
 
 
 class PhysicalSleeveTests(unittest.TestCase):
@@ -37,6 +37,15 @@ class PhysicalSleeveTests(unittest.TestCase):
         result = measure(self.sections, displaced, self.landmarks)
         self.assertTrue(result['rings'][0]['wrapped'])
         self.assertFalse(result['sleeve_wrapped'])
+
+    def test_moving_past_target_is_not_a_stationary_hold(self):
+        mask = np.ones(6, dtype=bool)
+        moving = np.ones((5, 6)) * .1
+        self.assertIsNone(first_stationary_window(mask, moving, 2))
+        moving[3:] = 0.
+        self.assertEqual(first_stationary_window(mask, moving, 2), 3)
+        mask[-1] = False
+        self.assertIsNone(first_stationary_window(mask, moving, 2))
 
 
 if __name__ == '__main__':

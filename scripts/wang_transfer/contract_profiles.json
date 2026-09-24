@@ -1,0 +1,6 @@
+[
+  {"name": "legacy"},
+  {"name": "single_voxel", "bridge_voxel": 0},
+  {"name": "single_voxel_force", "bridge_voxel": 0, "force_source": "body_contact", "force_scale": 0.0001, "force_clip": 0.04, "force_ema": 0.2},
+  {"name": "single_voxel_guard", "bridge_voxel": 0, "tracking_budget_m": 0.018}
+]
