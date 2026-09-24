@@ -324,3 +324,24 @@ At the stalled states the ten macros end within millimetres of each other in pro
 clearly frees a jam. One run per cell and IPC runs diverge, so 2 of 5 against 1 of 5 is noise; the
 macros add cost without a measured gain. What remains is that the policy cannot sense a jam; the
 route that addresses it is training on these states, not searching around them.
+
+## Filtered behaviour cloning on accepted rollouts: gentler, not more capable
+
+`scripts/wang_transfer/finetune_fmvp_bc.py` (curl environment) freezes the point encoder and
+fine-tunes the whole three-layer actor trunk of `fmvp_sim.pt` on the executed actions of accepted
+episodes (model frame; zero during the verified hold), with a trust term to the released outputs and
+equal weight per body. Data: 157 unique accepted episodes, 33 bodies, 68,929 states, from the two
+Codex collections, with 14047, 5046, 10047 and 2046 excluded. Held-out-body fit 0.275 -> 0.044.
+Model: `output/uipc_manip/fmvp_ipc_bc_20260924/model/fmvp_ipc_bc.pt`.
+
+IPC evaluation, identical settings for both (full body, strain rate 10, density 750, FMVP rotation,
+no external slowdown, no lookahead, stop at proximal 0.7 while wrapped, 2 replicas, seed 2026092421):
+
+| group | original | fine-tuned |
+|---|---|---|
+| excluded bodies 14047, 5046, 10047, 2046 | 6/8, success at 187-231, grip peak 66-276 N | 6/8, success at 241-296, grip peak 44-143 N |
+| never-accepted bodies 14045, 14050, 9046, 13046, 22046 | 0/10 | 0/10 |
+
+It learned the collector's slowdown (slower, about half the load) and nothing new: the data contain
+no recovery from a jam, so the hard bodies stay at zero. Their states have to enter the data with
+better actions attached, which is what a DAgger round with the IPC lookahead as labeller does.
