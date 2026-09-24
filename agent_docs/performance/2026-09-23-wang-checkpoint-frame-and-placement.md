@@ -300,3 +300,27 @@ policy action, so a hand snag, which needs backing out and re-threading, is out 
 Caveat: the two accepted episodes pass the physical-sleeve test (wrapped, proximal at least 0.7) with
 the legacy upper-arm ratio at 0.39 and 0.55; the two progress measures disagree and one must be chosen.
 Cost: about 20 to 25 minutes per 750-decision episode with lookahead, slot 0 only.
+
+## Multi-decision recovery macros do not add to the one-decision filter
+
+`scripts/wang_transfer/experimental/ipc_macro_filter.py` extends the filter: when the sleeve's mean
+ring position advances less than 4 mm in 25 decisions (from decision 50), it simulates ten
+8-decision macros from the current IPC state (policy action, hold, retreat, lift, drop, left, right,
+retreat-and-lift then forward, yaw either way with the policy's translation), scores the end state
+(progress + wrapped bonus - load over 40 N, infeasible past 19 mm tracking or the stretch limits) and
+executes the best one. Wired into a local copy of the collector (not the production file), same
+settings and seed as the one-decision test:
+
+| body | one-decision filter | + macros |
+|---|---|---|
+| 14045 | accepted | grasp lost |
+| 14050 | accepted | accepted (decision 738) |
+| 9046 | fail | fail |
+| 13046 | grasp lost | grasp held, not dressed |
+| 22046 | stuck on the hand | threaded, forearm 0.85 at the 750-decision limit |
+
+At the stalled states the ten macros end within millimetres of each other in progress (for example
+0.172 to 0.186 m on 22046) and several are infeasible on tracking, so no short fixed manoeuvre
+clearly frees a jam. One run per cell and IPC runs diverge, so 2 of 5 against 1 of 5 is noise; the
+macros add cost without a measured gain. What remains is that the policy cannot sense a jam; the
+route that addresses it is training on these states, not searching around them.
