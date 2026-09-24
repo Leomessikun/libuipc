@@ -369,3 +369,23 @@ The easy excluded bodies stay at 6/8 with DAgger r1. No new successes yet, but o
 the sleeve now threads and stays wrapped on the forearm where the original snagged on the hand; the
 failure has moved to the elbow, where round 2 collects labels. 9047 loses the grasp within 36
 decisions under every model and looks like a start problem.
+
+## DAgger round 2 does not add to round 1
+
+Round-2 collection with the r1 model plus lookahead dressed 5 of 10 hard bodies (round 1: 2 of 8),
+about 1,450 more labels (80,793 states, 2,960 lookahead labels in total). Evaluation, seed
+2026092461, 2 replicas, no lookahead; hard held-out bodies 22046, 14058, 9047, 22047 (13047, 17046,
+24046, 26046 had no legal start); easy held-out 14047, 5046, 10047, 2046:
+
+| model | hard held-out | easy held-out |
+|---|---|---|
+| original | 1/8 | 6/8 (seed 2026092421) |
+| r1 | 3/8 | 6/8 |
+| r2, continued from r1 | 1/8 | 4/8 |
+| r2, retrained from the original on all data | 2/8 | 3/8 |
+
+More lookahead labels made the easy bodies worse under both training schemes. A likely reason, not
+yet tested: the encoder is frozen and its force input is zero, so a jammed state and a free state that
+look alike in the 6.25 cm cloud get contradictory targets (the lookahead's choice against the
+policy's own action) and the trunk averages them. Two replicas per cell and diverging IPC runs make
+every difference here small against noise; r1 is the best model so far on both groups.
