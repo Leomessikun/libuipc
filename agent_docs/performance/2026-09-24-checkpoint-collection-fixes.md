@@ -137,3 +137,36 @@ Each new worker writes `timing.json` separating policy calls, environment
 steps, state recording, and optional lookahead. Production uses zero lookahead.
 The remaining isolated lookahead diagnostic exits at its finite step limit
 and is not automatically repeated.
+
+## CPU versus GPU policy inference
+
+The actor client defaults to CPU; the IPC backend already runs CUDA. A measured
+two-slot batch on body 14046 spent 4.26 s in policy calls, 72.52 s in environment
+steps, and 77.71 s in the rollout loop overall. GPU utilization sampled during
+collection was 82%. Environment time includes CPU observation/control work as
+well as CUDA physics; these counters do not separate those components.
+
+Testing CUDA exposed two bridge problems in the active `residual-rl` worktree:
+the force tensor was left on CPU, and the client treated a CUDA warning before
+the readiness marker as startup failure. Both are fixed without changing
+weights or CPU computations. The collector now exposes `--policy-device` and
+records the selection; its default remains CPU.
+
+The isolated in-process test on 12 saved observations measured median CPU
+3.19 ms and CUDA 2.19 ms after warmup. The actual subprocess client test, with
+production collection running concurrently, measured CPU median 3.63 ms,
+CUDA median 23.42 ms, and a CUDA first call of 99.26 s (CPU 0.0135 s). Maximum
+CPU/CUDA action difference over 60 requests was 7.45e-7. Reports are
+`output/uipc_manip/fmvp_policy_device_fixed_probe_20260924.json` and
+`output/uipc_manip/fmvp_policy_client_device_benchmark_20260924.json`.
+
+The subprocess CUDA measurements include contention from the running CUDA
+simulator and are not a claim that GPU inference is intrinsically slower.
+The old curl environment uses PyTorch 2.1.2 / CUDA 11.8 and warns that its
+compiled architectures do not support this sm_120 Blackwell GPU, although
+these tested operations execute. The large first-call delay was observed;
+its exact internal cause was not profiled. With a fresh policy subprocess per
+batch and inference only around 5–6% of measured rollout time, this is not a
+verified end-to-end improvement, so production keeps CPU inference and CUDA
+physics. No environment upgrade or additional long-running benchmark was
+started.

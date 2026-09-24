@@ -45,6 +45,8 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--package-root", type=Path, default=ROOT / ".claude/worktrees/residual-rl/python")
     p.add_argument("--checkpoint", type=Path, default=Path("/home/ge47gax/Desktop/fmvp_sim.pt"))
+    p.add_argument("--policy-device", choices=("cpu", "cuda"), default="cpu",
+                   help="Checkpoint inference device; independent of the IPC CUDA physics backend.")
     p.add_argument("--hang", type=Path, required=True)
     p.add_argument("--hang-key", default="k300")
     p.add_argument("--out", type=Path, required=True)
@@ -240,13 +242,13 @@ def main():
     all_records = []
     skipped = []
     client = WangPolicyClient(checkpoint=str(args.checkpoint), yaw_deg=args.yaw,
-                              voxel=args.bridge_voxel, package_root=args.package_root)
+                              device=args.policy_device, voxel=args.bridge_voxel, package_root=args.package_root)
     clients = {args.bridge_voxel: client}
     for profile in profiles:
         voxel = profile.bridge_voxel if profile.bridge_voxel is not None else args.bridge_voxel
         if voxel not in clients:
             clients[voxel] = WangPolicyClient(checkpoint=str(args.checkpoint), yaw_deg=args.yaw,
-                                            voxel=voxel, package_root=args.package_root)
+                                            device=args.policy_device, voxel=voxel, package_root=args.package_root)
     policy_clients = [clients[p.bridge_voxel if p.bridge_voxel is not None else args.bridge_voxel] for p in profiles]
     try:
         for body in args.bodies:
