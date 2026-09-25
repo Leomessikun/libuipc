@@ -1,5 +1,5 @@
-"""Garment-general fork of collect_better_rollouts.py: --garment, --fit-sleeve-ratio (size the garment to
-the body), --body-fit-filter (Wang's 18 cm body filter), --armhole-endpoint, --lookahead-from/--min-load.
+"""Garment-general fork of collect_better_rollouts.py: --garment, --fit-sleeve-ratio, --body-fit-filter, --armhole-endpoint,
+--batch-bodies (several bodies in one IPC world), --lookahead-from/--min-load.
 
 Record FMVP rollouts from the already verified gravity-hung start.
 
@@ -103,6 +103,8 @@ def parser():
     p.add_argument("--cloth-density", type=float, default=None,
                    help="Optional kg/m^3 material-density override; save and extract separately from default physics.")
     p.add_argument("--garment", default="tshirt_26")
+    p.add_argument("--batch-bodies", type=int, default=1,
+                   help="Put this many bodies (same garment) in one IPC world; each keeps its replicas. No lookahead.")
     p.add_argument("--body-fit-filter", type=float, default=None, help="Wang's body thickness filter in metres (0.18).")
     p.add_argument("--fit-sleeve-ratio", type=float, default=None,
                    help="Scale the garment up so the sleeve radius is at least this multiple of the upper-arm radius.")
@@ -240,7 +242,7 @@ def main():
     def hung_build(factory, garment, human):
         # Controller slots share the same body, hang and requested placement.
         # Keep the fully checked geometry, but give every slot independent arrays.
-        key = (factory, garment, human)
+        key = (garment, human)
         if not args.no_placement_cache and key in prepared_cells:
             placement_timing['cache_hits'] += 1
             return deepcopy(prepared_cells[key])
@@ -319,9 +321,20 @@ def main():
             clients[voxel] = make_client(voxel)
     policy_clients = [clients[p.bridge_voxel if p.bridge_voxel is not None else args.bridge_voxel] for p in profiles]
     try:
-        for body in args.bodies:
+        batch = max(1, int(args.batch_bodies))
+        if batch > 1 and any(p.lookahead_interval for p in profiles):
+            raise ValueError("--batch-bodies does not combine with the IPC lookahead")
+        base_variants, base_labels, base_profiles, base_clients = variants, labels, profiles, policy_clients
+        groups = [args.bodies[k:k + batch] for k in range(0, len(args.bodies), batch)]
+        for group in groups:
             prepared_cells.clear()
             placement_timing.update(searches=0, cache_hits=0, search_s=0.)
+            slot_body = [b for b in group for _ in base_variants]
+            variants = [v for _ in group for v in base_variants]
+            labels = [lab for _ in group for lab in base_labels]
+            profiles = [p for _ in group for p in base_profiles]
+            policy_clients = [c for _ in group for c in base_clients]
+            body = group[0] if len(group) == 1 else f"{group[0]}+{len(group) - 1}"
             _, training_args, _ = pretrain_wang.prepare(
                 ["teacher", "--region", "13", "--seed", "1", "--obs-mode", "wang_static_arm", "--no-obs-augment"])
             n = len(variants)
@@ -329,13 +342,42 @@ def main():
             if args.cloth_strain_rate is not None:
                 material["cloth_strain_rate"] = args.cloth_strain_rate
             cfg = replace(train_sac.dressing_config(training_args),
-                          cells=tuple((args.garment, body) for _ in range(n)), cell_source="live",
+                          cells=tuple((args.garment, b) for b in slot_body), cell_source="live",
                           collision_geometry=args.collision_geometry,
                           horizon=args.steps + args.hold + 10, seed=1, show_viewer=args.show_viewer, decision_watchdog=False,
                           clip_rotation_to_yz=False, anchor_count=48, contact_force_readout=True,
                           **material)
             if args.body_fit_filter is not None:
                 cfg = replace(cfg, live=replace(cfg.live, body=replace(cfg.live.body, fit_filter_m=args.body_fit_filter)))
+            if batch > 1:
+                # Pre-check every body's placement alone with the world's own live config, so one illegal
+                # start drops that body, not the world; the (garment, body) cache hands the result to the build.
+                # Bodies on the CPU: torch touching CUDA before Genesis initialises breaks Genesis. The world
+                # build reuses these cached cells, so every slot sees exactly the body checked here.
+                probe = dressing_live.LiveCellFactory(replace(cfg.live, body=replace(cfg.live.body, device="cpu")))
+                kept = []
+                for body in group:
+                    try:
+                        hung_build(probe, args.garment, body)
+                        kept.append(body)
+                    except RuntimeError as exc:
+                        row = {"body": body, "reason": str(exc)}
+                        skipped.append(row)
+                        save_json(args.out / "skipped.json", skipped)
+                        print(f"[skip] {json.dumps(row)}", flush=True)
+                if not kept:
+                    continue
+                body = group[0] if len(group) == 1 else f"{group[0]}+{len(group) - 1}"
+                if kept != list(group):
+                    group = kept
+                    slot_body = [b for b in group for _ in base_variants]
+                    variants = [v for _ in group for v in base_variants]
+                    labels = [lab for _ in group for lab in base_labels]
+                    profiles = [p for _ in group for p in base_profiles]
+                    policy_clients = [c for _ in group for c in base_clients]
+                    body = group[0] if len(group) == 1 else f"{group[0]}+{len(group) - 1}"
+                    n = len(variants)
+                    cfg = replace(cfg, cells=tuple((args.garment, b) for b in slot_body))
             print(f"[collect] building body={body} variants={labels}", flush=True)
             try:
                 setup_started = time.monotonic()
@@ -344,7 +386,7 @@ def main():
             except RuntimeError as exc:
                 if "No legal gravity-hung placement" not in str(exc):
                     raise
-                row = {"body": body, "reason": str(exc)}
+                row = {"body": body, "bodies": list(group), "reason": str(exc)}
                 skipped.append(row)
                 save_json(args.out / "skipped.json", skipped)
                 print(f"[skip] {json.dumps(row)}", flush=True)
@@ -353,17 +395,19 @@ def main():
                 obs = env.reset([args.seed] * n)
                 env._arm_force_summaries()  # Initializes the lazy contact exporter before state zero.
                 spec = ObsSpec(training_args.point_budget)
-                cell = env.cells[0]
-                sleeve = SleeveSections(*sleeve_template, cell.opening_idx) if sleeve_template is not None else None
-                sleeve_landmarks = np.stack([cell.finger, cell.elbow, cell.shoulder])
-                finger, shoulder = np.asarray(cell.finger), np.asarray(cell.shoulder)
-                axis = shoulder - finger
-                triangles = cell.cloth[cell.faces]
-                areas = .5 * np.linalg.norm(np.cross(triangles[:, 1] - triangles[:, 0],
-                                                     triangles[:, 2] - triangles[:, 0]), axis=1)
-                masses = np.zeros(len(cell.cloth))
-                np.add.at(masses, cell.faces.ravel(), np.repeat(areas / 3, 3))
-                masses *= 2 * cfg.cloth_thickness * cfg.cloth_density
+                def slot_geometry(c):
+                    tri = c.cloth[c.faces]
+                    area = .5 * np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
+                    m = np.zeros(len(c.cloth))
+                    np.add.at(m, c.faces.ravel(), np.repeat(area / 3, 3))
+                    m *= 2 * cfg.cloth_thickness * cfg.cloth_density
+                    sec = SleeveSections(*sleeve_template, c.opening_idx) if sleeve_template is not None else None
+                    fi, sh = np.asarray(c.finger), np.asarray(c.shoulder)
+                    return dict(cell=c, sleeve=sec, landmarks=np.stack([c.finger, c.elbow, c.shoulder]),
+                                finger=fi, shoulder=sh, axis=sh - fi, masses=m)
+                slots = [slot_geometry(c) for c in env.cells]
+                cell, sleeve, masses = slots[0]["cell"], slots[0]["sleeve"], slots[0]["masses"]
+                finger, shoulder = slots[0]["finger"], slots[0]["shoulder"]
                 planner = None
                 if profiles[0].lookahead_interval:
                     from ipc_action_filter import IPCActionFilter
@@ -373,10 +417,15 @@ def main():
                         planner = IPCMacroFilter(env, sleeve, masses, strength_gain=profiles[0].grasp_strength_gain,
                                                  horizon=args.macro_horizon)
                 macro_queue, progress_history, macro_cooldown_until = [], [], 0
-                body_dir = args.out / f"body_{body}_seed_{args.seed}"
-                body_dir.mkdir()
-                save_json(body_dir / "config.json", dict(config=cfg.to_dict(), placement=placements[str(body)],
-                                                         mass_kg=float(masses.sum())))
+                body_dirs = {}
+                for i, b in enumerate(slot_body):
+                    if b not in body_dirs:
+                        body_dirs[b] = args.out / f"body_{b}_seed_{args.seed}"
+                        body_dirs[b].mkdir()
+                        save_json(body_dirs[b] / "config.json", dict(config=cfg.to_dict(), placement=placements[str(b)],
+                                                                     mass_kg=float(slots[i]["masses"].sum()),
+                                                                     world_bodies=list(group)))
+                body_dir = body_dirs[slot_body[0]]
                 buffers = [{k: [] for k in ["obs", "positions", "tcp", "tcp_rotation", "gripper_force", "arm_force", "body_force",
                             "upperarm_ratio", "forearm_ratio", "actions", "policy_actions", "rewards",
                             "executed_translation", "tracking_error", "early_turn", "grasp_valid", "speed_scale", "controller_id",
@@ -400,7 +449,7 @@ def main():
                             continue
                         indices = env._pickers[i]["anchor_idx"]
                         target = env._anchor[i][None, :] + env._offsets[i]
-                        stiffness = cfg.constraint_strength * profiles[i].grasp_strength_gain * masses[indices] / cfg.dt ** 2
+                        stiffness = cfg.constraint_strength * profiles[i].grasp_strength_gain * slots[i]["masses"][indices] / cfg.dt ** 2
                         grip = -(stiffness[:, None] * (target - positions[i][indices])).sum(0)
                         progress = env._last_progress[i]
                         body_force = pairs[i][0] + pairs[i][1]
@@ -413,8 +462,8 @@ def main():
                                       body_force=body_force.sum(0),
                                       upperarm_ratio=float(progress.upperarm_ratio),
                                       forearm_ratio=float(progress.forearm_ratio))
-                        if sleeve is not None:
-                            geometry = measure_sleeve(sleeve, positions[i], sleeve_landmarks)
+                        if slots[i]["sleeve"] is not None:
+                            geometry = measure_sleeve(slots[i]["sleeve"], positions[i], slots[i]["landmarks"])
                             values.update(sleeve_wrapped=geometry["sleeve_wrapped"],
                                           sleeve_cuff_s=geometry["cuff_s"],
                                           sleeve_proximal_upper_fraction=geometry["armhole_upper_fraction" if args.armhole_endpoint else "proximal_upper_fraction"])
@@ -473,7 +522,7 @@ def main():
                                 gain = args.rotation_gain if profiles[i].rotation_gain is None else profiles[i].rotation_gain
                                 action[5] = gain * np.sign(model_vertical_rotation) * delta / cfg.max_rotation
                             proposed[i] = action
-                            along = float((env._anchor[i] - finger) @ axis / (axis @ axis))
+                            along = float((env._anchor[i] - slots[i]["finger"]) @ slots[i]["axis"] / (slots[i]["axis"] @ slots[i]["axis"]))
                             slowed[i] |= along >= args.slow_along
                             scales[i] = VARIANTS[variant] if slowed[i] else 1.
                             actions[i] = action * scales[i]
@@ -560,7 +609,7 @@ def main():
                             failures[i] = "grasp tracking exceeded validity limit; ended at first invalid transition"
                             completed[i] = True
                             continue
-                        sleeve_ok = sleeve is None or buffers[i]["sleeve_wrapped"][-1]
+                        sleeve_ok = slots[i]["sleeve"] is None or buffers[i]["sleeve_wrapped"][-1]
                         endpoint_reached = (infos[i]["upperarm_ratio"] >= args.success
                                             if args.stop_proximal_upper is None else
                                             buffers[i]["sleeve_proximal_upper_fraction"][-1] >= args.stop_proximal_upper)
@@ -597,13 +646,15 @@ def main():
                                          if success_at[i] is not None else np.array([]))
                         stable = bool(hold_complete and proximal_hold.size >= args.hold + 1
                                       and proximal_hold.min() >= args.stop_proximal_upper)
-                    if sleeve is not None and success_at[i] is not None:
+                    if slots[i]["sleeve"] is not None and success_at[i] is not None:
                         stable = stable and bool(data["sleeve_wrapped"][success_at[i]:].all())
                     valid = bool(np.all(data["grasp_valid"]))
                     accepted = stable and valid and failures[i] is None
                     force = np.linalg.norm(data["gripper_force"][1:], axis=1)
                     arm_force = np.linalg.norm(data["arm_force"][1:], axis=1)
-                    record = dict(body=body, variant=variant, replica=i if args.replicas > 1 else None,
+                    j = i % len(base_variants)
+                    record = dict(body=slot_body[i], variant=variant, replica=j if args.replicas > 1 else None,
+                                  world_bodies=list(group),
                                   profile=profile_dict(profiles[i]),
                                   checkpoint_sha256=metadata["checkpoint_sha256"], simulator="Genesis+IPC",
                                   policy_device=args.policy_device,
@@ -625,18 +676,21 @@ def main():
                                   arm_p90_N=float(np.percentile(arm_force, 90)), arm_peak_N=float(arm_force.max()),
                                   early_turn=bool(data["early_turn"].any()),
                                   duration_sim_s=t * cfg.dt * cfg.action_repeat,
-                                  path=str((body_dir / f"{labels[i]}.npz").relative_to(args.out)))
+                                  path=str((body_dirs[slot_body[i]] / f"{labels[i]}.npz").relative_to(args.out)))
                     full_body = (dict(human_vertices=env.collider_meshes[i][0],
                                       human_faces=env.collider_meshes[i][1])
                                  if args.collision_geometry == "full_body" else {})
-                    np.savez_compressed(body_dir / f"{labels[i]}.npz", **data, **full_body,
+                    c_i = slots[i]["cell"]
+                    np.savez_compressed(body_dirs[slot_body[i]] / f"{labels[i]}.npz", **data, **full_body,
                                         grasp_indices=env._pickers[i]["anchor_idx"], initial_grasp_offsets=env._initial_offsets[i],
-                                        faces=cell.faces, arm_vertices=cell.arm_points, arm_faces=cell.arm_faces,
-                                        opening_idx=cell.opening_idx, finger=finger, shoulder=shoulder,
-                                        elbow=np.asarray(cell.elbow), metadata_json=json.dumps(record))
+                                        faces=c_i.faces, arm_vertices=c_i.arm_points, arm_faces=c_i.arm_faces,
+                                        opening_idx=c_i.opening_idx, finger=slots[i]["finger"], shoulder=slots[i]["shoulder"],
+                                        elbow=np.asarray(c_i.elbow), metadata_json=json.dumps(record))
                     records.append(record)
                     print("[result] " + json.dumps(record), flush=True)
-                save_json(body_dir / "metrics.json", records)
+                for b, d in body_dirs.items():
+                    save_json(d / "metrics.json", [r for r in records if r["body"] == b])
+                    save_json(d / "timing.json", timing)
                 all_records.extend(records)
                 save_json(args.out / "metrics.json", all_records)
                 save_json(args.out / "accepted.json", [r for r in all_records if r["accepted"]])

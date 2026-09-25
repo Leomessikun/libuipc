@@ -529,3 +529,23 @@ against 0 to about a third per garment before. Rendered final frames of an accep
 show the sleeve on the upper arm to the shoulder (long sleeves covering the arm, the gown's body behind
 the torso). The multi-garment collection restarted as v4 (`fmvp_scaled_multigarment_v4_20260925/`,
 1,275 units, 14 workers) with these settings; v3 was stopped (unfiltered bodies).
+
+## Collection speed: time-slicing, then batched worlds under MPS (2026-09-26)
+
+v4 ran 20 collector processes, each a 2-slot world: every process pinned one CPU core, the GPU read
+100 % utilisation but drew 171 of 600 W at 52 C, and halving the process count sped the rest by only
+15 %. The processes never joined the user's MPS daemon (`CUDA_MPS_PIPE_DIRECTORY=/home/ge47gax/.mps_pipe`,
+started for the Newton jobs), so their contexts time-sliced the GPU, each slice carrying one world's
+small kernels. Measured on idle GPU, tshirt_26, body-decisions per second summed over worlds:
+
+| setup | throughput | power |
+|---|---|---|
+| 20 x 2-slot worlds (v4 as launched) | 2.9 | 171 W |
+| 3 worlds of 3-7 bodies, no MPS | 9.9 (6 worlds: 10.0) | 288-323 W |
+| same 3 worlds under MPS | 17.7 | 406 W |
+
+A batched world uses about 0.6 GB per slot. `collect_garment.py --batch-bodies K` puts K bodies of one
+garment in a world (placements pre-checked on CPU-generated bodies, so an illegal start drops one body,
+not the world), and `collect_scaled_batched.py` resumes the v4 ledger with 6 such worlds under MPS
+(475 W, 79 C). Bodies with no legal start move to the next placement offset; bodies with no accepted
+replica get one reseeded batched retry instead of the single-slot lookahead rescue.
