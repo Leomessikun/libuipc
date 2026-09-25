@@ -413,3 +413,20 @@ forearm 0.07. With two replicas per cell every model difference in this section 
 is within noise: none of the fine-tunes has shown a reliable gain over the original on hard bodies.
 A powered comparison (more bodies, at least four replicas) is needed before another training round
 can be judged.
+
+## Powered comparison on 14 never-accepted bodies: r1 helps, modestly
+
+Fourteen bodies that no Codex collection attempt had ever accepted and that entered no training set,
+four replicas each, seed 2026092501, same settings as above (7046, 7047, 8047, 13047, 14061, 14067,
+16047, 17047, 18046 had no legal start at the 5 mm offset):
+
+| model | accepted | bodies with any success |
+|---|---|---|
+| original fmvp_sim | 3/56 (5%) | 1/14 (22047 only) |
+| r1 (behaviour cloning + one DAgger round, frozen encoder) | 9/56 (16%) | 4/14 (22047, 14064, 14066, 14068) |
+| force-conditioned | 6/56 (11%) | 3/14 (22047, 14066, 14075) |
+
+Leaving out 22047, which all three dress: 0/52, 5/52 and 2/52 (r1 against the original, Fisher
+p about 0.06). r1 is a real but small improvement and the force channel adds nothing measurable on
+top of it. Absolute success on hard bodies stays low. The practical number for collection is r1 with
+the IPC lookahead: 5 of 10 hard bodies in the round-2 DAgger collection.
