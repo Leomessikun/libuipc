@@ -499,11 +499,15 @@ tshirt_68 7.2, hospital_gown 7.0, tshirt_392 5.8, so the other four are narrower
 half the bodies. FleX cloth stretches and interpenetrates, so Wang's fixed garment scales worked on his
 bodies; in IPC a sleeve narrower than the arm cannot go on.
 
-Wang samples betas U(-2, 5) as we do, but rejects bodies with any of three thicknesses at or above
-18 cm (`gen_human_mesh.py::test_human_fit_to_cloth`, vertex pairs 7891/7982, 7452/7375, 8712/6521).
-Our generator omits that step: 37 of our 60 bodies would be rejected (median shoulder pair 18.4 cm),
-and tshirt_26 acceptance is 55% on the kept against 34% on the rejected. The filter measures shoulder
-breadth, not arm girth (kept and rejected upper-arm radius medians 7.3 and 7.1 cm), so it does not fix
-sleeve fit. Plan: add Wang's filter (faithful), and size each garment to the body (a deviation from
-Wang's fixed scales that IPC's non-penetration forces); the collector's `--fit-sleeve-ratio` pilot
-tests the second. The v3 tshirt_26-only run is paused (unfiltered bodies).
+Wang samples betas U(-2, 5) as we do, but rejects bodies with any of three thicknesses (wrist,
+elbow, shoulder vertex pairs) at or above 18 cm (`gen_human_mesh.py::test_human_fit_to_cloth`). His
+indices (7891/7982, 7452/7375, 8712/6521) belong to his FleX mesh's vertex order and are not on the arm
+of ours (8712 is 1.1 m from the shoulder); ours are `dressing_body.REWARD_LINE_UPPER/LOWER`
+(7462/7497, 7039/7260, 5995/7176). With the correct pairs, 17 of our 60 bodies would be rejected: their
+median upper-arm radius is 9.4 cm and tshirt_26 is accepted on 24% of their attempts, against 6.5 cm
+and 49% on the 43 kept. On the kept bodies (circumference median 41 cm) the sleeve is at least the arm
+on 95% (tshirt_26), 74% (tshirt_4), 72% (tshirt_68), 65% (gown) and 21% (tshirt_392); a 1.2x sleeve
+clearance needs a median size-up of 1.00, 1.03, 1.09, 1.12 and 1.35x. Plan: add Wang's filter
+(faithful), then size each garment to the body with a 1.2x clearance (a deviation from Wang's fixed
+scales that IPC's non-penetration forces). An earlier version of this paragraph used Wang's raw indices
+on our mesh and wrongly concluded the filter does not track arm girth. The v3 tshirt_26-only run is paused (unfiltered bodies).
