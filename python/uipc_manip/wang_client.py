@@ -33,8 +33,11 @@ class WangPolicyClient:
         self.yaw_deg = float(yaw_deg)
         self.proc = subprocess.Popen(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            # One thread: torch otherwise starts a pool per core in every policy process, and a dozen
+            # collectors' policies (79 threads, 250 % CPU each) starved the IPC solvers of the CPU.
             env={"PYTHONPATH": f"{REFERENCE_ROOT}:{root}", "PATH": "/usr/bin:/bin",
-                 "CUDA_VISIBLE_DEVICES": "" if device == "cpu" else "0"},
+                 "CUDA_VISIBLE_DEVICES": "" if device == "cpu" else "0",
+                 "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"},
         )
         # CUDA/library warnings can precede the readiness marker. Preserve them
         # for a startup error without treating the first warning as a failure.
