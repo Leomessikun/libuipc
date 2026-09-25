@@ -430,3 +430,12 @@ Leaving out 22047, which all three dress: 0/52, 5/52 and 2/52 (r1 against the or
 p about 0.06). r1 is a real but small improvement and the force channel adds nothing measurable on
 top of it. Absolute success on hard bodies stays low. The practical number for collection is r1 with
 the IPC lookahead: 5 of 10 hard bodies in the round-2 DAgger collection.
+
+## Scaled collection started (2026-09-25)
+
+`scripts/wang_transfer/collect_scaled.py` runs 12 workers over 255 bodies (27 regions x poses
+40-49, evaluation bodies excluded) into `output/uipc_manip/fmvp_scaled_r1_20260925/`: per body the
+r1 model with two replicas; on no legal start, six further placement offsets; with no acceptance,
+one r1 + IPC-lookahead rescue. `attempts.jsonl` records every result, `manifest.json` the accepted
+episodes, `no_legal_start.jsonl` the bodies with no legal start anywhere. Before it, the unique
+accepted pool was 603 episodes, but on only 37 bodies in 13 regions.
