@@ -461,3 +461,14 @@ reach its offscreen cameras): `output/uipc_manip/demo_videos_20260925.zip`. The 
 
 Pose variation in all of this is Wang's range only (shoulder_z -20..30, elbow_y 70..110, elbow_z
 -20..30 degrees, 27 cells) plus SMPL-X shape; the accepted pool is concentrated in regions 1, 2, 9, 13.
+
+## Multi-garment scaled collection (2026-09-25)
+
+Wang trained on five garments (hospital_gown, tshirt_26, tshirt_68, tshirt_4, tshirt_392) over 27
+pose regions; a single-garment dataset cannot serve a general policy. The tshirt_26-only run was
+stopped after 56 results (18 accepted, 25 bodies, kept in `fmvp_scaled_r1_20260925/`).
+`collect_scaled.py` now works on (body, garment) units, pose index outermost so any prefix of the run
+is balanced over garments and regions: 1,275 units (255 bodies x 5 garments, evaluation bodies
+excluded), r1 policy, 12 workers, into `output/uipc_manip/fmvp_scaled_multigarment_20260925/`. Rescue
+is the IPC lookahead for tshirt_26 and a reseeded retry for the others. Acceptance differs by garment
+(physical sleeve for tshirt_26, legacy ratio for the rest); `attempts.jsonl` records the garment.
