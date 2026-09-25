@@ -100,6 +100,11 @@ class BodyConfig:
     pose_mode: str = "dressing"
     """``dressing`` seats the body and randomises the right arm; ``dressing-simple``
     narrows that randomisation; ``dressing-standing`` keeps the body upright."""
+    fit_filter_m: float | None = None
+    """Wang's ``test_human_fit_to_cloth``: redraw the body (shape, gender, height, pose within the id's
+    region) until the wrist, elbow and shoulder thicknesses, measured on the REWARD_LINE vertex pairs,
+    are all below this. Wang uses 0.18 m. None keeps every id's historical body."""
+    fit_attempts: int = 50
     hand_pca: float = -1.0
     """Right-hand PCA coefficients, pinned as in the reference so the fist stays relaxed."""
     device: str = "cuda"
@@ -112,6 +117,7 @@ class BodyConfig:
             "model_dir": str(self.model_dir), "gender": self.gender, "num_betas": int(self.num_betas), "device": self.device,
             "beta_range": list(self.beta_range), "height_range": list(self.height_range) if self.height_range else None,
             "pose_mode": self.pose_mode, "hand_pca": float(self.hand_pca),
+            "fit_filter_m": self.fit_filter_m, "fit_attempts": int(self.fit_attempts),
         }
 
 
@@ -278,14 +284,14 @@ def _reward_line_landmarks(vertices: np.ndarray, joints: np.ndarray) -> dict[str
     }
 
 
-def body_parameters(seed: int, cfg: BodyConfig | None = None):
+def body_parameters(seed: int, cfg: BodyConfig | None = None, attempt: int = 0):
     """``(rng, gender, betas, pose)`` for a body id, drawn in :func:`generate_body`'s order.
 
     The generator is returned part way through, because the body's height is drawn from
-    it later.
+    it later. ``attempt`` > 0 is a redraw for the fit filter; the pose region stays the id's.
     """
     cfg = cfg or BodyConfig()
-    rng = np.random.default_rng(int(seed))
+    rng = np.random.default_rng(int(seed) if attempt == 0 else [int(seed), int(attempt)])
     gender = cfg.gender
     if gender == "random":
         gender = str(rng.choice(["male", "female"]))
@@ -294,12 +300,29 @@ def body_parameters(seed: int, cfg: BodyConfig | None = None):
     return rng, gender, betas, pose
 
 
+def arm_thicknesses(vertices: np.ndarray) -> np.ndarray:
+    """Wrist, elbow and shoulder thickness: the distance across each REWARD_LINE vertex pair."""
+    v = np.asarray(vertices)
+    return np.linalg.norm(v[list(REWARD_LINE_UPPER)] - v[list(REWARD_LINE_LOWER)], axis=1)
+
+
 def generate_body(seed: int, cfg: BodyConfig | None = None) -> Body:
-    """Sample one SMPL-X dressing body, upright in the +Z-up simulation frame."""
+    """Sample one SMPL-X dressing body, upright in the +Z-up simulation frame.
+
+    With ``cfg.fit_filter_m`` set, bodies failing Wang's thickness test are redrawn.
+    """
+    cfg = cfg or BodyConfig()
+    for attempt in range(1 if cfg.fit_filter_m is None else int(cfg.fit_attempts)):
+        body = _generate_body(seed, cfg, attempt)
+        if cfg.fit_filter_m is None or bool(np.all(arm_thicknesses(body.vertices) < cfg.fit_filter_m)):
+            return body
+    raise RuntimeError(f"Body {seed}: no draw in {cfg.fit_attempts} passes the {cfg.fit_filter_m} m fit filter")
+
+
+def _generate_body(seed: int, cfg: BodyConfig, attempt: int) -> Body:
     import torch
 
-    cfg = cfg or BodyConfig()
-    rng, gender, betas, pose = body_parameters(seed, cfg)
+    rng, gender, betas, pose = body_parameters(seed, cfg, attempt)
     model = _model(str(cfg.model_dir), gender, cfg.num_betas)
     device = cfg.device if (cfg.device.startswith("cuda") and torch.cuda.is_available()) else "cpu"
     model = model.to(device)
