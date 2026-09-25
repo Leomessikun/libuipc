@@ -21,6 +21,29 @@ from check_pb_cloth_deformation import read_obj
 DEFAULT_OBJ = Path('/home/ge47gax/kun/fmvp_pb/dressing_pb/assistive_gym/assets/data/cloth3d/train/Tshirt/tshirt_26.obj')
 
 
+def simple_components(adjacency):
+    """The connected components of a graph in which every vertex has degree two.
+
+    Garment meshes such as tshirt_4, tshirt_392 and the hospital gown have a few non-manifold
+    boundary vertices away from the sleeve; dropping those components keeps the cuff loop.
+    """
+    seen, keep = set(), {}
+    for start in adjacency:
+        if start in seen:
+            continue
+        stack, component = [start], set()
+        while stack:
+            v = stack.pop()
+            if v in component:
+                continue
+            component.add(v)
+            stack.extend(adjacency[v] - component)
+        seen |= component
+        if all(len(adjacency[v]) == 2 for v in component):
+            keep.update({v: adjacency[v] for v in component})
+    return keep
+
+
 def cycles(adjacency):
     if any(len(v) != 2 for v in adjacency.values()):
         raise ValueError('Expected disjoint closed degree-two mesh loops')
@@ -52,9 +75,13 @@ class SleeveSections:
         for a, b in self.edges[counts == 1]:
             boundary.setdefault(int(a), set()).add(int(b))
             boundary.setdefault(int(b), set()).add(int(a))
-        loops = cycles(boundary)
+        loops = cycles(simple_components(boundary))
         seam_center = vertices[self.armhole].mean(0)
-        self.cuff = np.asarray(min(loops, key=lambda ids: np.linalg.norm(vertices[ids].mean(0) - seam_center)), int)
+        # The two sleeve cuffs are the smallest boundary loops; the neckline and hem are larger and on
+        # long-sleeved garments (tshirt_4, tshirt_392) lie closer to the armhole seam than the cuff.
+        smallest = min(len(ids) for ids in loops)
+        cuffs = [ids for ids in loops if len(ids) == smallest]
+        self.cuff = np.asarray(min(cuffs, key=lambda ids: np.linalg.norm(vertices[ids].mean(0) - seam_center)), int)
         cuff_center = vertices[self.cuff].mean(0)
         axis = seam_center - cuff_center
         length = np.linalg.norm(axis)
@@ -64,32 +91,47 @@ class SleeveSections:
         self.fractions = [0.]
         # Stay on the sleeve side of the seam. Three true cross-sections,
         # plus its free opening, are enough to reject an unthreaded sleeve.
-        for fraction in (.25, .5, .75):
-            origin = cuff_center + fraction * length * axis
-            signed = (vertices - origin) @ axis
-            graph = {}
-            for face in faces:
-                crossed = []
-                for a, b in zip(face, np.roll(face, -1)):
-                    if signed[a] * signed[b] < 0:
-                        crossed.append(tuple(sorted((int(a), int(b)))))
-                if len(crossed) == 2:
-                    a, b = crossed
-                    graph.setdefault(a, set()).add(b)
-                    graph.setdefault(b, set()).add(a)
-                elif crossed:
-                    raise ValueError('Degenerate section plane through a vertex')
-            candidates = []
-            for loop in cycles(graph):
-                edges = np.asarray(loop, int)
-                weight = -signed[edges[:, 0]] / (signed[edges[:, 1]] - signed[edges[:, 0]])
-                points = vertices[edges[:, 0]] * (1 - weight[:, None]) + vertices[edges[:, 1]] * weight[:, None]
-                candidates.append((np.linalg.norm(points.mean(0) - origin), edges, weight))
-            if not candidates:
+        for target in (.25, .5, .75):
+            # Short, oblique sleeves (the hospital gown's) put the 0.75 plane into the torso; step
+            # back toward the cuff until the plane cuts one closed sleeve loop.
+            for fraction in (target, target - .1, target - .15, target - .2):
+                section = self._section(vertices, faces, cuff_center, axis, length, fraction)
+                # A loop much longer than the previous one has left the sleeve for the torso.
+                if section is not None and (len(self.sections) == 1
+                                            or len(section[0]) <= 1.5 * len(self.sections[-1][0])):
+                    break
+                section = None
+            else:
                 raise ValueError('No closed sleeve cross-section')
-            _, edges, weight = min(candidates, key=lambda c: c[0])
-            self.sections.append((edges, weight))
+            self.sections.append(section)
             self.fractions.append(fraction)
+
+    @staticmethod
+    def _section(vertices, faces, cuff_center, axis, length, fraction):
+        origin = cuff_center + fraction * length * axis
+        signed = (vertices - origin) @ axis
+        graph = {}
+        for face in faces:
+            crossed = []
+            for a, b in zip(face, np.roll(face, -1)):
+                if signed[a] * signed[b] < 0:
+                    crossed.append(tuple(sorted((int(a), int(b)))))
+            if len(crossed) == 2:
+                a, b = crossed
+                graph.setdefault(a, set()).add(b)
+                graph.setdefault(b, set()).add(a)
+            elif crossed:
+                raise ValueError('Degenerate section plane through a vertex')
+        candidates = []
+        for loop in cycles(simple_components(graph)):
+            edges = np.asarray(loop, int)
+            weight = -signed[edges[:, 0]] / (signed[edges[:, 1]] - signed[edges[:, 0]])
+            points = vertices[edges[:, 0]] * (1 - weight[:, None]) + vertices[edges[:, 1]] * weight[:, None]
+            candidates.append((np.linalg.norm(points.mean(0) - origin), edges, weight))
+        if not candidates:
+            return None
+        _, edges, weight = min(candidates, key=lambda c: c[0])
+        return edges, weight
 
     def points(self, cloth):
         return [cloth[edge[:, 0]] * (1 - weight[:, None]) + cloth[edge[:, 1]] * weight[:, None]

@@ -6,12 +6,11 @@ garments and pose regions. Per unit, in a worker pool:
 1. Run the policy (default: the DAgger-r1 fine-tune of fmvp_sim) with ``--replicas`` slots in one
    world. If the collector finds no legal gravity-hung start at the placement offset, try the next
    offset in ``OFFSETS_MM`` (model frame, relative to the FMVP-PyBullet gripper position).
-2. If no slot is accepted, rerun once: for tshirt_26 with the one-decision IPC lookahead
-   (``ipc_filter_profile.json``, single slot, from decision 20, loads over 5 N), which needs its
-   physical-sleeve sections; for other garments with a new seed.
+2. If no slot is accepted, rerun once with the one-decision IPC lookahead (``ipc_filter_profile.json``,
+   single slot, from decision 20, loads over 5 N).
 
-tshirt_26 is accepted by the physical-sleeve test (proximal section at 0.7, wrapped); other garments
-by the legacy upper-arm ratio (0.7, held 20 decisions), since the sleeve sections are tshirt_26's.
+Every garment is accepted by the physical-sleeve test on its own cloth3d mesh (proximal section at 0.7
+of the upper arm, sleeve wrapped); the collector must read ``<garment>.obj`` for the sections.
 
 Every attempt's collector output directory and log stay under ``--out``; ``attempts.jsonl`` holds
 one line per result and ``manifest.json`` the accepted episodes. Evaluation bodies are excluded
@@ -42,9 +41,10 @@ COMMON = ["--hang-key", "k300", "--variants", "baseline", "--steps", "750", "--h
 
 
 def garment_args(garment):
-    geometry = (["--success-geometry", "physical_sleeve", "--stop-proximal-upper", ".7"] if garment == "tshirt_26"
-                else ["--success-geometry", "legacy_ratio"])
-    return ["--garment", garment, "--hang", HANGS[garment], *geometry]
+    # Every garment is judged by the physical-sleeve test on its own cloth3d mesh; the legacy
+    # upper-arm ratio disagrees with it in both directions on the non-tshirt_26 garments.
+    return ["--garment", garment, "--hang", HANGS[garment], "--success-geometry", "physical_sleeve",
+            "--stop-proximal-upper", ".7"]
 
 
 def run_collector(args, body, garment, offset, seed, tag, extra):
@@ -97,11 +97,8 @@ def collect_unit(args, ledger, unit):
             return f"{garment} {body}: policy {sum(bool(r.get('accepted')) for r in results)}/{len(results)}"
         if args.no_rescue:
             return f"{garment} {body}: policy 0/{len(results)}"
-        if garment == "tshirt_26":
-            extra, stage = ["--profiles-json", "scripts/wang_transfer/ipc_filter_profile.json",
-                            "--lookahead-from", "20", "--lookahead-min-load", "5"], "rescue"
-        else:
-            extra, stage = ["--replicas", str(args.replicas)], "retry"
+        extra, stage = ["--profiles-json", "scripts/wang_transfer/ipc_filter_profile.json",
+                        "--lookahead-from", "20", "--lookahead-min-load", "5"], "rescue"
         results, _, log = run_collector(args, body, garment, offset, seed + 1, stage, extra)
         for row in results:
             ledger.add(body, garment, stage, offset, row, log)
