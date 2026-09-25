@@ -487,3 +487,23 @@ and the gripper keeps pulling until the grasp fails. `physical_sleeve.measure` n
 (`fmvp_scaled_multigarment_v3_20260925/`) uses it for every garment. For tshirt_26 this is looser
 than the proximal endpoint (its accepted episodes had the seam at about 0.85), so v3 and earlier
 tshirt_26 data are not directly comparable. Runs v1 and v2 used other criteria; do not mix them.
+
+## Why the other garments fail: arm girth against sleeve size (2026-09-25)
+
+Start geometry explains part: tshirt_68 starts like tshirt_26 (sleeve within 7-16 degrees of the
+forearm) but the long sleeves hang 20-44 degrees off it and the gown 44-64. The larger part is fit.
+Mid-upper-arm radius over 60 bodies: median 7.1 cm, p75 8.7, max 12.1 (circumference 44 / 54 / 76 cm;
+adults are roughly 28-36). tshirt_26 acceptance in the Codex collection by arm radius: < 6 cm 45%,
+6-7 59%, 7-8 61%, > 8 cm 9% (26/284). Mean sleeve cross-section radius: tshirt_26 9.1 cm, tshirt_4 7.6,
+tshirt_68 7.2, hospital_gown 7.0, tshirt_392 5.8, so the other four are narrower than the arm on about
+half the bodies. FleX cloth stretches and interpenetrates, so Wang's fixed garment scales worked on his
+bodies; in IPC a sleeve narrower than the arm cannot go on.
+
+Wang samples betas U(-2, 5) as we do, but rejects bodies with any of three thicknesses at or above
+18 cm (`gen_human_mesh.py::test_human_fit_to_cloth`, vertex pairs 7891/7982, 7452/7375, 8712/6521).
+Our generator omits that step: 37 of our 60 bodies would be rejected (median shoulder pair 18.4 cm),
+and tshirt_26 acceptance is 55% on the kept against 34% on the rejected. The filter measures shoulder
+breadth, not arm girth (kept and rejected upper-arm radius medians 7.3 and 7.1 cm), so it does not fix
+sleeve fit. Plan: add Wang's filter (faithful), and size each garment to the body (a deviation from
+Wang's fixed scales that IPC's non-penetration forces); the collector's `--fit-sleeve-ratio` pilot
+tests the second. The v3 tshirt_26-only run is paused (unfiltered bodies).
