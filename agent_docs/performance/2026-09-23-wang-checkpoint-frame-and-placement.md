@@ -511,3 +511,21 @@ clearance needs a median size-up of 1.00, 1.03, 1.09, 1.12 and 1.35x. Plan: add 
 (faithful), then size each garment to the body with a 1.2x clearance (a deviation from Wang's fixed
 scales that IPC's non-penetration forces). An earlier version of this paragraph used Wang's raw indices
 on our mesh and wrongly concluded the filter does not track arm girth. The v3 tshirt_26-only run is paused (unfiltered bodies).
+
+## Body filter plus garment sizing: every garment dresses (2026-09-25)
+
+Pilot, `scripts/wang_transfer/collect_garment.py` with `--body-fit-filter 0.18 --fit-sleeve-ratio 1.2
+--armhole-endpoint`, r1, bodies 1040-5040, two replicas (5040 had no legal tshirt_392 start):
+
+| garment | accepted | applied scale |
+|---|---|---|
+| tshirt_26 | 6/10 | 1.00 |
+| tshirt_68 | 7/10 | 1.01-1.26 |
+| tshirt_4 | 8/10 | 1.00-1.20 |
+| tshirt_392 | 7/8 | 1.24-1.51 |
+| hospital_gown | 5/10 | 1.27-1.59 |
+
+against 0 to about a third per garment before. Rendered final frames of an accepted episode per garment
+show the sleeve on the upper arm to the shoulder (long sleeves covering the arm, the gown's body behind
+the torso). The multi-garment collection restarted as v4 (`fmvp_scaled_multigarment_v4_20260925/`,
+1,275 units, 14 workers) with these settings; v3 was stopped (unfiltered bodies).

@@ -45,8 +45,11 @@ def garment_args(garment):
     # upper-arm ratio disagrees with it in both directions on the non-tshirt_26 garments.
     # The endpoint is the armhole seam at 0.7 of the upper arm with the sleeve wrapped; the proximal
     # section it replaced sits too low on long sleeves to reach 0.7 even when they are fully on.
+    # Bodies pass Wang's 18 cm fit filter, and each garment is sized to the body so the sleeve is 1.2x
+    # the upper arm: in IPC a sleeve narrower than the arm cannot go on.
     return ["--garment", garment, "--hang", HANGS[garment], "--success-geometry", "physical_sleeve",
-            "--stop-proximal-upper", ".7", "--armhole-endpoint"]
+            "--stop-proximal-upper", ".7", "--armhole-endpoint", "--body-fit-filter", "0.18",
+            "--fit-sleeve-ratio", "1.2"]
 
 
 def run_collector(args, body, garment, offset, seed, tag, extra):
