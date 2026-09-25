@@ -472,3 +472,18 @@ is balanced over garments and regions: 1,275 units (255 bodies x 5 garments, eva
 excluded), r1 policy, 12 workers, into `output/uipc_manip/fmvp_scaled_multigarment_20260925/`. Rescue
 is the IPC lookahead for tshirt_26 and a reseeded retry for the others. Acceptance differs by garment
 (physical sleeve for tshirt_26, legacy ratio for the rest); `attempts.jsonl` records the garment.
+
+## The multi-garment endpoint is the armhole seam (2026-09-25)
+
+With the proximal-section endpoint on all garments (run v2), 1 of 30 attempts was accepted and every
+other one lost the grasp. Re-measuring those attempts: on bodies 1040 and 3040 the armhole seam never
+passed 0.45 of the upper arm for any garment, including tshirt_26, so those failures are real; but on
+2040 tshirt_392 reached a seam fraction of 0.81 and tshirt_4 0.72 with the sleeve wrapped while their
+proximal sections sat at 0.35 and 0.29. The proximal section lies a fixed share of the sleeve's length
+below the seam, so on long sleeves it cannot reach 0.7 when the shirt is fully on, the stop never fires
+and the gripper keeps pulling until the grasp fails. `physical_sleeve.measure` now also returns
+`armhole_upper_fraction` (the seam centre's place along elbow -> shoulder); the collector's
+`--armhole-endpoint` stops and accepts on it (sleeve wrapped, seam at 0.7), and run v3
+(`fmvp_scaled_multigarment_v3_20260925/`) uses it for every garment. For tshirt_26 this is looser
+than the proximal endpoint (its accepted episodes had the seam at about 0.85), so v3 and earlier
+tshirt_26 data are not directly comparable. Runs v1 and v2 used other criteria; do not mix them.

@@ -174,8 +174,15 @@ def measure(sections, cloth, landmarks):
     upper_fraction = ((rings[-1]['s'] * np.linalg.norm(np.diff(landmarks, axis=0), axis=1).sum()
                        - np.linalg.norm(landmarks[1] - landmarks[0]))
                       / np.linalg.norm(landmarks[2] - landmarks[1]))
+    # Where the armhole seam itself sits along elbow -> shoulder. The proximal section lies a fixed share
+    # of the sleeve's length below the seam, so on long sleeves (tshirt_4, tshirt_392) it stays low on
+    # the upper arm even when the garment is fully on; the seam is comparable across garments.
+    elbow, shoulder = landmarks[1], landmarks[2]
+    seam = cloth[sections.armhole].mean(0) - elbow
+    armhole_fraction = float(seam @ (shoulder - elbow) / np.dot(shoulder - elbow, shoulder - elbow))
     return dict(sleeve_wrapped=all(r['wrapped'] for r in rings),
-                cuff_s=rings[0]['s'], proximal_upper_fraction=float(upper_fraction), rings=rings)
+                cuff_s=rings[0]['s'], proximal_upper_fraction=float(upper_fraction),
+                armhole_upper_fraction=armhole_fraction, rings=rings)
 
 
 def first_window(mask, hold):
