@@ -439,3 +439,25 @@ r1 model with two replicas; on no legal start, six further placement offsets; wi
 one r1 + IPC-lookahead rescue. `attempts.jsonl` records every result, `manifest.json` the accepted
 episodes, `no_legal_start.jsonl` the bodies with no legal start anywhere. Before it, the unique
 accepted pool was 603 episodes, but on only 37 bodies in 13 regions.
+
+## Other garments, and the demo videos (2026-09-25)
+
+All collection so far was tshirt_26 (the calibration, the physical-sleeve test and the collectors were
+built on it). Gravity hangs baked for tshirt_68, tshirt_4 and hospital_gown (opening 22, 21 and 17 cm
+from the picker, 57-68 degrees down), then r1 with the legacy upper-arm test (0.7, held 20), full body,
+two replicas per body:
+
+| garment | accepted |
+|---|---|
+| tshirt_4 | 3047: 2/2; 2040, 11047, 10047, 15046: 0/8 |
+| hospital_gown | 3047: 2/2; 10047: 2/2; 2040, 11047, 15046: 0/6 |
+| tshirt_68 | 5046: 1/2; 2040, 11047, 3047, 10047, 15046, 22047: 0/12 |
+
+The checkpoint dresses other garments on some bodies; coverage is thin. Ten demo videos (six
+tshirt_26 pose regions, tshirt_68, tshirt_4, two hospital_gown) rendered offscreen with
+`scripts/wang_transfer/render_rollouts_mp4.py` (stock pyrender over EGL; Genesis debug meshes do not
+reach its offscreen cameras): `output/uipc_manip/demo_videos_20260925.zip`. The collector copy with
+`--garment` and the hang script are stored beside the episodes in `garment_demos_20260925/`.
+
+Pose variation in all of this is Wang's range only (shoulder_z -20..30, elbow_y 70..110, elbow_z
+-20..30 degrees, 27 cells) plus SMPL-X shape; the accepted pool is concentrated in regions 1, 2, 9, 13.
