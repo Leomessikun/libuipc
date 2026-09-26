@@ -26,6 +26,12 @@ The IPC baseline/flow adapter and five-case matched validation-start runner
 are ready; collect and inspect their results before dynamic training. The current split
 retains all five garments on both sides and cannot measure unseen-garment
 generalization. The teacher may have seen the held-out body IDs.
+The evaluation runner is launched but waiting for the continuous v5 collection;
+GPU-sharing permission is pending under the owner's earlier no-overlap request.
+A 149-episode CPU phase audit shows appreciable start and hold command errors
+(4.210/3.063 mm RMS for Gaussian samples). The initial model is not a validated
+dressing policy, and the planned shared completion guard does not test learned
+autonomous stopping. See the pilot record for the finite wait/run budgets.
 
 ## Backless-chair bilateral RL design — 2026-09-23
 

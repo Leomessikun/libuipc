@@ -236,6 +236,38 @@ test autonomous stopping. The first run uses seeded Gaussian noise, not the
 optional zero-noise diagnostic. GPU jobs are checked between cases; the
 runner never terminates unrelated processes. Evaluation results are pending.
 
+The five-case runner has been launched at
+`output/anticipatory_dressing/flow_bc_v4_eval/status.json`. It is currently
+`waiting_for_gpu`: immediately after training, the original workspace started
+the continuous v5 collection (five active workers at inspection). The current
+runner permits a 3,600 s initial GPU wait and 7,200 s evaluation wall budget.
+The owner's earlier no-overlap preference remains in effect; a question about
+allowing shared GPU execution is pending. No paired rollout has run yet.
+
+A further CPU audit of the selected checkpoint uses all 149 validation
+episodes, five prescribed positions per episode and torch seed 2026092607.
+The positions are 0, 10, T//2, T-21 and T-1 (the final 20 commands are the
+recorded hold). The first predicted command is compared with the recorded
+command; observations remain from the demonstration, not policy rollouts.
+`flow_bc_v4_train/offline_phase_audit.json` records the checkpoint hash and
+all metrics. Translation errors below are RMS command-vector errors using
+the 8.660254 mm per-axis scale, not measured cloth/gripper tracking errors:
+
+| Position | Seeded Gaussian flow (mm) | Zero-noise flow (mm) | Zero command (mm) |
+| --- | ---: | ---: | ---: |
+| Start | 4.210 | 3.342 | 5.332 |
+| Early (10) | 2.967 | 2.495 | 4.741 |
+| Middle | 1.763 | 1.172 | 3.459 |
+| Before hold | 1.620 | 0.692 | 3.438 |
+| Final hold | 3.063 | 3.704 | 0.000 |
+
+The initial policy has appreciable starting-action error and has not learned
+reliable stopping on these recorded terminal observations. Zero initial noise
+is a diagnostic; it is not the generative distribution's mean and is not the
+selected evaluation protocol. Keep the external hold explicit in any result.
+These findings justify inspecting closed-loop behavior before treating the
+offline loss reduction as a usable dressing policy or starting dynamic training.
+
 ### GRAB conversion
 
 `python/uipc_manip/grab_motion.py` and

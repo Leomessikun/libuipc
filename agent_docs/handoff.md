@@ -29,6 +29,12 @@ in 56.1 s after the GPU wait; best validation flow loss selects update 4,500
 including the isolated flow inference client. `collect_garment.py` can compare
 baseline/flow slots; `eval_static_flow.py` fixes one accepted validation start
 per garment with source contract/hash checks and identical completion holds.
+The paired runner is launched under `flow_bc_v4_eval`, currently waiting for
+the newly started continuous v5 GPU collection. An optional question about
+sharing the GPU is pending; preserve the owner's no-overlap preference until
+answered. The runner's initial wait is bounded at 3,600 s. A CPU phase audit
+across all 149 validation episodes finds start/hold command-vector RMS errors
+of 4.210/3.063 mm with Gaussian sampling; stopping has not been learned.
 Closed-loop results are pending. This five-case reproduction diagnostic is not
 an unbiased success rate, unseen-garment evaluation or autonomous-stop test.
 Dataset/run paths and the command are in the pilot record.
