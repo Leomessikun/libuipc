@@ -10,6 +10,10 @@ a diagnostic; it does not replace garment-diversity or whole-garment goals.
 Future-aware teacher training remains conditional on pilot evidence and a
 learnable causal forecasting signal. GPU experiments must wait around the
 ongoing `9eae3121` collection jobs. No improvement result is established yet.
+The first hold smoke moved the body but failed the 2 mm tracking gate at
+1.95 s (3.4 mm error). A rerun with tighter Newton convergence is queued,
+followed by static-baseline and motion-comparison gates; see the pilot note
+for output paths, limits and interpretation. CPU bridge inference passes.
 
 ## 2026-09-23 — Backless seated bilateral pull-up: RL-training design
 

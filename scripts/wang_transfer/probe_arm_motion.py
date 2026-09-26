@@ -54,6 +54,8 @@ def parser():
     p.add_argument("--obs-mode", choices=("wang_live_arm", "wang_static_arm"), default="wang_live_arm")
     p.add_argument("--tracking-tolerance", type=float, default=.002)
     p.add_argument("--drive-strength", type=float, default=1e6)
+    p.add_argument("--newton-velocity-tolerance", type=float, default=.01,
+                   help="IPC absolute velocity convergence tolerance in m/s; .1 from the static preset failed the motion gate")
     p.add_argument("--preflight-only", action="store_true", help="CPU asset, placement, schedule and checkpoint checks; no physics")
     p.add_argument("--wait-for-gpu", type=float, default=0., help="Maximum seconds to wait for other compute jobs; never stops them")
     return p
@@ -132,6 +134,39 @@ class PreparedFactory:
         return dict(self.placement)
 
 
+def make_client(args):
+    client_cls = runpy.run_path(str(args.policy_package_root / "uipc_manip/wang_client.py"))["WangPolicyClient"]
+    return client_cls(checkpoint=str(args.checkpoint), yaw_deg=args.yaw, device="cpu", package_root=args.policy_package_root)
+
+
+def check_policy_on_cpu(args, cfg, cell):
+    """Check the real bridge/observation contract without constructing a world."""
+    from uipc_manip.dressing_obs import BatchedDressingObservationBuilder, RigInputs, sample_segmented_cloud
+    from uipc_manip.obs import ObsSpec, FLAG_MARKER, FLAG_DEFORMABLE
+
+    spec = ObsSpec(cfg.point_budget, constraint_flag=bool(cfg.constraint_objective),
+                   episode_clock=bool(cfg.constraint_episode))
+    offsets = cell.cloth[cell.anchor_indices(cfg.anchor_count)] - cell.picker_pos
+    rig = RigInputs.from_cells([cell], cell.picker_pos[None], [offsets], [offsets])
+    builder = BatchedDressingObservationBuilder(cfg.obs, "cpu")
+    rng = np.random.default_rng(args.seed)
+    arm, cloth = builder.visible_points([cell.arm_points], [cell.cloth], [cell.finger],
+                                        [cell.shoulder], [rng], cfg.augment_obs, rig=rig)[0]
+    arm, cloth = sample_segmented_cloud(arm, cloth, spec.deformable_budget, rng)
+    flags = np.zeros((len(arm) + len(cloth), 4), np.float32)
+    flags[:len(arm), FLAG_MARKER] = 1.
+    flags[len(arm):, FLAG_DEFORMABLE] = 1.
+    observation = spec.pack_labeled(np.concatenate([arm, cloth]) - cell.picker_pos, flags,
+                                    cell.shoulder - cell.picker_pos, cell.picker_pos, attached=True)
+    pos, flags, valid, _ = spec.unpack_numpy(observation)
+    with make_client(args) as client:
+        action = client.act(pos[valid], flags[valid], np.zeros(3))
+    if action.shape != (6,) or not np.isfinite(action).all():
+        raise RuntimeError("Policy bridge failed the CPU observation check")
+    return dict(visible_arm_points=len(arm), visible_cloth_points=len(cloth),
+                action=action.tolist(), physics_run=False)
+
+
 def run(args):
     from uipc_manip import pretrain_wang, train_sac
     from uipc_manip.dressing_motion import MotionDressingEnv
@@ -146,6 +181,7 @@ def run(args):
     cfg = replace(cfg, cells=(("tshirt_26", int(motion.metadata["body_id"])),), cell_source="live",
                   collision_geometry="full_body", live=live, horizon=args.steps + 1, seed=1,
                   decision_watchdog=False, clip_rotation_to_yz=False, anchor_count=48,
+                  newton_tolerance=args.newton_velocity_tolerance,
                   cloth_density=750., cloth_strain_rate=10., contact_force_readout=False,
                   workspace=str(args.out / "world"),
                   obs=replace(cfg.obs, mode=args.obs_mode, static_arm=False))
@@ -175,10 +211,15 @@ def run(args):
                     force_input="zero for all controllers", scope="single sleeve, one known garment; no garment-generalization claim",
                     success_rule="wrapped physical sleeve and upperarm ratio >= threshold for hold consecutive decisions, valid grasp throughout",
                     failure_policy="retain failed runs; no success filtering; simulation failure is invalid physics, not task failure")
+    metadata["completion_control"] = "suppress actor advance while sleeve is wrapped and progress meets the endpoint; retain the method's registration correction"
     save_json(args.out / "run.json", metadata)
     np.savez_compressed(args.out / "schedules.npz", times=np.arange(args.steps) * dt, **masks)
     print("[preflight] " + json.dumps(dict(placement=placement, pause_counts=metadata["pause_counts"], decision_dt_s=dt)), flush=True)
     if args.preflight_only:
+        if any(method != "hold" for method in args.methods):
+            result = check_policy_on_cpu(args, cfg, cell)
+            save_json(args.out / "cpu_policy_probe.json", result)
+            print("[policy preflight] " + json.dumps(result), flush=True)
         return
     idle_gpu(args.wait_for_gpu)
     client = None
@@ -186,8 +227,7 @@ def run(args):
     records = []
     try:
         if any(method != "hold" for method in args.methods):
-            client_cls = runpy.run_path(str(args.policy_package_root / "uipc_manip/wang_client.py"))["WangPolicyClient"]
-            client = client_cls(checkpoint=str(args.checkpoint), yaw_deg=args.yaw, device="cpu", package_root=args.policy_package_root)
+            client = make_client(args)
         env = MotionDressingEnv(cfg, motion, onset_s=args.onset, speed=args.motion_speed,
                                drive_strength=args.drive_strength, tracking_tolerance_m=args.tracking_tolerance,
                                cell_factory=PreparedFactory(live, cell, placement))
@@ -228,7 +268,8 @@ def run(args):
                     transform, diagnostics = gicp(previous_roi, roi)
                     correction = bounded_correction(transform, tool, args.correction_bound)
                 paused = bool(masks[method][step]) if method in masks else method == "hold"
-                action = np.zeros(6) if paused else policy.copy()
+                completion_hold = states[-1]["sleeve_wrapped"] and states[-1]["upperarm_ratio"] >= args.success
+                action = np.zeros(6) if paused or completion_hold else policy.copy()
                 action[:3] += correction / cfg.max_translation
                 action = np.clip(action, -1., 1.).astype(np.float32)
                 previous_roi = roi
@@ -240,6 +281,7 @@ def run(args):
                     break
                 states.append(state())
                 transitions.append(dict(actions=action, policy_actions=policy, pause=paused,
+                                        completion_hold=completion_hold,
                                         correction=correction, registration_valid=diagnostics["valid"],
                                         registration_matches=diagnostics["matches"], registration_transform=transform,
                                         rewards=float(rewards[0]), tracking_error=float(info[0]["tracking_error"]),
@@ -260,6 +302,8 @@ def run(args):
             arrays = {key: np.asarray([row[key] for row in states]) for key in states[0]}
             if transitions:
                 arrays.update({key: np.asarray([row[key] for row in transitions]) for key in transitions[0]})
+            else:
+                arrays.update(actions=np.empty((0, 6), np.float32), policy_actions=np.empty((0, 6), np.float32))
             arrays.update(faces=cell.faces, human_faces=motion.faces, opening_idx=cell.opening_idx,
                           grasp_idx=cell.grasp_idx, picker_idx=cell.picker_idx)
             np.savez_compressed(args.out / f"{method}.npz", **arrays)
@@ -272,6 +316,10 @@ def run(args):
                           pause_count=sum(row["pause"] for row in transitions),
                           registration_failures=sum(not row["registration_valid"] for row in transitions[1:]) if method not in ("r1", "hold") else 0,
                           failure=failure, elapsed_s=time.monotonic() - started, **env.motion_diagnostics())
+            # A solver exception triggers a base-environment reset. Report the
+            # last valid trajectory time/error, not the freshly reset scene.
+            record["time_s"] = states[-1]["time_s"]
+            record["body_tracking_max_m"] = max((row["body_tracking_max_m"] for row in transitions), default=0.)
             records.append(record)
             save_json(args.out / "metrics.json", records)
             print("[result] " + json.dumps(record), flush=True)
@@ -291,6 +339,8 @@ def main():
               args.correction_bound, args.yaw, args.tracking_tolerance, args.drive_strength, args.wait_for_gpu]
     if not np.isfinite(values).all() or min(args.onset, args.wait_for_gpu) < 0 or min(values[1:5] + values[6:8]) <= 0:
         raise ValueError("Invalid time, speed, correction or tracking parameters")
+    if not np.isfinite(args.newton_velocity_tolerance) or args.newton_velocity_tolerance <= 0:
+        raise ValueError("Newton velocity tolerance must be finite and positive")
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=False)
     try:
