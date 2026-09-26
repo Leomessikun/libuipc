@@ -108,8 +108,8 @@ The virtual-gripper Cartesian commands are not robot joint trajectories.
 
 This baseline does not require new dynamic demonstrations or an IPC solve per
 gradient update. The current actor's visual encoder may be reusable, but a new
-flow action head is not the same network as the FMVP actor. No flow-policy
-training has started. The existing BC scripts offer data-contract references;
+flow action head is not the same network as the FMVP actor. The existing BC
+scripts offer data-contract references;
 they fine-tune the original actor and do not implement action-chunk flow matching.
 
 If the dynamic pilot supports further work, use the pretrained policy or r1
@@ -119,6 +119,80 @@ GRAB motion on an old successful robot trajectory does not make its old actions
 valid dynamic supervision: contact outcomes must be recomputed. Failed actions
 must not be treated as successful imitation targets. New-garment supervision
 still depends on obtaining physically valid behavior on those garments.
+
+### Static flow baseline: data and training entry prepared
+
+`python/uipc_manip/rollout_chunks.py` now reads the v4 manifest's job-relative
+paths, checks the recorded acceptance/grasp flags, array alignment, finite
+values, normalized command bounds and consistent observation/action contracts.
+It hashes the observation/command arrays for exact training-data deduplication
+and writes compact memory-mapped arrays, leaving source geometry untouched.
+This is a recording audit, not independent mesh/contact success validation.
+
+The prepared snapshot is
+`output/anticipatory_dressing/flow_bc_v4_data/manifest.json` in the isolated
+worktree. All 810 entries pass these checks, with no exact training-array
+duplicates. The cache occupies 5.07 GiB. The seed is 20260926 and the validation
+fraction is 0.2, with body IDs split before constructing any windows:
+
+| Split | Episodes | Body/pose IDs | Commands |
+| --- | ---: | ---: | ---: |
+| Train | 661 | 122 | 204,401 |
+| Validation | 149 | 31 | 47,505 |
+
+All five garments appear on both sides; body IDs do not overlap. This is a
+student imitation holdout, not proof of unseen people or garments: the source
+FMVP teacher may have trained on these bodies. Total controller counts are
+232,910 ordinary FMVP, 16,200 hold, 1,592 tracking-limited FMVP and 1,204
+IPC-improved FMVP commands. Thus the labels include recorded collector
+corrections. Two rotation axes are identically zero; six stored action
+components do not imply demonstrations covering arbitrary 6-DoF rotation.
+
+`python/uipc_manip/train_flow_bc.py` adds a static imitation baseline using
+the existing FQL `FlowPolicy.vector` API, tool-point encoder and residual
+network utilities. It has no Q objective or simulator calls. Three ordered
+observations, with an initial-history mask, condition an eight-command joint
+flow. Future padding is masked; windows never cross episodes. Sampling is
+uniform over body IDs, then episodes, then decisions, including recorded holds.
+The compact PointNet++ encoder starts from random weights. FMVP visual-weight
+transfer is a possible later experiment, not an implemented feature.
+The saved checkpoint carries the data hash and the command/observation
+contract. The initial deployment plan executes one command and replans every
+0.1 s; predicting eight commands does not require executing all eight blindly.
+
+The six CPU tests in `test_rollout_chunks.py` pass. They cover temporal
+alignment and masking, split leakage, duplicate removal, malformed/invalid
+recordings, parameter updates and exact checkpoint inference round trips.
+A real-data CPU smoke completed two updates with batch size 2, hidden width
+32 and two flow integration steps, under
+`output/anticipatory_dressing/flow_bc_cpu_smoke`. Its final validation flow loss
+is 1.4462 and sampled-command MSE is 0.6520 (zero-command MSE 0.04575).
+These tiny-sample diagnostics only check the training path; the smoke
+checkpoint has not learned a usable policy. No full training or closed-loop
+flow-policy evaluation has run. The unrelated six GPU collection workers
+were still active during preparation and were not interrupted.
+
+The next bounded training run, after a GPU window is available, is:
+
+```bash
+OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 PYTHONPATH=python \
+  /home/ge47gax/kun/genesis-world/.venv/bin/python -m uipc_manip.train_flow_bc \
+  --data output/anticipatory_dressing/flow_bc_v4_data \
+  --out output/anticipatory_dressing/flow_bc_v4_train \
+  --device cuda --steps 5000 --batch-size 16 --history 3 --horizon 8
+```
+
+This command must run from the isolated worktree. Output directories must be
+new. Five thousand updates are an initial budget, not a convergence claim.
+The immediate milestone is a flow policy that can reproduce the existing
+single-sleeve pull-up behavior in IPC. Add the flow-checkpoint inference
+adapter and compare against r1 on matched held-out body/garment starts,
+with identical control periods, grasp checks and the collector's physical
+sleeve/proximal endpoint plus hold window. Report success, lost grasp and
+completion time per garment; offline MSE is insufficient. A small paired
+smoke should establish the interface before expanding the evaluation cohort.
+Only after this static baseline is working should dynamic teacher corrections
+and future-prediction ablations become the main training experiment.
 
 ### GRAB conversion
 

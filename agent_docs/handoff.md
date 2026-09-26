@@ -16,8 +16,17 @@ The phone clip loses grasp under a stationary gripper, and the runner stops
 before the static baseline or policy comparisons. Distinguish this task failure
 from body-drive validity. CPU bridge inference passes. Existing v4 checkpoint
 rollouts (810 manifest-accepted entries, five configured garments) are the
-proposed initial supervision for a flow/diffusion imitation baseline; new
-dynamic data should supplement them. No new policy training has started.
+initial supervision for a flow imitation baseline; new dynamic data should
+supplement them. `rollout_chunks.py` prepared 661 train / 149 validation
+episodes (204,401 / 47,505 commands), split across disjoint 122 / 31 body IDs.
+All 810 pass the recording audit; this is not independent geometry validation.
+`train_flow_bc.py` provides three-frame/eight-command flow imitation, reusing
+the FQL vector-field and point-encoder utilities, with random encoder weights.
+Six CPU tests and a two-update real-data CPU smoke pass. Full training and
+closed-loop flow evaluation have not run; the smoke checkpoint is untrained.
+Next: bounded static flow training when GPU collection allows, add its IPC
+inference adapter, and compare to r1 on matched held-out starts before dynamic
+teacher training. Dataset/run paths and the command are in the pilot record.
 
 ## 2026-09-23 — Backless seated bilateral pull-up: RL-training design
 

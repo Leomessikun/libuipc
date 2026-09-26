@@ -16,7 +16,15 @@ Tighter Newton convergence fixes the initial tracking failure on the pass/lift
 smokes (maximum errors 0.314/0.0985 mm). The phone hold loses grasp; the current
 runner stops there. Separate this controller failure from body-drive validity
 before further comparisons. Existing v4 rollouts provide initial action
-supervision for a flow/diffusion baseline; dynamic data are additional coverage.
+supervision for a flow baseline; dynamic data are additional coverage.
+The prepared v4 cache has 661 train / 149 validation episodes, with disjoint
+body IDs, and 251,906 total commands. The causal chunk loader and flow BC
+entrypoint pass six CPU tests and a two-update real-data smoke. No full
+training or closed-loop improvement is established. Next run bounded static
+imitation training in an available GPU window, implement the flow checkpoint's
+IPC inference adapter and compare matched starts against r1. The current split
+retains all five garments on both sides and cannot measure unseen-garment
+generalization. The teacher may have seen the held-out body IDs.
 
 ## Backless-chair bilateral RL design — 2026-09-23
 
