@@ -594,3 +594,9 @@ Per sleeve section:
 * **Stall past the shoulder** (short sleeves, gown): the armhole trails the grasp by about 30 cm, so it
   reaches 0.7 only if the gripper goes 20-26 cm past the shoulder; successes do (1.8-2.0 along
   elbow->shoulder), failures stop at 1.15-1.43 and lose the sleeve there.
+
+Armhole-aligned start, same previously failing bodies and seed, all with `--sections-wrap`:
+tshirt_392 3/12 -> 12/14 (all 7 bodies), tshirt_68 0/8 -> 3/8, tshirt_26 0/6 -> 4/12 (bodies with no legal
+start 4 -> 1), hospital_gown 1/12 -> 4/14; rendered endpoints show the sleeve on the upper arm. The final
+collection v5 (`fmvp_scaled_multigarment_v5_20260926/`) uses both fixes: 5 garments x 27 regions x poses
+30-49 (2,625 units), batched under MPS, 6 workers.

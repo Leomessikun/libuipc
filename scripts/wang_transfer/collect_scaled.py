@@ -49,7 +49,7 @@ def garment_args(garment):
     # the upper arm: in IPC a sleeve narrower than the arm cannot go on.
     return ["--garment", garment, "--hang", HANGS[garment], "--success-geometry", "physical_sleeve",
             "--stop-proximal-upper", ".7", "--armhole-endpoint", "--body-fit-filter", "0.18",
-            "--fit-sleeve-ratio", "1.2"]
+            "--fit-sleeve-ratio", "1.2", "--sections-wrap", "--align-armhole-axis"]
 
 
 def run_collector(args, body, garment, offset, seed, tag, extra):
