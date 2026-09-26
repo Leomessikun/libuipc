@@ -1,5 +1,22 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-27 — Additional trajectories and feasibility reassessment
+
+The [pilot record](performance/2026-09-26-anticipatory-dressing-pilot.md)
+now records a read-only v5 snapshot: 424 accepted entries, 132,725 commands,
+72 body/pose IDs, still the same five garments. Sampled archives describe a
+static recipient. v5 changes initial armhole alignment and sleeve acceptance;
+reconcile provenance, geometry criteria and cross-version body splits before
+pooling. It broadens posture coverage, not dynamic or unseen-garment labels.
+RSS 2021's uncertain-human-dynamics dressing MPC is direct prior art: prediction
+and uncertainty alone cannot constitute our contribution. Contact/recovery
+supervision distilled across plausible futures remains an unvalidated candidate.
+Only static flow BC is implemented; no QGF critic or learned dynamic student.
+The IPC evaluation wait expired: `flow_bc_v4_eval/status.json` reports `error`,
+all cases are pending, and no runner is queued. No closed-loop success result
+exists. Preserve the owner's no-overlap preference. This reassessment changed
+documentation only; no new training or simulation was launched.
+
 ## 2026-09-26 — Authorized GRAB anticipatory-dressing pilot
 
 The owner authorized a new implementation branch, `research/anticipatory-dressing`,
@@ -29,10 +46,10 @@ in 56.1 s after the GPU wait; best validation flow loss selects update 4,500
 including the isolated flow inference client. `collect_garment.py` can compare
 baseline/flow slots; `eval_static_flow.py` fixes one accepted validation start
 per garment with source contract/hash checks and identical completion holds.
-The paired runner is launched under `flow_bc_v4_eval`, currently waiting for
-the newly started continuous v5 GPU collection. An optional question about
-sharing the GPU is pending; preserve the owner's no-overlap preference until
-answered. The runner's initial wait is bounded at 3,600 s. A CPU phase audit
+The paired runner was launched under `flow_bc_v4_eval`; its 3,600 s GPU wait
+subsequently expired (see the 2026-09-27 update above). An optional question
+about sharing the GPU is unanswered; preserve the owner's no-overlap preference.
+A CPU phase audit
 across all 149 validation episodes finds start/hold command-vector RMS errors
 of 4.210/3.063 mm with Gaussian sampling; stopping has not been learned.
 Closed-loop results are pending. This five-case reproduction diagnostic is not

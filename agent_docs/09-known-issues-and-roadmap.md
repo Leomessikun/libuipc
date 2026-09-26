@@ -26,12 +26,23 @@ The IPC baseline/flow adapter and five-case matched validation-start runner
 are ready; collect and inspect their results before dynamic training. The current split
 retains all five garments on both sides and cannot measure unseen-garment
 generalization. The teacher may have seen the held-out body IDs.
-The evaluation runner is launched but waiting for the continuous v5 collection;
-GPU-sharing permission is pending under the owner's earlier no-overlap request.
+As of 2026-09-27, the evaluation runner's one-hour GPU wait expired; its status
+is `error`, all five cases remain pending, and it is no longer queued.
+GPU-sharing permission is unanswered under the owner's earlier no-overlap request.
 A 149-episode CPU phase audit shows appreciable start and hold command errors
 (4.210/3.063 mm RMS for Gaussian samples). The initial model is not a validated
 dressing policy, and the planned shared completion guard does not test learned
 autonomous stopping. See the pilot record for the finite wait/run budgets.
+
+The 2026-09-27 v5 snapshot adds 424 accepted entries / 132,725 commands across
+72 body/pose IDs on the same five garments, with stationary humans per episode.
+Before merging, account for changed armhole alignment and interior-section
+success criteria, and preserve common body splits as collection reaches old
+pose IDs. No compatible merged cache exists yet. The next empirical gate is
+static closed-loop competence, followed by dynamic comparisons with matched
+data and compute. RSS 2021 uncertain-human-dynamics MPC already addresses
+predictive dressing: any proposed contact/recovery distillation method needs
+a specific mechanism and measured gains beyond prediction or CVaR alone.
 
 ## Backless-chair bilateral RL design — 2026-09-23
 

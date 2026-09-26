@@ -24,6 +24,7 @@ heuristic does not disprove anticipation in general.
 | [Takase, Onda and Yamazaki (2025)](https://www.jstage.jst.go.jp/article/jrobomech/37/3/37_710/_article/-char/en) | Uses time-series depth images to predict the robot end-effector target, combined with force control for dressing. This differs from predicting a future arm trajectory, but rules out claiming the first dressing system using motion prediction. |
 | [Clegg et al., Learning Human Behaviors for Robot-Assisted Dressing (2017)](https://arxiv.org/abs/1709.07033) | Learns simulated recipient behavior for sleeve insertion, explicitly motivated by anticipating human motion. Different actor and objective, but relevant prior art. |
 | [Erickson et al., Deep Haptic Model Predictive Control (ICRA 2018)](https://arxiv.org/abs/1709.09735) | Learns action-conditioned cloth force predictions in simulation and uses MPC for real dressing. Predicting contact consequences for dressing is also established; this work predicts forces, not arbitrary future recipient motion. |
+| [Li et al., Provably Safe and Efficient Motion Planning with Uncertain Human Dynamics (RSS 2021)](https://safe-dressing.github.io/) | Predicts uncertain human dynamics and uses MPC with collision-avoidance or safe-impact constraints, including real robot-assisted dressing experiments. Anticipation and uncertainty-aware planning for dressing are established prior art. A cloth-contact/recoverability distillation mechanism would need a specific distinction and controlled evidence; adding prediction or CVaR is insufficient. |
 | [Cai et al., Privileged Information in Partially Observable RL (NeurIPS 2024)](https://arxiv.org/abs/2412.00985) | Analyzes failure of generic expert distillation and conditions for successful use of privileged information. It reinforces the need to test what the student's observations identify; it does not directly analyze this dressing system. |
 | [GRAB](https://github.com/otaheri/GRAB) | Whole-body object interactions represented with SMPL-X. These are motion sources, not dressing demonstrations or measurements of how a recipient responds to cloth. |
 
@@ -31,6 +32,66 @@ This is a targeted prior-art check, not an exhaustive novelty certification.
 Teacher distillation, privileged future inputs, motion prediction, and
 diffusion/flow policies are established ingredients. A contribution would need
 an explicit mechanism and controlled gains beyond their combination.
+
+## 2026-09-27 feasibility and additional-data audit
+
+The current implementation is a static flow behavior-cloning baseline. The
+dynamic teacher, causal motion forecaster and corrective distillation remain
+proposed work. The original [QGF paper](https://arxiv.org/abs/2606.11087)
+pretrains a flow policy and value critic, then guides actions with value
+gradients at test time. Our current trainer has no critic or value guidance;
+it is not a QGF reproduction.
+
+A read-only manifest snapshot at 2026-09-27 00:10 CEST found:
+
+| Dataset | Accepted entries | Recorded commands | Body/pose IDs | Garments |
+| --- | ---: | ---: | ---: | ---: |
+| v4, `fmvp_scaled_multigarment_v4_20260925` | 810 | 251,906 | 153 | 5 |
+| v5, `fmvp_scaled_multigarment_v5_20260926` | 424 | 132,725 | 72 | 5 |
+
+The source datasets remain under the original workspace's
+`output/uipc_manip`. Collection is still running, so these are snapshot counts,
+not final totals or independently geometry-validated successes. At this point
+v5 covers pose IDs 30--33 and has no body-ID overlap with v4 (poses 40--49).
+The v5 run is configured to continue through pose 49: preserve a single
+cross-version body split when those IDs appear. Five v5 archives inspected,
+one per garment, have finite aligned observation/action arrays and valid
+recorded grasp flags. Their `wang_static_arm` observations and single saved
+human mesh describe a stationary recipient within each episode.
+
+The new examples broaden posture coverage on the same five garments. They
+support foundational imitation, but provide neither dynamic human responses
+nor new ClothesNet garment demonstrations. v5 also enables armhole-axis
+initial alignment and changes acceptance from all sleeve rings to interior
+sections wrapping the arm. The latter permits a long cuff past the fingertips;
+it is a protocol change, not by itself evidence of invalid data. Before pooling
+versions, retain these provenance flags, check geometry under a common success
+definition and account for changed initial states. The current v4 cache loader
+does not encode these new flags; a compatible merged dataset has not been built.
+
+The 5,000-update run sampled 80,000 windows with replacement, compared with
+204,401 recorded training commands. It is an initial bounded run, not a
+convergence study. Offline errors indicate a need to inspect initial alignment
+and terminal hold behavior. More data can help representation coverage, but
+does not establish closed-loop control or allow pure imitation to repair
+unrepresented teacher failures. Retain failed rollouts for future consequence
+learning or corrective labeling; do not treat failed commands as expert labels.
+
+The paired IPC evaluation's one-hour GPU wait expired. Its status is `error`,
+all five cases remain `pending`, and no evaluation process is still queued.
+No paired simulation or learned-flow dressing success rate exists. Preserve
+the no-overlap scheduling preference; the optional sharing question is unanswered.
+
+Next evidence gates are: reconcile the two recording protocols, establish
+static closed-loop competence against FMVP on matched starts, then compare
+history-only and forecast-conditioned policies on identical dynamic data and
+budgets. An oracle-future controller provides a diagnostic upper bound; a
+causal student must also improve to support deployable anticipation. Success,
+loss of threading and completion time must be considered together, so waiting
+indefinitely cannot count as an improvement. Unseen garments require separate
+garment holdouts and valid supervision. The candidate contribution remains
+learning contact-preserving recovery actions across plausible human futures;
+neither its novelty nor its practical advantage is established.
 
 ## Candidate mechanism after the pilot
 
@@ -236,13 +297,13 @@ test autonomous stopping. The first run uses seeded Gaussian noise, not the
 optional zero-noise diagnostic. GPU jobs are checked between cases; the
 runner never terminates unrelated processes. Evaluation results are pending.
 
-The five-case runner has been launched at
-`output/anticipatory_dressing/flow_bc_v4_eval/status.json`. It is currently
-`waiting_for_gpu`: immediately after training, the original workspace started
-the continuous v5 collection (five active workers at inspection). The current
-runner permits a 3,600 s initial GPU wait and 7,200 s evaluation wall budget.
-The owner's earlier no-overlap preference remains in effect; a question about
-allowing shared GPU execution is pending. No paired rollout has run yet.
+The five-case runner was launched with status at
+`output/anticipatory_dressing/flow_bc_v4_eval/status.json`. Inspection on
+2026-09-27 finds `error`: the 3,600 s initial GPU wait expired while other jobs
+continued. All five cases remain pending; no paired rollout ran and the process
+is no longer queued. The configured evaluation wall budget was 7,200 s after
+the wait. The owner's earlier no-overlap preference remains in effect; the
+optional question about allowing shared GPU execution is unanswered.
 
 A further CPU audit of the selected checkpoint uses all 149 validation
 episodes, five prescribed positions per episode and torch seed 2026092607.
