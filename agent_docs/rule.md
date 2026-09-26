@@ -126,6 +126,10 @@ record it here in the same commit.**
   train on existing FMVP rollouts, then evaluate against r1 on matched IPC
   starts before dynamic teacher training. This authorizes the bounded 5,000
   update run and initial five-garment paired diagnostic (2026-09-26).
+  On 2026-09-27 the owner approved the explained four-step continuation:
+  reconcile v4/v5 recordings, continue static training and matched evaluation,
+  then test dynamic anticipation and collect targeted corrections as justified
+  by those results. This does not override the GPU no-overlap preference.
 
 - **Selected task: dress both arms and the torso of a seated person.**
   The owner explicitly abandoned the single-human-arm research direction and

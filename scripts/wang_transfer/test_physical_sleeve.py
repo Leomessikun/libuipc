@@ -1,9 +1,13 @@
 """Geometry regressions: use the sleeve side, and reject an off-arm tube."""
 import unittest
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 
 from physical_sleeve import SleeveSections, first_stationary_window, measure
+from prepare_flow_dataset import TerminalSleeveAudit
 
 
 class PhysicalSleeveTests(unittest.TestCase):
@@ -46,6 +50,47 @@ class PhysicalSleeveTests(unittest.TestCase):
         self.assertEqual(first_stationary_window(mask, moving, 2), 3)
         mask[-1] = False
         self.assertIsNone(first_stationary_window(mask, moving, 2))
+
+    def test_common_audit_recomputes_meshes_and_allows_cuff_beyond_fingers(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            episode = root / 'episode'
+            episode.mkdir()
+            path = episode / 'baseline.npz'
+            run = dict(success_geometry='physical_sleeve', armhole_endpoint=True,
+                       stop_proximal_upper=.7, hold=20, collision_geometry='full_body',
+                       environment_sha256='test', collector_sha256='test', sections_wrap=True)
+            (root / 'run.json').write_text(json.dumps(run))
+            (episode / 'config.json').write_text(json.dumps(dict(
+                config=dict(obs=dict(mode='wang_static_arm')), placement={})))
+            # The cuff at x=0 lies beyond the fingertip at x=.1. Interior
+            # sections still enclose the arm and the armhole is above 0.7.
+            landmarks = self.landmarks.copy()
+            landmarks[0, 0] = .1
+            cloth = np.repeat(self.vertices[None], 21, axis=0)
+
+            def save():
+                np.savez(path, positions=cloth, faces=self.sections.faces,
+                         opening_idx=self.sections.armhole, finger=landmarks[0],
+                         elbow=landmarks[1], shoulder=landmarks[2],
+                         sleeve_wrapped=np.ones(21, bool),
+                         metadata_json=json.dumps(dict(success_state=0)))
+
+            save()
+            audit = TerminalSleeveAudit()
+            audit.template = lambda garment, opening: (self.sections, 'test')
+            record = dict(source_path=str(path), garment='synthetic')
+            result = audit(record, np.zeros((20, 6)))
+            self.assertFalse(result['cuff_also_wrapped'])
+            self.assertEqual(result['held_states'], 21)
+            with self.assertRaisesRegex(ValueError, 'nonzero commands'):
+                audit(record, np.ones((20, 6)))
+            # Recorded success flags remain true; a displaced final mesh
+            # must nevertheless be rejected by the common geometry audit.
+            cloth[-1, :, 1] += .3
+            save()
+            with self.assertRaisesRegex(ValueError, 'Terminal mesh fails'):
+                audit(record, np.zeros((20, 6)))
 
 
 if __name__ == '__main__':

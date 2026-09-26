@@ -1,5 +1,17 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Static flow v4/v5 reconciliation — 2026-09-27
+
+The [new stage record](performance/2026-09-27-static-flow-v45.md) closes the
+initial merge/provenance gate: 1,275 frozen examples pass a common terminal
+geometry audit; old body splits are preserved and new IDs are stably assigned.
+The data retain five known garments and static humans. Fifteen CPU regressions
+pass. A bounded 20,000-update CPU training run is active; completion, phase
+errors and paired IPC performance remain to be checked. Preserve the no-overlap
+GPU preference. A common endpoint must be applied to both evaluation methods,
+and any new-placement start must be reproduced explicitly rather than silently
+using the v4 placement code. GRAB remains outside static training.
+
 ## Anticipatory dressing pilot — 2026-09-26
 
 The owner now authorizes a GRAB-motion / future-informed teacher pilot on

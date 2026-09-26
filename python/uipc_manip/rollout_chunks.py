@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import datetime, timezone
 from functools import lru_cache
 import hashlib
 import json
@@ -18,18 +19,32 @@ import numpy as np
 from .obs import ObsSpec
 
 
-def split_bodies(episodes, fraction, seed):
+def split_bodies(episodes, fraction, seed, reference=None):
     """Keep every replica and garment of a body ID on the same side."""
     if not 0 < fraction < 1:
         raise ValueError("Validation fraction must be between zero and one")
     bodies = sorted({e["body"] for e in episodes})
     if len(bodies) < 2:
         raise ValueError("At least two body IDs are needed for a held-out split")
-    order = np.random.default_rng(seed).permutation(bodies)
-    n = min(len(bodies) - 1, max(1, round(len(bodies) * fraction)))
-    validation = set(order[:n].tolist())
+    fixed = {}
+    if reference is not None:
+        for row in reference["episodes"]:
+            body, split = int(row["body"]), row["split"]
+            if split not in ("train", "validation") or (body in fixed and fixed[body] != split):
+                raise ValueError("Reference split leaks a body or has an invalid split")
+            fixed[body] = split
+        # A new body keeps its assignment in subsequent growing snapshots.
+        validation = {b for b in bodies if fixed.get(b) == "validation" or
+                      (b not in fixed and int.from_bytes(hashlib.sha256(f"{seed}:{b}".encode()).digest()[:8],
+                                                         "big") / 2**64 < fraction)}
+    else:
+        order = np.random.default_rng(seed).permutation(bodies)
+        n = min(len(bodies) - 1, max(1, round(len(bodies) * fraction)))
+        validation = set(order[:n].tolist())
     for episode in episodes:
         episode["split"] = "validation" if episode["body"] in validation else "train"
+    if len({e["split"] for e in episodes}) != 2:
+        raise ValueError("Retained episodes must include both train and validation bodies")
 
 
 def read_episode(row):
@@ -74,24 +89,39 @@ def read_episode(row):
     return obs, actions, contract, record
 
 
-def prepare(source, out, *, val_fraction=.2, seed=20260926):
-    source, out = Path(source), Path(out)
+def prepare(source, out, *, val_fraction=.2, seed=20260926, split_manifest=None, episode_audit=None):
+    sources = [Path(source)] if isinstance(source, (str, Path)) else list(map(Path, source))
+    out = Path(out)
+    if not sources or len({s.resolve() for s in sources}) != len(sources):
+        raise ValueError("Need distinct source directories")
     if not 0 < val_fraction < 1:
         raise ValueError("Validation fraction must be between zero and one")
-    raw = (source / "manifest.json").read_bytes()
-    rows = json.loads(raw)["accepted"]
+    snapshots = [(s, (s / "manifest.json").read_bytes()) for s in sources]
+    rows = [(i, row) for i, (_, raw) in enumerate(snapshots) for row in json.loads(raw)["accepted"]]
+    reference_raw = Path(split_manifest).read_bytes() if split_manifest is not None else None
+    reference = json.loads(reference_raw) if reference_raw is not None else None
     out.mkdir(parents=True, exist_ok=False)
-    (out / "source_manifest.json").write_bytes(raw)
+    provenance = []
+    for i, (source_path, raw) in enumerate(snapshots):
+        name = "source_manifest.json" if len(sources) == 1 else f"source_{i:03d}_manifest.json"
+        (out / name).write_bytes(raw)
+        provenance.append(dict(source=str(source_path.resolve()), snapshot=name,
+                               source_manifest_sha256=hashlib.sha256(raw).hexdigest()))
+    if reference_raw is not None:
+        (out / "split_reference.json").write_bytes(reference_raw)
     episodes, rejected, duplicates, seen = [], [], [], {}
     contract = None
     action_min, action_max = np.full(6, np.inf), np.full(6, -np.inf)
-    for i, row in enumerate(rows):
+    for i, (source_index, row) in enumerate(rows):
         try:
             if not row.get("accepted"):
                 raise ValueError("Manifest entry is not accepted")
             obs, actions, current, record = read_episode(row)
             if contract is not None and current != contract:
                 raise ValueError("Observation/action contract differs from the dataset")
+            if episode_audit is not None:
+                record["audit"] = episode_audit(record, actions)
+            record["source_index"] = source_index
             key = record["training_arrays_sha256"]
             if key in seen:
                 duplicates.append(dict(source_path=record["source_path"], duplicate_of=seen[key]))
@@ -106,23 +136,29 @@ def prepare(source, out, *, val_fraction=.2, seed=20260926):
             action_min = np.minimum(action_min, actions.min(0))
             action_max = np.maximum(action_max, actions.max(0))
         except (OSError, ValueError, KeyError) as error:
-            rejected.append(dict(log=row.get("log"), path=row.get("path"), reason=str(error)))
+            rejected.append(dict(source_index=source_index, log=row.get("log"), path=row.get("path"), reason=str(error)))
         if (i + 1) % 100 == 0:
             print(f"[prepare] {i + 1}/{len(rows)} inspected, {len(episodes)} retained", flush=True)
-    split_bodies(episodes, val_fraction, seed)
+    split_bodies(episodes, val_fraction, seed, reference)
     summary = {}
     for split in ("train", "validation"):
         subset = [e for e in episodes if e["split"] == split]
         summary[split] = dict(episodes=len(subset), bodies=len({e["body"] for e in subset}),
                               transitions=sum(e["transitions"] for e in subset),
                               garments=dict(Counter(e["garment"] for e in subset)))
-    payload = dict(format="fmvp_action_chunks_v1", source=str(source.resolve()),
-                   source_manifest_sha256=hashlib.sha256(raw).hexdigest(), seed=seed,
+        summary[split]["sources"] = dict(Counter(e["source_index"] for e in subset))
+    payload = dict(format="fmvp_action_chunks_v1", sources=provenance,
+                   snapshot_utc=datetime.now(timezone.utc).isoformat(), seed=seed,
+                   split_reference_sha256=hashlib.sha256(reference_raw).hexdigest() if reference_raw else None,
                    validation_fraction=val_fraction, split_unit="body ID across all garments and replicas",
                    validation_scope="Student imitation holdout; teacher may have seen these bodies. Not a garment holdout.",
                    audit_scope="Recorded acceptance, shapes, finiteness, command bounds, grasp and contract consistency; no mesh revalidation.",
                    contract=contract, action_min=action_min.tolist(), action_max=action_max.tolist(),
                    summary=summary, episodes=episodes, rejected=rejected, duplicates=duplicates)
+    if len(sources) == 1:
+        payload.update({k: v for k, v in provenance[0].items() if k != "snapshot"})
+    if episode_audit is not None:
+        payload["audit_scope"] = episode_audit.scope
     (out / "manifest.json").write_text(json.dumps(payload, indent=2) + "\n")
     print(json.dumps(dict(summary=summary, rejected=len(rejected), duplicates=len(duplicates)), indent=2), flush=True)
     return payload
@@ -180,12 +216,13 @@ class ChunkDataset:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--source", type=Path, required=True, nargs="+")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--val-fraction", type=float, default=.2)
     parser.add_argument("--seed", type=int, default=20260926)
+    parser.add_argument("--split-manifest", type=Path, help="Preserve all existing body assignments; hash new IDs.")
     args = parser.parse_args()
-    prepare(args.source, args.out, val_fraction=args.val_fraction, seed=args.seed)
+    prepare(args.source, args.out, val_fraction=args.val_fraction, seed=args.seed, split_manifest=args.split_manifest)
 
 
 if __name__ == "__main__":

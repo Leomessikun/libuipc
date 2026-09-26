@@ -1,5 +1,20 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-27 — Reconciled data and continued static training
+
+The owner approved proceeding with the four-step sequence. The
+[v4/v5 stage record](performance/2026-09-27-static-flow-v45.md) freezes 1,275
+episodes / 397,729 commands, including 465 new v5 entries. All pass a recomputed
+terminal interior-section/armhole-0.7 hold audit; 166 v5 examples would fail
+the older cuff-inclusive rule. No duplicates or rejects. The 8.01 GiB cache
+preserves every v4 body split: train 1,079 episodes / 198 IDs, validation 196 /
+43, with no body overlap. New IDs use stable hash assignments. Provenance
+retains different placement protocols; this is not unseen-garment data.
+Fifteen CPU tests pass. A 20,000-update, two-thread CPU flow run is active under
+`output/anticipatory_dressing/flow_bc_v45_train`; inspect its metrics/checkpoints
+before calling training complete. GPU collection remains active. No paired
+IPC success result exists; dynamic training has not started.
+
 ## 2026-09-27 — Additional trajectories and feasibility reassessment
 
 The [pilot record](performance/2026-09-26-anticipatory-dressing-pilot.md)

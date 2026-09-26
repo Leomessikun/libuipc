@@ -7,7 +7,7 @@ import torch
 
 from uipc_manip.fql import FQLConfig
 from uipc_manip.obs import ObsSpec
-from uipc_manip.rollout_chunks import ChunkDataset, prepare, read_episode
+from uipc_manip.rollout_chunks import ChunkDataset, prepare, read_episode, split_bodies
 from uipc_manip.tests.test_sac_agent import _small_cfg
 from uipc_manip.train_flow_bc import ChunkFlowPolicy, tensor_batch
 
@@ -72,6 +72,31 @@ def test_unusable_episode_is_rejected(tmp_path, bad):
     np.savez(path, **arrays)
     with pytest.raises(ValueError):
         read_episode(row)
+
+
+def test_merged_sources_preserve_old_split_and_new_body_assignment(tmp_path):
+    first, second = tmp_path / "first", tmp_path / "second"
+    old_rows = [source_episode(first, b) for b in (1, 2, 3)]
+    new_rows = [source_episode(second, b) for b in (1, 4, 5)]
+    for root, rows in ((first, old_rows), (second, new_rows)):
+        (root / "manifest.json").write_text(json.dumps(dict(accepted=rows)))
+    original = prepare(first, tmp_path / "original", seed=7)
+    merged = prepare([first, second], tmp_path / "merged", seed=7,
+                     split_manifest=tmp_path / "original/manifest.json")
+    before = {r["body"]: r["split"] for r in original["episodes"]}
+    after = {r["body"]: r["split"] for r in merged["episodes"]}
+    assert all(after[b] == split for b, split in before.items())
+    assert len(merged["duplicates"]) == 1 and len(merged["episodes"]) == 5
+    assert len(merged["sources"]) == 2 and merged["split_reference_sha256"]
+    extended = [dict(body=b) for b in (1, 2, 3, 4, 5, 6, 7)]
+    split_bodies(extended, .2, 7, original)
+    assert all(r["split"] == after[r["body"]] for r in extended if r["body"] in after)
+
+
+def test_conflicting_reference_split_is_rejected():
+    reference = dict(episodes=[dict(body=1, split="train"), dict(body=1, split="validation")])
+    with pytest.raises(ValueError, match="Reference split leaks"):
+        split_bodies([dict(body=1), dict(body=2)], .2, 7, reference)
 
 
 def test_flow_trains_encoder_and_chunk_head_and_reloads_for_inference(tmp_path):
