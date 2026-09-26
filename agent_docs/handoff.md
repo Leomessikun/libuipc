@@ -22,11 +22,16 @@ episodes (204,401 / 47,505 commands), split across disjoint 122 / 31 body IDs.
 All 810 pass the recording audit; this is not independent geometry validation.
 `train_flow_bc.py` provides three-frame/eight-command flow imitation, reusing
 the FQL vector-field and point-encoder utilities, with random encoder weights.
-Six CPU tests and a two-update real-data CPU smoke pass. Full training and
-closed-loop flow evaluation have not run; the smoke checkpoint is untrained.
-Next: bounded static flow training when GPU collection allows, add its IPC
-inference adapter, and compare to r1 on matched held-out starts before dynamic
-teacher training. Dataset/run paths and the command are in the pilot record.
+The owner approved training and evaluation. The 5,000-update static run completed
+in 56.1 s after the GPU wait; best validation flow loss selects update 4,500
+(sampled-command MSE 0.02404 versus zero-command 0.04300). Checkpoints are in
+`output/anticipatory_dressing/flow_bc_v4_train`. Eight CPU tests now pass,
+including the isolated flow inference client. `collect_garment.py` can compare
+baseline/flow slots; `eval_static_flow.py` fixes one accepted validation start
+per garment with source contract/hash checks and identical completion holds.
+Closed-loop results are pending. This five-case reproduction diagnostic is not
+an unbiased success rate, unseen-garment evaluation or autonomous-stop test.
+Dataset/run paths and the command are in the pilot record.
 
 ## 2026-09-23 — Backless seated bilateral pull-up: RL-training design
 

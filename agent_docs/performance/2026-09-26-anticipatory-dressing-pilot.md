@@ -194,6 +194,48 @@ smoke should establish the interface before expanding the evaluation cohort.
 Only after this static baseline is working should dynamic teacher corrections
 and future-prediction ablations become the main training experiment.
 
+### First static training run and paired evaluation adapter
+
+The owner approved proceeding. The launch waited for the active collection
+workers, then completed the configured 5,000 updates with batch size 16 in
+56.1 s process wall time (53.95 s to the final logged update). Artifacts are
+`output/anticipatory_dressing/flow_bc_v4_train/{run.json,metrics.jsonl,best.pt,latest.pt}`;
+`flow_bc_v4_launch.json` records the launch and return code zero. The checkpoint
+selected by validation flow loss is update 4,500: loss 0.12349, sampled command
+MSE 0.02404, versus zero-command MSE 0.04300 on the fixed 64 validation windows.
+Update 5,000 has flow loss 0.12504 and command MSE 0.02355. These normalized
+offline errors do not establish dressing competence or convergence.
+
+`flow_client.py` provides CPU inference in a separate process using this
+worktree's model code, while the collector keeps the original external FMVP
+environment package. The environment file hash still matches the v4 recordings.
+Each slot has an independent causal history and seeded Gaussian stream; reset
+clears both. The client checks observation mode, point budget, collision mode,
+command scales and decision period. It executes the first predicted command
+and replans. The collector's `flow` variant consumes the full flat observation
+and bypasses FMVP's rotation conversion, since that conversion is already in
+the training labels. Both controllers use the recorded translation/world-yaw
+command space (the two unsupported rotation axes are zero).
+
+Eight CPU tests pass, including separate slot histories, reset reproducibility,
+contract mismatch rejection and an exact subprocess/direct-inference comparison.
+`eval_static_flow.py` prepares one validation start per garment, reusing the
+source hang, body, placement, material, seed and sleeve/armhole success rule.
+It checks source environment, hang and checkpoint hashes before launching.
+The initial cohort is body 10040 for `tshirt_26`, `tshirt_4`, `tshirt_68` and
+`hospital_gown`, and body 25040 for `tshirt_392`. These are held out from student
+training, but selected from accepted demonstrations and potentially familiar
+to the FMVP teacher. Treat the result as a reproduction diagnostic, not an
+unbiased success-rate estimate or unseen-garment result.
+
+Each fresh collector world contains a baseline slot and a flow slot with the
+same start. Both use the original external completion hold, 750 search
+decisions and a 20-decision hold window. The runner retains failures and
+reports the actual initial cloth/tool/observation differences. This does not
+test autonomous stopping. The first run uses seeded Gaussian noise, not the
+optional zero-noise diagnostic. GPU jobs are checked between cases; the
+runner never terminates unrelated processes. Evaluation results are pending.
+
 ### GRAB conversion
 
 `python/uipc_manip/grab_motion.py` and

@@ -122,6 +122,10 @@ record it here in the same commit.**
   around the ongoing `9eae3121` garment jobs. Preserve their work and data.
   The owner also identifies transfer beyond the five Cloth3D training garments
   as a central motivation; human-motion adaptation alone does not resolve it.
+  The owner subsequently approved proceeding with the static flow baseline:
+  train on existing FMVP rollouts, then evaluate against r1 on matched IPC
+  starts before dynamic teacher training. This authorizes the bounded 5,000
+  update run and initial five-garment paired diagnostic (2026-09-26).
 
 - **Selected task: dress both arms and the torso of a seated person.**
   The owner explicitly abandoned the single-human-arm research direction and

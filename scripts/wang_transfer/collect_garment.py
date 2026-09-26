@@ -18,6 +18,7 @@ from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import time
@@ -28,7 +29,7 @@ from rollout_controls import crop_observation, force_input, load_profiles, profi
 
 
 ROOT = Path("/home/ge47gax/kun/libuipc")
-VARIANTS = {"baseline": 1.0, "half": 0.5, "quarter": 0.25, "handoff": 1.0, "expert": 1.0}
+VARIANTS = {"baseline": 1.0, "half": 0.5, "quarter": 0.25, "handoff": 1.0, "expert": 1.0, "flow": 1.0}
 
 
 def sha256(path):
@@ -49,6 +50,9 @@ def parser():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--package-root", type=Path, default=ROOT / ".claude/worktrees/residual-rl/python")
     p.add_argument("--checkpoint", type=Path, default=Path("/home/ge47gax/Desktop/fmvp_sim.pt"))
+    p.add_argument("--flow-checkpoint", type=Path, help="Action-chunk flow BC checkpoint for the flow variant; CPU inference.")
+    p.add_argument("--flow-noise", choices=("random", "zero"), default="random",
+                   help="Seeded Gaussian flow sampling, or an explicit zero-noise diagnostic.")
     p.add_argument("--policy-device", choices=("cpu", "cuda"), default=None,
                    help="Checkpoint inference device; independent of the IPC CUDA physics backend.")
     p.add_argument("--policy-socket", type=Path,
@@ -154,6 +158,12 @@ def main():
                                                or not 0 < args.stop_proximal_upper <= 1):
         raise ValueError("--stop-proximal-upper requires physical_sleeve and a fraction in (0, 1]")
     profiles = load_profiles(args.profiles_json, len(args.variants)) * args.replicas
+    if "flow" in args.variants:
+        if args.flow_checkpoint is None:
+            raise ValueError("The flow variant requires --flow-checkpoint")
+        if (args.profiles_json is not None or set(args.variants) - {"baseline", "flow"}
+                or args.rotation != "fmvp" or args.rotation_gain != 1.):
+            raise ValueError("Flow comparison uses baseline/flow, default profiles and --rotation fmvp --rotation-gain 1")
     if any(p.lookahead_interval for p in profiles) and (len(profiles) != 1 or args.success_geometry != "physical_sleeve"):
         raise ValueError("IPC lookahead requires one slot and physical_sleeve geometry")
     hang_hash = sha256(args.hang)
@@ -198,14 +208,18 @@ def main():
                     controls_sha256=sha256(Path(__file__).with_name("rollout_controls.py")),
                     bridge_sha256=sha256(args.package_root / "uipc_manip/wang_bridge.py"),
                     environment_sha256=sha256(args.package_root / "uipc_manip/dressing_env.py"),
-                    collector_revision=revision(ROOT), package_revision=revision(args.package_root),
+                    collector_revision=revision(Path(__file__).resolve().parents[2]), package_revision=revision(args.package_root),
                     policy_force_input="zero" if args.profiles_json is None else "per_profile; stored in policy_force",
                     profiles=[profile_dict(p) for p in profiles], force_sampling="end of decision, not substep peak",
                     observations="obs[t] -> actions[t] -> obs[t+1]; force arrays align with obs",
-                    controller_id="0 FMVP, 1 scripted expert, 2 hold, 3 tracking-limited FMVP, 4 IPC-improved FMVP; policy_actions are proposals",
+                    controller_id="0 FMVP, 1 scripted expert, 2 hold, 3 tracking-limited FMVP, 4 IPC-improved FMVP, 6 flow BC; policy_actions are proposals",
                     accepted_rule=("proximal sleeve fraction >= stop_proximal_upper, real sleeve wrapped throughout hold, valid grasp, no sim error"
                                    if args.stop_proximal_upper is not None else
                                    "upper >= success throughout hold, valid grasp throughout, no sim error"))
+    if "flow" in args.variants:
+        metadata.update(flow_checkpoint_sha256=sha256(args.flow_checkpoint),
+                        flow_client_sha256=sha256(Path(__file__).resolve().parents[2] / "python/uipc_manip/flow_client.py"),
+                        flow_action_contract="Normalized world-frame commands; yaw only, no second FMVP rotation conversion")
     save_json(args.out / "run.json", metadata)
     with np.load(args.hang) as source:
         hang = source[args.hang_key].copy()
@@ -310,6 +324,10 @@ def main():
             return PersistentPolicyClient(args.policy_socket, **kwargs)
         return WangPolicyClient(**kwargs)
 
+    flow_client = None
+    if "flow" in variants:
+        flow_cls = runpy.run_path(str(Path(__file__).resolve().parents[2] / "python/uipc_manip/flow_client.py"))["FlowPolicyClient"]
+        flow_client = flow_cls(args.flow_checkpoint, noise=args.flow_noise)
     client = make_client(args.bridge_voxel)
     if args.policy_socket is not None:
         metadata['policy_server'] = client.info
@@ -393,6 +411,10 @@ def main():
                 continue
             try:
                 obs = env.reset([args.seed] * n)
+                if flow_client is not None:
+                    flow_client.reset(args.seed, dict(point_budget=cfg.point_budget, obs_mode=cfg.obs.mode,
+                        collision_geometry=args.collision_geometry, max_translation_m=cfg.max_translation,
+                        max_rotation_rad=cfg.max_rotation, decision_dt_s=cfg.dt * cfg.action_repeat))
                 env._arm_force_summaries()  # Initializes the lazy contact exporter before state zero.
                 spec = ObsSpec(training_args.point_budget)
                 def slot_geometry(c):
@@ -507,20 +529,26 @@ def main():
                             scales[i] = 1.
                             controllers[i] = 1
                         else:
-                            controllers[i] = 0
+                            controllers[i] = 6 if variant == "flow" else 0
                             pos, feat, valid, _ = (x[0] for x in spec.unpack_numpy(buffers[i]["obs"][-1][None]))
                             valid = valid.astype(bool)
                             policy_started = time.monotonic()
-                            action = policy_clients[i].act(pos[valid], feat[valid], policy_forces[i])
+                            action = (flow_client.act(buffers[i]["obs"][-1], i) if variant == "flow" else
+                                      policy_clients[i].act(pos[valid], feat[valid], policy_forces[i]))
                             timing["policy_s"] += time.monotonic() - policy_started
-                            model_vertical_rotation = float((rotation @ action[3:])[1])
-                            action[3:] = 0.
-                            if args.rotation == "fmvp":
-                                delta = abs(model_vertical_rotation)
-                                if delta > np.deg2rad(5.):
-                                    delta *= np.deg2rad(5.) / np.sqrt(3.)
-                                gain = args.rotation_gain if profiles[i].rotation_gain is None else profiles[i].rotation_gain
-                                action[5] = gain * np.sign(model_vertical_rotation) * delta / cfg.max_rotation
+                            if variant == "flow":
+                                # Training labels already include FMVP's world-yaw conversion.
+                                # Match that command subspace; these two axes have no labels.
+                                action[3:5] = 0.
+                            else:
+                                model_vertical_rotation = float((rotation @ action[3:])[1])
+                                action[3:] = 0.
+                                if args.rotation == "fmvp":
+                                    delta = abs(model_vertical_rotation)
+                                    if delta > np.deg2rad(5.):
+                                        delta *= np.deg2rad(5.) / np.sqrt(3.)
+                                    gain = args.rotation_gain if profiles[i].rotation_gain is None else profiles[i].rotation_gain
+                                    action[5] = gain * np.sign(model_vertical_rotation) * delta / cfg.max_rotation
                             proposed[i] = action
                             along = float((env._anchor[i] - slots[i]["finger"]) @ slots[i]["axis"] / (slots[i]["axis"] @ slots[i]["axis"]))
                             slowed[i] |= along >= args.slow_along
@@ -656,8 +684,10 @@ def main():
                     record = dict(body=slot_body[i], variant=variant, replica=j if args.replicas > 1 else None,
                                   world_bodies=list(group),
                                   profile=profile_dict(profiles[i]),
-                                  checkpoint_sha256=metadata["checkpoint_sha256"], simulator="Genesis+IPC",
-                                  policy_device=args.policy_device,
+                                  checkpoint_sha256=metadata["flow_checkpoint_sha256"] if variant == "flow" else metadata["checkpoint_sha256"],
+                                  policy_kind="flow_bc" if variant == "flow" else "fmvp_or_scripted", simulator="Genesis+IPC",
+                                  policy_device="cpu" if variant == "flow" else args.policy_device,
+                                  flow_noise=args.flow_noise if variant == "flow" else None,
                                   policy_server_pid=metadata.get('policy_server', {}).get('pid'),
                                   max_translation_m=cfg.max_translation, max_rotation_rad=cfg.max_rotation,
                                   decision_dt_s=cfg.dt * cfg.action_repeat,
@@ -697,6 +727,8 @@ def main():
             finally:
                 env.close()
     finally:
+        if flow_client is not None:
+            flow_client.close()
         for policy_client in clients.values():
             policy_client.close()
         dressing_live.LiveCellFactory.build = build_original

@@ -19,10 +19,11 @@ before further comparisons. Existing v4 rollouts provide initial action
 supervision for a flow baseline; dynamic data are additional coverage.
 The prepared v4 cache has 661 train / 149 validation episodes, with disjoint
 body IDs, and 251,906 total commands. The causal chunk loader and flow BC
-entrypoint pass six CPU tests and a two-update real-data smoke. No full
-training or closed-loop improvement is established. Next run bounded static
-imitation training in an available GPU window, implement the flow checkpoint's
-IPC inference adapter and compare matched starts against r1. The current split
+entrypoint and isolated inference client pass eight CPU tests. The first 5,000
+updates completed in 56.1 s; the selected checkpoint's command MSE is 0.02404
+versus zero-command 0.04300. Closed-loop improvement is not established.
+The IPC baseline/flow adapter and five-case matched validation-start runner
+are ready; collect and inspect their results before dynamic training. The current split
 retains all five garments on both sides and cannot measure unseen-garment
 generalization. The teacher may have seen the held-out body IDs.
 
