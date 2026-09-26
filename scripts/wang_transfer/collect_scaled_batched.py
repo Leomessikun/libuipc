@@ -61,6 +61,7 @@ def main():
     p.add_argument("--batch", type=int, default=7)
     p.add_argument("--replicas", type=int, default=2)
     p.add_argument("--workers", type=int, default=6)
+    p.add_argument("--max-offsets", type=int, default=2)
     p.add_argument("--seed", type=int, default=2026092600)
     args = p.parse_args()
     args.out = args.out.resolve()
@@ -102,7 +103,8 @@ def main():
             by_body.setdefault(row["body"], []).append(bool(row.get("accepted")))
         moved = [b for b in bodies if b in skipped and b not in by_body]
         if moved:
-            if offset_index + 1 < len(OFFSETS_MM):
+            # The armhole-aligned start already searches gripper offsets itself; one more offset is enough.
+            if offset_index + 1 < min(len(OFFSETS_MM), args.max_offsets):
                 follow.append((garment, moved, offset_index + 1, stage))
             else:
                 with ledger.lock, (args.out / "no_legal_start.jsonl").open("a") as f:

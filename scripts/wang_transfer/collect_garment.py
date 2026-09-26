@@ -309,10 +309,20 @@ def main():
                         cost = off + 2. * max(0., -0.20 - t) + 2. * max(0., t + 0.05)   # armhole 5-20 cm past the tip
                         ranked.append((cost, degrees, tgt))
             ranked.sort(key=lambda r: r[0])
+            from scipy.spatial import cKDTree
+            collider = cell.arm_points if full_body_faces is None else cell.human_points
+            tree = cKDTree(np.asarray(collider, float))
             for cost, degrees, tgt in ranked[:400]:
                 c, s_ = np.cos(np.radians(degrees)), np.sin(np.radians(degrees))
                 cloth = hang_fit @ np.array([[c, -s_, 0], [s_, c, 0], [0, 0, 1.]]).T + tgt
-                if full_body_faces is None:
+                # Cheap bounds before the exact test: a vertex pair under 3 mm means a surface gap under 3 mm;
+                # every vertex over 4 cm from the body cannot cross it (edges and triangles are ~1-2 cm).
+                nearest = float(tree.query(cloth)[0].min())
+                if nearest < 0.003:
+                    continue
+                if nearest > 0.04:
+                    gap = nearest
+                elif full_body_faces is None:
                     gap = dressing_live.garment_arm_gap(cloth, cell.faces, cell.arm_points, cell.arm_faces)
                 else:
                     gap = dressing_live.garment_arm_gap(cloth, cell.faces, cell.human_points, full_body_faces)
