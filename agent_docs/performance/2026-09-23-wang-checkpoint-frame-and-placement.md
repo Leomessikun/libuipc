@@ -549,3 +549,24 @@ garment in a world (placements pre-checked on CPU-generated bodies, so an illega
 not the world), and `collect_scaled_batched.py` resumes the v4 ledger with 6 such worlds under MPS
 (475 W, 79 C). Bodies with no legal start move to the next placement offset; bodies with no accepted
 replica get one reseeded batched retry instead of the single-slot lookahead rescue.
+
+## v4 multi-garment collection: result (2026-09-26)
+
+Finished: 2,696 recorded attempts, **810 accepted episodes, 251,906 transitions, 153 bodies**, median
+gripper-load p90 46 N (`output/uipc_manip/fmvp_scaled_multigarment_v4_20260925/`, `manifest.json`, 46 GB).
+Of 1,275 (body, garment) units, 911 were attempted and 486 accepted at least once; 364 had no legal start
+at any of the seven offsets.
+
+| garment | units tried | with success | accepted episodes |
+|---|---|---|---|
+| tshirt_26 | 175 | 105 (0.60) | 182 |
+| tshirt_68 | 189 | 101 (0.53) | 172 |
+| tshirt_4 | 211 | 116 (0.55) | 196 |
+| tshirt_392 | 147 | 76 (0.52) | 123 |
+| hospital_gown | 189 | 88 (0.47) | 137 |
+
+Coverage is uneven by pose. Region r = 9 i(shoulder_z) + 3 i(elbow_y) + i(elbow_z). The nine regions with
+elbow_y 98-110 degrees (6-8, 15-17, 24-26) and the high-shoulder ones (23) are nearly empty: 8, 17 and 26
+have no success, and they hold most of the no-legal-start units (26: 48, 17: 38, 23: 38). The gravity-hung
+start is calibrated for one arm pose; with the elbow bent further the hung garment intersects the arm or
+body at every tried offset. Regions with elbow_z 14-30 (11, 14, 20) start legally but succeed 7-13 %.
