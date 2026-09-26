@@ -110,6 +110,19 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Anticipatory dressing pilot on a new branch (2026-09-26).** The owner
+  explicitly authorized trying the GRAB motion / future-informed teacher
+  proposal and creating a new branch. This authorizes motion conversion,
+  implementation, tests, and bounded matched simulation comparisons on
+  `research/anticipatory-dressing`, including the existing single-sleeve task
+  as a diagnostic. It supersedes the 2026-09-22 research-only and
+  no-teacher/student restrictions for this experiment. Teacher training and
+  student distillation remain conditional on useful, learnable anticipation;
+  no novelty or generalization result is assumed. Schedule GPU experiments
+  around the ongoing `9eae3121` garment jobs. Preserve their work and data.
+  The owner also identifies transfer beyond the five Cloth3D training garments
+  as a central motivation; human-motion adaptation alone does not resolve it.
+
 - **Selected task: dress both arms and the torso of a seated person.**
   The owner explicitly abandoned the single-human-arm research direction and
   selected dressing a person sitting in a chair with both human arms raised

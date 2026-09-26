@@ -408,12 +408,14 @@ class BatchedDressingObservationBuilder:
 # ---------------------------------------------------------------------------
 # Camera rigs: explicit intrinsics, body occlusion, range limits
 # ---------------------------------------------------------------------------
-RIG_MODES = ("wang_static_arm", "stretch3_head", "stretch3_head_wrist")
+RIG_MODES = ("wang_static_arm", "wang_live_arm", "stretch3_head", "stretch3_head_wrist")
 """Observation modes rendered by :meth:`BatchedDressingObservationBuilder.rig_visibility`.
 
 ``wang_static_arm`` is Wang RSS 2023's ``pointcloud_3`` on the port's front-oblique
 camera: the arm is captured without the garment, so the sleeve never hides it, and the
-garment is hidden by the body. The ``stretch3`` rigs put a Hello Robot Stretch 3 pan-tilt
+garment is hidden by the body. ``wang_live_arm`` uses the same camera geometry
+with live garment occlusion of the arm; motion experiments freeze this camera
+at its initial pose. The ``stretch3`` rigs put a Hello Robot Stretch 3 pan-tilt
 head camera (RealSense D435if in portrait, 58 x 87 degrees, 0.3 to 3 m) in front of and
 to the right of the person, aimed at the arm, and for ``stretch3_head_wrist`` its gripper
 camera (RealSense D405, 87 x 58 degrees, 7 to 50 cm) rigidly on the tool; both see the arm
@@ -499,7 +501,7 @@ def rig_cameras(cfg: DressingObsConfig, finger, elbow, shoulder, lateral, floor,
     """
     up = torch.zeros_like(finger)
     up[..., 2] = 1.0
-    if cfg.mode == "wang_static_arm":
+    if cfg.mode in ("wang_static_arm", "wang_live_arm"):
         pos, tgt = derive_dressing_cameras_torch(
             finger, shoulder, mode="visible_single", distance_m=cfg.camera_distance_m,
             height_m=cfg.camera_height_m, side=cfg.camera_side,

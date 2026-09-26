@@ -1,5 +1,16 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-26 — Authorized GRAB anticipatory-dressing pilot
+
+The owner authorized a new implementation branch, `research/anticipatory-dressing`,
+in an isolated worktree. The [pilot design and evidence](performance/2026-09-26-anticipatory-dressing-pilot.md)
+records the prior-art check, CPU GRAB-to-recipient conversion, three real motion
+clips and required causal/pause-budget controls. The one-sleeve experiment is
+a diagnostic; it does not replace garment-diversity or whole-garment goals.
+Future-aware teacher training remains conditional on pilot evidence and a
+learnable causal forecasting signal. GPU experiments must wait around the
+ongoing `9eae3121` collection jobs. No improvement result is established yet.
+
 ## 2026-09-23 — Backless seated bilateral pull-up: RL-training design
 
 The owner clarified that the chair has no backrest and asked for a concrete RL

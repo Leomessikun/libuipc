@@ -353,6 +353,15 @@ class GenesisIPCDressingEnv:
     # ------------------------------------------------------------------
     # Scene construction
     # ------------------------------------------------------------------
+    def _make_human_collider(self, mesh, env_idx: int) -> None:
+        """Configure a fixed body; motion experiments override this constitution."""
+        from uipc.constitution import AffineBodyConstitution
+        AffineBodyConstitution().apply_to(mesh, 1e8, np.eye(12), 1.0)
+        self._uipc.view(mesh.instances().find(self._uipc.builtin.is_fixed))[:] = 1
+
+    def _animate_human_collider(self, ipc_object, env_idx: int) -> None:
+        """Optional prescribed-motion registration, after geometry creation."""
+
     def _build_scene(self) -> None:
         gs = self._gs
         cfg = self.cfg
@@ -427,7 +436,7 @@ class GenesisIPCDressingEnv:
         )
         if cfg.ground_plane:
             self.scene.add_entity(gs.morphs.Plane(), material=gs.materials.Rigid(coup_type="ipc_only"))
-        # The arm is a native libuipc fixed affine body rather than a Genesis mesh entity:
+        # The arm is a native libuipc collider rather than a Genesis mesh entity:
         # Genesis re-tessellates imported meshes (1307 vertices became 4885 with duplicates),
         # and the duplicated vertices produced NaN distances in the IPC trajectory filter.
         # The native body is the exact cached arm mesh or full SMPL-X surface.
@@ -442,7 +451,6 @@ class GenesisIPCDressingEnv:
         self._pickers: list[dict] = []
         uipc = self._uipc
         from uipc.constitution import (
-            AffineBodyConstitution,
             DiscreteShellBending,
             ElasticModuli2D,
             NeoHookeanShell,
@@ -453,22 +461,18 @@ class GenesisIPCDressingEnv:
         from uipc.geometry import trimesh as ipc_trimesh
 
         original_add_objects = coupler._add_objects_to_ipc
-        builtin = uipc.builtin
-
         def add_objects_with_garments() -> None:
             original_add_objects()
             for env_idx, cell in enumerate(self.cells):
                 arm = ipc_trimesh(*self.collider_meshes[env_idx])
                 label_surface(arm)
-                # Open surface: use the explicit mass overload, the body is fixed anyway.
-                AffineBodyConstitution().apply_to(arm, 1e8, np.eye(12), 1.0)
-                uipc.view(arm.instances().find(builtin.is_fixed))[:] = 1
+                self._make_human_collider(arm, env_idx)
                 coupler._ipc_contact_tabular.default_element().apply_to(arm)
                 coupler._ipc_subscenes[env_idx].apply_to(arm)
                 # Keep the collider slot so its global vertex block can select contact rows.
-                self.arm_slots.append(
-                    coupler._ipc_objects.create(f"arm_human_{cell.human}_{env_idx}").geometries().create(arm)[0]
-                )
+                human_object = coupler._ipc_objects.create(f"arm_human_{cell.human}_{env_idx}")
+                self.arm_slots.append(human_object.geometries().create(arm)[0])
+                self._animate_human_collider(human_object, env_idx)
                 mesh = ipc_trimesh(cell.cloth, cell.faces)
                 label_surface(mesh)
                 moduli = ElasticModuli2D.youngs_poisson(cfg.cloth_youngs, cfg.cloth_poisson)

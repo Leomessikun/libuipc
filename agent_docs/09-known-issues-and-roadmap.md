@@ -1,5 +1,18 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Anticipatory dressing pilot — 2026-09-26
+
+The owner now authorizes a GRAB-motion / future-informed teacher pilot on
+`research/anticipatory-dressing`; this supersedes the historical research-only
+and no-teacher/student restriction for this scoped experiment. See the
+[pilot contract](performance/2026-09-26-anticipatory-dressing-pilot.md).
+CPU conversion preserves the existing recipient and has produced three
+recorded-motion clips. Remaining gates are valid moving-body IPC tracking,
+a competent static baseline, matched future/causal/pause-budget comparisons,
+and evidence that useful future information is learnable from observations.
+Neither a weak heuristic failure nor an oracle gain settles the research
+question. Motion adaptation does not resolve the five-garment data limitation.
+
 ## Backless-chair bilateral RL design — 2026-09-23
 
 The chair has **no backrest**. The owner is now considering a narrowed task
