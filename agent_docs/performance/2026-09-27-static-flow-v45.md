@@ -86,10 +86,50 @@ terminal holds, and reject a displaced final cloth mesh even when saved success
 flags remain true. A cuff beyond the fingers with wrapped interior sections
 passes the chosen common criterion.
 
-The next gate is matched FMVP/flow execution from preselected v4 validation
-starts with the common endpoint rule for both controllers. Its five-case scope
-is a conditional reproduction diagnostic with an external completion hold;
-it cannot measure unbiased success, unseen garments, or autonomous stopping.
-IPC execution must wait for the other GPU clients. Dynamic teacher/student
-work remains conditional on competent static control and causal anticipation
-evidence; see the [research pilot](2026-09-26-anticipatory-dressing-pilot.md).
+## Automatic follow-through and paired evaluation
+
+`finish_static_flow_run.py` is attached to the live CPU training process
+(PID 839339, identified by its Linux process start time and full command).
+Its current state is `waiting_for_training` at
+`output/anticipatory_dressing/flow_bc_v45_stage/status.json`. It requires the
+expected final 20,000-update checkpoint and matching data hash before proceeding:
+
+1. `audit_flow_bc.py` compares the old v4 and new v4/v5 policies on identical
+   held-out recordings. It checks that neither checkpoint trained on audited
+   body IDs, evaluates start/early/middle/pre-hold/hold commands with seeded
+   Gaussian sampling, and reports translation/yaw command errors by source.
+   This is teacher-forced offline inference, not realized physical tracking.
+2. `eval_static_flow.py` checks checkpoint/data identity and source environment,
+   hang, actor and audited configuration hashes. It then queues five matched
+   FMVP/flow cases, one per garment, with the same common interior-wrap and
+   armhole endpoint. `collect_garment.py --sections-wrap` implements that rule
+   for all controller slots and records the selected interpretation explicitly.
+3. The IPC GPU guard waits until other non-desktop CUDA clients are absent.
+   It never terminates or modifies collection jobs.
+
+The training wait and initial GPU wait are each bounded at 24 hours. The IPC
+execution budget is two hours after the initial GPU wait. An expired wait or
+failed check sets an error state; it does not imply a completed evaluation.
+Training remains running; the follow-through has not yet audited its final
+checkpoint or executed any paired IPC case.
+
+Preflight resolves the same v4 starts as the original five-case diagnostic:
+body 10040 for `tshirt_26`, `tshirt_4`, `tshirt_68`, `hospital_gown`, and 25040
+for `tshirt_392`. They remain held out after merging. The common rule is
+applied to both methods even though these source demonstrations used the
+older cuff-inclusive rule. The runner explicitly rejects unsupported v5
+alignment/material starts, preventing an accidental v4-placement substitution.
+No v5-placement closed-loop claim is made. `--prepare-only` saves cases without
+launching simulation.
+
+Two new reproduction-guard tests pass (17 targeted CPU tests in total): reject
+a checkpoint paired with another training manifest, and reject unsupported
+placement flags. A real five-case CPU preflight also passes and confirms the
+common endpoint flag on every command. A deliberate old-checkpoint/new-data
+combination is rejected. Python compilation and `git diff --check` pass.
+
+The five-case scope is a conditional reproduction diagnostic with an external
+completion hold; it cannot measure unbiased success, unseen garments, or
+autonomous stopping. Dynamic teacher/student work remains conditional on
+competent static control and causal anticipation evidence; see the
+[research pilot](2026-09-26-anticipatory-dressing-pilot.md).

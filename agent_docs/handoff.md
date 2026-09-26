@@ -10,10 +10,17 @@ the older cuff-inclusive rule. No duplicates or rejects. The 8.01 GiB cache
 preserves every v4 body split: train 1,079 episodes / 198 IDs, validation 196 /
 43, with no body overlap. New IDs use stable hash assignments. Provenance
 retains different placement protocols; this is not unseen-garment data.
-Fifteen CPU tests pass. A 20,000-update, two-thread CPU flow run is active under
+Seventeen targeted CPU tests pass. A 20,000-update, two-thread CPU flow run is active under
 `output/anticipatory_dressing/flow_bc_v45_train`; inspect its metrics/checkpoints
-before calling training complete. GPU collection remains active. No paired
-IPC success result exists; dynamic training has not started.
+before calling training complete. `finish_static_flow_run.py` is attached to
+training PID 839339 and currently reports `waiting_for_training` under
+`flow_bc_v45_stage/status.json`. It will verify final completion, audit old/new
+checkpoints on identical held-out windows, then queue the five matched v4-start
+IPC cases with a common endpoint for both methods. The real CPU case preflight
+passes. Training/GPU waits are each bounded at 24 hours; IPC has a two-hour run
+budget. Read parent and nested IPC status before launching a duplicate. GPU
+collection remains active. No paired IPC result exists; dynamic training has
+not started. Unsupported v5 placement flags are rejected by this diagnostic.
 
 ## 2026-09-27 — Additional trajectories and feasibility reassessment
 

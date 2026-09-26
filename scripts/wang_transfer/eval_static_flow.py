@@ -25,7 +25,13 @@ def digest(path):
 
 
 def make_cases(data, checkpoint, out, source_root, garments, steps, noise):
+    import torch
+
     manifest = json.loads((data / "manifest.json").read_text())
+    payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    if (payload.get("format") != "dressing_flow_bc_chunks_v1"
+            or payload["metadata"]["data_manifest_sha256"] != digest(data / "manifest.json")):
+        raise ValueError("Checkpoint was not trained on this data manifest; held-out claims would be invalid")
     validation = [r for r in manifest["episodes"] if r["split"] == "validation"]
     training_bodies = {r["body"] for r in manifest["episodes"] if r["split"] == "train"}
     cases = []
@@ -35,6 +41,15 @@ def make_cases(data, checkpoint, out, source_root, garments, steps, noise):
             raise ValueError("Evaluation body appears in student training data")
         source = Path(row["source_path"])
         run = json.loads((source.parent.parent / "run.json").read_text())
+        if run.get("align_armhole_axis") or run.get("arm_frame_placement") or run.get("friction") is not None:
+            raise ValueError("This reproduction runner supports original placement/material settings; select a v4 start")
+        common_rule = row.get("audit", {}).get("common_rule")
+        if common_rule not in (None, "interior_sections_and_armhole_0.7_hold20_v1"):
+            raise ValueError("Unknown audited endpoint rule")
+        if common_rule is not None and (
+                digest(source.parent.parent / "run.json") != row["audit"]["run_sha256"]
+                or digest(source.parent / "config.json") != row["audit"]["config_sha256"]):
+            raise ValueError("Audited source collection configuration changed")
         package = Path(run["package_root"])
         if digest(package / "uipc_manip/dressing_env.py") != run["environment_sha256"]:
             raise ValueError("Source environment changed; pin it before interpreting reproduction")
@@ -60,11 +75,13 @@ def make_cases(data, checkpoint, out, source_root, garments, steps, noise):
         command.extend(["--placement-offset-mm", *map(str, run["placement_offset_mm"])])
         if run.get("armhole_endpoint"):
             command.append("--armhole-endpoint")
+        if common_rule is not None or run.get("sections_wrap"):
+            command.append("--sections-wrap")
         if run.get("profiles_json") is not None:
             raise ValueError("This diagnostic requires the default source controller profile")
         cases.append(dict(garment=garment, body=row["body"], seed=row["seed"], source_path=str(source),
                           source_training_arrays_sha256=row["training_arrays_sha256"], command=command,
-                          state="pending"))
+                          endpoint_rule=common_rule or "source_collection_rule", state="pending"))
     return cases
 
 
@@ -92,13 +109,15 @@ def main():
     parser.add_argument("--flow-noise", choices=("random", "zero"), default="random")
     parser.add_argument("--wait-for-gpu", type=float, default=3600.)
     parser.add_argument("--wall-budget", type=float, default=7200.)
+    parser.add_argument("--prepare-only", action="store_true", help="Save checked cases without requesting the GPU.")
     args = parser.parse_args()
     if min(args.steps, args.wall_budget) <= 0 or args.wait_for_gpu < 0 or len(set(args.garments)) != len(args.garments):
         raise ValueError("Invalid budget or duplicate garment")
     out, checkpoint = args.out.resolve(), args.flow_checkpoint.resolve(strict=True)
     cases = make_cases(args.data.resolve(), checkpoint, out, args.source_root, args.garments, args.steps, args.flow_noise)
     out.mkdir(parents=True, exist_ok=False)
-    status = dict(state="waiting_for_gpu", cases=cases, checkpoint_sha256=digest(checkpoint),
+    status = dict(state="prepared" if args.prepare_only else "waiting_for_gpu", cases=cases,
+                  checkpoint_sha256=digest(checkpoint),
                   data_manifest_sha256=digest(args.data / "manifest.json"),
                   hold_control="Same external completion hold for both methods",
                   scope="One validation demonstration start per garment; conditional reproduction diagnostic only")
@@ -108,6 +127,9 @@ def main():
         (out / "status.tmp.json").replace(out / "status.json")
 
     write_status()
+    if args.prepare_only:
+        print(f"[prepared] {len(cases)} matched cases; no simulation launched: {out}", flush=True)
+        return
     try:
         idle_gpu(args.wait_for_gpu)
         deadline = time.monotonic() + args.wall_budget

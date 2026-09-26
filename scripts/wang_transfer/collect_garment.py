@@ -81,6 +81,8 @@ def parser():
     p.add_argument("--success", type=float, default=0.7)
     p.add_argument("--success-geometry", choices=("legacy_ratio", "physical_sleeve"), default="legacy_ratio",
                    help="physical_sleeve additionally requires the real cuff and three sleeve sections to wrap the arm.")
+    p.add_argument("--sections-wrap", action="store_true",
+                   help="Require three interior sleeve sections; allow a long cuff beyond the fingertip. Shared by all slots.")
     p.add_argument("--stop-proximal-upper", type=float, default=None,
                    help="Diagnostic endpoint: replace the legacy ratio with the proximal sleeve section's upper-arm fraction; requires physical_sleeve.")
     p.add_argument("--slow-along", type=float, default=0.9,
@@ -157,6 +159,8 @@ def main():
     if args.stop_proximal_upper is not None and (args.success_geometry != "physical_sleeve"
                                                or not 0 < args.stop_proximal_upper <= 1):
         raise ValueError("--stop-proximal-upper requires physical_sleeve and a fraction in (0, 1]")
+    if args.sections_wrap and args.success_geometry != "physical_sleeve":
+        raise ValueError("--sections-wrap requires physical_sleeve")
     profiles = load_profiles(args.profiles_json, len(args.variants)) * args.replicas
     if "flow" in args.variants:
         if args.flow_checkpoint is None:
@@ -486,7 +490,9 @@ def main():
                                       forearm_ratio=float(progress.forearm_ratio))
                         if slots[i]["sleeve"] is not None:
                             geometry = measure_sleeve(slots[i]["sleeve"], positions[i], slots[i]["landmarks"])
-                            values.update(sleeve_wrapped=geometry["sleeve_wrapped"],
+                            wrapped = (all(r["wrapped"] for r in geometry["rings"][1:]) if args.sections_wrap
+                                       else geometry["sleeve_wrapped"])
+                            values.update(sleeve_wrapped=wrapped,
                                           sleeve_cuff_s=geometry["cuff_s"],
                                           sleeve_proximal_upper_fraction=geometry["armhole_upper_fraction" if args.armhole_endpoint else "proximal_upper_fraction"])
                         for key, value in values.items():
@@ -694,6 +700,7 @@ def main():
                                   tcp_rotation_convention="world rotation relative to initial virtual tool orientation; identity at reset",
                                   collision_geometry=args.collision_geometry,
                                   success_geometry=args.success_geometry,
+                                  sections_wrap=args.sections_wrap, armhole_endpoint=args.armhole_endpoint,
                                   stop_proximal_upper=args.stop_proximal_upper,
                                   seed=args.seed, transitions=t, success_state=success_at[i],
                                   handoff_state=handoff_at[i],

@@ -5,12 +5,16 @@
 The [new stage record](performance/2026-09-27-static-flow-v45.md) closes the
 initial merge/provenance gate: 1,275 frozen examples pass a common terminal
 geometry audit; old body splits are preserved and new IDs are stably assigned.
-The data retain five known garments and static humans. Fifteen CPU regressions
+The data retain five known garments and static humans. Seventeen CPU regressions
 pass. A bounded 20,000-update CPU training run is active; completion, phase
-errors and paired IPC performance remain to be checked. Preserve the no-overlap
-GPU preference. A common endpoint must be applied to both evaluation methods,
-and any new-placement start must be reproduced explicitly rather than silently
-using the v4 placement code. GRAB remains outside static training.
+errors and paired IPC performance remain to be checked. The attached follow-through
+under `flow_bc_v45_stage/status.json` waits for final training, audits old/new
+checkpoints on common held-out windows and queues matched IPC tests. Waits for
+training/GPU are each bounded at 24 hours; IPC execution at two hours. Preserve
+the no-overlap GPU preference and inspect status before starting another run.
+Both controllers use the common endpoint. CPU preflight verifies five v4
+starts and rejects unsupported new-placement flags. GRAB remains outside
+static training; v5-placement and unseen-garment closed-loop results remain open.
 
 ## Anticipatory dressing pilot — 2026-09-26
 
