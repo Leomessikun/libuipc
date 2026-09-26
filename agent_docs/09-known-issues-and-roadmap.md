@@ -12,9 +12,11 @@ a competent static baseline, matched future/causal/pause-budget comparisons,
 and evidence that useful future information is learnable from observations.
 Neither a weak heuristic failure nor an oracle gain settles the research
 question. Motion adaptation does not resolve the five-garment data limitation.
-The first GPU smoke failed the 2 mm tracking gate (3.4 mm at 1.95 s).
-Retest tighter Newton convergence before interpreting any controller outcome;
-the finite queued runner stops on invalid physics or an unsuccessful static baseline.
+Tighter Newton convergence fixes the initial tracking failure on the pass/lift
+smokes (maximum errors 0.314/0.0985 mm). The phone hold loses grasp; the current
+runner stops there. Separate this controller failure from body-drive validity
+before further comparisons. Existing v4 rollouts provide initial action
+supervision for a flow/diffusion baseline; dynamic data are additional coverage.
 
 ## Backless-chair bilateral RL design — 2026-09-23
 

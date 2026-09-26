@@ -79,6 +79,49 @@ holdout. The present known-garment pilot cannot support that claim.
 
 ## Motion conversion implemented
 
+### Existing FMVP rollouts are the initial action supervision
+
+The owner emphasized reusing the already collected checkpoint rollouts. A
+read-only inspection of the original workspace on 2026-09-26 confirms that
+`output/uipc_manip/fmvp_scaled_multigarment_v4_20260925/manifest.json` contains
+810 entries marked accepted. Its collection configuration covers `tshirt_26`,
+`tshirt_68`, `tshirt_4`, `tshirt_392` and `hospital_gown`, using the r1 checkpoint.
+This is a manifest count, not a fresh independent geometry audit or a count of
+independent recipients. Older dataset versions can overlap and need deduplication.
+
+One inspected hospital-gown episode contains 270 observations, 269 six-axis
+action commands, 270 cloth meshes and tool poses, a static full-body mesh,
+and per-transition grasp validity. Its controller IDs identify 249 FMVP
+decisions followed by 20 hold decisions. The alignment is
+`obs[t] -> actions[t] -> obs[t+1]`. These recordings already supply supervised
+pull-up behavior; GRAB supplies recipient motion, not robot actions.
+
+The recommended training order is to first establish a history-conditioned
+flow/diffusion imitation baseline from existing valid rollouts. For example,
+three past observations can condition the next eight recorded action commands;
+these window lengths are proposed hyperparameters. Match the deployment action
+frame, scale and decision period, mask episode ends, balance hold segments,
+and split by whole episodes/bodies/garment identities before extracting windows.
+Distinguish `policy_actions` (raw proposals), `actions` (commands submitted to
+the environment), and `executed_translation` (accepted anchor displacement).
+The virtual-gripper Cartesian commands are not robot joint trajectories.
+
+This baseline does not require new dynamic demonstrations or an IPC solve per
+gradient update. The current actor's visual encoder may be reusable, but a new
+flow action head is not the same network as the FMVP actor. No flow-policy
+training has started. The existing BC scripts offer data-contract references;
+they fine-tune the original actor and do not implement action-chunk flow matching.
+
+If the dynamic pilot supports further work, use the pretrained policy or r1
+as an action proposal in moving-body simulations, collect teacher-corrected
+recovery decisions, and train with both existing and new data. Superimposing
+GRAB motion on an old successful robot trajectory does not make its old actions
+valid dynamic supervision: contact outcomes must be recomputed. Failed actions
+must not be treated as successful imitation targets. New-garment supervision
+still depends on obtaining physically valid behavior on those garments.
+
+### GRAB conversion
+
 `python/uipc_manip/grab_motion.py` and
 `scripts/wang_transfer/prepare_grab_motion.py` read trusted local GRAB NPZ
 files and export a pickle-free motion archive. Right collar, shoulder, elbow
@@ -247,6 +290,20 @@ OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
 
 Read `status.json` in that output directory before launching another copy.
 No policy improvement or novelty result has been established.
+
+### Rerun outcome
+
+The queued runner has now stopped at its motion gate. With the tighter Newton
+setting, the pass clip completes all 40 hold decisions with maximum body error
+0.314 mm; the lift clip completes 40 with maximum body error 0.0985 mm. Both
+pass the 2 mm target-tracking check. The phone clip stops after its fifth
+decision because garment grasp tracking exceeds the grasp-validity limit;
+maximum recorded body tracking error is 0.754 mm. This last failure is a
+stationary-gripper task failure, not an observed violation of the human
+tracking limit. The current runner conservatively stops on it; separating
+motion-physics validity from this legitimate controller failure remains open.
+Static r1 and the five-controller comparisons have not run. These smoke checks
+produce no evidence of anticipation gains.
 
 The force reproducibility, gradient horizon and landmark-error numbers in
 the proposed plan came from earlier limited audits. They should not be
