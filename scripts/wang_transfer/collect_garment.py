@@ -103,6 +103,13 @@ def parser():
     p.add_argument("--cloth-density", type=float, default=None,
                    help="Optional kg/m^3 material-density override; save and extract separately from default physics.")
     p.add_argument("--garment", default="tshirt_26")
+    p.add_argument("--align-armhole-axis", action="store_true",
+                   help="Start with the forearm's extension through the armhole centre (first legal of the best-aligned placements).")
+    p.add_argument("--sections-wrap", action="store_true",
+                   help="Sleeve on the arm = its three interior sections wrap the arm; the cuff may hang past the hand.")
+    p.add_argument("--arm-frame-placement", action="store_true",
+                   help="Place the gripper and opening in a frame whose x follows this arm's forearm (FMVP's rule).")
+    p.add_argument("--friction", type=float, default=None, help="Cloth-body friction override.")
     p.add_argument("--batch-bodies", type=int, default=1,
                    help="Put this many bodies (same garment) in one IPC world; each keeps its replicas. No lookahead.")
     p.add_argument("--body-fit-filter", type=float, default=None, help="Wang's body thickness filter in metres (0.18).")
@@ -249,8 +256,21 @@ def main():
         placement_started = time.monotonic()
         cell = build_original(factory, garment, human)
         finger = np.asarray(cell.finger, float)
+        frame = rotation
+        if args.arm_frame_placement:
+            # FMVP places the gripper along the forearm (wrist + 2 hand radii along it), not at a fixed world
+            # offset. Keep the model frame's up and handedness, but point its x along this arm's forearm
+            # (horizontal part), so the hung opening faces the hand whatever the elbow does.
+            forward = np.asarray(cell.elbow, float) - finger
+            forward[2] = 0.
+            forward /= np.linalg.norm(forward)
+            up = rotation[1] / np.linalg.norm(rotation[1])
+            side = np.cross(forward, up)
+            if np.sign(np.linalg.det(np.stack([forward, up, side]))) != np.sign(np.linalg.det(rotation)):
+                side = -side
+            frame = np.stack([forward, up, side])
         target = finger + (np.array([-0.033, 0.106, -0.003])
-                           + np.asarray(args.placement_offset_mm, float) / 1000.) @ rotation
+                           + np.asarray(args.placement_offset_mm, float) / 1000.) @ frame
         desired_opening = np.array([-0.085, -0.135, -0.050])
         fit_scale = 1.
         if args.fit_sleeve_ratio is not None:
@@ -267,8 +287,42 @@ def main():
             arm_r = float(np.median(radial[radial < 0.12]))
             fit_scale = max(1., args.fit_sleeve_ratio * arm_r / sleeve_r)
         hang_fit = hang * fit_scale
+        aligned = False
+        if args.align_armhole_axis:
+            # Aim the forearm at the armhole: over turns and small gripper offsets, rank candidates by how far
+            # the armhole centre sits from the forearm's extension beyond the fingertip (5-20 cm out), and take
+            # the first legal one. The calibrated PyBullet opening coordinates do not ensure this for other
+            # garments and scales, and the hand then meets the garment beside the opening.
+            elbow = np.asarray(cell.elbow, float)
+            fwd = (elbow - finger) / np.linalg.norm(elbow - finger)
+            ranked = []
+            for dy in (-40., -20., 0., 20., 40.):
+                for dz in (-60., -40., -20., 0., 20., 40., 60.):
+                    tgt = finger + (np.array([-0.033, 0.106, -0.003]) + (np.asarray(args.placement_offset_mm, float)
+                                                                          + np.array([0., dy, dz])) / 1000.) @ frame
+                    for degrees in range(0, 360, 5):
+                        c, s_ = np.cos(np.radians(degrees)), np.sin(np.radians(degrees))
+                        turn = np.array([[c, -s_, 0], [s_, c, 0], [0, 0, 1.]])
+                        ah = (hang_fit[cell.opening_idx].mean(0)) @ turn.T + tgt - finger
+                        t = float(ah @ fwd)
+                        off = float(np.linalg.norm(ah - t * fwd))
+                        cost = off + 2. * max(0., -0.20 - t) + 2. * max(0., t + 0.05)   # armhole 5-20 cm past the tip
+                        ranked.append((cost, degrees, tgt))
+            ranked.sort(key=lambda r: r[0])
+            for cost, degrees, tgt in ranked[:400]:
+                c, s_ = np.cos(np.radians(degrees)), np.sin(np.radians(degrees))
+                cloth = hang_fit @ np.array([[c, -s_, 0], [s_, c, 0], [0, 0, 1.]]).T + tgt
+                if full_body_faces is None:
+                    gap = dressing_live.garment_arm_gap(cloth, cell.faces, cell.arm_points, cell.arm_faces)
+                else:
+                    gap = dressing_live.garment_arm_gap(cloth, cell.faces, cell.human_points, full_body_faces)
+                if gap >= 0.003:
+                    target = tgt
+                    hang_fit = hang_fit @ np.array([[c, -s_, 0], [s_, c, 0], [0, 0, 1.]]).T
+                    aligned = True
+                    break
         best = None
-        for degrees in range(0, 360, 5):
+        for degrees in ((0,) if aligned else range(0, 360, 5)):
             c, s = np.cos(np.radians(degrees)), np.sin(np.radians(degrees))
             turn = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1.]])
             cloth = hang_fit @ turn.T + target
@@ -278,7 +332,7 @@ def main():
                 gap = dressing_live.garment_arm_gap(cloth, cell.faces, cell.human_points, full_body_faces)
             if gap < 0.003:
                 continue
-            opening = (cloth[cell.opening_idx].mean(0) - finger) @ rotation.T
+            opening = (cloth[cell.opening_idx].mean(0) - finger) @ frame.T
             error = float(np.linalg.norm(opening - desired_opening))
             if best is None or error < best[0]:
                 best = (error, degrees, gap, opening, cloth)
@@ -341,6 +395,8 @@ def main():
             material = {} if args.cloth_density is None else {"cloth_density": args.cloth_density}
             if args.cloth_strain_rate is not None:
                 material["cloth_strain_rate"] = args.cloth_strain_rate
+            if args.friction is not None:
+                material["friction"] = args.friction
             cfg = replace(train_sac.dressing_config(training_args),
                           cells=tuple((args.garment, b) for b in slot_body), cell_source="live",
                           collision_geometry=args.collision_geometry,
@@ -464,7 +520,7 @@ def main():
                                       forearm_ratio=float(progress.forearm_ratio))
                         if slots[i]["sleeve"] is not None:
                             geometry = measure_sleeve(slots[i]["sleeve"], positions[i], slots[i]["landmarks"])
-                            values.update(sleeve_wrapped=geometry["sleeve_wrapped"],
+                            values.update(sleeve_wrapped=geometry["sections_wrapped" if args.sections_wrap else "sleeve_wrapped"],
                                           sleeve_cuff_s=geometry["cuff_s"],
                                           sleeve_proximal_upper_fraction=geometry["armhole_upper_fraction" if args.armhole_endpoint else "proximal_upper_fraction"])
                         for key, value in values.items():

@@ -570,3 +570,27 @@ elbow_y 98-110 degrees (6-8, 15-17, 24-26) and the high-shoulder ones (23) are n
 have no success, and they hold most of the no-legal-start units (26: 48, 17: 38, 23: 38). The gravity-hung
 start is calibrated for one arm pose; with the elbow bent further the hung garment intersects the arm or
 body at every tried offset. Regions with elbow_z 14-30 (11, 14, 20) start legally but succeed 7-13 %.
+
+## Why rollouts fail (2026-09-26)
+
+Of 1,886 failed v4 attempts, 96 % end the same way: the garment stops and the gripper keeps pulling
+until the held patch is 20 mm off target. Ruled out by same-body, same-seed reruns: forearm-frame start
+placement (0/6 vs 0/6, 0/8 vs 0/8), friction 0.15 (2/14 vs 2/14), sleeve clearance 1.4 (2/12), and a
+soft grasp (grasp stiffness x4.444 or density 3333: still 0/8, with half the attempts ending over
+1,000 N of gripper load, so the jams are physical). Contact at the jam (`jam_contacts.py`, 300 failed /
+300 accepted): in failures the arm is inside the sleeve at the end 16 % of the time and the garment's
+torso panel lies on the arm; in successes 100 %.
+
+Per sleeve section:
+* **Criterion bug, long sleeves.** A fully-on long sleeve ends with its cuff at or past the fingertip,
+  where the cuff ring cannot wrap the arm, so `sleeve_wrapped` (all four rings) never held: 95 % of
+  tshirt_392 failures with the three interior sections on the arm had the armhole past 0.7. The collector's
+  `--sections-wrap` uses the three interior sections (`measure()` returns `sections_wrapped`). Same bodies
+  and seed: tshirt_4 0/14 -> 11/14 (6 of 7 bodies; rendered endpoints are dressed), tshirt_392 1/12 -> 3/12.
+* **Never threaded** (hand meets the garment beside the armhole): tshirt_392 mostly, 20-35 % elsewhere.
+  Starting with the armhole further off the forearm axis lowers success (> 1.5 armhole radii: 31 %,
+  within 1: 48 %). `--align-armhole-axis` starts from the first legal of the placements that put the
+  armhole centre closest to the forearm's extension 5-20 cm past the fingertip (under test).
+* **Stall past the shoulder** (short sleeves, gown): the armhole trails the grasp by about 30 cm, so it
+  reaches 0.7 only if the gripper goes 20-26 cm past the shoulder; successes do (1.8-2.0 along
+  elbow->shoulder), failures stop at 1.15-1.43 and lose the sleeve there.

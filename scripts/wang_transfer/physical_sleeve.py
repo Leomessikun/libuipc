@@ -180,7 +180,10 @@ def measure(sections, cloth, landmarks):
     elbow, shoulder = landmarks[1], landmarks[2]
     seam = cloth[sections.armhole].mean(0) - elbow
     armhole_fraction = float(seam @ (shoulder - elbow) / np.dot(shoulder - elbow, shoulder - elbow))
+    # The three interior sections, not the cuff: a long sleeve that is fully on (tshirt_392, tshirt_4) ends
+    # with its cuff at or past the fingertip, where the cuff ring cannot wrap the arm.
     return dict(sleeve_wrapped=all(r['wrapped'] for r in rings),
+                sections_wrapped=all(r['wrapped'] for r in rings[1:]),
                 cuff_s=rings[0]['s'], proximal_upper_fraction=float(upper_fraction),
                 armhole_upper_fraction=armhole_fraction, rings=rings)
 
