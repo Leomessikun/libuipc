@@ -290,7 +290,15 @@ def main(argv: list[str] | None = None) -> None:
     if a.self_test:
         _self_test(a.checkpoint)
     elif a.serve:
-        serve(ReferencePolicy(a.checkpoint, device=a.device, yaw_deg=a.yaw, voxel=a.voxel))
+        import torch
+
+        payload = torch.load(str(a.checkpoint), map_location="cpu", weights_only=False)
+        if isinstance(payload, dict) and "flow_policy" in payload:
+            from .flow_policy import FlowPolicy
+
+            serve(FlowPolicy(a.checkpoint, device=a.device, yaw_deg=a.yaw, voxel=a.voxel))
+        else:
+            serve(ReferencePolicy(a.checkpoint, device=a.device, yaw_deg=a.yaw, voxel=a.voxel))
     else:
         p.print_help()
 
