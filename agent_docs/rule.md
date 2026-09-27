@@ -130,6 +130,13 @@ record it here in the same commit.**
   reconcile v4/v5 recordings, continue static training and matched evaluation,
   then test dynamic anticipation and collect targeted corrections as justified
   by those results. This does not override the GPU no-overlap preference.
+  The owner explicitly corrected a dispatcher pause on 2026-09-27: keep
+  trajectory collection running. Do not pause or terminate its dispatcher or
+  workers to reserve an evaluation window without an explicit owner request.
+  Having enough data for an initial training/evaluation pilot is not a reason
+  to stop collecting. Schedule experiments around collection and use natural
+  availability or an owner-specified window; do not restart the collection
+  lease based on the earlier authorization to proceed.
 
 - **Selected task: dress both arms and the torso of a seated person.**
   The owner explicitly abandoned the single-human-arm research direction and

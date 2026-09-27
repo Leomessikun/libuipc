@@ -113,9 +113,9 @@ passes the chosen common criterion.
 ## Automatic follow-through and paired evaluation
 
 `finish_static_flow_run.py` verified the final CPU training checkpoint and
-completed the offline phase audit. Its current state is `ipc_runner` at
-`output/anticipatory_dressing/flow_bc_v45_stage/status.json`; the nested
-`ipc/status.json` reports `waiting_for_gpu`. Its sequence is:
+completed the offline phase audit. The stage and nested IPC status files now
+report `interrupted` after the owner requested uninterrupted collection (see
+the scheduling correction below). No evaluator remains queued. Its sequence was:
 
 1. `audit_flow_bc.py` compares the old v4 and new v4/v5 policies on identical
    held-out recordings. It checks that neither checkpoint trained on audited
@@ -133,8 +133,19 @@ completed the offline phase audit. Its current state is `ipc_runner` at
 The training wait and initial GPU wait are each bounded at 24 hours. The IPC
 execution budget is two hours after the initial GPU wait. An expired wait or
 failed check sets an error state; it does not imply a completed evaluation.
-Training and the offline audit are complete. No paired IPC case has executed
-yet; all five remain pending while existing GPU clients finish.
+Training and the offline audit are complete. Two IPC cases completed before
+the evaluation was canceled; the third was interrupted and two remain pending.
+
+| Garment / body | FMVP accepted / first success | Flow accepted / first success | Maximum initial cloth difference |
+| --- | --- | --- | ---: |
+| tshirt_26 / 10040 | yes / decision 292 | yes / decision 305 | 4.01 mm |
+| tshirt_4 / 10040 | yes / decision 295 | yes / decision 291 | 5.52 mm |
+
+Both methods completed the 20-decision hold with valid grasps and no simulator
+error in these two cases. The initial TCP positions agree, but independently
+settled cloth states do not. These are preliminary completions on two selected
+static starts, not exactly matched evidence of improvement, an unbiased
+success rate, unseen-garment transfer, or learned autonomous stopping.
 
 Preflight resolves the same v4 starts as the original five-case diagnostic:
 body 10040 for `tshirt_26`, `tshirt_4`, `tshirt_68`, `hospital_gown`, and 25040
@@ -157,7 +168,7 @@ autonomous stopping. Dynamic teacher/student work remains conditional on
 competent static control and causal anticipation evidence; see the
 [research pilot](2026-09-26-anticipatory-dressing-pilot.md).
 
-## Moving from collection to evaluation
+## Collection continues; evaluation scheduling correction
 
 The owner asked whether the accumulated trajectories suffice to move on.
 They suffice for the first static closed-loop diagnostic; no universal sample
@@ -168,24 +179,25 @@ entries are not all re-audited or included in the trained frozen cache.
 Do not restart training solely to consume every newly arriving demonstration
 before evaluating the existing model.
 
-To obtain a serial evaluation window without interrupting running collection
-batches, `collection_eval_lease.py` temporarily SIGSTOPs only dispatcher PID
-550064. Its six existing collector children continue writing their own logs
-and archives. Their ledger entries will be processed when the dispatcher is
-resumed. The selected collection path and readable manifest were verified
-after the pause. Original source files and trajectory files are unchanged.
+The agent used `collection_eval_lease.py` to pause dispatcher PID 550064 while
+its six active children finished, then ran the queued evaluator. The owner
+objected: the authorization to advance the research did not authorize pausing
+collection. The agent terminated only its evaluation guardian and evaluation
+subtree, and the guardian resumed the original dispatcher. Verification found
+the same dispatcher identity in state S and six new `collector.py` processes.
+The lease record reports `collector_resumed: true`; its interruption error is
+retained as history. No collection worker was signaled and no trajectory file
+was deleted. Parent and nested evaluation statuses explicitly record this
+interruption and preserve both completed cases and partial output.
 
-The active lease is recorded in `flow_bc_v45_stage/collection_eval_lease.json`
-and currently reports `draining_collection`. The already queued evaluator is
-PID 3029525. The lease restores the same dispatcher with SIGCONT after the
-evaluation completes or errors. If evaluation does not start within one hour,
-or exceeds a 7,500 s execution window, it cancels only our evaluation subtree
-and restores collection. Other GPU users are never signaled; a new unrelated
-GPU job can still delay this window. The dispatcher pause is a temporary
-scheduling action, not termination of collection or its workers.
+After resumption, v5's ledger contains 1,464 accepted entries / 463,236 commands,
+giving 2,274 v4/v5 entries / 715,142 commands. This growing raw count is not the
+audited training cache. More varied trajectories remain useful; the evidence
+does not identify a data-sufficiency threshold for the final research task.
 
-Two process tests passed: the dispatcher is stopped while its child completes,
-and the dispatcher resumes after either normal evaluation completion or a
-timeout. There are now 19 targeted CPU tests across the data, geometry,
-inference, evaluation-protocol and scheduling checks. Read the lease and nested
-IPC status before launching another evaluator or managing the dispatcher.
+Do not restart this lease or pause collection to create a GPU window without
+an explicit owner request. Keep collecting and schedule evaluations during
+natural availability or an owner-specified window. The previous 19 targeted
+CPU tests included scheduling recovery checks; those checks do not establish
+authorization to change another job's schedule. This correction ran no new
+training or simulation.

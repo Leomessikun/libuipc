@@ -8,16 +8,18 @@ geometry audit; old body splits are preserved and new IDs are stably assigned.
 The data retain five known garments and static humans. The 20,000-update CPU
 run and common 196-episode offline audit are complete. Start/middle command
 errors improve, pre-hold is slightly worse and terminal stopping remains
-imperfect; no closed-loop gain is established. The next gate is the queued
-five-case IPC diagnostic. `flow_bc_v45_stage/status.json` reports `ipc_runner`
-and nested `ipc/status.json` is `waiting_for_gpu`. Do not launch a duplicate.
-Following the owner's request to move beyond collection, an active dispatcher
-lease drains the six existing batches while temporarily preventing new jobs.
-Read `flow_bc_v45_stage/collection_eval_lease.json`: dispatcher PID 550064 is
-restored after evaluation or timeout; its child collectors are never signaled.
-Drain/start wait is bounded at one hour, the evaluation window at 7,500 s.
-Other GPU users can still delay it. Nineteen targeted CPU tests pass, including
-normal/error scheduling recovery. Preserve serial collection/evaluation.
+imperfect; no closed-loop gain is established. The five-case IPC diagnostic
+was interrupted after the owner objected to pausing collection. Dispatcher
+PID 550064 was resumed and six new collectors were verified running. Our
+evaluation and guardian exited; no evaluator remains queued. Do not pause
+collection or restart the lease without an explicit owner request. Readiness
+for a first pilot does not establish that enough trajectories have been collected.
+Both stage and nested IPC statuses now report `interrupted`. The two completed
+cases (`tshirt_26`, `tshirt_4`) passed for both methods, but initial cloth states
+differ by up to 4.01/5.52 mm. The third case was interrupted and two remain
+pending. Preserve those results and finish evaluation during natural GPU
+availability or an owner-specified window. Nineteen targeted CPU tests had
+passed; no additional simulation was launched during this correction.
 Both controllers use the common endpoint. CPU preflight verifies five v4
 starts and rejects unsupported new-placement flags. GRAB remains outside
 static training; v5-placement and unseen-garment closed-loop results remain open.
