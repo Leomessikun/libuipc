@@ -1,5 +1,21 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Continue the active Claude flow evaluation — 2026-09-27
+
+Claude's frozen-r1-encoder flow policy completed 30,000 updates on its
+2,361-episode v4/v5 index. Its 410 planned evaluations are running alongside
+collection. The new CPU audit keeps pending/no-start/failed results visible
+and checks saved acceptance evidence, checkpoint identity, body splits and
+actual initial-state differences. Seven regressions pass. Read the live
+report before making a success claim; no completed cases existed when this
+entry was written. Details: [continuation record](performance/2026-09-27-claude-flow-continuation.md).
+
+Next: finish this evaluation, inspect failures and pairing, then compare
+with a matched geometry-only input before adopting its simulated-force
+conditioning. The test is on seen garments and on body IDs drawn from the
+accepted-data population. It does not establish new-garment transfer or
+anticipatory control. Keep collection and existing evaluation running.
+
 ## Completed static diagnostic and independent motion failure — 2026-09-27
 
 The five-case diagnostic is complete: flow four accepted, FMVP three. Both

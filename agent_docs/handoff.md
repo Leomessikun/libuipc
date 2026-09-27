@@ -1,5 +1,24 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-27 — Continue Claude's completed flow training and active evaluation
+
+The owner asked to inspect and continue Claude's work. Its original workspace
+contains a newer 2,361-episode index and a completed 30,000-update flow policy
+with a frozen r1 encoder and gripper-force input. A four-worker evaluation
+has started over 41 held-out body/pose IDs x five garments x r1/flow (410
+planned results). Six collection workers remain active. Preserve these jobs;
+do not launch duplicate static training/evaluation. No new closed-loop
+results have completed at this handoff.
+
+This branch adds a read-only CPU audit and seven passing regressions. It
+retains the full denominator, verifies saved holds/checkpoint identity and
+body splits, and measures actual paired initial geometry. Its active watcher
+and evidence live in `output/anticipatory_dressing/claude_flow_continuation_20260927`.
+See [the continuation record](performance/2026-09-27-claude-flow-continuation.md)
+for source commits, model identity, results and limitations. This force-input
+model is separate from this branch's earlier geometry/history-only flow BC.
+Neither establishes dynamic anticipation or unseen-garment transfer.
+
 ## 2026-09-27 — Static diagnostic finished; valid-motion continuation running
 
 All five selected static cases are complete: flow accepts four, FMVP three.

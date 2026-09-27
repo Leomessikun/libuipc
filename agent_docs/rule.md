@@ -110,6 +110,11 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Continue Claude's existing dressing work (2026-09-27).** The owner asked
+  to inspect what Claude implemented and continue from it. Read its current
+  code, checkpoints, logs and active jobs when selecting the next step;
+  preserve the previously authorized ongoing collection.
+
 - **Anticipatory dressing pilot on a new branch (2026-09-26).** The owner
   explicitly authorized trying the GRAB motion / future-informed teacher
   proposal and creating a new branch. This authorizes motion conversion,
