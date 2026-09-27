@@ -108,6 +108,8 @@ def main():
     parser.add_argument("--steps", type=int, default=750)
     parser.add_argument("--flow-noise", choices=("random", "zero"), default="random")
     parser.add_argument("--wait-for-gpu", type=float, default=3600.)
+    parser.add_argument("--allow-shared-gpu", action="store_true",
+                        help="Run alongside existing CUDA jobs when GPU sharing is authorized.")
     parser.add_argument("--wall-budget", type=float, default=7200.)
     parser.add_argument("--prepare-only", action="store_true", help="Save checked cases without requesting the GPU.")
     args = parser.parse_args()
@@ -117,6 +119,7 @@ def main():
     cases = make_cases(args.data.resolve(), checkpoint, out, args.source_root, args.garments, args.steps, args.flow_noise)
     out.mkdir(parents=True, exist_ok=False)
     status = dict(state="prepared" if args.prepare_only else "waiting_for_gpu", cases=cases,
+                  gpu_scheduling="shared" if args.allow_shared_gpu else "exclusive_idle_wait",
                   checkpoint_sha256=digest(checkpoint),
                   data_manifest_sha256=digest(args.data / "manifest.json"),
                   hold_control="Same external completion hold for both methods",
@@ -131,10 +134,14 @@ def main():
         print(f"[prepared] {len(cases)} matched cases; no simulation launched: {out}", flush=True)
         return
     try:
-        idle_gpu(args.wait_for_gpu)
+        if args.allow_shared_gpu:
+            print("[gpu] shared execution authorized; collection continues, evaluation cases run sequentially", flush=True)
+        else:
+            idle_gpu(args.wait_for_gpu)
         deadline = time.monotonic() + args.wall_budget
         for case in cases:
-            idle_gpu(max(0., min(args.wait_for_gpu, deadline - time.monotonic())))
+            if not args.allow_shared_gpu:
+                idle_gpu(max(0., min(args.wait_for_gpu, deadline - time.monotonic())))
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("Paired evaluation wall budget exhausted")

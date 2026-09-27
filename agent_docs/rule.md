@@ -137,6 +137,12 @@ record it here in the same commit.**
   to stop collecting. Schedule experiments around collection and use natural
   availability or an owner-specified window; do not restart the collection
   lease based on the earlier authorization to proceed.
+  Later on 2026-09-27, the owner pointed out roughly 60 GB of free GPU memory
+  and requested concurrent work. Shared GPU evaluation is now authorized;
+  this supersedes the earlier no-overlap preference for this pilot. Keep
+  collection running, use one additional evaluation process at a time, and
+  observe memory use and collection progress. This does not authorize pausing
+  the collector or restarting the dispatcher lease.
 
 - **Selected task: dress both arms and the torso of a seated person.**
   The owner explicitly abandoned the single-human-arm research direction and

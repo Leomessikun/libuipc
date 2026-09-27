@@ -1,5 +1,17 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Shared GPU continuation — 2026-09-27
+
+The owner now authorizes evaluation alongside collection, superseding the
+earlier no-overlap preference. Keep the collector running. The opt-in
+`eval_static_flow.py --allow-shared-gpu` runs the three remaining cases
+sequentially in `flow_bc_v45_stage/ipc_shared_20260927` with a 1,800 s budget.
+Two completed cases in the original directory remain valid preliminary
+observations. Initial GPU sampling found 59,274 MiB free but 100% utilization;
+sharing memory capacity does not imply free compute. Six collectors remain
+active with the additional evaluator. Inspect both results and
+`shared_gpu_monitor.jsonl`; do not restart the collection pause lease.
+
 ## Static flow v4/v5 reconciliation — 2026-09-27
 
 The [new stage record](performance/2026-09-27-static-flow-v45.md) closes the
@@ -11,14 +23,14 @@ errors improve, pre-hold is slightly worse and terminal stopping remains
 imperfect; no closed-loop gain is established. The five-case IPC diagnostic
 was interrupted after the owner objected to pausing collection. Dispatcher
 PID 550064 was resumed and six new collectors were verified running. Our
-evaluation and guardian exited; no evaluator remains queued. Do not pause
+original evaluation and guardian exited. Do not pause
 collection or restart the lease without an explicit owner request. Readiness
 for a first pilot does not establish that enough trajectories have been collected.
 Both stage and nested IPC statuses now report `interrupted`. The two completed
 cases (`tshirt_26`, `tshirt_4`) passed for both methods, but initial cloth states
 differ by up to 4.01/5.52 mm. The third case was interrupted and two remain
-pending. Preserve those results and finish evaluation during natural GPU
-availability or an owner-specified window. Nineteen targeted CPU tests had
+pending at that point. The shared-GPU continuation above now covers them.
+Nineteen targeted CPU tests had
 passed; no additional simulation was launched during this correction.
 Both controllers use the common endpoint. CPU preflight verifies five v4
 starts and rejects unsupported new-placement flags. GRAB remains outside

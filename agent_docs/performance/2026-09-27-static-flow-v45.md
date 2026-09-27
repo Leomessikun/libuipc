@@ -7,8 +7,9 @@ FMVP data, establish static closed-loop competence, test the value and
 learnability of future human motion, then collect targeted corrections.
 This stage covers the first two steps on `research/anticipatory-dressing`.
 GRAB is not included in this static training dataset. Preserve the original
-workspace and its active collection; GPU sharing remains unauthorized under
-the earlier no-overlap preference.
+workspace and its active collection. The owner later authorized shared GPU
+evaluation on 2026-09-27; the continuation below supersedes the earlier
+no-overlap preference. Pausing collection remains unauthorized.
 
 ## Common data audit
 
@@ -115,7 +116,8 @@ passes the chosen common criterion.
 `finish_static_flow_run.py` verified the final CPU training checkpoint and
 completed the offline phase audit. The stage and nested IPC status files now
 report `interrupted` after the owner requested uninterrupted collection (see
-the scheduling correction below). No evaluator remains queued. Its sequence was:
+the scheduling correction below). That evaluator exited; the separately
+authorized shared-GPU continuation is recorded below. Its sequence was:
 
 1. `audit_flow_bc.py` compares the old v4 and new v4/v5 policies on identical
    held-out recordings. It checks that neither checkpoint trained on audited
@@ -196,8 +198,43 @@ audited training cache. More varied trajectories remain useful; the evidence
 does not identify a data-sufficiency threshold for the final research task.
 
 Do not restart this lease or pause collection to create a GPU window without
-an explicit owner request. Keep collecting and schedule evaluations during
-natural availability or an owner-specified window. The previous 19 targeted
+an explicit owner request. Keep collecting; the later shared-GPU authorization
+below permits concurrent evaluation. The previous 19 targeted
 CPU tests included scheduling recovery checks; those checks do not establish
 authorization to change another job's schedule. This correction ran no new
 training or simulation.
+
+## Shared GPU continuation
+
+The owner subsequently pointed out approximately 60 GB of available GPU memory
+and requested concurrent execution. This authorizes sharing and supersedes the
+earlier no-overlap preference, while keeping the collector running.
+`eval_static_flow.py --allow-shared-gpu` bypasses the existing idle-device wait
+and records the scheduling mode in `status.json`; the default remains the
+idle-device wait. Only one evaluation case runs at a time. No collection process
+or source configuration is modified. The two existing reproduction-guard tests
+and Python compilation pass after the CLI change.
+
+The remaining three cases were launched in a fresh output directory, preserving
+the original completed and interrupted outputs:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+CUDA_MPS_PIPE_DIRECTORY=/home/ge47gax/.mps_pipe \
+CUDA_MPS_LOG_DIRECTORY=/home/ge47gax/.mps_log \
+  /home/ge47gax/kun/genesis-world/.venv/bin/python -u \
+  scripts/wang_transfer/eval_static_flow.py \
+  --data output/anticipatory_dressing/flow_bc_v45_data \
+  --flow-checkpoint output/anticipatory_dressing/flow_bc_v45_train/best.pt \
+  --out output/anticipatory_dressing/flow_bc_v45_stage/ipc_shared_20260927 \
+  --garments tshirt_68 tshirt_392 hospital_gown \
+  --allow-shared-gpu --wall-budget 1800
+```
+
+Before launch, GPU 0 had 59,274 MiB free with 100% utilization. An early sample
+with the evaluation client allocated reported 55,313 MiB free; all six collection
+workers remained active and the v5 ledger contained 1,467 accepted entries.
+The free memory accommodates this additional job, but compute contention may
+increase wall times. Live samples are retained in
+`flow_bc_v45_stage/shared_gpu_monitor.jsonl`. These are operational observations,
+not a controlled throughput benchmark. The continuation is still running.

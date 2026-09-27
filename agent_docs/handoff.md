@@ -1,5 +1,21 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-27 — Shared GPU evaluation authorized and running
+
+The owner pointed out roughly 60 GB of available GPU memory and requested
+concurrent work. This supersedes the earlier no-overlap preference; collection
+must remain running. `eval_static_flow.py --allow-shared-gpu` now bypasses only
+the idle-device wait and records `gpu_scheduling: shared`. Its default still
+waits for an idle device. Cases run sequentially; no collector is signaled.
+The remaining `tshirt_68`, `tshirt_392`, and `hospital_gown` cases are running
+under `flow_bc_v45_stage/ipc_shared_20260927`, with a 1,800 s total budget.
+The original completed cases and interrupted output are preserved. At launch
+there were 59,274 MiB free and 100% GPU utilization; an early sample with
+evaluation allocated showed 55,313 MiB free and six live collector workers.
+Memory capacity permits the additional job, but compute is shared; do not
+claim unchanged collection throughput. Samples are recorded in
+`flow_bc_v45_stage/shared_gpu_monitor.jsonl`. Two reproduction-guard tests pass.
+
 ## 2026-09-27 — Reconciled data and continued static training
 
 The owner approved proceeding with the four-step sequence. The
@@ -20,8 +36,9 @@ That scheduling intervention was not authorized by the request to proceed.
 The evaluation guardian and runner have been stopped; dispatcher PID 550064
 was resumed and six new collector processes were verified running. The lease
 record confirms `collector_resumed: true`. Do not restart the lease or pause
-collection. Future GPU experiments must use natural availability or an explicit
-owner-specified window. Existing trajectory files were not deleted or changed.
+collection. At this point the earlier no-overlap preference still applied;
+the later shared-GPU authorization above supersedes it. Existing trajectory
+files were not deleted or changed.
 
 Both `flow_bc_v45_stage/status.json` and nested `ipc/status.json` now report
 `interrupted`: `tshirt_26` and `tshirt_4` completed, `tshirt_68` was interrupted,
@@ -29,7 +46,7 @@ and the remaining two cases are pending. Both controllers passed the common
 completion/hold criterion in the two completed cases. Their initial cloth
 states differ by up to 4.01/5.52 mm, so they are not exactly matched comparisons.
 These selected static starts do not establish a general success rate or gain.
-Results are preserved; no evaluation runner remains queued.
+Results are preserved; that original evaluation runner has exited.
 
 The post-resume raw snapshot contains 810 v4 + 1,464 v5 accepted entries:
 2,274 entries / 715,142 commands. The trained frozen cache remains 1,275
