@@ -103,6 +103,8 @@ def parser():
     p.add_argument("--cloth-density", type=float, default=None,
                    help="Optional kg/m^3 material-density override; save and extract separately from default physics.")
     p.add_argument("--garment", default="tshirt_26")
+    p.add_argument("--native-policy-actions", action="store_true",
+                   help="Execute the policy's 6-D action as given (no FMVP rotation rule, no slow-down).")
     p.add_argument("--align-armhole-axis", action="store_true",
                    help="Start with the forearm's extension through the armhole centre (first legal of the best-aligned placements).")
     p.add_argument("--sections-wrap", action="store_true",
@@ -579,6 +581,12 @@ def main():
                             policy_started = time.monotonic()
                             action = policy_clients[i].act(pos[valid], feat[valid], policy_forces[i])
                             timing["policy_s"] += time.monotonic() - policy_started
+                            if args.native_policy_actions:
+                                # A policy trained on this collector's executed actions (flow_policy) already
+                                # outputs the environment's 6-D action; FMVP's rotation rule would distort it.
+                                proposed[i] = actions[i] = np.clip(action, -1, 1)
+                                scales[i] = 1.
+                                continue
                             model_vertical_rotation = float((rotation @ action[3:])[1])
                             action[3:] = 0.
                             if args.rotation == "fmvp":
