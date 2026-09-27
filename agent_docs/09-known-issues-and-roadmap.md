@@ -1,5 +1,20 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## First paired static results and successful motion correction — 2026-09-27
+
+The newer flow policy accepts 30/35 cases versus r1's 29/35 over the first
+five garment batches. Both accept seven long-sleeve cases. These are partial
+results with initial cloth differences up to 4.795 mm. The 410-case test
+continues. A copied-data 60k training-budget control has started; compare it
+on validation against 30k before drawing a training-duration conclusion.
+
+The pass-motion pilot's static gate and dynamic GICP proxy both succeed;
+unmodified r1 loses grasp shortly after motion begins. Thus the chosen case
+does not yet show a need for prediction beyond geometric correction. Finish
+the oracle/causal/yoked controls without treating this one case as a general
+result. The existing motion world continues under a bounded replacement CPU
+monitor, preserving reset comparisons and collection activity.
+
 ## Continue the active Claude flow evaluation — 2026-09-27
 
 Claude's frozen-r1-encoder flow policy completed 30,000 updates on its

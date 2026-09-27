@@ -1,5 +1,38 @@
 # Anticipatory dressing: GRAB motion pilot
 
+## Update at 19:00 CEST: static gate and GICP succeed on the pass clip
+
+The same-scene static r1 gate completed 450 decisions successfully, with
+its first held success at decision 206, valid grasp, and maximum body-target
+error 0.174 mm. Dynamic r1 then lost grasp at decision 13 (1.3 seconds,
+with motion starting at one second). Its maximum recorded-prefix body error
+is 0.420 mm; the incomplete rollout must not be described as having failed
+the 2 mm body-tracking bound.
+
+The GICP proxy completed all 450 dynamic decisions successfully. Its first
+held success is decision 156, final armhole fraction 0.8242, final interior
+sleeve wrapping true, and grasp remains valid. Maximum body error is
+0.598 mm, with zero reported registration failures. The initial cloth differs
+from dynamic r1 by 3.852 micrometres; body and TCP differences are zero.
+This passes the existing 10-micrometre comparison gate. Its wall time was
+4,196.53 seconds under concurrent GPU work. This is a single body/clip/onset
+result for our simplified GICP controller, not a reproduction of the full
+published controller or evidence that anticipation adds value. The pause
+controllers remain pending/running in the same world.
+
+The original two-hour coordinator budget was insufficient for all five
+controllers. To preserve the in-flight world and avoid repeating the completed
+physics/static gates, an output-local continuation monitor verified the
+parent PID/start identity, its output directory, direct child relation and
+the child's full recorded command. It backed up `status.json` to
+`status.before_extension.json`, terminated only coordinator PID 2522877,
+and retained probe PID 2765780 in the same process/world. Replacement CPU
+monitor PID 3211102 records its identity, an additional six-hour bound and
+deadline in `status.json`; its script, log and launch record are in the
+existing `pilot_pass_continuation_20260927` output directory. The probe's
+controller algorithms, reset checks and 450-decision budgets are unchanged.
+The collection dispatcher/workers and Claude evaluation were not signaled.
+
 ## Latest motion evidence and pass-only continuation — 2026-09-27
 
 The corrected pilot completed its three motion smokes. Pass and lift each

@@ -1,5 +1,29 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-27 19:05 CEST — First five garment pairs; dynamic GICP succeeds
+
+Claude's 30k flow and r1 finished the first seven bodies on all five garments:
+flow 30/35 accepted versus r1 29/35. Both accept all seven tshirt_392 cases.
+All pairs have nonidentical settled cloth (0.035--4.795 mm maximum errors);
+there is no superiority claim. The next tshirt_26 r1 batch is complete, 2/7,
+bringing the reported total to 77/410; its flow batch remains pending.
+
+A 60k training-budget control now runs in
+`output/anticipatory_dressing/claude_flow_h16_60k_20260927`, using copied,
+hashed inputs identical to the 30k model's 1,807 training episodes. It starts
+from initialization with a 60k cosine schedule; it is not an optimizer-state
+resume. The current test evaluator stays on its frozen 30k checkpoint.
+No 60k result exists yet; use validation to compare training budgets.
+
+The motion pilot's static gate succeeded. Dynamic r1 loses grasp at decision
+13; GICP succeeds through 450 decisions, first held success at 156, with
+maximum body-tracking error 0.598 mm and initial cloth mismatch 3.852 um.
+Oracle/causal/yoked pauses are not complete. The existing probe/world is
+retained under an output-local continuation monitor after retiring only its
+expiring two-hour coordinator. An additional six-hour bound is recorded in
+the status file. Collection and Claude's evaluation remain active.
+See the static continuation and anticipatory pilot performance records.
+
 ## 2026-09-27 — Continue Claude's completed flow training and active evaluation
 
 The owner asked to inspect and continue Claude's work. Its original workspace

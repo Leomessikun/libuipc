@@ -1,5 +1,53 @@
 # Continuation of Claude's static flow policy
 
+## Update at 19:05 CEST: five paired garment batches and a training-budget control
+
+The first seven body/pose IDs have completed both policies on all five garments:
+
+| Garment | r1 accepted | Flow accepted |
+| --- | ---: | ---: |
+| tshirt_26 | 4/7 | 5/7 |
+| tshirt_68 | 6/7 | 6/7 |
+| tshirt_4 | 6/7 | 6/7 |
+| tshirt_392 | 7/7 | 7/7 |
+| hospital_gown | 6/7 | 6/7 |
+| Paired total | 29/35 | 30/35 |
+
+The next tshirt_26 r1 batch also finished (2/7); its flow batch is not complete
+at this snapshot, so it is excluded from the paired total. There are 77/410
+reported trial outcomes. The initial geometry audit passes saved acceptance
+evidence and body-split checks, but all 35 completed pairs exceed its strict
+10-micrometre identical-start tolerance. Maximum cloth differences are
+0.035--0.139 mm for tshirt_26, 2.564--4.355 mm for tshirt_68,
+1.463--2.629 mm for tshirt_4, 0.948--3.037 mm for tshirt_392, and
+1.616--4.795 mm for hospital_gown.
+Human vertices and TCP starts match. One additional flow success on this
+small subset is not evidence of superiority. The long-sleeve successes use
+different starts, body IDs and a different flow model from the older failed
+five-case diagnostic; do not treat them as a controlled fix of that failure.
+
+To test the owner's training-duration question, a new 60,000-update run was
+started at `output/anticipatory_dressing/claude_flow_h16_60k_20260927`.
+It uses a byte-identical copied index and copies of all 16 feature shards:
+the same 1,807 training episodes / 570,717 training states, 255 validation
+episodes, architecture, force input, batch 1,024, seed zero and AdamW settings
+as the 30,000-update run. No newly collected trajectories are added to this
+control. The trainer source is copied; `run.json` records commands and hashes
+for the index, shards, trainer, policy definition and r1 encoder checkpoint.
+The existing trainer is loaded with the original external package path.
+
+This starts from initialization, because the old checkpoint contains weights
+without optimizer state. Cosine learning-rate decay spans the new 60,000
+updates. It tests an increased training budget with its corresponding
+schedule, not an exact continuation of the old optimization trajectory.
+The 410-case evaluator retains its frozen 30,000-update checkpoint. Validate
+the new model on the fixed validation split before using test outcomes for
+claims; no improvement from additional training has been measured yet.
+The live log reached 4,000 updates without an execution error.
+
+Collection continues. The latest v5 ledger at 18:55 CEST had 1,728 accepted
+records; new collection data is separate from both frozen training runs.
+
 ## Scope and provenance
 
 The owner requested inspecting and continuing Claude's work on 2026-09-27.
@@ -125,4 +173,3 @@ for that claim. Neither this checkpoint nor GRAB retargeting implements
 anticipatory dressing. The existing pass-motion pilot remains a separate
 running diagnostic, with static competence as its gate. Dynamic data,
 causal prediction, recovery supervision and garment holdouts remain open.
-
