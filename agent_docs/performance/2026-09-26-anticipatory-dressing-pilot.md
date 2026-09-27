@@ -1,5 +1,40 @@
 # Anticipatory dressing: GRAB motion pilot
 
+## Latest motion evidence and pass-only continuation — 2026-09-27
+
+The corrected pilot completed its three motion smokes. Pass and lift each
+finish 40 decisions, with body excursions 119.1/62.6 mm and maximum tracking
+errors 0.319/0.209 mm. Phone records grasp loss at decision five and then a
+body-tracking failure at 0.716667 s: 2.313 mm exceeds the unchanged 2 mm bound.
+Its archive has only seven valid transitions, with maximum recorded-prefix
+error 1.916 mm; do not confuse that prefix metric with the failing 2.313 mm
+substep reported in `failure.detail`. The pilot stopped before the static r1
+gate or controller comparisons. This is simulator/drive evidence, not an
+anticipation result. The failed phone clip remains excluded from valid policy
+comparisons pending repair; no tolerance has been loosened.
+
+The independent pass clip can proceed using its already completed validation.
+`run_motion_pilot.py --reuse-smoke` verifies matching smoke arguments, motion,
+hang and checkpoint hashes, the recorded simulation-source hashes, and the
+complete body-motion gate, retaining hashes and provenance of reused outputs.
+It accepts only hold-only diagnostics. Policy bridge/client changes are
+recorded but do not invalidate body-drive checks that never instantiated a
+policy client. The bridge did change externally in this interval; a fresh
+CPU preflight at `pass_continuation_preflight_20260927` passes and gives the
+same example action as before. New policy runs log the current bridge hash.
+Real-data checks accept the pass record and reject both a mismatched motion
+and the failed phone check. Python compilation and `git diff --check` pass.
+
+The continuation at `output/anticipatory_dressing/pilot_pass_continuation_20260927`
+is running its static r1 gate. Its command uses the same MPS/thread environment
+as below, with `--motions .../motions/s1_mug_pass_body14046.npz`,
+`--reuse-smoke .../pilot_protocol_20260927/smoke_0`, `--steps 450 --onsets 1`,
+`--endpoint interior_armhole --allow-shared-gpu --wait-for-gpu 7200
+--wall-budget 7200`. No other motion is selected for policy testing. On a
+successful same-scene static baseline, it proceeds to the five diagnostic
+controllers; there are no new controller-comparison results yet. Six
+collection workers remain active.
+
 ## Current status — 2026-09-27
 
 The [static stage record](2026-09-27-static-flow-v45.md) supersedes the older

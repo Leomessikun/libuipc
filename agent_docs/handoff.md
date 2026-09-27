@@ -1,5 +1,32 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-27 — Static diagnostic finished; valid-motion continuation running
+
+All five selected static cases are complete: flow accepts four, FMVP three.
+Both fail `tshirt_392`: FMVP loses grasp at decision 170; flow preserves grasp
+but never satisfies interior sleeve wrapping and reaches the 750-decision
+limit. Flow is still moving (80.2 mm TCP excursion over the final 100 states),
+so this is not simply a stationary controller. These are five selected starts
+on two body/pose IDs with initial cloth mismatch 3.12--7.91 mm, not unbiased
+success estimates or a controlled superiority result. The aggregate is
+`flow_bc_v45_stage/static_five_case_summary.json`.
+
+The corrected dynamic smokes finished: pass and lift track fully (maximum
+errors 0.319/0.209 mm). Phone first loses grasp at decision five, then exceeds
+the 2 mm body-tracking bound at 0.716667 s (2.313 mm); its valid prefix has only
+seven decisions. The first pilot stopped before static r1 or policy comparisons.
+Do not claim an anticipation result. Keep this failed motion separately.
+
+`pilot_pass_continuation_20260927` now runs static r1, followed conditionally by
+the five pass-clip controllers. `--reuse-smoke` verified the previous complete
+pass diagnostic against its motion/asset hashes, recorded simulation-source
+hashes, settings and full-clip gate, avoiding redundant simulation. A wrong
+motion and failed phone record are both rejected by real-data checks. The
+external policy bridge changed since the hold-only validation; that unused
+dependency is recorded, and a new CPU actor preflight passes with identical
+example output. Fresh policy runs record their own bridge hash. No body
+tracking bound was relaxed. Collection remains active with six workers.
+
 ## 2026-09-27 — Dynamic protocol corrected and pilot queued
 
 The owner's continuation is proceeding while collection stays active.

@@ -1,5 +1,34 @@
 # Static flow baseline: reconciled v4/v5 recordings
 
+## Completed five-case diagnostic
+
+All five selected cases now have full results:
+
+| Garment / body | FMVP | Flow |
+| --- | --- | --- |
+| tshirt_26 / 10040 | accepted | accepted |
+| tshirt_4 / 10040 | accepted | accepted |
+| tshirt_68 / 10040 | accepted | accepted |
+| hospital_gown / 10040 | grasp failure | accepted |
+| tshirt_392 / 25040 | grasp failure | decision limit without success |
+
+The aggregate is `flow_bc_v45_stage/static_five_case_summary.json`, including
+source-status paths and hashes, checkpoint identity and initial-state errors.
+These four versus three accepted cases are not unbiased success-rate estimates:
+starts were selected from accepted demonstrations, there are only two body/pose
+IDs, and independently settled cloth differs by 3.12--7.91 mm between methods.
+Do not infer superiority, dynamic competence, or new-garment generalization.
+
+The last `tshirt_392` run took 2,019.14 s wall time. FMVP lost grasp at decision
+170. Flow retained valid grasp throughout 750 decisions with no solver error,
+but never met the three-interior-section wrap criterion; both legacy forearm
+and upper-arm progress remained zero. Its final 100 TCP states span 80.2 mm,
+and its last 100 mean executed translation norms are 1.57 mm per decision.
+Thus the unsuccessful rollout continues moving while failing sleeve geometry;
+this evidence does not identify a unique cause or prove a recovery solution.
+Initial cloth mismatch in this pair is 3.12 mm. Preserve this failed rollout
+for diagnosis and possible corrective labeling, not successful imitation.
+
 ## Authorized scope
 
 On 2026-09-27 the owner approved the explained sequence: reconcile existing

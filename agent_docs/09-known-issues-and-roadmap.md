@@ -1,5 +1,23 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Completed static diagnostic and independent motion failure — 2026-09-27
+
+The five-case diagnostic is complete: flow four accepted, FMVP three. Both
+fail the long-sleeve `tshirt_392` case; flow keeps a valid grasp but never
+meets the interior-wrap condition in 750 decisions. Initial cloth differences
+of 3.12--7.91 mm and the small, selected sample prevent comparative claims.
+The next static issue is alignment/threading recovery and fair initial-state
+reproduction, not treating failed actions as successful demonstrations.
+
+Full pass/lift body-motion checks succeed. Phone now fails a true body-tracking
+gate after its earlier grasp failure: 2.313 mm at 0.716667 s exceeds the
+unchanged 2 mm limit. Preserve that failure and repair it independently; it
+does not invalidate the completed pass check or establish an anticipation
+failure. `pilot_pass_continuation_20260927` reuses only the verified passed
+smoke and is running its same-scene static r1 gate before the five controllers.
+No dynamic policy comparison or learned anticipation result exists yet.
+Collection remains active; do not pause its dispatcher or workers.
+
 ## Dynamic protocol and queued diagnostic — 2026-09-27
 
 The gown case subsequently completed: flow accepted, FMVP grasp failure, with

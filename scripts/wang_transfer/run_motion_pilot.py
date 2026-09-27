@@ -14,7 +14,7 @@ import time
 
 import numpy as np
 
-from probe_arm_motion import ENDPOINTS, ROOT, idle_gpu, save_json
+from probe_arm_motion import ENDPOINTS, ROOT, idle_gpu, parser as probe_parser, save_json, sha256
 
 
 def motion_smoke_gate(result, archive, expected_steps=40):
@@ -34,11 +34,53 @@ def motion_smoke_gate(result, archive, expected_steps=40):
                 scope="Full body-drive diagnostic only; a failed grasp remains invalid task supervision")
 
 
+def verified_motion_smoke(directory, motion, endpoint):
+    """Reuse a completed check only with identical assets, code and smoke settings."""
+    directory = directory.resolve(strict=True)
+    run = json.loads((directory / "run.json").read_text())
+    expected = vars(probe_parser().parse_args([
+        "--motion", str(motion), "--out", str(directory), "--steps", "40",
+        "--onset", "0", "--methods", "hold", "--motion-smoke", "--endpoint", endpoint]))
+    for key, value in expected.items():
+        if key in ("out", "wait_for_gpu", "allow_shared_gpu"):
+            continue
+        saved = run["arguments"].get(key)
+        if isinstance(value, Path):
+            value, saved = str(value.resolve()), str(Path(saved).resolve()) if saved is not None else None
+        if saved != value:
+            raise ValueError(f"Cached motion check differs in {key}: {saved!r} != {value!r}")
+    for key in ("motion", "hang", "checkpoint"):
+        if sha256(expected[key]) != run[key + "_sha256"]:
+            raise ValueError(f"Cached motion check has changed {key}")
+    code_hashes = run["code_sha256"]
+    required = {"scripts/wang_transfer/probe_arm_motion.py", "python/uipc_manip/dressing_env.py",
+                "python/uipc_manip/dressing_motion.py", "python/uipc_manip/dressing_obs.py",
+                "python/uipc_manip/grab_motion.py", "python/uipc_manip/motion_controls.py"}
+    if not required.issubset(code_hashes) or any(sha256(ROOT / path) != digest for path, digest in code_hashes.items()):
+        raise ValueError("Cached motion check code has changed or is incomplete")
+    metrics = json.loads((directory / "metrics.json").read_text())
+    if len(metrics) != 1 or metrics[0]["method"] != "hold" or not metrics[0].get("motion_smoke"):
+        raise ValueError("Cached run is not a full-motion hold diagnostic")
+    gate = motion_smoke_gate(metrics[0], directory / "hold.npz")
+    if not gate["passed"]:
+        raise ValueError("Cached motion check did not pass the complete body-motion gate")
+    # A hold-only probe never constructs the actor client. Track policy changes
+    # for provenance; they cannot invalidate this body-drive-only evidence.
+    unused_policy_sources_changed = {
+        name: sha256(expected["policy_package_root"] / f"uipc_manip/wang_{name}.py") != run[name + "_sha256"]
+        for name in ("bridge", "client")}
+    return dict(state="complete", metrics=metrics, motion_gate=gate, reused_from=str(directory),
+                unused_policy_sources_changed=unused_policy_sources_changed,
+                source_sha256={name: sha256(directory / name) for name in ("run.json", "metrics.json", "hold.npz")})
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--motions", type=Path, nargs="+", required=True)
     p.add_argument("--smoke-motions", type=Path, nargs="*", default=[],
                    help="Additional clips for body-drive validation only; policy comparisons still use --motions.")
+    p.add_argument("--reuse-smoke", type=Path, action="append", default=[],
+                   help="Reuse a passed smoke directory after verifying the full gate, code, assets and settings; repeat per clip.")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--steps", type=int, default=750)
     p.add_argument("--onsets", type=float, nargs="+", default=[1., 8.])
@@ -119,8 +161,20 @@ def main():
             return metrics
 
         # Each clip must actually move its simulated body before policy testing.
+        reusable = {}
+        for directory in args.reuse_smoke:
+            old = json.loads((directory / "run.json").read_text())
+            motion = Path(old["arguments"]["motion"]).resolve(strict=True)
+            if motion not in smoke_motions or motion in reusable:
+                raise ValueError("Cached smoke must uniquely match a selected motion")
+            reusable[motion] = verified_motion_smoke(directory, motion, args.endpoint)
         for i, motion in enumerate(smoke_motions):
             name = f"smoke_{i}"
+            if motion in reusable:
+                status["cases"].append(dict(name=name, **reusable[motion]))
+                write_status()
+                print(f"[pilot] reused verified full body-motion check: {motion.name}", flush=True)
+                continue
             result = case(name, motion, 40, 0., ["hold"], motion_smoke=True)[0]
             gate = motion_smoke_gate(result, out / name / "hold.npz")
             status["cases"][-1]["motion_gate"] = gate
