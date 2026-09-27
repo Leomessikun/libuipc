@@ -237,4 +237,34 @@ workers remained active and the v5 ledger contained 1,467 accepted entries.
 The free memory accommodates this additional job, but compute contention may
 increase wall times. Live samples are retained in
 `flow_bc_v45_stage/shared_gpu_monitor.jsonl`. These are operational observations,
-not a controlled throughput benchmark. The continuation is still running.
+not a controlled throughput benchmark. This first continuation subsequently
+exhausted its wall budget as recorded below.
+
+### Results and remaining-case retry
+
+The shared run completed `tshirt_68` / body 10040 in 433.01 s wall time.
+FMVP reached the completion condition at decision 360 and flow at decision
+295; both completed the 20-decision hold with valid grasps and no simulator
+error. Maximum initial cloth difference was 3.34 mm, with identical initial
+TCP positions. Along with the two original cases, this gives three selected
+static starts completed by both methods, not a general success rate or a
+controlled improvement claim.
+
+The 1,800 s total wall budget expired during `tshirt_392`. Its last logged
+decision was 621; flow had not reported success and the baseline slot had
+already stopped without reported sleeve progress. There is no completed
+metrics archive for this case. Wall-time interruption must not be equated
+with either success or a fully evaluated policy failure. The gown case did
+not start. The first shared status is now `error` / `TimeoutExpired`.
+
+A fresh run at `flow_bc_v45_stage/ipc_shared_remaining_20260927` uses the same
+checkpoint and dataset contract, `--garments hospital_gown tshirt_392`,
+`--allow-shared-gpu`, and `--wall-budget 7200`. Putting the gown first prevents
+the previously slow case from again consuming its opportunity to run. The
+remaining command and MPS/thread settings are unchanged. All previous output
+is retained. Six collection workers were verified active at this launch.
+
+The accompanying raw snapshot is 810 v4 + 1,523 v5 accepted entries, totalling
+2,333 entries / 732,617 commands. The model still uses the frozen audited
+1,275-episode cache (1,079 training, 196 validation), not every collected entry.
+No dynamic student or new-garment result follows from these static tests.

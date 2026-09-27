@@ -1,13 +1,43 @@
 # Handoff — Current State of the Repo
 
-## 2026-09-27 — Shared GPU evaluation authorized and running
+## 2026-09-27 — Research status and remaining static evaluation
+
+The static flow baseline has completed three selected validation-start cases
+(`tshirt_26`, `tshirt_4`, `tshirt_68`); both FMVP and flow pass the common
+completion and hold criterion in all three. This is not a measured general
+success rate. Their initial cloth differences are 4.01, 5.52 and 3.34 mm.
+The shared continuation then exhausted its 1,800 s wall budget during
+`tshirt_392`; its log reached decision 621 without a reported flow success.
+No completed metrics exist for that case, and `hospital_gown` never started.
+Do not report the previous shared runner as still running or the five-case
+diagnostic as complete.
+
+A fresh shared run at `flow_bc_v45_stage/ipc_shared_remaining_20260927` now
+covers `hospital_gown` first, then `tshirt_392`, with a 7,200 s total budget.
+The original attempts are preserved. Six collection workers remain active;
+the latest raw snapshot is 810 v4 + 1,523 v5 accepted entries (2,333 total,
+732,617 commands). The audited cache is still 1,275 episodes: 1,079 training
+and 196 validation. The extra data have not all been audited or trained on.
+
+Research remains at static-baseline validation. GRAB has supplied three arm
+motion clips, not robot action demonstrations. Pass/lift body-drive smoke
+tests meet the tracking tolerance; the phone hold loses its grasp. No dynamic
+teacher, causal forecaster, recovery distillation, or unseen-garment result
+exists. Next gates are complete/diagnose the static cases, distinguish body
+tracking from grasp/task failures, test whether useful future information is
+also predictable from history, then train contact/recovery supervision if
+supported. New ClothesNet garment transfer requires a separate data and
+garment-holdout evaluation; more static examples of the five known garments
+do not establish it. See the updated stage and pilot records.
+
+## 2026-09-27 — Shared GPU evaluation authorization and first launch
 
 The owner pointed out roughly 60 GB of available GPU memory and requested
 concurrent work. This supersedes the earlier no-overlap preference; collection
 must remain running. `eval_static_flow.py --allow-shared-gpu` now bypasses only
 the idle-device wait and records `gpu_scheduling: shared`. Its default still
 waits for an idle device. Cases run sequentially; no collector is signaled.
-The remaining `tshirt_68`, `tshirt_392`, and `hospital_gown` cases are running
+The remaining `tshirt_68`, `tshirt_392`, and `hospital_gown` cases were launched
 under `flow_bc_v45_stage/ipc_shared_20260927`, with a 1,800 s total budget.
 The original completed cases and interrupted output are preserved. At launch
 there were 59,274 MiB free and 100% GPU utilization; an early sample with

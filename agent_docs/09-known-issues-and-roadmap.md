@@ -1,10 +1,28 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Research evidence and continuation — 2026-09-27
+
+Three selected static cases now complete for both controllers. Their initial
+cloth states differ by 3.34--5.52 mm; do not infer superiority or a general
+success rate. The first shared run hit its 1,800 s wall limit during
+`tshirt_392`, before any completed metrics for that case or `hospital_gown`.
+The continuation at `flow_bc_v45_stage/ipc_shared_remaining_20260927` runs
+the gown first and then `tshirt_392`, with a 7,200 s total budget. Collection
+continues with six workers. Preserve all partial results and diagnose failures.
+
+The research plan remains: establish static control, validate dynamic-body
+and grasp behavior separately, test future-informed versus causal/reactive
+controls at matched budgets, then learn contact-preserving recovery actions
+across plausible futures if those tests support it. Dynamic teacher/student
+training has not started. Garment transfer needs valid demonstrations for new
+geometries and a separate garment holdout. Current data remain five known
+garments and static humans; the new raw count is not the frozen training set.
+
 ## Shared GPU continuation — 2026-09-27
 
 The owner now authorizes evaluation alongside collection, superseding the
 earlier no-overlap preference. Keep the collector running. The opt-in
-`eval_static_flow.py --allow-shared-gpu` runs the three remaining cases
+`eval_static_flow.py --allow-shared-gpu` launched the three remaining cases
 sequentially in `flow_bc_v45_stage/ipc_shared_20260927` with a 1,800 s budget.
 Two completed cases in the original directory remain valid preliminary
 observations. Initial GPU sampling found 59,274 MiB free but 100% utilization;

@@ -1,5 +1,38 @@
 # Anticipatory dressing: GRAB motion pilot
 
+## Current status — 2026-09-27
+
+The [static stage record](2026-09-27-static-flow-v45.md) supersedes the older
+data/training/evaluation snapshots below: an audited 1,275-episode cache,
+20,000 flow-BC updates, and three completed selected static starts for both
+FMVP and flow. A shared-GPU continuation is completing the remaining two
+cases after a wall-time interruption. Collection remains active; concurrent
+evaluation is now explicitly authorized. Do not pause the dispatcher.
+
+The algorithmic contribution is still a hypothesis: learn robot actions that
+preserve sleeve contact and permit recovery across plausible human futures,
+using sampled IPC consequences as teacher supervision for a causal flow
+policy. Static imitation alone does not establish this contribution.
+The causal predictor and dynamic teacher/student are not implemented.
+
+GRAB conversion produced pass, lift, and phone clips. The first two body-drive
+smokes pass; the phone hold loses its grasp despite body tracking remaining
+within tolerance. Separate physical motion validity from controller/task
+failure before dynamic comparisons. Next compare reactive registration,
+causal/history-based controls, and a true-future diagnostic under the same
+initial state, decision and pause budgets. A benefit from true future access
+alone is insufficient; usable information must be inferable from past/current
+observations. A failed pause heuristic alone cannot reject anticipation.
+
+If supported, collect dynamic corrective actions, mix them with the existing
+static demonstrations, and compare history-only and forecast-conditioned
+policies with identical data and compute. Hold out whole motion sequences and
+subjects. New ClothesNet garments remain a separate data and geometry task;
+evaluate unseen garment identities separately and jointly with unseen motion.
+GRAB supplies recipient motion, while the simulator/controller must generate
+robot action labels. Existing static actions cannot simply be reused after
+moving the recipient.
+
 ## Scope and decision
 
 The owner authorized implementation and bounded experiments on
