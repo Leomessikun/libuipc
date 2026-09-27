@@ -10,17 +10,27 @@ the older cuff-inclusive rule. No duplicates or rejects. The 8.01 GiB cache
 preserves every v4 body split: train 1,079 episodes / 198 IDs, validation 196 /
 43, with no body overlap. New IDs use stable hash assignments. Provenance
 retains different placement protocols; this is not unseen-garment data.
-Seventeen targeted CPU tests pass. A 20,000-update, two-thread CPU flow run is active under
-`output/anticipatory_dressing/flow_bc_v45_train`; inspect its metrics/checkpoints
-before calling training complete. `finish_static_flow_run.py` is attached to
-training PID 839339 and currently reports `waiting_for_training` under
-`flow_bc_v45_stage/status.json`. It will verify final completion, audit old/new
-checkpoints on identical held-out windows, then queue the five matched v4-start
-IPC cases with a common endpoint for both methods. The real CPU case preflight
-passes. Training/GPU waits are each bounded at 24 hours; IPC has a two-hour run
-budget. Read parent and nested IPC status before launching a duplicate. GPU
-collection remains active. No paired IPC result exists; dynamic training has
-not started. Unsupported v5 placement flags are rejected by this diagnostic.
+The 20,000-update CPU run completed in 6.14 h. Best step 20,000 has validation
+flow loss 0.109342 / sampled MSE 0.022145. A common 196-episode offline audit
+finds old/new start errors 4.347/3.714 mm and middle errors 1.559/1.359 mm;
+pre-hold is slightly worse and stopping remains imperfect. These are command
+errors, not closed-loop performance. Training data and duration both changed.
+`flow_bc_v45_stage/status.json` is now `ipc_runner`; nested `ipc/status.json`
+is `waiting_for_gpu`, with all five cases pending. Do not launch a duplicate.
+
+The owner asked to move beyond collection. The newer raw snapshot has 2,248
+v4/v5 accepted entries / 706,276 commands, but the trained frozen cache remains
+1,275 episodes. The first evaluation need not wait for further collection.
+`collection_eval_lease.py` now pauses only dispatcher PID 550064 while its
+six active batch children finish and save. It will restore the dispatcher
+after the queued evaluator (PID 3029525) finishes or errors. Check
+`flow_bc_v45_stage/collection_eval_lease.json` before touching these processes.
+Its current state is `draining_collection`. Maximum drain/start wait is one
+hour and execution window 7,500 s; on failure only our evaluation is canceled
+before collection resumes. Another unrelated GPU client can delay evaluation.
+Original collection source/data are unchanged. Two process tests verify child
+completion and dispatcher restoration on success/timeout (19 targeted CPU tests
+total). No paired IPC result exists; dynamic training has not started.
 
 ## 2026-09-27 — Additional trajectories and feasibility reassessment
 

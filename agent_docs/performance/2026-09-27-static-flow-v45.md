@@ -74,8 +74,32 @@ BC model, random encoder initialization, 3 observation frames, 8 commands,
 batch size 16 and seed 20260926. Evaluation samples 256 fixed validation windows
 every 1,000 updates. Best checkpoint selection uses validation flow loss.
 The output is `output/anticipatory_dressing/flow_bc_v45_train`.
-Training completion and phase-specific errors still need inspection; no
-closed-loop gain follows from lower offline loss.
+The run completed all 20,000 updates in 22,107 s (6.14 h); update 20,000 has
+the best validation flow loss, 0.109342. Its sampled command MSE is 0.022145
+versus 0.042839 for zero commands on the same fixed validation windows.
+Checkpoint SHA256 is
+`30476c7b64e5e502ab57da62b38ff7079106f0648a17c6dafd60ce5c1229c6ae`.
+Lower offline loss does not establish closed-loop dressing success.
+
+The follow-through also completed its old/new comparison on the same 196
+validation episodes. The table reports RMS translation-command vector error
+for the first predicted action, in millimetres, using recorded observations:
+
+| Phase | Old v4 model | New v4/v5 model |
+| --- | ---: | ---: |
+| Start | 4.347 | 3.714 |
+| Early | 3.262 | 3.237 |
+| Middle | 1.559 | 1.359 |
+| Before hold | 1.616 | 1.671 |
+| Final hold | 3.187 | 2.763 |
+
+The new model improves start/middle/hold errors, is nearly unchanged early,
+and is slightly worse before hold. Both models still output nonzero commands
+where the recorded terminal command is zero. This does not establish learned
+autonomous stopping. These are not realized cloth/gripper tracking errors.
+Data distribution and training duration both changed, so this comparison
+cannot isolate the benefit of additional trajectories. Full source-specific
+translation/yaw metrics are in `flow_bc_v45_stage/offline_phase_audit.json`.
 
 ## Verification and remaining gate
 
@@ -88,11 +112,10 @@ passes the chosen common criterion.
 
 ## Automatic follow-through and paired evaluation
 
-`finish_static_flow_run.py` is attached to the live CPU training process
-(PID 839339, identified by its Linux process start time and full command).
-Its current state is `waiting_for_training` at
-`output/anticipatory_dressing/flow_bc_v45_stage/status.json`. It requires the
-expected final 20,000-update checkpoint and matching data hash before proceeding:
+`finish_static_flow_run.py` verified the final CPU training checkpoint and
+completed the offline phase audit. Its current state is `ipc_runner` at
+`output/anticipatory_dressing/flow_bc_v45_stage/status.json`; the nested
+`ipc/status.json` reports `waiting_for_gpu`. Its sequence is:
 
 1. `audit_flow_bc.py` compares the old v4 and new v4/v5 policies on identical
    held-out recordings. It checks that neither checkpoint trained on audited
@@ -110,8 +133,8 @@ expected final 20,000-update checkpoint and matching data hash before proceeding
 The training wait and initial GPU wait are each bounded at 24 hours. The IPC
 execution budget is two hours after the initial GPU wait. An expired wait or
 failed check sets an error state; it does not imply a completed evaluation.
-Training remains running; the follow-through has not yet audited its final
-checkpoint or executed any paired IPC case.
+Training and the offline audit are complete. No paired IPC case has executed
+yet; all five remain pending while existing GPU clients finish.
 
 Preflight resolves the same v4 starts as the original five-case diagnostic:
 body 10040 for `tshirt_26`, `tshirt_4`, `tshirt_68`, `hospital_gown`, and 25040
@@ -133,3 +156,36 @@ completion hold; it cannot measure unbiased success, unseen garments, or
 autonomous stopping. Dynamic teacher/student work remains conditional on
 competent static control and causal anticipation evidence; see the
 [research pilot](2026-09-26-anticipatory-dressing-pilot.md).
+
+## Moving from collection to evaluation
+
+The owner asked whether the accumulated trajectories suffice to move on.
+They suffice for the first static closed-loop diagnostic; no universal sample
+threshold or dynamic/unseen-garment competence follows from the count.
+At the scheduling snapshot, v4 has 810 accepted entries and v5 has 1,438:
+2,248 entries / 706,276 commands across the same five garments. The extra
+entries are not all re-audited or included in the trained frozen cache.
+Do not restart training solely to consume every newly arriving demonstration
+before evaluating the existing model.
+
+To obtain a serial evaluation window without interrupting running collection
+batches, `collection_eval_lease.py` temporarily SIGSTOPs only dispatcher PID
+550064. Its six existing collector children continue writing their own logs
+and archives. Their ledger entries will be processed when the dispatcher is
+resumed. The selected collection path and readable manifest were verified
+after the pause. Original source files and trajectory files are unchanged.
+
+The active lease is recorded in `flow_bc_v45_stage/collection_eval_lease.json`
+and currently reports `draining_collection`. The already queued evaluator is
+PID 3029525. The lease restores the same dispatcher with SIGCONT after the
+evaluation completes or errors. If evaluation does not start within one hour,
+or exceeds a 7,500 s execution window, it cancels only our evaluation subtree
+and restores collection. Other GPU users are never signaled; a new unrelated
+GPU job can still delay this window. The dispatcher pause is a temporary
+scheduling action, not termination of collection or its workers.
+
+Two process tests passed: the dispatcher is stopped while its child completes,
+and the dispatcher resumes after either normal evaluation completion or a
+timeout. There are now 19 targeted CPU tests across the data, geometry,
+inference, evaluation-protocol and scheduling checks. Read the lease and nested
+IPC status before launching another evaluator or managing the dispatcher.

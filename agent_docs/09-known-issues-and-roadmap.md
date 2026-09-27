@@ -5,13 +5,19 @@
 The [new stage record](performance/2026-09-27-static-flow-v45.md) closes the
 initial merge/provenance gate: 1,275 frozen examples pass a common terminal
 geometry audit; old body splits are preserved and new IDs are stably assigned.
-The data retain five known garments and static humans. Seventeen CPU regressions
-pass. A bounded 20,000-update CPU training run is active; completion, phase
-errors and paired IPC performance remain to be checked. The attached follow-through
-under `flow_bc_v45_stage/status.json` waits for final training, audits old/new
-checkpoints on common held-out windows and queues matched IPC tests. Waits for
-training/GPU are each bounded at 24 hours; IPC execution at two hours. Preserve
-the no-overlap GPU preference and inspect status before starting another run.
+The data retain five known garments and static humans. The 20,000-update CPU
+run and common 196-episode offline audit are complete. Start/middle command
+errors improve, pre-hold is slightly worse and terminal stopping remains
+imperfect; no closed-loop gain is established. The next gate is the queued
+five-case IPC diagnostic. `flow_bc_v45_stage/status.json` reports `ipc_runner`
+and nested `ipc/status.json` is `waiting_for_gpu`. Do not launch a duplicate.
+Following the owner's request to move beyond collection, an active dispatcher
+lease drains the six existing batches while temporarily preventing new jobs.
+Read `flow_bc_v45_stage/collection_eval_lease.json`: dispatcher PID 550064 is
+restored after evaluation or timeout; its child collectors are never signaled.
+Drain/start wait is bounded at one hour, the evaluation window at 7,500 s.
+Other GPU users can still delay it. Nineteen targeted CPU tests pass, including
+normal/error scheduling recovery. Preserve serial collection/evaluation.
 Both controllers use the common endpoint. CPU preflight verifies five v4
 starts and rejects unsupported new-placement flags. GRAB remains outside
 static training; v5-placement and unseen-garment closed-loop results remain open.
