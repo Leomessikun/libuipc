@@ -268,3 +268,16 @@ The accompanying raw snapshot is 810 v4 + 1,523 v5 accepted entries, totalling
 2,333 entries / 732,617 commands. The model still uses the frozen audited
 1,275-episode cache (1,079 training, 196 validation), not every collected entry.
 No dynamic student or new-garment result follows from these static tests.
+
+### Gown result from the remaining-case run
+
+`hospital_gown` / body 10040 completed in 870.06 s wall time while sharing the
+GPU. Flow reached the endpoint at decision 303 and completed the hold at 323,
+with valid grasp and no simulator error. FMVP ended at decision 288 when its
+grasp exceeded the tracking-validity bound; it had not reached the endpoint.
+Maximum initial cloth mismatch is 7.91 mm and the initial TCP difference is
+zero. This is a preliminary flow completion, not controlled evidence of
+superiority. The four completed selected starts all succeed for flow; FMVP
+succeeds on three. `tshirt_392` is still running, so the five-case result is
+incomplete. These initial-state mismatches must be resolved before comparative
+performance claims or a larger matched evaluation.

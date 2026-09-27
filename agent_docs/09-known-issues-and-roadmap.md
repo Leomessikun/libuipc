@@ -1,5 +1,30 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Dynamic protocol and queued diagnostic — 2026-09-27
+
+The gown case subsequently completed: flow accepted, FMVP grasp failure, with
+7.91 mm maximum initial cloth mismatch. Four selected static cases now complete
+for flow; the last static case is running. Do not interpret the gown difference
+as a controlled policy improvement.
+
+The motion pilot now distinguishes full body tracking from grasp/task failure,
+uses the audited interior-wrap/armhole endpoint by default, and rejects
+controller resets differing by more than 10 micrometres. Hold-only smoke runs
+may continue after a recorded grasp failure to check the rest of the body
+motion; policy trials cannot. Full smoke length, finite states, >= 1 mm motion
+and <= 2 mm tracking remain mandatory. Fourteen CPU tests and real CPU actor
+preflight pass; there is no new physics result yet.
+
+The first corrected pilot is queued at `pilot_protocol_20260927`, waiting for
+`flow_bc_v45_stage/ipc_shared_remaining_20260927/status.json`. It shares GPU
+capacity with collection after that predecessor exits. Three motion smokes
+precede a same-observation static r1 gate, then the pass clip's five diagnostic
+controllers at onset 1 s with 450 decisions each. Initial placement, the live
+observation shift, body tracking and static competence may still fail gates;
+report their causes without attributing them to anticipation. An oracle-only
+gain or failure of one pause rule cannot settle the research question.
+No dynamic learning or unseen-garment result exists. Keep collection active.
+
 ## Research evidence and continuation — 2026-09-27
 
 Three selected static cases now complete for both controllers. Their initial

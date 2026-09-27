@@ -1,5 +1,39 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-27 — Dynamic protocol corrected and pilot queued
+
+The owner's continuation is proceeding while collection stays active.
+The gown case has now completed: flow passed at decision 303 plus 20 hold
+decisions; FMVP lost grasp at decision 288. Initial cloth states differ by
+7.91 mm, so this is not a controlled superiority result. Flow has completed
+four selected static cases; `tshirt_392` is still running.
+`probe_arm_motion.py` now separates body-drive/solver failures from grasp
+failures. An explicit hold-only `--motion-smoke` retains the first grasp
+failure and continues the prescribed motion; normal policy runs still stop
+at grasp failure. A valid smoke requires all 40 decisions/41 states, actual
+body excursion >= 1 mm, and tracking within the existing 2 mm bound. Failed
+grasps remain failed tasks and are not expert labels. No tolerance was relaxed.
+
+The default motion endpoint now matches the static cache: three interior
+sleeve sections wrapped, armhole upper fraction >= 0.7, valid grasp, with
+21 consecutive successful states for 20 hold transitions. The former metric
+remains available as `--endpoint legacy_ratio`; old outputs are unchanged.
+Controller resets must agree within 10 micrometres for cloth, human and TCP
+positions before action comparison. Fourteen CPU protocol/control tests pass.
+A real CPU preflight verifies r1 inference and records oracle/causal/yoked
+pause counts of 21/23/21 on 450 decisions; it performs no physics simulation.
+
+`output/anticipatory_dressing/pilot_protocol_20260927/status.json` reports
+`waiting_for_predecessor`. It waits for the existing remaining-static status
+to finish, then shares the GPU with collection, using one physics process at
+a time. It validates the three existing GRAB clips, tests static r1 under
+the same live-arm observations, and only on passing those gates compares the
+five controllers on the pass clip at onset 1 s, 450 decisions (45 s) each.
+Wait and execution budgets are each 7,200 s. The GICP and oracle pause are
+diagnostic controls, not a complete Sun et al. reproduction or a learned
+teacher. No new dynamic outcome or anticipation benefit is established yet.
+The command and evidence are in the pilot record. Do not launch a duplicate.
+
 ## 2026-09-27 — Research status and remaining static evaluation
 
 The static flow baseline has completed three selected validation-start cases

@@ -17,8 +17,8 @@ The causal predictor and dynamic teacher/student are not implemented.
 
 GRAB conversion produced pass, lift, and phone clips. The first two body-drive
 smokes pass; the phone hold loses its grasp despite body tracking remaining
-within tolerance. Separate physical motion validity from controller/task
-failure before dynamic comparisons. Next compare reactive registration,
+within tolerance over its recorded prefix. The corrected protocol below
+separates body-drive validity from controller/task failure. Next compare reactive registration,
 causal/history-based controls, and a true-future diagnostic under the same
 initial state, decision and pause budgets. A benefit from true future access
 alone is insufficient; usable information must be inferable from past/current
@@ -32,6 +32,79 @@ evaluate unseen garment identities separately and jointly with unseen motion.
 GRAB supplies recipient motion, while the simulator/controller must generate
 robot action labels. Existing static actions cannot simply be reused after
 moving the recipient.
+
+## Corrected motion protocol and queued first comparison — 2026-09-27
+
+The original phone smoke stopped after five decisions on a grasp failure.
+That established neither invalid body physics nor valid tracking for the full
+clip. `probe_arm_motion.py --motion-smoke` is now an explicit hold-only
+diagnostic: it retains the first grasp failure, continues zero-command motion,
+and still stops immediately on body-drive or solver failure. Ordinary policy
+trials keep the original stop-on-grasp-failure behavior. Smoke output with a
+failed grasp cannot supply successful task demonstrations. A later solver
+failure preserves the earlier grasp-failure record as well.
+
+`run_motion_pilot.py` requires the full 40 decisions and 41 finite body states,
+at least 1 mm actual excursion, and maximum tracking error within the existing
+2 mm bound. The recorded grasp outcome is separate from this body-motion gate.
+Passing only the first five frames can no longer pass the full-clip gate.
+Body tracking under this prescribed soft drive is still not a calibrated
+human biomechanics or contact-force model.
+
+The default `--endpoint interior_armhole` now matches the audited static
+criterion: all three interior sections surround the arm and the armhole seam
+reaches 0.7 along elbow-to-shoulder. The completion controller uses that same
+criterion. Twenty hold transitions require 21 consecutive successful states;
+grasp validity is required throughout. The old cuff-inclusive legacy progress
+rule remains available with `--endpoint legacy_ratio`, and old archives retain
+their original meaning. Both metrics remain in new state recordings.
+Dynamic comparison still evaluates final persistence over its full decision
+budget; static collection stops after its completion hold, so the protocols
+are not interchangeable success-rate estimates.
+
+Controller resets in one comparison must agree within 10 micrometres in cloth,
+human vertices and TCP positions. A larger or nonfinite difference aborts
+before executing that controller; per-method differences are saved in metrics.
+This addresses the need for matched starts rather than assuming reset identity.
+
+Fourteen CPU tests pass: the endpoint and partial/full-motion failure cases,
+absorbing grasp-failure history, separate solver failure, reset mismatch, and
+existing registration/causal-information controls. Python compilation and
+`git diff --check` pass. Real CPU preflight at
+`output/anticipatory_dressing/pilot_protocol_preflight_20260927` produces finite
+r1 actions from 63 visible arm and 200 cloth points, and pause counts of
+21/23/21 (oracle/causal/yoked). This verifies plumbing, not body physics or
+policy competence. The existing placement search reports 117.2 mm offset from
+its preferred opening target; the same-scene static policy gate remains
+necessary before attributing a failure to motion.
+
+The queued run is:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+CUDA_MPS_PIPE_DIRECTORY=/home/ge47gax/.mps_pipe \
+CUDA_MPS_LOG_DIRECTORY=/home/ge47gax/.mps_log \
+  /home/ge47gax/kun/genesis-world/.venv/bin/python -u \
+  scripts/wang_transfer/run_motion_pilot.py \
+  --motions output/anticipatory_dressing/motions/s1_mug_pass_body14046.npz \
+  --smoke-motions output/anticipatory_dressing/motions/s1_mug_lift_body14046.npz \
+                  output/anticipatory_dressing/motions/s1_phone_call_1_body14046.npz \
+  --out output/anticipatory_dressing/pilot_protocol_20260927 \
+  --steps 450 --onsets 1 --endpoint interior_armhole --allow-shared-gpu \
+  --after-status output/anticipatory_dressing/flow_bc_v45_stage/ipc_shared_remaining_20260927/status.json \
+  --wait-for-gpu 7200 --wall-budget 7200
+```
+
+It is currently `waiting_for_predecessor`. The predecessor wait is read-only
+and bounded; its complete/error/interrupted status releases this runner,
+which performs its own motion and static-control gates. The execution budget
+starts after the wait. No collection process is signaled. Three motion smokes
+precede the pass clip's same-observation static r1 case, followed by r1, GICP,
+oracle pause, causal-present pause and shifted-oracle pause. Each policy has
+450 decisions at 10 Hz, including pauses. The onset is a fixed 1 s diagnostic,
+not yet a verified contact-phase intervention. The exact future and exact
+present-motion schedules are privileged controls, not a learned predictor.
+No new dynamic simulation outcome or anticipation benefit is established yet.
 
 ## Scope and decision
 

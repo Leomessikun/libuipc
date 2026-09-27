@@ -25,6 +25,7 @@ from uipc_manip.motion_controls import bounded_correction, gicp, observed_arm_ro
 
 WORKSPACE = Path("/home/ge47gax/kun")
 METHODS = ("r1", "gicp", "oracle_pause", "causal_pause", "yoked_pause", "hold")
+ENDPOINTS = ("interior_armhole", "legacy_ratio")
 
 
 def save_json(path, value):
@@ -45,6 +46,8 @@ def parser():
     p.add_argument("--steps", type=int, default=350, help="Same total decision budget for every controller, including pauses")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--success", type=float, default=.7)
+    p.add_argument("--endpoint", choices=ENDPOINTS, default="interior_armhole",
+                   help="interior_armhole matches the audited static sleeve criterion; legacy_ratio reproduces the original pilot.")
     p.add_argument("--hold", type=int, default=20, help="Consecutive successful states required; trials still use the full budget")
     p.add_argument("--future-horizon", type=float, default=.4)
     p.add_argument("--pause-displacement", type=float, default=.02)
@@ -57,8 +60,37 @@ def parser():
     p.add_argument("--newton-velocity-tolerance", type=float, default=.01,
                    help="IPC absolute velocity convergence tolerance in m/s; .1 from the static preset failed the motion gate")
     p.add_argument("--preflight-only", action="store_true", help="CPU asset, placement, schedule and checkpoint checks; no physics")
+    p.add_argument("--motion-smoke", action="store_true",
+                   help="Hold-only body-drive diagnostic: retain grasp failures but continue checking the full motion; never accept as task supervision.")
+    p.add_argument("--allow-shared-gpu", action="store_true",
+                   help="Run alongside collection when GPU sharing is authorized.")
     p.add_argument("--wait-for-gpu", type=float, default=0., help="Maximum seconds to wait for other compute jobs; never stops them")
     return p
+
+
+def endpoint_reached(state, endpoint, threshold):
+    if endpoint == "interior_armhole":
+        return bool(state["sleeve_sections_wrapped"] and state["sleeve_armhole_upper_fraction"] >= threshold)
+    if endpoint == "legacy_ratio":
+        return bool(state["sleeve_wrapped"] and state["upperarm_ratio"] >= threshold)
+    raise ValueError(f"Unknown sleeve endpoint: {endpoint}")
+
+
+def classify_failures(info, step, previous_grasp_failure=None):
+    """Keep task failure history even if a later body-drive/solver failure occurs."""
+    if info.get("sim_error"):
+        return dict(kind="invalid_physics", step=step, detail=info["error"]), previous_grasp_failure
+    if not info["grasp_valid"] and previous_grasp_failure is None:
+        previous_grasp_failure = dict(kind="invalid_grasp", step=step + 1, detail="grasp tracking limit exceeded")
+    return None, previous_grasp_failure
+
+
+def initial_state_difference(reference, state):
+    differences = {key: float(np.linalg.norm(state[key] - reference[key], axis=-1).max())
+                   for key in ("positions", "human_vertices", "tcp")}
+    if not np.isfinite(list(differences.values())).all() or max(differences.values()) > 1e-5:
+        raise ValueError(f"Controller reset differs from the reference initial state by more than 10 micrometres: {differences}")
+    return differences
 
 
 def idle_gpu(timeout_s):
@@ -209,9 +241,16 @@ def run(args):
                     observations="obs[t] -> actions[t] -> obs[t+1]; state arrays have one extra frame",
                     registration="covariance-weighted nearest-neighbor GICP, observed spatial ROI, bounded point displacement; proxy only",
                     force_input="zero for all controllers", scope="single sleeve, one known garment; no garment-generalization claim",
-                    success_rule="wrapped physical sleeve and upperarm ratio >= threshold for hold consecutive decisions, valid grasp throughout",
+                    endpoint=args.endpoint,
+                    success_rule=("three interior sections wrap the arm and armhole upper fraction >= threshold for hold consecutive decisions, valid grasp throughout"
+                                  if args.endpoint == "interior_armhole" else
+                                  "wrapped physical sleeve and upperarm ratio >= threshold for hold consecutive decisions, valid grasp throughout"),
+                    motion_smoke=args.motion_smoke,
+                    gpu_scheduling="shared" if args.allow_shared_gpu else "exclusive_idle_wait",
                     failure_policy="retain failed runs; no success filtering; simulation failure is invalid physics, not task failure")
     metadata["completion_control"] = "suppress actor advance while sleeve is wrapped and progress meets the endpoint; retain the method's registration correction"
+    required_success_states = args.hold + 1 if args.endpoint == "interior_armhole" else args.hold
+    metadata["required_success_states"] = required_success_states
     save_json(args.out / "run.json", metadata)
     np.savez_compressed(args.out / "schedules.npz", times=np.arange(args.steps) * dt, **masks)
     print("[preflight] " + json.dumps(dict(placement=placement, pause_counts=metadata["pause_counts"], decision_dt_s=dt)), flush=True)
@@ -221,10 +260,12 @@ def run(args):
             save_json(args.out / "cpu_policy_probe.json", result)
             print("[policy preflight] " + json.dumps(result), flush=True)
         return
-    idle_gpu(args.wait_for_gpu)
+    if not args.allow_shared_gpu:
+        idle_gpu(args.wait_for_gpu)
     client = None
     env = None
     records = []
+    reference_initial = None
     try:
         if any(method != "hold" for method in args.methods):
             client = make_client(args)
@@ -237,6 +278,7 @@ def run(args):
             previous_roi = None
             hold_count, first_success = 0, None
             failure = None
+            grasp_failure = None
             started = time.monotonic()
 
             def state():
@@ -250,9 +292,15 @@ def run(args):
                             finger=current.finger.copy(), elbow=current.elbow.copy(), shoulder=current.shoulder.copy(),
                             upperarm_ratio=float(progress.upperarm_ratio), forearm_ratio=float(progress.forearm_ratio),
                             sleeve_wrapped=bool(geometry["sleeve_wrapped"]), sleeve_cuff_s=float(geometry["cuff_s"]),
+                            sleeve_sections_wrapped=all(r["wrapped"] for r in geometry["rings"][1:]),
+                            sleeve_armhole_upper_fraction=float(geometry["armhole_upper_fraction"]),
                             sleeve_proximal_upper_fraction=float(geometry["proximal_upper_fraction"]))
 
             states.append(state())
+            if reference_initial is None:
+                reference_initial = states[0]
+            initial_difference = initial_state_difference(reference_initial, states[0])
+            hold_count = int(endpoint_reached(states[0], args.endpoint, args.success))
             for step in range(args.steps):
                 pos, flags, valid, _ = env.spec.unpack_numpy(obs[0])
                 policy = np.zeros(6) if client is None else client.act(pos[valid], flags[valid], np.zeros(3))
@@ -268,16 +316,17 @@ def run(args):
                     transform, diagnostics = gicp(previous_roi, roi)
                     correction = bounded_correction(transform, tool, args.correction_bound)
                 paused = bool(masks[method][step]) if method in masks else method == "hold"
-                completion_hold = states[-1]["sleeve_wrapped"] and states[-1]["upperarm_ratio"] >= args.success
+                completion_hold = endpoint_reached(states[-1], args.endpoint, args.success)
                 action = np.zeros(6) if paused or completion_hold else policy.copy()
                 action[:3] += correction / cfg.max_translation
                 action = np.clip(action, -1., 1.).astype(np.float32)
                 previous_roi = roi
                 obs, rewards, done, info = env.step(action[None], reset_on_done=False)
-                if info[0].get("sim_error"):
+                physics_failure, grasp_failure = classify_failures(info[0], step, grasp_failure)
+                if physics_failure is not None:
                     # The base environment resets on a solver exception. Never append
                     # that reset state as the outcome of this attempted transition.
-                    failure = dict(kind="invalid_physics", step=step, detail=info[0]["error"], attempted_action=action.tolist())
+                    failure = dict(**physics_failure, attempted_action=action.tolist())
                     break
                 states.append(state())
                 transitions.append(dict(actions=action, policy_actions=policy, pause=paused,
@@ -288,12 +337,13 @@ def run(args):
                                         grasp_valid=bool(info[0]["grasp_valid"]),
                                         executed_translation=env._anchor[0] - tool,
                                         body_tracking_max_m=env.body_tracking_max_m))
-                if not info[0]["grasp_valid"]:
-                    failure = dict(kind="invalid_grasp", step=step + 1, detail="grasp tracking limit exceeded")
-                    break
-                success = states[-1]["sleeve_wrapped"] and states[-1]["upperarm_ratio"] >= args.success
+                if grasp_failure is not None:
+                    failure = grasp_failure
+                    if not args.motion_smoke:
+                        break
+                success = endpoint_reached(states[-1], args.endpoint, args.success)
                 hold_count = hold_count + 1 if success else 0
-                if hold_count >= args.hold and first_success is None:
+                if hold_count >= required_success_states and first_success is None:
                     first_success = step + 1
                 if (step + 1) % 25 == 0 or step + 1 == args.steps:
                     print(f"[{method}] {step + 1}/{args.steps} t={env.motion_time_s:.2f}s "
@@ -307,12 +357,19 @@ def run(args):
             arrays.update(faces=cell.faces, human_faces=motion.faces, opening_idx=cell.opening_idx,
                           grasp_idx=cell.grasp_idx, picker_idx=cell.picker_idx)
             np.savez_compressed(args.out / f"{method}.npz", **arrays)
-            record = dict(method=method, steps=len(transitions), success=hold_count >= args.hold and failure is None,
+            record = dict(method=method, steps=len(transitions), success=hold_count >= required_success_states and failure is None,
                           ever_held_success=first_success is not None and failure is None,
-                          first_success_step=first_success, final_success=hold_count >= args.hold and failure is None,
+                          first_success_step=first_success, final_success=hold_count >= required_success_states and failure is None,
                           max_upperarm_ratio=max(row["upperarm_ratio"] for row in states),
                           final_upperarm_ratio=states[-1]["upperarm_ratio"],
                           final_sleeve_wrapped=states[-1]["sleeve_wrapped"],
+                          final_sections_wrapped=states[-1]["sleeve_sections_wrapped"],
+                          final_armhole_upper_fraction=states[-1]["sleeve_armhole_upper_fraction"],
+                          endpoint=args.endpoint, motion_smoke=args.motion_smoke,
+                          initial_difference_m=initial_difference,
+                          valid_grasp=grasp_failure is None, grasp_failure=grasp_failure,
+                          body_motion_valid=(len(transitions) == args.steps
+                                             and (failure is None or failure["kind"] != "invalid_physics")),
                           pause_count=sum(row["pause"] for row in transitions),
                           registration_failures=sum(not row["registration_valid"] for row in transitions[1:]) if method not in ("r1", "hold") else 0,
                           failure=failure, elapsed_s=time.monotonic() - started, **env.motion_diagnostics())
@@ -323,6 +380,8 @@ def run(args):
             records.append(record)
             save_json(args.out / "metrics.json", records)
             print("[result] " + json.dumps(record), flush=True)
+            if failure is not None and failure["kind"] == "invalid_physics":
+                break
     finally:
         if env is not None:
             env.close()
@@ -335,6 +394,8 @@ def main():
     if (args.steps < 2 or args.hold < 1 or not 0 < args.success <= 1
             or len(set(args.methods)) != len(args.methods)):
         raise ValueError("Need steps >= 2, hold >= 1, success in (0,1], and unique methods")
+    if args.motion_smoke and args.methods != ["hold"]:
+        raise ValueError("--motion-smoke is a hold-only diagnostic, not policy or training data")
     values = [args.onset, args.motion_speed, args.future_horizon, args.pause_displacement,
               args.correction_bound, args.yaw, args.tracking_tolerance, args.drive_strength, args.wait_for_gpu]
     if not np.isfinite(values).all() or min(args.onset, args.wait_for_gpu) < 0 or min(values[1:5] + values[6:8]) <= 0:
