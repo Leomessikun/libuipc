@@ -1,5 +1,52 @@
 # Anticipatory dressing: GRAB motion pilot
 
+## 2026-09-28: pilot complete; next comparison holds the planner fixed
+
+`pilot_pass_continuation_20260927/status.json` is complete. The existing
+single-body, single-pass-clip, one-second-onset comparison ended as follows:
+
+| Controller | Final success | Completed decisions | First held success |
+| --- | --- | ---: | ---: |
+| Dynamic r1 | No; grasp lost | 13 | None |
+| GICP proxy | Yes | 450 | 156 |
+| Oracle pause plus GICP | No; grasp lost | 190 | None |
+| Causal pause plus GICP | Yes | 450 | 211 |
+| Yoked pause plus GICP | No; grasp lost | 133 | None |
+
+The static r1 control also succeeds, first held success at decision 206.
+All comparison resets meet the existing 10-micrometre initial-state bound.
+The causal pause schedule uses exact present/past motion, not camera-estimated
+motion or a learned forecast. Oracle pause is a heuristic with future access,
+not an optimal teacher. These results neither demonstrate a benefit from
+anticipation nor rule it out. The GICP implementation is a simplified proxy,
+not a reproduction of Sun et al.'s complete policy and representation.
+
+The owner retains dynamic-arm dressing and garment generalization and has
+excluded MaxRL. The next method experiment should reuse sampled IPC lookahead
+and compare a common planner under three motion-information conditions:
+
+1. Hold the current human pose constant inside the planning branches.
+2. Extrapolate motion from past/current observations.
+3. Supply the true future motion inside the planning branches.
+
+All execute against the same real prescribed motion in the simulator. Use
+identical candidate robot actions, current-state information, geometric score,
+execution frequency, horizon and simulation budget. Record grasp validity,
+sleeve wrapping, progress and full continuation outcomes; a short-horizon
+score improvement alone is insufficient. Keep the existing GICP proxy as a
+separate reactive baseline. Start with the validated pass/lift clips and a
+statically successful garment, covering pre-entry and inserted-sleeve starts.
+Do not use the failed phone-drive check as a policy comparison.
+
+This planner comparison is planned, not implemented or launched. If true
+future information helps reproducibly, test whether a causal motion forecast
+retains the benefit before committing to large dynamic teacher/student training.
+Compare a history-only policy and a forecast-conditioned policy with identical
+dynamic data and compute, and test held-out subjects/sequences and garments.
+Teacher access to unpredictable future motion cannot be assumed distillable.
+The method contribution remains unvalidated; collecting dynamic data or using
+a future teacher is not by itself a new algorithm.
+
 ## Update at 19:00 CEST: static gate and GICP succeed on the pass clip
 
 The same-scene static r1 gate completed 450 decisions successfully, with

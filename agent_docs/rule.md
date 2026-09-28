@@ -110,6 +110,14 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Keep the dressing research direction; exclude MaxRL (2026-09-28).** The
+  owner explicitly removed MaxRL from this project and requested continuing
+  garment generalization and dynamic-arm dressing. Do not schedule MaxRL
+  implementation or experiments as part of this plan. Inspect the existing
+  running jobs and their results, preserve collection, and distinguish static
+  flow training from the still-unimplemented future-informed teacher and
+  causal anticipatory student.
+
 - **Continue Claude's existing dressing work (2026-09-27).** The owner asked
   to inspect what Claude implemented and continue from it. Read its current
   code, checkpoints, logs and active jobs when selecting the next step;

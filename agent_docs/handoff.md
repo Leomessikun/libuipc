@@ -1,5 +1,34 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-28 17:03 CEST — Live results reviewed; original dressing direction retained
+
+The owner removed MaxRL from the project. Continue garment generalization and
+dynamic-arm dressing. At the read-only snapshot, the v5 dispatcher has three
+active collectors and 2,477 accepted records. The two existing ClothesNet
+coordinators have five active collectors combined. Their logs are advancing.
+No process was signaled, no training/evaluation checkpoint was changed, and
+no new GPU experiment was launched during this review. `nvidia-smi` reports a
+driver/library mismatch, so current GPU memory use is unknown.
+
+The five-garment evaluation is complete: FMVP/r1/flow accept 100/130/138 of
+201 starts; four additional planned units have no legal start. ClothesNet is
+interim: 378 policy rows, 119 complete triples, 116 started triples across
+16 garments, with 35/42/40 successes. Grasp failures remain in the denominator.
+There are no duplicate result keys in this snapshot. The 60k training-budget
+control completed with best logged validation first-action MSE sum 0.0173,
+versus 0.0191 at 30k; no 60k closed-loop comparison exists. New collection
+records are not automatically included in the frozen 1,807-episode trainer.
+
+The pass-motion pilot is complete: GICP and causal pause succeed; r1, oracle
+pause and yoked pause fail. This single case does not establish anticipation
+benefit or its absence. Next finish the garment baseline and prepare training
+garments, while implementing a bounded comparison that holds the planner,
+candidate actions and budget fixed and changes only its motion information.
+Dynamic teacher training and student distillation remain conditional on useful,
+causally learnable information. See the updated static continuation and motion
+pilot records. Hashed input copies and the status report are in
+`output/anticipatory_dressing/status_review_20260928_150255/`.
+
 ## 2026-09-27 19:05 CEST — First five garment pairs; dynamic GICP succeeds
 
 Claude's 30k flow and r1 finished the first seven bodies on all five garments:

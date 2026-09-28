@@ -1,5 +1,38 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Garment transfer and dynamic-arm research — 2026-09-28
+
+MaxRL is excluded by the owner. Continue the existing collection and
+ClothesNet evaluation, then add training garments to the static flow dataset
+with fixed garment/subject splits. The current evaluation checkpoint was
+trained on 1,807 static episodes from the five existing garments; the growing
+v5 ledger is not its training set. The 25/50/100 percent offline curves do not
+establish data sufficiency, and the 60k model's lower validation error does
+not establish better closed-loop performance.
+
+The next method experiment is a common short-horizon planner with three
+motion models: fixed present pose, causal velocity extrapolation, and true
+future motion. Keep candidate actions, current observations, scoring,
+execution frequency, resets and branch budgets matched. Include the existing
+reactive GICP proxy as an external baseline. Test validated motion clips at
+pre-entry and inserted-sleeve states; use full dressing outcomes to validate
+short-horizon selections. The single completed pause pilot is insufficient.
+
+Only after future information provides a repeatable benefit, collect dynamic
+corrections and compare history-only versus forecast-conditioned students on
+identical data, inputs and training budgets. Hold out complete motion subjects
+and sequences, and evaluate unseen garments and motions separately and jointly.
+The teacher/student combination is not itself a novelty claim. The specific
+learning mechanism and its advantage over ordinary dynamic imitation remain
+open research work.
+
+Operational observations: two ClothesNet coordinators currently share an
+output directory, so provenance/log overwrites are possible even without
+duplicate result rows. Use one coordinator or disjoint outputs for subsequent
+work. Preserve the present results and active jobs. GPU memory cannot currently
+be read through `nvidia-smi` because of a driver/library mismatch; do not infer
+free capacity from earlier measurements. The current review changed docs only.
+
 ## First paired static results and successful motion correction — 2026-09-27
 
 The newer flow policy accepts 30/35 cases versus r1's 29/35 over the first

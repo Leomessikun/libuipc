@@ -1,5 +1,57 @@
 # Continuation of Claude's static flow policy
 
+## 2026-09-28 17:03 CEST: completed static evaluation and live garment transfer
+
+This update supersedes the running-status statements in the dated entries
+below. The owner excluded MaxRL and retained the garment-transfer and
+dynamic-arm plan. The evidence snapshot is
+`output/anticipatory_dressing/status_review_20260928_150255/report.json`, with
+hashed copies of the original ledgers, training index, logs and motion status.
+It is a ledger/log review, not a new simulation or geometry validation.
+
+| Evaluation population | Started units completed by all three policies | FMVP | r1 | Flow |
+| --- | ---: | ---: | ---: | ---: |
+| Five existing garments, completed | 201 | 100 | 130 | 138 |
+| ClothesNet, interim | 116 | 35 | 42 | 40 |
+
+The static grid has 205 planned units and four without a legal start. The
+ClothesNet snapshot has 378 policy rows, 119 complete triples, three of those
+without a legal start, and 16 garments represented among the 116 started
+triples. Lost grasps remain failures in the denominator. There are no duplicate
+result keys. Pending units are not failures or completed trials. This is not
+the final 20-garment, 14-body result, and its aggregate cannot establish a
+policy ranking. Previously measured nonidentical settled cloth and the static
+body selection limitations remain. A garment that all policies fail is not
+automatically an invalid asset.
+
+The v5 manifest has 2,477 accepted records: tshirt_26 428, tshirt_68 489,
+tshirt_4 660, tshirt_392 570, and hospital_gown 330. Three collection workers
+remain active under dispatcher 550064. ClothesNet coordinators 3485169 and
+1056477 have three and two active workers respectively. Their output logs
+continue to advance. The frozen flow training set remains 1,807 episodes;
+these additional records are not automatically consumed by that checkpoint.
+
+The training-budget control completed:
+
+| Training body fraction | Updates | Best logged validation first-action MSE sum |
+| --- | ---: | ---: |
+| 25 percent | 30,000 | 0.0185 |
+| 50 percent | 30,000 | 0.0185 |
+| 100 percent | 30,000 | 0.0191 |
+| 100 percent | 60,000 | 0.0173 |
+
+The 60k result comes from `claude_flow_h16_60k_20260927/train.log`; evaluation
+continues to use the frozen 30k checkpoint. These are sampled offline errors,
+with one seed and non-nested fractional subsets. They do not establish a data
+ceiling or an improvement in dressing success. Evaluate selected models on
+validation before a separate final test; retain the existing test baseline.
+
+Next retain the 20 ClothesNet test garments, prepare independent training and
+validation garment manifests, and compare the same flow model trained with
+and without garment diversity. Dynamic experiments can proceed on a statically
+successful garment while that work continues; they need not wait for success
+on every garment. The motion pilot record specifies the next comparison.
+
 ## Update at 19:05 CEST: five paired garment batches and a training-budget control
 
 The first seven body/pose IDs have completed both policies on all five garments:
