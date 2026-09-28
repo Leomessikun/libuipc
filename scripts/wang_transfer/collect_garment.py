@@ -103,6 +103,9 @@ def parser():
     p.add_argument("--cloth-density", type=float, default=None,
                    help="Optional kg/m^3 material-density override; save and extract separately from default physics.")
     p.add_argument("--garment", default="tshirt_26")
+    p.add_argument("--sleeve-template", type=Path,
+                   help="Rest mesh for the physical-sleeve sections (same topology as the baked garment); "
+                        "default: FMVP's cloth3d mesh <garment>.obj scaled by 4.")
     p.add_argument("--native-policy-actions", action="store_true",
                    help="Execute the policy's 6-D action as given (no FMVP rotation rule, no slow-down).")
     p.add_argument("--align-armhole-axis", action="store_true",
@@ -224,8 +227,12 @@ def main():
     sleeve_template = None
     if args.success_geometry == "physical_sleeve":
         from physical_sleeve import DEFAULT_OBJ, SleeveSections, measure as measure_sleeve, read_obj
-        rest_vertices, rest_faces = read_obj(DEFAULT_OBJ.parent / f"{args.garment}.obj")
-        sleeve_template = (rest_vertices * 4., rest_faces)
+        if args.sleeve_template is not None:
+            rest_vertices, rest_faces = read_obj(args.sleeve_template)
+            sleeve_template = (rest_vertices, rest_faces)
+        else:
+            rest_vertices, rest_faces = read_obj(DEFAULT_OBJ.parent / f"{args.garment}.obj")
+            sleeve_template = (rest_vertices * 4., rest_faces)
     variants = args.variants * args.replicas
     labels = [f"{v}_rep{i}" if args.replicas > 1 else v for i, v in enumerate(variants)]
     if args.profiles_json is not None:
