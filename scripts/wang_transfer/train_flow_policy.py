@@ -80,6 +80,12 @@ def load(a):
                 i, kind = k.split("_")
                 data.setdefault(int(i[1:]), {})[kind] = z[k]
     split = {s: [i for i, e in enumerate(index) if e["split"] == s and i in data] for s in ("train", "val", "test")}
+    if getattr(a, "train_fraction", 1.0) < 1.0:
+        # Keep a fixed random subset of training bodies (all their episodes), for data-scaling curves.
+        bodies = sorted({index[i]["body"] for i in split["train"]})
+        rng = np.random.default_rng(a.seed)
+        keep = set(rng.choice(bodies, max(1, round(a.train_fraction * len(bodies))), replace=False).tolist())
+        split["train"] = [i for i in split["train"] if index[i]["body"] in keep]
     return index, data, split
 
 
@@ -180,6 +186,8 @@ def main():
     t.add_argument("--eval-every", type=int, default=2000)
     t.add_argument("--device", default="cuda")
     t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--train-fraction", type=float, default=1.0,
+                   help="Train on this fraction of the training bodies (validation unchanged).")
     t.add_argument("--out", type=Path, required=True)
     a = p.parse_args()
     features(a) if a.stage == "features" else train(a)

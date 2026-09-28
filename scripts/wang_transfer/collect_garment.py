@@ -110,6 +110,9 @@ def parser():
                    help="Execute the policy's 6-D action as given (no FMVP rotation rule, no slow-down).")
     p.add_argument("--align-armhole-axis", action="store_true",
                    help="Start with the forearm's extension through the armhole centre (first legal of the best-aligned placements).")
+    p.add_argument("--align-target", choices=("armhole", "cuff"), default="armhole",
+                   help="With --align-armhole-axis, the sleeve ring aimed at: the armhole 5-20 cm past the fingertip, "
+                        "or the free cuff 3-15 cm past it (long sleeves hang their cuff far from the armhole).")
     p.add_argument("--sections-wrap", action="store_true",
                    help="Sleeve on the arm = its three interior sections wrap the arm; the cuff may hang past the hand.")
     p.add_argument("--arm-frame-placement", action="store_true",
@@ -304,6 +307,11 @@ def main():
             # garments and scales, and the hand then meets the garment beside the opening.
             elbow = np.asarray(cell.elbow, float)
             fwd = (elbow - finger) / np.linalg.norm(elbow - finger)
+            if args.align_target == "cuff":
+                from physical_sleeve import SleeveSections as _Sections
+                ring_idx, near, far = _Sections(*sleeve_template, cell.opening_idx).cuff, 0.03, 0.15
+            else:
+                ring_idx, near, far = cell.opening_idx, 0.05, 0.20
             ranked = []
             for dy in (-40., -20., 0., 20., 40.):
                 for dz in (-60., -40., -20., 0., 20., 40., 60.):
@@ -312,10 +320,10 @@ def main():
                     for degrees in range(0, 360, 5):
                         c, s_ = np.cos(np.radians(degrees)), np.sin(np.radians(degrees))
                         turn = np.array([[c, -s_, 0], [s_, c, 0], [0, 0, 1.]])
-                        ah = (hang_fit[cell.opening_idx].mean(0)) @ turn.T + tgt - finger
+                        ah = (hang_fit[ring_idx].mean(0)) @ turn.T + tgt - finger
                         t = float(ah @ fwd)
                         off = float(np.linalg.norm(ah - t * fwd))
-                        cost = off + 2. * max(0., -0.20 - t) + 2. * max(0., t + 0.05)   # armhole 5-20 cm past the tip
+                        cost = off + 2. * max(0., -far - t) + 2. * max(0., t + near)   # ring near..far past the tip
                         ranked.append((cost, degrees, tgt))
             ranked.sort(key=lambda r: r[0])
             from scipy.spatial import cKDTree

@@ -16,6 +16,7 @@ import argparse
 import collections
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import threading
@@ -62,6 +63,7 @@ def run_batch(args, policy, checkpoint, garment, bodies, offset_index):
            "--seed", str(args.seed), "--placement-offset-mm", *map(str, offset), "--out", str(out)]
     if is_flow(checkpoint):
         cmd += ["--native-policy-actions", "--profiles-json", str(args.out / "flow_profile.json")]
+    cmd += shlex.split(args.collector_args)
     log = out.with_suffix(".log")
     env = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", PYTHONUNBUFFERED="1", **MPS, **garment_env)
     with log.open("w") as stream:
@@ -112,6 +114,8 @@ def main():
     p.add_argument("--seed", type=int, default=2026092700)
     p.add_argument("--summary", action="store_true")
     p.add_argument("--max-bodies", type=int, help="Evaluate only the first N bodies of the split.")
+    p.add_argument("--collector-args", default="",
+                   help="Extra collector options for every job, one quoted string (e.g. '--align-target cuff').")
     args = p.parse_args()
     args.out = args.out.resolve()
     if args.summary:

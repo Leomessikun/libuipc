@@ -4,12 +4,12 @@ ClothesNet ships each top as unwelded sewing panels (centimetres, Y up). Per gar
 
 * welds panel seams (vertices within ``--weld-cm``), skipping a panel that would make an edge
   non-manifold (collars and pockets sewn on top), and keeps the largest connected piece;
-* converts to metres in Wang's raw frame (Z up, sleeves along X) and optionally remeshes;
+* converts to metres in Wang's raw frame (Z up, sleeves along X);
 * finds the two cuffs (the boundary loops at the sleeve ends) and takes the one at -X, the side
   Wang's tables use, as the dressed sleeve;
 * finds the armhole seam from the panels: the welded vertices between the panels that carry that
-  cuff and the rest of the garment (geometric fallback: the first section plane from the cuff whose
-  loop is much longer than the sleeve's);
+  cuff and the rest of the garment; when that fails (sleeves cut with the torso), marches
+  cross-sections from the cuff and takes the last closed sleeve section;
 * writes Wang-style index tables: six armhole vertices (``shoulder_polygon``), a grasp patch on
   top of the shoulder medial to the armhole, two picker vertices at its top, and a two-vertex
   alignment line pointing from the hand side to the shoulder side.
@@ -65,16 +65,29 @@ def weld(v, f, labels, weld_cm):
         while rep[r] != r:
             r = rep[r]
         rep[i] = r
-    kept, skipped = [], []
+    kept, kept_panel, skipped = [], [], []
     for panel in order:
-        trial = np.concatenate(kept + [f[labels == panel]]) if kept else f[labels == panel]
-        _, counts = edge_counts(rep[trial])
+        own = f[labels == panel]
+        if not kept:
+            # A panel that is non-manifold by itself loses the faces on its over-shared edges.
+            edges, counts = edge_counts(rep[own])
+            bad = {tuple(e) for e in edges[counts > 2]}
+            if bad:
+                tri = rep[own]
+                keep = [not ({tuple(sorted((t[0], t[1]))), tuple(sorted((t[1], t[2]))), tuple(sorted((t[2], t[0])))} & bad)
+                        for t in tri]
+                own = own[np.asarray(keep, bool)]
+            kept.append(own)
+            kept_panel.append(np.full(len(own), panel))
+            continue
+        _, counts = edge_counts(rep[np.concatenate(kept + [own])])
         if (counts > 2).any():
             skipped.append(int(panel))
             continue
-        kept.append(f[labels == panel])
+        kept.append(own)
+        kept_panel.append(np.full(len(own), panel))
     faces = rep[np.concatenate(kept)]
-    face_panel = np.concatenate([np.full((labels == p).sum(), p) for p in order if p not in skipped])
+    face_panel = np.concatenate(kept_panel)
     # Largest connected piece after welding.
     comp = trimesh.graph.connected_component_labels(trimesh.graph.face_adjacency(faces), node_count=len(faces))
     main = np.argmax(np.bincount(comp))
@@ -116,6 +129,72 @@ def ring_order(points, centre, axis):
     return np.argsort(np.arctan2(rel @ other, rel @ ref))
 
 
+def geometric_armhole(V, faces, cuff, step=0.015):
+    """March cross-sections from the cuff along the sleeve; the armhole is the last closed sleeve section
+    before a section leaves the sleeve (no closed loop near the centreline, or one much longer)."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "wang_transfer"))
+    from physical_sleeve import SleeveSections
+
+    centre = V[cuff].mean(0)
+    axis = np.array([1.0, 0.0, 0.0])                     # the -X sleeve runs towards +X
+    ring = np.linalg.svd(V[cuff] - centre)[2][2]
+    axis = ring if ring @ axis > 0 else -ring
+    perimeters, last = [], None
+    for k in range(1, 80):
+        section = None
+        for jitter in (0.0, 1e-4, -1e-4, 3e-4):
+            try:
+                section = SleeveSections._section(V, faces, centre, axis, 1.0, step + jitter)
+                break
+            except ValueError:
+                continue
+        if section is None:
+            break
+        edges, weight = section
+        pts = V[edges[:, 0]] * (1 - weight[:, None]) + V[edges[:, 1]] * weight[:, None]
+        perim = float(np.linalg.norm(np.diff(np.vstack([pts, pts[:1]]), axis=0), axis=1).sum())
+        if (np.linalg.norm(pts.mean(0) - (centre + step * axis)) > 0.05
+                or (len(perimeters) >= 2 and perim > 1.5 * np.median(perimeters[-3:]))):
+            break
+        perimeters.append(perim)
+        new_centre = pts.mean(0)
+        direction = new_centre - centre
+        if np.linalg.norm(direction) > 1e-6:
+            axis = 0.7 * axis + 0.3 * direction / np.linalg.norm(direction)
+            axis /= np.linalg.norm(axis)
+        centre, last = new_centre, edges
+    if last is None or len(perimeters) < 3:
+        raise ValueError("no closed sleeve section beyond the cuff")
+    # The cuff-side endpoint of every crossed edge of the last sleeve section.
+    signed = (V - centre) @ axis
+    return np.unique(np.where(signed[last[:, 0]] < signed[last[:, 1]], last[:, 0], last[:, 1]))
+
+
+def ring_shape(points):
+    """Mean radius and flatness (smallest over largest principal extent) of a ring of points."""
+    c = points.mean(0)
+    sv = np.linalg.svd(points - c, compute_uv=False)
+    return float(np.linalg.norm(points - c, axis=1).mean()), float(sv[2] / max(sv[0], 1e-12))
+
+
+def check_semantics(V, cuff, seam, grasp_centre, picker):
+    """Reject annotations that visual QA showed to be wrong: an 'armhole' that is a torso seam, a hem
+    taken for a cuff, a grasp below or lateral of the armhole."""
+    cuff_r, cuff_flat = ring_shape(V[cuff])
+    arm_r, arm_flat = ring_shape(V[seam])
+    arm_c = V[seam].mean(0)
+    far = float(np.linalg.norm(V[seam] - arm_c, axis=1).max())
+    if cuff_r > 0.12:
+        raise ValueError(f"QA: cuff radius {cuff_r:.3f} m (hem or slit taken for a cuff)")
+    if not (0.03 < arm_r < 0.13) or far > 0.2 or arm_flat > 0.35:
+        raise ValueError(f"QA: armhole ring radius {arm_r:.3f} m, max {far:.3f} m, flatness {arm_flat:.2f}")
+    if grasp_centre[2] < arm_c[2] + 0.03 or grasp_centre[0] < arm_c[0] + 0.04:
+        raise ValueError("QA: grasp patch not above and medial of the armhole")
+    if V[picker][:, 2].min() < arm_c[2]:
+        raise ValueError("QA: pickers below the armhole centre")
+
+
 def prepare(path, name, out, weld_cm=0.05, target_edge_m=None):
     v, f, labels = read_panels(path)
     vw, fw, face_panel, skipped = weld(v, f, labels, weld_cm)
@@ -145,11 +224,21 @@ def prepare(path, name, out, weld_cm=0.05, target_edge_m=None):
     method = "panels"
     ok = len(seam) >= 12
     if ok:
+        # A seam that runs on past the armhole (into a shoulder seam) has loose ends in the edge graph.
+        edges_all, _ = edge_counts(fw)
+        inside = np.isin(edges_all, seam).all(1)
+        degree = collections.Counter(edges_all[inside].ravel().tolist())
+        ok = sum(degree[int(x)] <= 1 for x in seam) < 2
+    if ok:
         seam_c = V[seam].mean(0)
         sleeve_len = np.linalg.norm(seam_c - cuff_c)
         ok = 0.08 < sleeve_len < 0.9 and seam_c[0] > cuff_c[0]
     if not ok:
-        raise ValueError(f"armhole seam not found from panels (seam vertices {len(seam)})")
+        seam = geometric_armhole(V, fw, cuff)
+        method = "sections"
+        seam_c = V[seam].mean(0)
+        if not (0.08 < np.linalg.norm(seam_c - cuff_c) < 0.9 and seam_c[0] > cuff_c[0]):
+            raise ValueError(f"armhole not found (panels: {len(seam)} seam vertices; sections gave a bad seam)")
     axis = (seam_c - cuff_c) / np.linalg.norm(seam_c - cuff_c)
     order = seam[ring_order(V[seam], seam_c, axis)]
     polygon = order[np.linspace(0, len(order), 6, endpoint=False).astype(int)]
@@ -175,6 +264,7 @@ def prepare(path, name, out, weld_cm=0.05, target_edge_m=None):
     picker = np.array([first, second])
     shoulder_end = patch[np.argmin(np.linalg.norm(V[patch] - (centre + 0.02 * medial), axis=1))]
     hand_end = patch[np.argmin(np.linalg.norm(V[patch] - (centre - 0.045 * medial), axis=1))]
+    check_semantics(V, cuff, seam, centre, picker)
     report.update(cuff_vertices=len(cuff), armhole_vertices=len(seam), armhole_method=method,
                   sleeve_length_m=float(np.linalg.norm(seam_c - cuff_c)),
                   armhole_radius_m=float(np.linalg.norm(V[seam] - seam_c, axis=1).mean()),

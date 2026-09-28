@@ -74,3 +74,28 @@ and the gravity hangs settle (opening 24-34 cm from the picker, 55-61 degrees do
 
 Every body had a legal start. Rendered frames of an accepted cn_tnsc_043 episode show the sleeve on the
 upper arm; a failed one has the hand beside the opening and the garment sliding off.
+
+## Data scaling of the flow policy (offline)
+
+Same trainer, 30k steps, fixed validation split (255 episodes), training on a fixed random subset of
+training bodies (`train_flow_policy.py --train-fraction`):
+
+| training bodies | training states | best val first-action MSE (sum of 4 dims) |
+|---|---|---|
+| 25 % | 146k | 0.0185 |
+| 50 % | 278k | 0.0185 |
+| 100 % | 571k | 0.0191 |
+
+Imitation error does not fall with more trajectories of the five Cloth3D garments; the current data
+saturate this model. Closed loop agrees: flow matches r1 on the training garments but loses to it on
+unseen ClothesNet garments (below), so what is missing is garment diversity, not episode count.
+
+## Interim zero-shot result on held-out ClothesNet garments (2026-09-28 14:00)
+
+8 of 20 test garments, 62 units paired across the three policies: fmvp_sim 13, r1 21, flow 15.
+r1 vs fmvp_sim 9:1 (p = 0.02); flow vs r1 0:6 (p = 0.03). Interim look, three comparisons: treat as
+provisional. Open-front jackets and the coarse cn_tnsc_top236 (16 mm edges, grasp lost within 20
+decisions) fail for every policy and are start/asset failures rather than policy differences.
+Cuff-aimed starts (`--align-target cuff`) lost to armhole-aimed ones on the pilot garments
+(9/14 vs 3/14, 6:0 discordant, p = 0.031), though they rescued one long-sleeve group (0/7 -> 3/7);
+armhole aiming stays the default.
