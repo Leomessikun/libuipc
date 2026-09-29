@@ -99,3 +99,26 @@ decisions) fail for every policy and are start/asset failures rather than policy
 Cuff-aimed starts (`--align-target cuff`) lost to armhole-aimed ones on the pilot garments
 (9/14 vs 3/14, 6:0 discordant, p = 0.031), though they rescued one long-sleeve group (0/7 -> 3/7);
 armhole aiming stays the default.
+
+## Where r1's gain comes from: BC-only controls (final, 201 test units, 2026-09-29)
+
+r1 was trained in two steps from `fmvp_sim.pt` (frozen encoder, trunk fine-tuned): round 0 = behaviour
+cloning on 157 accepted fmvp_sim episodes (68,929 states, 8 epochs; `fmvp_ipc_bc_20260924`), then 8 more
+epochs from round 0 on those states plus about 6,900 IPC-lookahead-labelled states (75,786 states). The
+control `bc_cont` continues round 0 for the same 8 epochs, learning rate, trust and hold weight on the
+68,929 BC states only (`fmvp_bc_continued_control_20260929`). All four on the same 201 units:
+
+| model | accepted |
+|---|---|
+| fmvp_sim | 100 |
+| bc0 (round 0) | 118 |
+| bc_cont (round 0 + 8 epochs, no IPC labels) | 105 |
+| r1 (round 0 + 8 epochs with IPC labels) | 130 |
+
+Exact McNemar, discordant pairs: bc0 vs fmvp_sim 32:14 (p = 0.011); bc_cont vs bc0 10:23 (p = 0.035);
+r1 vs bc_cont 33:8 (p = 1e-4); r1 vs bc0 22:10 (p = 0.050).
+
+Reading: behaviour cloning on the checkpoint's own successes helps; training further on the same successes
+hurts (back to the released level); training further with the IPC-labelled states instead improves on
+round 0. The IPC labels are the difference between the two continuations, at an equal training budget.
+Their gain over round 0 is borderline (p = 0.05); the controlled contrast is r1 vs bc_cont.

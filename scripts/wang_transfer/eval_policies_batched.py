@@ -32,7 +32,8 @@ def is_flow(checkpoint):
     import zipfile
     try:
         with zipfile.ZipFile(checkpoint) as z:     # torch zip checkpoint: pickled dict keys appear in data.pkl
-            return any(n.endswith("data.pkl") and b"flow_policy" in z.read(n) for n in z.namelist())
+            return any(n.endswith("data.pkl") and (b"flow_policy" in z.read(n) or b"flow_e2e" in z.read(n))
+                       for n in z.namelist())
     except zipfile.BadZipFile:
         return False
 
