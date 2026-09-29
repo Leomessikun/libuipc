@@ -170,3 +170,32 @@ Keep the pretrained representation for garment generalisation.
 The same evaluation for fmvp_sim, r1 and flow (240 units so far, second body group still running):
 fmvp_sim 51, r1 66, flow 67; r1 vs fmvp_sim 23:8 (p = 0.011), flow vs fmvp_sim 23:7 (p = 0.005),
 flow vs r1 13:12 (p = 1.0).
+
+## Held-out ClothesNet garments: final (20 garments x 14 test bodies, 2026-09-29)
+
+All 840 planned results are in (no-legal-start units excluded; lost jobs from the two MPS teardowns rerun).
+254 units paired across the three policies: fmvp_sim 52 (20 %), r1 68 (27 %), flow 70 (28 %).
+r1 vs fmvp_sim 25:9 (p = 0.009), flow vs fmvp_sim 25:7 (p = 0.002), flow vs r1 14:12 (p = 0.85).
+
+| garment | units | fmvp_sim | r1 | flow |
+|---|---|---|---|---|
+| cn_tcsc_model2_013 | 14 | 10 | 9 | 12 |
+| cn_tnlc_normal_model_034 | 13 | 7 | 9 | 10 |
+| cn_tnlc_jacket021 | 14 | 7 | 10 | 9 |
+| cn_tcsc_model2_080 | 14 | 7 | 7 | 9 |
+| cn_tclo_027 | 14 | 8 | 7 | 5 |
+| cn_tnsc_model2_020 | 14 | 5 | 8 | 7 |
+| cn_tnsc_model2_004 | 13 | 4 | 5 | 4 |
+| cn_tcnc_jacket144 | 11 | 2 | 4 | 5 |
+| cn_tnlc_036 | 14 | 1 | 2 | 5 |
+| cn_tclo_suit003 | 14 | 1 | 3 | 2 |
+| cn_tcsc_top610 | 14 | 0 | 2 | 1 |
+| cn_tnsc_top065 | 14 | 0 | 1 | 1 |
+| cn_tnlc_062 | 14 | 0 | 1 | 0 |
+| cn_tclo_048, cn_tclo_022, cn_tcsc_top483, cn_tcsc_top228, cn_tnlc_top315, cn_tnsc_top369, cn_tnsc_top236 | 71 | 0 | 0 | 0 |
+
+The IPC fine-tune's gain over the released checkpoint holds on unseen garments; the flow student keeps its
+teacher's level. Seven garments fail for every policy (never threaded, early grasp loss on a coarse mesh,
+a cuff as wide as the armhole, or mostly no legal start): garment/start compatibility, not policy choice,
+dominates the unseen-garment rate. Success on unseen garments (20-28 %) is about 40 % of the training-garment
+rate (50-69 %).
