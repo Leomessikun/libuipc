@@ -104,7 +104,10 @@ armhole aiming stays the default.
 
 r1 was trained in two steps from `fmvp_sim.pt` (frozen encoder, trunk fine-tuned): round 0 = behaviour
 cloning on 157 accepted fmvp_sim episodes (68,929 states, 8 epochs; `fmvp_ipc_bc_20260924`), then 8 more
-epochs from round 0 on those states plus about 6,900 IPC-lookahead-labelled states (75,786 states). The
+epochs from round 0 on those states plus the 6,857 states of one IPC DAgger round (75,786 states). Only
+1,505 of those 6,857 carry an IPC-lookahead label; the other 5,352 are behaviour-cloning states of the
+accepted episodes that round added (`features/episodes.json` lists 177 episodes, 8 with labels; the
+provenance of 18 of the 20 added episodes is still being re-checked). The
 control `bc_cont` continues round 0 for the same 8 epochs, learning rate, trust and hold weight on the
 68,929 BC states only (`fmvp_bc_continued_control_20260929`). All four on the same 201 units:
 
@@ -113,14 +116,15 @@ control `bc_cont` continues round 0 for the same 8 epochs, learning rate, trust 
 | fmvp_sim | 100 |
 | bc0 (round 0) | 118 |
 | bc_cont (round 0 + 8 epochs, no IPC labels) | 105 |
-| r1 (round 0 + 8 epochs with IPC labels) | 130 |
+| r1 (round 0 + 8 epochs with one IPC DAgger round) | 130 |
 
 Exact McNemar, discordant pairs: bc0 vs fmvp_sim 32:14 (p = 0.011); bc_cont vs bc0 10:23 (p = 0.035);
 r1 vs bc_cont 33:8 (p = 1e-4); r1 vs bc0 22:10 (p = 0.050).
 
 Reading: behaviour cloning on the checkpoint's own successes helps; training further on the same successes
 hurts (back to the released level); training further with the IPC-labelled states instead improves on
-round 0. The IPC labels are the difference between the two continuations, at an equal training budget.
+round 0. One IPC DAgger round (its labels plus the episodes it steered) is the difference between the two
+continuations, at an equal training budget; a labels-only control is still needed to credit the labels alone.
 Their gain over round 0 is borderline (p = 0.05); the controlled contrast is r1 vs bc_cont.
 
 ## All control policies on the 201 test units (final, 2026-09-29)
