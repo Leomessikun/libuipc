@@ -135,9 +135,10 @@ Same 201 units, same starts, exact McNemar on discordant pairs (`multi_way.py` o
 |---|---|---|
 | fmvp_sim | released PyBullet fine-tune | 100 |
 | bc_cont | round 0 + 8 epochs BC only | 105 |
+| flow_fmvp_all | flow (frozen encoder) on all 447 accepted fmvp_sim episodes | 97 |
 | flow_fmvp | flow (frozen encoder) on 236 fmvp_sim successes, matched units | 104 |
 | bc0 | round-0 BC on fmvp_sim successes | 118 |
-| r1 | round 0 + 8 epochs with IPC labels | 130 |
+| r1 | round 0 + 8 epochs with one IPC DAgger round | 130 |
 | flow_r1m | flow on 236 r1 successes, same units as flow_fmvp | 132 |
 | flow_e2e | end-to-end point encoder, all r1 data (force-rotation fix) | 137 |
 | flow | frozen-encoder flow, all r1 data | 138 |
@@ -151,6 +152,12 @@ so the flow head and the encoder (frozen vs end-to-end) do not change closed-loo
 the gain comes from the teacher, and the teacher's gain over the equal-budget BC control comes from the IPC
 labels. More r1 data (all vs matched 236 episodes) leans positive but is not significant. Unseen-garment
 results for flow_e2e are in `clothesnet_eval_test_e2e_20260929` (running).
+
+More fmvp_sim data does not lift the student past its teacher either: `flow_fmvp_all`
+(`fmvp_flow_all_20260929`, 447 accepted fmvp_sim episodes from `fmvp_sim_rollouts_scale_20260929` and the
+earlier collection, about 1.9x the 236 of flow_fmvp) reaches 97/201, vs fmvp_sim 15:18 (p = 0.73), vs r1 6:39
+(p < 1e-4), vs flow 7:48 (p < 1e-4). Doubling the teacher's own successes leaves the flow policy at the
+teacher's level, so the r1-data flow policies' gain is not a data-volume effect.
 
 ## Held-out ClothesNet garments: the end-to-end encoder does not generalise (2026-09-29)
 
