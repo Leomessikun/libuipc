@@ -21,7 +21,10 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from collect_scaled import COMMON, EVAL_BODIES, GARMENTS, OFFSETS_MM, PY, ROOT, Ledger, garment_args
+import shlex
+
+from collect_scaled import COMMON, EVAL_BODIES, GARMENTS, OFFSETS_MM, PY, ROOT, Ledger
+from eval_policies_batched import garment_cli
 
 MPS = {"CUDA_MPS_PIPE_DIRECTORY": "/home/ge47gax/.mps_pipe", "CUDA_MPS_LOG_DIRECTORY": "/home/ge47gax/.mps_log"}
 
@@ -31,11 +34,13 @@ def run_batch(args, garment, bodies, offset_index, stage, seed):
     tag = f"{stage}_off{'_'.join(map(str, offset))}_{bodies[0]}x{len(bodies)}"
     out = args.out / garment / "batches" / tag
     out.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [PY, str(args.out / "collector.py"), *COMMON, *garment_args(garment), "--checkpoint", str(args.checkpoint),
+    garment_cmd, garment_env = garment_cli(garment)
+    cmd = [PY, str(args.out / "collector.py"), *COMMON, *garment_cmd, "--checkpoint", str(args.checkpoint),
            "--bodies", *map(str, bodies), "--batch-bodies", str(len(bodies)), "--replicas", str(args.replicas),
-           "--seed", str(seed), "--placement-offset-mm", *map(str, offset), "--out", str(out)]
+           "--seed", str(seed), "--placement-offset-mm", *map(str, offset), "--out", str(out),
+           *shlex.split(args.collector_args)]
     log = out.with_suffix(".log")
-    env = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", PYTHONUNBUFFERED="1", **MPS)
+    env = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", PYTHONUNBUFFERED="1", **MPS, **garment_env)
     with log.open("w") as stream:
         subprocess.run(cmd, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT, env=env, check=False)
     results, skipped = [], set()
@@ -63,6 +68,7 @@ def main():
     p.add_argument("--workers", type=int, default=6)
     p.add_argument("--max-offsets", type=int, default=2)
     p.add_argument("--seed", type=int, default=2026092600)
+    p.add_argument("--collector-args", default="", help="Extra collector options for every job, one quoted string.")
     args = p.parse_args()
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -94,7 +100,8 @@ def main():
 
     def handle(job):
         garment, bodies, offset_index, stage = job
-        seed = args.seed + 100000 * GARMENTS.index(garment) + (1 if stage == "retry" else 0)
+        gi = GARMENTS.index(garment) if garment in GARMENTS else 5 + sorted(args.garments).index(garment)
+        seed = args.seed + 100000 * gi + (1 if stage == "retry" else 0)
         results, skipped, log, offset = run_batch(args, garment, bodies, offset_index, stage, seed)
         follow = []
         by_body = {}

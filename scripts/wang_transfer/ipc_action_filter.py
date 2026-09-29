@@ -11,6 +11,16 @@ import numpy as np
 from physical_sleeve import measure
 
 
+# A ring counts toward progress only once its centre is near the arm axis. Far from the arm, ``ring_on_arm``
+# clamps the ring to the nearer arm end, so an unthreaded sleeve hanging past the shoulder read as full
+# progress (ClothesNet: 26-40 % of states; failed episodes ended higher than accepted ones).
+RING_NEAR_M = .12
+
+
+def arm_progress(rings, arm_length):
+    return float(np.mean([r['s'] if r['center_distance_m'] <= RING_NEAR_M else 0. for r in rings]) * arm_length)
+
+
 class IPCActionFilter:
     def __init__(self, env, sections, masses, *, strength_gain=1.):
         if env.num_envs != 1:
@@ -66,7 +76,7 @@ class IPCActionFilter:
         force = float(np.linalg.norm((self.stiffness[:, None] * (target - positions[self.indices])).sum(0)))
         stretch = np.linalg.norm(positions[self.edges[:, 0]] - positions[self.edges[:, 1]], axis=1) / self.rest_lengths
         tracking = float(infos[0]['tracking_error'])
-        progress = float(np.mean([r['s'] for r in geometry['rings']]) * self.arm_length)
+        progress = arm_progress(geometry['rings'], self.arm_length)
         # Local progress, then reduced excessive load; constrain large tracking
         # errors and deformation instead of rewarding a torn-off held patch.
         score = (progress - 2e-5 * max(force - 40., 0.)
@@ -115,3 +125,134 @@ class IPCActionFilter:
         finally:
             self.restore(snap)
         return candidates[best].astype(np.float32), dict(selected=best, candidates=rows, noise_margin=self.noise_margin)
+
+
+class BatchedIPCActionFilter:
+    """``IPCActionFilter`` for a batched world: one snapshot, candidate k run for every active slot at once.
+
+    Candidates, scores and the noise-margin rule are those of ``IPCActionFilter``; a slot's candidate list is
+    padded with its nominal action so all slots advance through the same K world steps per evaluation.
+    Slots that are not active keep their nominal action during the candidate steps and are restored after.
+    """
+
+    def __init__(self, env, slots, *, strength_gain=1., horizon=1):
+        self.env = env
+        self.horizon = int(horizon)       # each candidate is held for this many decisions before scoring
+        cfg = env.cfg
+        initial = env.positions()
+        self.per_slot = []
+        for i, s in enumerate(slots):
+            idx = env._pickers[i]['anchor_idx']
+            edges = s['sleeve'].edges
+            self.per_slot.append(dict(
+                sections=s['sleeve'], landmarks=s['landmarks'],
+                arm_length=float(np.linalg.norm(np.diff(s['landmarks'], axis=0), axis=1).sum()),
+                indices=idx, stiffness=cfg.constraint_strength * strength_gain * s['masses'][idx] / cfg.dt**2,
+                edges=edges, rest=np.linalg.norm(initial[i][edges[:, 0]] - initial[i][edges[:, 1]], axis=1)))
+        self.noise_margin = .0002
+        self.replay_checked = False
+
+    snapshot = IPCActionFilter.snapshot
+
+    def _positions(self):
+        return np.stack(self.env.positions())
+
+    def restore(self, snap):
+        e = self.env
+        if not e._world.recover(snap['frame']):
+            raise RuntimeError('IPC candidate restore failed')
+        e._world.retrieve()
+        for name, value in snap['state'].items():
+            setattr(e, name, copy.deepcopy(value))
+        e.scene.sim._cur_substep_global = snap['sim_step']
+        for rng, state in zip(e.rngs, snap['rngs']):
+            rng.bit_generator.state = copy.deepcopy(state)
+        e._update_targets()
+        e._decision_times.clear()
+        error = float(np.max(abs(self._positions() - snap['all_positions'])))
+        if error > 1e-8 or int(e._world.frame()) != snap['frame']:
+            raise RuntimeError(f'IPC snapshot did not restore exactly: {error} m')
+
+    def _score(self, i, positions, info, action, nominal):
+        p = self.per_slot[i]
+        geometry = measure(p['sections'], positions, p['landmarks'])
+        target = self.env._anchor[i] + self.env._offsets[i]
+        force = float(np.linalg.norm((p['stiffness'][:, None] * (target - positions[p['indices']])).sum(0)))
+        stretch = np.linalg.norm(positions[p['edges'][:, 0]] - positions[p['edges'][:, 1]], axis=1) / p['rest']
+        tracking = float(info['tracking_error'])
+        progress = arm_progress(geometry['rings'], p['arm_length'])
+        score = progress - 2e-5 * max(force - 40., 0.) - .0002 * float(np.sum((action - nominal) ** 2))
+        feasible = tracking <= .019 and np.quantile(stretch, .99) <= 2.25 and stretch.max() <= 4.
+        if not feasible:
+            score -= 1. + 100. * max(tracking - .019, 0.)
+        return dict(score=float(score), progress_m=progress, gripper_N=force, tracking_m=tracking,
+                    feasible=bool(feasible), wrapped=geometry['sleeve_wrapped'])
+
+    @staticmethod
+    def candidates(nominal):
+        nominal = np.clip(np.asarray(nominal, float), -1, 1)
+        out = [nominal.copy(), nominal * .5, np.zeros(6)]
+        no_rotation = nominal.copy()
+        no_rotation[3:] = 0.
+        out.append(no_rotation)
+        for axis in range(3):
+            for direction in (-1., 1.):
+                c = nominal.copy()
+                c[axis] += direction * .25
+                out.append(np.clip(c, -1, 1))
+        unique = {}
+        for c in out:
+            unique.setdefault(tuple(c), c)
+        return list(unique.values())
+
+    def improve(self, nominals, active):
+        """Best candidate per active slot; returns the new action array and one diagnostic per active slot."""
+        e = self.env
+        nominals = np.clip(np.asarray(nominals, float), -1, 1)
+        cands = {i: self.candidates(nominals[i]) for i in active}
+        K = max(len(c) for c in cands.values())
+        for i in active:
+            cands[i] += [cands[i][0]] * (K - len(cands[i]))
+        snap = self.snapshot()
+        snap['all_positions'] = self._positions()
+        rows = {i: [] for i in active}
+        try:
+            for k in range(K + (0 if self.replay_checked else 1)):
+                kk = min(k, K - 1) if k < K else 0          # the extra pass replays candidate 0
+                self.restore(snap)
+                acts = nominals.copy()
+                for i in active:
+                    acts[i] = cands[i][kk]
+                failed, worst = False, [0.] * len(acts)
+                for _ in range(self.horizon):
+                    _, _, done, infos = e.step(acts)
+                    failed = bool(done.any() or any(inf.get('sim_error') for inf in infos))
+                    if failed:
+                        break
+                    worst = [max(w, float(inf['tracking_error'])) for w, inf in zip(worst, infos)]
+                if not failed:                              # score feasibility on the worst step of the hold
+                    for inf, w in zip(infos, worst):
+                        inf['tracking_error'] = w
+                positions = None if failed else self._positions()
+                for i in active:
+                    row = (dict(score=-np.inf, feasible=False, sim_error=True) if failed else
+                           self._score(i, positions[i], infos[i], cands[i][kk], nominals[i]))
+                    if k < K:
+                        row['action'] = cands[i][kk].tolist()
+                        rows[i].append(row)
+                    elif np.isfinite(row['score']) and np.isfinite(rows[i][0]['score']):
+                        self.noise_margin = max(self.noise_margin, 2 * abs(row['score'] - rows[i][0]['score']))
+                if failed:                                  # a world error resets the env; recover it before going on
+                    self.restore(snap)
+            self.replay_checked = True
+        finally:
+            self.restore(snap)
+        out, diags = nominals.astype(np.float32).copy(), {}
+        for i in active:
+            scores = [r['score'] for r in rows[i]]
+            best = int(np.argmax(scores))
+            if scores[best] < scores[0] + self.noise_margin:
+                best = 0
+            out[i] = np.asarray(cands[i][best], np.float32)
+            diags[i] = dict(selected=best, candidates=rows[i], noise_margin=self.noise_margin)
+        return out, diags

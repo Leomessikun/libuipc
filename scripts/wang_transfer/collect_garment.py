@@ -125,6 +125,11 @@ def parser():
                    help="Scale the garment up so the sleeve radius is at least this multiple of the upper-arm radius.")
     p.add_argument("--armhole-endpoint", action="store_true",
                    help="Stop and accept on the armhole seam's place on the upper arm (recorded in sleeve_proximal_upper_fraction).")
+    p.add_argument("--batched-lookahead-interval", type=int, default=0,
+                   help="Batched worlds: every N decisions, pick each slot's action by one-decision IPC candidate "
+                        "evaluation (BatchedIPCActionFilter), for slots past --lookahead-from above --lookahead-min-load.")
+    p.add_argument("--batched-lookahead-horizon", type=int, default=1,
+                   help="Decisions each batched-lookahead candidate is held before its outcome is scored.")
     p.add_argument("--lookahead-from", type=int, default=80)
     p.add_argument("--lookahead-min-load", type=float, default=15.)
     p.add_argument("--macro-recovery", action="store_true", help="Multi-decision IPC recovery macros when the sleeve stalls (slot 0).")
@@ -499,6 +504,11 @@ def main():
                         from ipc_macro_filter import IPCMacroFilter
                         planner = IPCMacroFilter(env, sleeve, masses, strength_gain=profiles[0].grasp_strength_gain,
                                                  horizon=args.macro_horizon)
+                batched_planner = None
+                if args.batched_lookahead_interval:
+                    from ipc_action_filter import BatchedIPCActionFilter
+                    batched_planner = BatchedIPCActionFilter(env, slots, strength_gain=profiles[0].grasp_strength_gain,
+                                                             horizon=args.batched_lookahead_horizon)
                 macro_queue, progress_history, macro_cooldown_until = [], [], 0
                 body_dirs = {}
                 for i, b in enumerate(slot_body):
@@ -664,6 +674,21 @@ def main():
                                 controllers[0] = 4
                             with (body_dir / "lookahead.jsonl").open("a") as log:
                                 log.write(json.dumps(dict(state=step, **diagnostic)) + "\n")
+                    if (batched_planner is not None and step >= args.lookahead_from
+                            and step % args.batched_lookahead_interval == 0
+                            and env._episode_step + args.batched_lookahead_horizon < cfg.horizon):
+                        active = [i for i in range(n) if not completed[i] and success_at[i] is None and controllers[i] == 0
+                                  and float(np.linalg.norm(buffers[i]["gripper_force"][-1])) > args.lookahead_min_load]
+                        if active:
+                            lookahead_started = time.monotonic()
+                            actions, diagnostics = batched_planner.improve(actions, active)
+                            timing["lookahead_s"] += time.monotonic() - lookahead_started
+                            for i, diagnostic in diagnostics.items():
+                                planner_choices[i] = diagnostic["selected"]
+                                if diagnostic["selected"] != 0:
+                                    controllers[i] = 4
+                                with (body_dirs[slot_body[i]] / "lookahead.jsonl").open("a") as log:
+                                    log.write(json.dumps(dict(state=step, slot=i, **diagnostic), default=float) + "\n")
                     anchors = np.stack(env._anchor).copy()
                     environment_started = time.monotonic()
                     obs, rewards, dones, infos = env.step(actions)

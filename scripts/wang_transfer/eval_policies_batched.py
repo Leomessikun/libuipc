@@ -23,7 +23,7 @@ import threading
 from pathlib import Path
 
 from collect_scaled import COMMON, GARMENTS, OFFSETS_MM, PY, ROOT, garment_args
-from collect_scaled_batched import MPS
+MPS = {"CUDA_MPS_PIPE_DIRECTORY": "/home/ge47gax/.mps_pipe", "CUDA_MPS_LOG_DIRECTORY": "/home/ge47gax/.mps_log"}
 
 FLOW_PROFILE = [dict(name="flow_gripper", force_source="gripper", force_scale=1., force_clip=1e6, force_ema=1.)]
 
