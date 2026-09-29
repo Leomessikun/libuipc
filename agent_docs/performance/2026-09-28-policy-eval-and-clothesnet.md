@@ -106,8 +106,10 @@ r1 was trained in two steps from `fmvp_sim.pt` (frozen encoder, trunk fine-tuned
 cloning on 157 accepted fmvp_sim episodes (68,929 states, 8 epochs; `fmvp_ipc_bc_20260924`), then 8 more
 epochs from round 0 on those states plus the 6,857 states of one IPC DAgger round (75,786 states). Only
 1,505 of those 6,857 carry an IPC-lookahead label; the other 5,352 are behaviour-cloning states of the
-accepted episodes that round added (`features/episodes.json` lists 177 episodes, 8 with labels; the
-provenance of 18 of the 20 added episodes is still being re-checked). The
+accepted episodes added (`features/episodes.json` lists 177 episodes, 157 of round 0 plus 20: the 8 DAgger
+rollouts of `fmvp_dagger_r1_20260924`, which carry the labels and all succeeded, and 12 fmvp_sim successes from
+`fmvp_dataset_multiregion_500_20260924` that finished after round 0 was built). All of r1's data is tshirt_26:
+r1 predates the multi-garment collector (2026-09-25). The
 control `bc_cont` continues round 0 for the same 8 epochs, learning rate, trust and hold weight on the
 68,929 BC states only (`fmvp_bc_continued_control_20260929`). All four on the same 201 units:
 
