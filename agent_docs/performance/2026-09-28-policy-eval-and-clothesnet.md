@@ -122,3 +122,28 @@ Reading: behaviour cloning on the checkpoint's own successes helps; training fur
 hurts (back to the released level); training further with the IPC-labelled states instead improves on
 round 0. The IPC labels are the difference between the two continuations, at an equal training budget.
 Their gain over round 0 is borderline (p = 0.05); the controlled contrast is r1 vs bc_cont.
+
+## All control policies on the 201 test units (final, 2026-09-29)
+
+Same 201 units, same starts, exact McNemar on discordant pairs (`multi_way.py` over the six result dirs):
+
+| policy | what it is | accepted |
+|---|---|---|
+| fmvp_sim | released PyBullet fine-tune | 100 |
+| bc_cont | round 0 + 8 epochs BC only | 105 |
+| flow_fmvp | flow (frozen encoder) on 236 fmvp_sim successes, matched units | 104 |
+| bc0 | round-0 BC on fmvp_sim successes | 118 |
+| r1 | round 0 + 8 epochs with IPC labels | 130 |
+| flow_r1m | flow on 236 r1 successes, same units as flow_fmvp | 132 |
+| flow_e2e | end-to-end point encoder, all r1 data (force-rotation fix) | 137 |
+| flow | frozen-encoder flow, all r1 data | 138 |
+
+Key contrasts: r1 vs bc_cont 33:8 (p = 1e-4); flow_fmvp vs flow_r1m 12:40 (p = 1e-4); flow_fmvp vs fmvp_sim
+18:14 (p = 0.60); flow_r1m vs r1 16:14 (p = 0.86); flow vs flow_r1m 15:9 (p = 0.31); flow_e2e vs flow 13:14
+(p = 1.0); flow_e2e vs r1 20:13 (p = 0.30).
+
+Reading: a flow student lands at its teacher's level (fmvp_sim data -> fmvp_sim level; r1 data -> r1 level),
+so the flow head and the encoder (frozen vs end-to-end) do not change closed-loop success on these garments;
+the gain comes from the teacher, and the teacher's gain over the equal-budget BC control comes from the IPC
+labels. More r1 data (all vs matched 236 episodes) leans positive but is not significant. Unseen-garment
+results for flow_e2e are in `clothesnet_eval_test_e2e_20260929` (running).
