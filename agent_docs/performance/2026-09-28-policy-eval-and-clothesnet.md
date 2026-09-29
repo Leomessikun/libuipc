@@ -147,3 +147,26 @@ so the flow head and the encoder (frozen vs end-to-end) do not change closed-loo
 the gain comes from the teacher, and the teacher's gain over the equal-budget BC control comes from the IPC
 labels. More r1 data (all vs matched 236 episodes) leans positive but is not significant. Unseen-garment
 results for flow_e2e are in `clothesnet_eval_test_e2e_20260929` (running).
+
+## Held-out ClothesNet garments: the end-to-end encoder does not generalise (2026-09-29)
+
+20 held-out garments (`clothesnet_testset_20260928.json`), first 7 test bodies, same starts for every policy.
+flow_e2e (encoder trained from scratch on the five Cloth3D garments) against the frozen-FMVP-encoder
+policies, on the 132 units all four completed:
+
+| policy | accepted |
+|---|---|
+| flow_e2e | 24 |
+| fmvp_sim | 40 |
+| flow (frozen encoder) | 44 |
+| r1 | 47 |
+
+flow_e2e vs flow 2:22 (p < 1e-4), vs r1 3:26 (p < 1e-4), vs fmvp_sim 5:21 (p = 0.003). On the training
+garments the same checkpoint matches flow (137 vs 138 of 201). Its unseen-garment failures are mostly
+750-decision timeouts with partial progress, not early grasp loss: the scratch encoder fits the five
+garments' geometry, while the FMVP encoder (pretrained in FleX on many garments) carries the transfer.
+Keep the pretrained representation for garment generalisation.
+
+The same evaluation for fmvp_sim, r1 and flow (240 units so far, second body group still running):
+fmvp_sim 51, r1 66, flow 67; r1 vs fmvp_sim 23:8 (p = 0.011), flow vs fmvp_sim 23:7 (p = 0.005),
+flow vs r1 13:12 (p = 1.0).
