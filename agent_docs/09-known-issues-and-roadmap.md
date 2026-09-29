@@ -1,5 +1,21 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Next baseline and new-garment collection — 2026-09-29 16:31 CEST
+
+The verified original-FMVP inventory is now 434 episodes / 99,126 transitions.
+Prepare a common validation split and full-DP3 task adapter, comparing it with
+flow on the same data before concluding that structure is not a bottleneck.
+The earlier DP3-style encoder with an MLP flow head is not a full DP3 baseline.
+No DP3 training has been launched; reserve peak memory alongside continuing
+collection. See the latest [research review](performance/2026-09-29-research-status-review.md).
+
+Raw-FMVP ClothesNet collection and 24 training-garment hangs remain missing.
+The first two completed ClothesNet DAgger batches are 0/11 with six timeouts
+and five grasp failures. Compare r1 with/without the filter on matching starts
+and diagnose early alignment before scaling this data source. Completed child
+results can precede root-ledger updates because dispatchers are stopped by the
+priority controller. Preserve both and deduplicate when preparing data.
+
 ## Research continuation after completed garment tests — 2026-09-29
 
 Read the [audited status and experiment plan](performance/2026-09-29-research-status-review.md).

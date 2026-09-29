@@ -1,5 +1,26 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-29 16:31 CEST — 434 original-FMVP episodes; DP3 remains unstarted
+
+The [research review](performance/2026-09-29-research-status-review.md) now
+records the new launch/data audit. Today's original-FMVP children saved 112
+accepted episodes (326 completed attempts), giving 434 with the older source.
+All 112 new accepted archives pass the existing CPU grasp/hold audit. A frozen
+434-path inventory and hashed logs are in
+`output/anticipatory_dressing/status_review_20260929_1627/`; splits are not yet
+assigned for a new training experiment. The root ledger trails completed
+child logs while dispatch is gated, so avoid double-counting them.
+
+Three FMVP workers and two ClothesNet DAgger workers run at the snapshot;
+six Cloth3D DAgger workers remain stopped. ClothesNet DAgger completed 0/11
+on two garments (six timeouts, five grasp failures); 192 label records have
+saved failed-episode observations. Full DP3, new flow training, evaluation and
+dynamic-arm jobs are not running. The priority scheduler replaced the older
+watchdog. This review did not signal any process. Next use the current raw
+inventory for the DP3/flow baseline while collection continues; no arbitrary
+800-episode prerequisite. Add raw-FMVP ClothesNet collection and diagnose
+the small DAgger failure sample before expanding that branch.
+
 ## 2026-09-29 14:08 CEST — Original-FMVP route and completed garment audit
 
 The new [research review](performance/2026-09-29-research-status-review.md)

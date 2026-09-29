@@ -1,5 +1,79 @@
 # Dressing research review — 2026-09-29
 
+## 16:31 CEST follow-up: useful collection, no new trained-policy result
+
+Evidence: `output/anticipatory_dressing/status_review_20260929_1627/` (the
+name marks the inspection start; `report.json` was captured at 16:31 CEST).
+It preserves source logs/configs, the current scheduler and process listing.
+No process was signaled or GPU experiment launched by this review.
+
+| Job | State at snapshot | Completed child outcomes |
+| --- | --- | --- |
+| Original-FMVP scaling | Three collectors running; dispatcher admission controlled | 112 accepted of 326 attempts |
+| ClothesNet DAgger | Two collectors running, two initial batches finished | 0 accepted of 11 attempts on two garments |
+| Cloth3D DAgger | Six collectors stopped | No complete episodes |
+| DP3 / new flow training / policy evaluation / dynamic-arm pilot | No active jobs found | No new model result |
+
+The older original-FMVP collection contributes 322 accepted episodes. The
+combined **434-episode inventory** contains 99,126 transitions over 92 body/pose
+IDs and five garments. All accepted paths exist, have the original checkpoint
+fingerprint and avoid the current flow-index validation/test IDs. Every one
+of today's 112 accepted archives passes the existing CPU metadata/grasp/hold
+audit. `accepted_inventory.json` freezes these paths and provenance for a
+matched baseline experiment; it is an inventory, not a finished training and
+validation split. Original-FMVP trajectories on ClothesNet have not started.
+
+The root scaling ledger has only 106 accepted records in 312 attempts, while
+child logs have 112 in 326: completed work awaits merging by the admission-
+controlled dispatcher. Do not sum child and ledger counts. Collection attempts
+include retries and replicas; their acceptance fraction is not a held-out
+policy success estimate. Of today's completed outcomes, 209 lose grasp and
+five fail the stable-success condition despite completing the hold duration.
+
+ClothesNet DAgger's two completed garments are `cn_tclo_suit007` (0/5; all
+timeouts) and `cn_tclo_suit012` (0/6; five grasp failures, one timeout). Two
+grasp failures happen at decisions 14 and 23, before the filter's decision-40
+activation. The saved failed trajectories have 192 lookahead records; 48
+select a non-nominal action. In 124/192 records all feasible candidates have
+zero measured progress. This motivates checking early alignment and the local
+scoring signal, but does not isolate a root cause. These are two open-front
+long-sleeve garments, not a representative estimate over ClothesNet. Failed
+episodes can still support DAgger labels after state/action/selection checks;
+they cannot enter the success-only imitation inventory as successful demos.
+The 377 Cloth3D lookahead records currently have no saved episode observations.
+
+The new `gpu_controller.sh` has replaced the earlier watchdog. Its inspected
+rules prioritize original-FMVP collection, allow existing ClothesNet batches
+to finish, and defer Cloth3D DAgger until the FMVP run completes. It resumes
+workers individually and gates dispatch at 70 GiB used. The GPU query at
+16:28 returned 78.1/94.9 GiB used. The MPS log has no newer fatal event than
+13:58. The scheduler is improved, though it does not yet reserve a training
+job's peak allocation. All 16 prepared training hangs remain from only two
+categories; the other 24 are still absent and no bake process is active.
+
+### Immediate next work
+
+1. Freeze a shared validation protocol and use the 434-episode inventory for
+   a current-flow versus full-DP3 task-adapter comparison (plus a same-data
+   deterministic BC reference). Equalize available inputs, action convention,
+   execution frequency, data and validation-based selection; a complete-recipe
+   comparison does not isolate encoder versus objective. Reserve a known GPU
+   allocation for training while collection continues. An 800/1,000-episode
+   count is a later scaling point, not a prerequisite for this pilot.
+2. Continue original-FMVP collection; prioritize getting original-checkpoint
+   trajectories on independent ClothesNet training garments. Begin a bounded
+   pilot on prepared short-sleeve garments as well as long sleeves, complete
+   the other category hangs, and report per-garment coverage. Maintain the
+   separate r1/DAgger provenance.
+3. Diagnose the two completed DAgger failures with a matched r1 versus
+   r1-plus-lookahead control. Check placement/cuff geometry, early grasp loss
+   and whether candidate scores distinguish alignment before insertion. Do
+   not scale correction collection merely because label records are growing.
+4. Retain the bounded future-information arm-motion experiment; no new motion
+   result has appeared. Full DP3 has not been tested, so a structure bottleneck
+   remains open. Neither additional rollouts nor this status review establishes
+   an algorithm contribution.
+
 ## Scope and evidence
 
 The owner requested a review of Opus's new changes, data, results and research
