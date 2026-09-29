@@ -1,5 +1,35 @@
 # Handoff — Current State of the Repo
 
+## 2026-09-29 14:08 CEST — Original-FMVP route and completed garment audit
+
+The new [research review](performance/2026-09-29-research-status-review.md)
+supersedes yesterday's live counts. Static FMVP/r1/flow accept 100/130/138 of
+201 started units; final ClothesNet accepts 52/68/70 of 254. A flow trained
+on 236 original-FMVP episodes accepts 104/201. Keep original-checkpoint
+collection as the owner's main hypothesis and r1/DAgger as a separate control.
+The raw-FMVP source has 322 accepted episodes; r1 v4/v5 have 810/2,573. Only
+16 of the 40 selected ClothesNet training garments have saved k300 hangs.
+
+Array inspection corrects the claimed clean IPC-label ablation: the r1
+features contain 1,505 lookahead labels, not approximately 6,900; the remaining
+new states are ordinary BC/holds, and internal body splits differ. Test body
+3047 also appeared in teacher training. The review preserves original counts
+and reports a sensitivity analysis. A fully matched label control is pending.
+
+The new collection logs report 55 lost units after a 13:58 MPS fatal event;
+the launcher does not requeue them. Five raw-FMVP workers run, ten DAgger
+workers are stopped by the other session, and the three new roots have no
+completed attempt records at this snapshot. Hashed evidence and an unlaunched
+recovery manifest are in `output/anticipatory_dressing/status_review_20260929`.
+This review changed no live jobs or checkpoints. Next restore effective
+collection, separate source and garment-diversity comparisons, and keep the
+matched future-information motion pilot conditional on available capacity.
+
+At 14:15, the first new raw-FMVP batch completed: 5/14 accepted, all five
+archives pass the existing CPU success-hold audit. These are not yet merged
+by the stopped dispatcher. Four raw-FMVP workers remain active. Evidence is
+in the snapshot's `followup_1415/`; distinguish child results from root ledgers.
+
 ## 2026-09-28 17:03 CEST — Live results reviewed; original dressing direction retained
 
 The owner removed MaxRL from the project. Continue garment generalization and

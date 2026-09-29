@@ -1,5 +1,27 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Research continuation after completed garment tests — 2026-09-29
+
+Read the [audited status and experiment plan](performance/2026-09-29-research-status-review.md).
+Priorities are original-FMVP rollout coverage and garment diversity, then a
+controlled dynamic-arm information experiment; MaxRL remains excluded. The
+current flow gains do not isolate a flow-specific algorithm contribution.
+
+Open issues: recover 55 infrastructure-lost units without overwriting logs;
+finish 24 missing training garment hangs; enforce separate original-FMVP and
+IPC-corrected provenance; compare BC/flow and diversity at matched data and
+inputs; use task-based checkpoint selection. Correct the 6,900-label claim to
+1,505 actual lookahead labels, and match training states/body splits/updates
+before attributing the r1 gain solely to those labels. Reserve final body IDs
+outside all ancestor-teacher training sets (3047 overlaps the present test).
+
+The new batched IPC filter remains a static one-decision action selector. It
+does not implement a future-human-motion teacher. The existing single-clip
+motion result remains inconclusive for anticipation. Keep planner and budget
+fixed when comparing current pose, causal extrapolation and true future motion;
+train a forecast-conditioned student only after the information has useful,
+causally learnable value. The audit has not altered current collection jobs.
+
 ## Garment transfer and dynamic-arm research — 2026-09-28
 
 MaxRL is excluded by the owner. Continue the existing collection and
