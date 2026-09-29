@@ -210,3 +210,22 @@ teacher's level. Seven garments fail for every policy (never threaded, early gra
 a cuff as wide as the armhole, or mostly no legal start): garment/start compatibility, not policy choice,
 dominates the unseen-garment rate. Success on unseen garments (20-28 %) is about 40 % of the training-garment
 rate (50-69 %).
+
+### flow_fmvp_all on the held-out ClothesNet garments (first 7 test bodies, 2026-09-29)
+
+The flow policy trained on all 447 accepted fmvp_sim episodes (`clothesnet_eval_test_flow_fmvp_all_20260929`),
+paired on the 132 units that the flow_e2e run shares (same 20 garments, first 7 test bodies, same starts):
+
+| policy | training data | accepted of 132 |
+|---|---|---|
+| flow_e2e | r1 rollouts, end-to-end point encoder | 24 |
+| flow_fmvp_all | 447 fmvp_sim episodes, frozen encoder | 33 |
+| fmvp_sim | released checkpoint | 40 |
+| flow | r1 rollouts, frozen encoder | 44 |
+| r1 | one IPC DAgger round | 47 |
+
+flow_fmvp_all vs fmvp_sim 1:8 (p = 0.039); vs flow 3:14 (p = 0.013); vs r1 3:17 (p = 0.003).
+On unseen garments the student of the uncorrected teacher lands slightly below that teacher, while the student
+of the IPC-corrected teacher stays at its teacher's level; neither student exceeds its teacher. With the 201
+Cloth3D units (97 vs 100), the data volume of the teacher's own successes is ruled out as the source of the
+flow-on-r1 gain on both garment sets.
