@@ -259,3 +259,11 @@ round-2 labels that keep the nominal action or gain >= 1 mm (12,164 of 21,681), 
 p = 1.0; vs si 23:11, p = 0.058); r2w1, all labels at weight 1 instead of 3, reaches 121 (vs r1 11:20,
 p = 0.15). Weak labels and label weight are not what holds round 2 back. The ClothesNet held-out eval of r2,
 r1c and si, and a teacher check (r1 with the online lookahead at H = 1 and H = 4, fixed score) are running.
+
+### Round 2 on the held-out ClothesNet garments (final, 254 units, 2026-09-30)
+
+The same three models on the 20 held-out garments x 14 test bodies (`clothesnet_eval_test_r2_20260930`), paired
+with the earlier run on the same 254 units: fmvp_sim 52, si 58, r2 62, r1c 66, r1 68, flow 70. r2 vs r1 9:15
+(p = 0.31), r2 vs si 11:7 (p = 0.48), r1 vs si 18:8 (p = 0.076), r2 vs fmvp_sim 17:7 (p = 0.064). The Cloth3D
+reading holds on unseen garments: nothing trained on top of r1 improves it, round-2 labels sit between r1 and
+self-imitation, and self-imitation is the weakest continuation. Seven garments stay at zero for every model.
