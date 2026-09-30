@@ -254,6 +254,8 @@ where round 1 put it (127 vs 130). Self-imitation of r1's own successes at the s
 continuation that hurts (117, back to bc0's 118), so the labels are not harmful where self-imitation is, but
 they no longer add. Label statistics match round 1 (32 % keep the nominal action, median candidate progress
 spread 0.79 mm); round 2 picks the stop candidate in 25 % of labels against 14 % in round 1. Round 2 was scored
-before the ring-distance fix of 29bde384, which changes 0.6 % of Cloth3D states. The ClothesNet held-out eval
-of the same three models and the label-fix variants (weight 1; only labels that keep the nominal action or gain
->= 1 mm) are still running.
+before the ring-distance fix of 29bde384, which changes 0.6 % of Cloth3D states. Neither label fix changes this (`policy_eval_test_r2fix_20260930`, same units): r2f, r1 data plus only the
+round-2 labels that keep the nominal action or gain >= 1 mm (12,164 of 21,681), reaches 129 (vs r1 13:14,
+p = 1.0; vs si 23:11, p = 0.058); r2w1, all labels at weight 1 instead of 3, reaches 121 (vs r1 11:20,
+p = 0.15). Weak labels and label weight are not what holds round 2 back. The ClothesNet held-out eval of r2,
+r1c and si, and a teacher check (r1 with the online lookahead at H = 1 and H = 4, fixed score) are running.
