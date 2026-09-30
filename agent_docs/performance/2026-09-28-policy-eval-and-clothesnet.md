@@ -231,3 +231,29 @@ On unseen garments the student of the uncorrected teacher lands slightly below t
 of the IPC-corrected teacher stays at its teacher's level; neither student exceeds its teacher. With the 201
 Cloth3D units (97 vs 100), the data volume of the teacher's own successes is ruled out as the source of the
 flow-on-r1 gain on both garment sets.
+
+## Round 2: IPC labels on all five garments do not add to r1 (final, 201 test units, 2026-09-30)
+
+Round 2 rolled out r1 with the batched one-step IPC lookahead (every 3 decisions from decision 40, gripper
+load > 15 N, 10 candidates) on the 5 Cloth3D garments and 66 training bodies (`dagger_r2_cloth3d_20260929`,
+357 episodes, 21,322 labelled states, 14x round 1, no test bodies). Three models, each 8 epochs from r1 with
+r1's settings (lr 1e-4, trust 0.5, hold weight 2):
+
+| model | data beyond r1's 75,786 states | accepted of 201 |
+|---|---|---|
+| r2 | + 21,322 IPC-labelled states (weight 3), no whole episodes (`fmvp_ipc_dagger_r2_20260930`) | 127 |
+| r1c | nothing: r1 continued on its own data (`fmvp_r1_continued_control_20260930`) | 130 |
+| si | + 202 of r1's own accepted episodes on the same 5 garments, 64,089 states = the labels' weight (`fmvp_ipc_selfimit_r2ctrl_20260930`) | 117 |
+
+Exact McNemar on the same 201 units (`policy_eval_test_r2_20260930`): r2 vs r1 14:17 (p = 0.72), r2 vs r1c
+14:17 (p = 0.72), r2 vs si 25:15 (p = 0.15), r1 vs si 22:9 (p = 0.029), r1c vs si 24:11 (p = 0.041), r2 vs
+fmvp_sim 39:12 (p = 2e-4). Without test body 3047 (196 units): r2 vs r1 14:17, r1 vs si 21:9 (p = 0.043).
+
+Reading: the second round of IPC labels, 14 times the first and spread over all five garments, leaves the policy
+where round 1 put it (127 vs 130). Self-imitation of r1's own successes at the same training weight is the one
+continuation that hurts (117, back to bc0's 118), so the labels are not harmful where self-imitation is, but
+they no longer add. Label statistics match round 1 (32 % keep the nominal action, median candidate progress
+spread 0.79 mm); round 2 picks the stop candidate in 25 % of labels against 14 % in round 1. Round 2 was scored
+before the ring-distance fix of 29bde384, which changes 0.6 % of Cloth3D states. The ClothesNet held-out eval
+of the same three models and the label-fix variants (weight 1; only labels that keep the nominal action or gain
+>= 1 mm) are still running.
