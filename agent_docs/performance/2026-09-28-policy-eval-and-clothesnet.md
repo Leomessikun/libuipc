@@ -278,6 +278,7 @@ The one-step labeller does not choose better actions than r1 already takes, whic
 labels leave the student at r1's level. Most remaining failures are grasp loss, which a one-decision hold
 cannot see. Holding each candidate for four decisions does not change this: the H = 4 teacher
 (`policy_eval_test_teacher_h4_20260930` and `..._h4b_...`, the second driver on bodies 8-14 via
-`--skip-bodies 7`) reaches 41 vs r1's 43 on the same 62 units (2:4, p = 0.69) and ties the H = 1 teacher (2:2).
+`--skip-bodies 7`) reaches 41 vs r1's 43 on the same 62 units (2:4, p = 0.69) and ties the H = 1 teacher (2:2); with the second
+driver complete (69 units) it is 44 vs 45 (3:4) and 44 vs 44 against H = 1.
 A better labeller has to act where r1 fails, before the grasp is lost, rather than look further ahead from
 every loaded state.
