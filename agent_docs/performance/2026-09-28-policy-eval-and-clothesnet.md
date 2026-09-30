@@ -267,3 +267,13 @@ with the earlier run on the same 254 units: fmvp_sim 52, si 58, r2 62, r1c 66, r
 (p = 0.31), r2 vs si 11:7 (p = 0.48), r1 vs si 18:8 (p = 0.076), r2 vs fmvp_sim 17:7 (p = 0.064). The Cloth3D
 reading holds on unseen garments: nothing trained on top of r1 improves it, round-2 labels sit between r1 and
 self-imitation, and self-imitation is the weakest continuation. Seven garments stay at zero for every model.
+
+### Teacher check: the one-step lookahead is no better than r1 (2026-09-30)
+
+A DAgger student cannot exceed its labeller, so r1 was run with the lookahead active at test time (round 2's
+labeller: every 3 decisions from decision 40, load > 15 N, 10 candidates, ring-distance fix of 29bde384) on the
+first 14 test bodies x 5 garments (62 units with a legal start; `policy_eval_test_teacher_h1_20260930`). The
+teacher reaches 41 vs r1's 43 on the same units (2:4, p = 0.69); r2 39, r1c 41, si 43, fmvp_sim 38, flow 45.
+The one-step labeller does not choose better actions than r1 already takes, which explains why 14x more of its
+labels leave the student at r1's level. Most remaining failures are grasp loss, which a one-decision hold
+cannot see. The same check at H = 4 is running (`policy_eval_test_teacher_h4_20260930`, `..._h4b_...`).
