@@ -276,4 +276,8 @@ first 14 test bodies x 5 garments (62 units with a legal start; `policy_eval_tes
 teacher reaches 41 vs r1's 43 on the same units (2:4, p = 0.69); r2 39, r1c 41, si 43, fmvp_sim 38, flow 45.
 The one-step labeller does not choose better actions than r1 already takes, which explains why 14x more of its
 labels leave the student at r1's level. Most remaining failures are grasp loss, which a one-decision hold
-cannot see. The same check at H = 4 is running (`policy_eval_test_teacher_h4_20260930`, `..._h4b_...`).
+cannot see. Holding each candidate for four decisions does not change this: the H = 4 teacher
+(`policy_eval_test_teacher_h4_20260930` and `..._h4b_...`, the second driver on bodies 8-14 via
+`--skip-bodies 7`) reaches 41 vs r1's 43 on the same 62 units (2:4, p = 0.69) and ties the H = 1 teacher (2:2).
+A better labeller has to act where r1 fails, before the grasp is lost, rather than look further ahead from
+every loaded state.
