@@ -82,6 +82,6 @@ condition needs repeats; two more runs per planner condition are queued (`scratc
 
 Mug lift, one run each (motion ends at 4 s; the planner stops at decision 50): planner with causal motion succeeds
 (held from decision 131); planner with the true future reaches armhole fraction 0.65 and then loses the grasp at
-decision 156, after planning has ended; r1 + GICP loses it at 189; r1 alone lost it at 154 (fmvp_sim at 147). The
-current-pose planner is running. On this clip the failures come after the motion, where all conditions run the
+decision 156, after planning has ended; r1 + GICP loses it at 189; r1 alone lost it at 154 (fmvp_sim at 147); the
+current-pose planner loses it at 168. On this clip the failures come after the motion, where all conditions run the
 same unplanned policy, so the run-to-run variance seen for GICP can decide them; repeats are needed here as well.
