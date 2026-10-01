@@ -28,13 +28,19 @@ the policy then fails to dress the displaced arm, losing the grasp after about 1
 checkpoints fail the same way, so this is a property of policies trained on a static arm, and a target for
 motion-aware post-training. One body and two clips: failure modes, not rates.
 
-## Garment generalisation: the ClothesNet training jackets sit at the floor for r1 (interim)
+## Garment generalisation: the lookahead teacher ties r1 on ClothesNet training garments too
 
-Teacher check on ClothesNet training garments (`cn_train_r1_20261001` vs `cn_train_teacher_h1_20261001`, r1
-with the one-step lookahead, 8 hung collared training garments x the first 7 test bodies). At 13:40 plain r1
-has 5 accepted of 48 units: shirt007 0/7, suit007 0/7, jacket112 0/6, jacket081 1/7, tcnc_jacket143 0/7,
-model2_054 1/7, tcsc_top558 3/7; the teacher has 0/14 on the first two garments. With r1 near zero on most of
-these garments a paired teacher check has almost no discordant pairs to find, so it can only answer the
-question on top558-like garments. All 16 hung ClothesNet training garments are collared (TCLO, TCNC, TCSC);
-the categories where r1 transfers best on the held-out set (cn_tcsc_model2_*, cn_tnlc_*) have no hung training
-garments yet.
+Teacher check on 8 hung ClothesNet training garments x the first 7 test bodies: plain r1
+(`cn_train_r1_20261001`) against r1 with the one-step lookahead (round 2's labeller, ring-distance fix;
+`cn_train_teacher_h1_20261001` for the first garments, `cn_train_teacher_h1b_20261001` for tcsc_083 and
+tcsc_top558 to reach the informative garments sooner; the first driver was stopped after 3 garments).
+
+Plain r1 reaches 11 of 55 units: tcsc_083 6/7, tcsc_top558 3/7, and 2 of 41 on the six collared jackets
+(shirt007, suit007, jacket112, jacket081, tcnc_jacket143, model2_054). On the 34 units both ran, the teacher
+reaches 10 vs r1's 9 (1:0 discordant); on the two garments where r1 succeeds at all it is 6 vs 6 and 4 vs 3.
+
+Reading: on new garment types the one-step labeller is no better than r1 either, so collecting its labels on
+these garments would repeat round 2. The collared jackets fail for both (mostly no threading or grasp loss
+early), which no short lookahead changes. All 16 hung ClothesNet training garments are collared (TCLO, TCNC,
+TCSC); the categories where r1 transfers best on the held-out set (cn_tcsc_model2_*, cn_tnlc_*) have no hung
+training garments yet.
