@@ -74,4 +74,8 @@ Reproducibility caveat: the anticipatory-dressing pilot ran r1 + GICP with the s
 motion and motion code (`pilot_pass_continuation_20260927`) and it succeeded (held from decision 156); here it lost
 the grasp at decision 13. The only changed file is the policy bridge, whose change adds a flow-policy path that r1
 does not use. Single episodes under motion therefore do not reproduce run to run, and none of the rows above is a
-rate. Repeats of GICP (alone, and r1 then GICP in one process as in the pilot) are running before any comparison.
+rate. Repeats of GICP with the same arguments: alone, grasp lost at decision 150; r1 then GICP in one process as in the
+pilot, r1 at 13 and GICP at 153; alone again, 13. Over five identical runs GICP ends at 13, 13, 150, 153 and one
+success (the pilot's), while r1 alone fails at 13 in every run so far. GICP sits near a threshold where small
+run-to-run differences (shared GPU, solver tolerance) decide whether the grasp survives the motion, so every
+condition needs repeats; two more runs per planner condition are queued (`scratchpad/queue_m2b.sh`).
