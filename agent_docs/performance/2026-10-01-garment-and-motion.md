@@ -44,3 +44,34 @@ these garments would repeat round 2. The collared jackets fail for both (mostly 
 early), which no short lookahead changes. All 16 hung ClothesNet training garments are collared (TCLO, TCNC,
 TCSC); the categories where r1 transfers best on the held-out set (cn_tcsc_model2_*, cn_tnlc_*) have no hung
 training garments yet.
+
+## M2 pilot: one planner under three motion beliefs (interim, mug pass, 2026-10-01)
+
+`scripts/wang_transfer/motion_lookahead_probe.py` (ca8463c6) runs r1 with an IPC lookahead on the GRAB-driven
+body of the anticipatory-dressing worktree (used unmodified). The snapshot covers the IPC world, the env state and
+the motion state (clock, body target, target joints, cells, meshes); candidates are scored with the arm landmarks
+at the end of their own rollout. Every decision from 0.3 s before onset to 1 s after the motion ends, 12
+candidates (nominal, half, stop, no rotation, +-0.25 per axis, nominal + believed fingertip shift, shift only),
+each held 4 decisions; score = ring progress - excess load, infeasible on grasp loss, tracking or stretch. The
+three conditions differ only in the human motion assumed inside the candidate rollouts (and the fingertip shift):
+current pose held, causal constant-velocity extrapolation from the last decision, true GRAB future. The executed
+episode always follows the real motion. Body 14046, tshirt_26, onset 1 s, 450 decisions, success = interior
+armhole endpoint held 21 states with a valid grasp. Outputs in `output/uipc_manip/m2_pilot_20261001`.
+
+| s1_mug_pass | outcome | plans / changed | most chosen |
+|---|---|---|---|
+| r1 alone | grasp lost at decision 13 | - | - |
+| r1 + GICP (this run) | grasp lost at decision 13 | - | - |
+| planner, current pose | grasp lost at decision 13 | 6 / 0 | nominal every time |
+| planner, causal | success, held from decision 133 | 44 / 39 | +y 25, no rotation 5, +z 4, follow 4 |
+| planner, true future | success, held from decision 145 | 44 / 42 | +y 29, +z 8, follow 2 |
+
+Under the current-pose belief every candidate looks safe and the planner keeps the policy's action, which fails
+exactly like r1; with either motion belief it moves the gripper off the policy's action (mostly +0.25 on y) and
+the episode both keeps the grasp and dresses the arm. The explicit follow-the-arm candidates rarely win.
+
+Reproducibility caveat: the anticipatory-dressing pilot ran r1 + GICP with the same arguments, checkpoint, hang,
+motion and motion code (`pilot_pass_continuation_20260927`) and it succeeded (held from decision 156); here it lost
+the grasp at decision 13. The only changed file is the policy bridge, whose change adds a flow-policy path that r1
+does not use. Single episodes under motion therefore do not reproduce run to run, and none of the rows above is a
+rate. Repeats of GICP (alone, and r1 then GICP in one process as in the pilot) are running before any comparison.
