@@ -325,7 +325,11 @@ def run(args):
                     print(f"[{condition}] {step + 1}/{args.steps} t={env.motion_time_s:.2f}s plans={plans} changed={changed} "
                           f"armhole={last['sleeve_armhole_upper_fraction']:.3f} wall={time.monotonic() - started:.0f}s", flush=True)
             log.close()
+            # success_ever: held once and no later failure (the original rule); final_success: still held at the end,
+            # the rule probe_arm_motion.py uses for r1/GICP. Compare across runners with final_success.
             record = dict(condition=condition, steps=step + 1, success=first_success is not None and failure is None,
+                          final_success=hold_count >= required and failure is None,
+                          final_sections_wrapped=bool(last["sleeve_sections_wrapped"]),
                           first_success_step=first_success, failure=failure, plans=plans, changed=changed,
                           max_armhole_upper_fraction=max_upper, final_armhole_upper_fraction=last["sleeve_armhole_upper_fraction"],
                           time_s=env.motion_time_s, body_tracking_max_m=env.body_tracking_max_m,
