@@ -67,6 +67,8 @@ def parser():
     p.add_argument("--horizon", type=int, default=4, help="Decisions each candidate is held before scoring")
     p.add_argument("--window-before", type=float, default=.3, help="Seconds before motion onset when planning starts")
     p.add_argument("--window-after", type=float, default=1., help="Seconds after the motion ends when planning stops")
+    p.add_argument("--keep-rollout-obs", action="store_true",
+                   help="Build the point-cloud observation inside candidate rollouts too (slower; same outcome)")
     return p
 
 
@@ -77,6 +79,17 @@ def make_env_class():
         """``plan_mode`` None/'true' follow the real motion; 'current' and 'causal' replace the body target during
         candidate rollouts only. The real clock is restored with the snapshot afterwards."""
         plan_mode = None
+        skip_plan_obs = True        # candidate rollouts never read the observation; the snapshot restores the rngs
+        obs_wall_s = 0.
+
+        def observation(self, positions=None):
+            if self.plan_mode is not None and self.skip_plan_obs and hasattr(self, "_obs_placeholder"):
+                return self._obs_placeholder
+            started = time.perf_counter()
+            obs = super().observation(positions)
+            self.obs_wall_s += time.perf_counter() - started
+            self._obs_placeholder = np.zeros_like(obs)
+            return obs
 
         def _sim_step(self):
             if self.plan_mode in (None, "true"):
@@ -272,6 +285,7 @@ def run(args):
     env = make_env_class()(cfg, motion, onset_s=args.onset, speed=args.motion_speed, drive_strength=args.drive_strength,
                            tracking_tolerance_m=args.tracking_tolerance,
                            cell_factory=PROBE["PreparedFactory"](live, cell, placement))
+    env.skip_plan_obs = not args.keep_rollout_obs
     required = args.hold + 1
     records = []
     try:
@@ -282,6 +296,8 @@ def run(args):
             log = (args.out / f"{condition}_lookahead.jsonl").open("w")
             hold_count, first_success, failure, grasp_failure = 0, None, None, None
             plans = changed = 0
+            plan_wall = 0.
+            env.obs_wall_s = 0.
             started = time.monotonic()
             max_upper = 0.
 
@@ -303,6 +319,7 @@ def run(args):
                     lookahead_started = time.monotonic()
                     action, diag = planner.improve(action, condition)
                     plans += 1
+                    plan_wall += time.monotonic() - lookahead_started
                     changed += diag["selected"] != 0
                     log.write(json.dumps(dict(step=step, t=t, wall_s=time.monotonic() - lookahead_started, **diag),
                                          default=float) + "\n")
@@ -333,6 +350,7 @@ def run(args):
                           first_success_step=first_success, failure=failure, plans=plans, changed=changed,
                           max_armhole_upper_fraction=max_upper, final_armhole_upper_fraction=last["sleeve_armhole_upper_fraction"],
                           time_s=env.motion_time_s, body_tracking_max_m=env.body_tracking_max_m,
+                          plan_wall_s=plan_wall, observation_wall_s=env.obs_wall_s,
                           elapsed_s=time.monotonic() - started)
             records.append(record)
             PROBE["save_json"](args.out / "metrics.json", records)
