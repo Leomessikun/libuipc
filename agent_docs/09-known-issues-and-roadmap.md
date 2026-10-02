@@ -1,5 +1,20 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Proposed contact-intervention learning mechanism — 2026-10-02
+
+The owner requested a concrete new contribution. The
+[research construction](performance/2026-10-02-executable-contact-interventions.md)
+defines an action-to-intervention-dependence map: use contact-mechanism probes
+to measure a continuation deficit, learn how ordinary recovery prefixes change
+it, and validate proposed recoveries under unchanged physics. Its local fit
+residual must not be treated as a certificate of physical impossibility.
+The response supervision is an unvalidated novelty candidate; generic contact
+relaxation, counterfactual recovery and teacher/student training have direct
+precedents. First test whether friction-dependent failures exist, then compare
+against equal-cost direct sequence search and physical subgoal refinement.
+Local friction interventions are not yet implemented or verified. Existing M3
+jobs continue unchanged; this proposal has no new training result.
+
 ## Active dynamic dressing experiment — 2026-10-02
 
 The owner explicitly authorized corrected moving-arm teacher validation and,
@@ -7,7 +22,9 @@ conditional on useful labels, history/current-only student training and DAgger.
 This supersedes the older research-only restrictions below for this experiment.
 The [protocol and status](performance/2026-10-02-observed-motion-student.md)
 separates the exact-state 6/6 pilot from the newly launched visible-cloud test.
-No point-cloud teacher or trained-student result is established yet.
+At the latest inspection, pass/current failed at step 13 and pass/GICP failed
+at step 161. Both observed-motion runs were still active. No completed
+point-cloud teacher or trained-student result is established yet.
 
 ## Backless-chair bilateral RL design — 2026-09-23
 

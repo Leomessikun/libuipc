@@ -45,11 +45,15 @@ Implementation: `scripts/wang_transfer/motion_lookahead_probe.py`, with
   masks. Failed episodes are retained; invalid-physics episodes are not training
   data. Observations align as `obs[t] -> action[t] -> obs[t+1]`.
 
-The corrected pass/observed and pass/current runs are active under
-`output/uipc_manip/m3_observed_20261002/`. The queue also contains one GICP run
-and the three corresponding lift conditions. No corrected task result is
-available yet. The old 6/6 result must not be relabeled as point-cloud or student
-performance.
+Latest read-only inspection under `output/uipc_manip/m3_observed_20261002/`:
+pass/current completed with grasp failure at decision 13 (13 queries, no action
+changes); pass/GICP completed with grasp failure at decision 161 (maximum
+armhole fraction about 0.551). Pass/observed and lift/observed remain active;
+lift/current and lift/GICP are pending. There is no completed observed-motion
+teacher or trained-student result yet. The old 6/6 result must not be relabeled
+as point-cloud or student performance. The separate
+[contact-intervention proposal](2026-10-02-executable-contact-interventions.md)
+does not alter this experiment or its scaling gate.
 
 ## Training protocol
 

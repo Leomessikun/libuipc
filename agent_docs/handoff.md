@@ -1,5 +1,22 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-02 — Concrete contact-intervention learning proposal
+
+The owner asked to create a new method contribution. A primary-source and
+read-only experiment audit produced
+[an explicit candidate and falsification protocol](performance/2026-10-02-executable-contact-interventions.md):
+learn how ordinary robot prefixes change deficits measured through contact
+interventions, project desired changes into the tested action family, and accept
+only normal-physics-validated recovery labels. The proposal distinguishes its
+learning target from existing contact relaxation, privileged-action curricula,
+contact commands and inverse-dynamics recovery. It is not a confirmed novel
+algorithm or a measured policy improvement. The first gate is a small
+friction-dependence diagnostic, followed by an equal-cost direct recovery-search
+comparison. No new simulation, training or backend changes were performed for
+this proposal. Existing M3 jobs continue unchanged. Completed corrected M3
+pass/current and pass/GICP runs failed at steps 13 and 161 respectively; both
+observed-motion jobs were still active at inspection.
+
 ## 2026-09-23 — Backless seated bilateral pull-up: RL-training design
 
 The owner clarified that the chair has no backrest and asked for a concrete RL
