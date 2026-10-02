@@ -104,3 +104,7 @@ Before scaling, the comparison is corrected (M2b): one success rule for every me
 21 consecutive states at decision 450 with a valid grasp), one candidate set for every belief (the two
 follow-the-arm candidates, which won 2-4 of 44 plans, are dropped so the beliefs differ only in the human motion
 inside the rollouts), identical initial states checked per run, and GICP and r1 repeated on mug lift.
+
+Mug lift repeat 2 (2026-10-02): causal succeeds again (held from 133, final_success true); current pose fails at
+159 (sleeve sections still wrapped when the grasp is lost). Mug lift so far: causal 2 of 2, current pose 0 of 2,
+true future 0 of 1, GICP 0 of 1, r1 0 of 1.
