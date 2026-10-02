@@ -156,3 +156,37 @@ steps retain the original error behavior. States with no feasible candidate are
 not correction labels. The failed attempt is an implementation failure, not a
 completed task result. A corrected retry is active; the current-pose job remains
 running. No tolerance, score or success threshold was relaxed.
+
+## Corrected validation result and review (recorded by the supervising session, 2026-10-02 19:35)
+
+One run per condition, `observed_common` candidates (identical 12-action set under every belief, follow
+actions from the visible cloud), fixed 0-5 s window, final-state success, `output/uipc_manip/m3_observed_20261002`:
+
+| clip | observed forecast | current pose | GICP |
+|---|---|---|---|
+| s1 mug pass | success (held from 138) | grasp lost at 13 | grasp lost at 161 |
+| s1 mug lift | grasp lost at 142 | success | grasp lost at 181 |
+
+The teacher gate (observed teacher succeeds on both clips) fails on mug lift. The queue then stopped with
+`Initial states differ in pass: 1.4e-4 m`, so the gate table was not written by the pipeline.
+
+Review:
+
+- With the common candidate set, the **current-pose** planner dresses mug lift, where the legacy current-pose
+  planner failed 3 of 3. The legacy 6/6 for exact-state causal planning therefore cannot be attributed to the
+  motion inside the rollouts alone; the belief-dependent follow candidates (now observation-based and shared)
+  and lift's run-to-run variance are live alternatives. Mug pass still separates the beliefs (current pose fails
+  at 13 in every run so far). Repeats per condition are needed before any gate decision, which the pending
+  `validation_repeats` option provides.
+- The 10-micrometre initial-state check compares states settled in separate processes; they differ by 0.14 mm
+  here, consistent with the solver's run-to-run variation, not with a placement change. Either compare against
+  a measured same-command reset spread, or run all conditions of a clip in one process from one reset, as
+  `probe_arm_motion.py` does, which makes the starts identical by construction.
+- On the EXPO mainline: the motion env runs one body per process at roughly 3 s per decision without planning,
+  so a 450-decision episode takes about 20-25 min and two to four concurrent runs on the shared GPU give about
+  8-12 episodes per hour. An online editor/critic loop needing hundreds of episodes per seed is several days per
+  seed before controls. Earlier IPC-label SAC updates in this project did not improve (IAQL, closed 2026-09-17).
+  Order of work: (1) the offline critic-ranking diagnostic on existing candidate logs, (2) the teacher-to-student
+  distillation with history vs current-only students as the deliverable that existing evidence supports, (3)
+  plain EXPO from that student with a declared episode budget, (4) the consequence-metric variant only if plain
+  EXPO learns at that budget and its ranking errors are shown to matter.
