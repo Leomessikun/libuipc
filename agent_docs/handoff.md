@@ -1,5 +1,20 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-02 — Concrete algorithm delta from EXPO proposed
+
+The owner asked for a new post-training contribution relative to EXPO. The
+[expanded proposal](performance/2026-10-02-post-training-mainline.md#new-algorithm-candidate-a-shared-consequence-metric-for-editing-and-absorption)
+defines a shared action-consequence metric: use its inverse for residual
+exploration and the metric itself for supervised absorption of improved actions.
+The relative-advantage loss is retained as an auxiliary control. Jacobian-based
+exploration, metric trust regions and consequence-based safety filters are
+explicit prior art; neither novelty nor a current EXPO failure is established.
+The first diagnostic tests directional physical sensitivity against simulator
+noise and scalar-radius controls. A 2x2 editor/absorption comparison and matched
+total-cost EXPO comparisons determine whether the coupling earns a method claim.
+This is a proposal within the existing moving-arm/ClothesNet scope, not a change
+to the running M3 queue. No simulation, training or experiment result was added.
+
 ## 2026-10-02 — Owner restored the post-training mainline
 
 The owner rejected the contact-friction detour and supplied Perry Dong's

@@ -7,9 +7,13 @@ for moving arms and unseen garments, using the EXPO-related post-training recipe
 as a reference. The [concrete route](performance/2026-10-02-post-training-mainline.md)
 is a pretrained base, an RL action editor and critic, shared replay, and base
 updates that absorb improved behavior. Existing dynamic DAgger is the baseline.
-The research candidate is limited physical supervision of edit advantages,
-compared with ordinary EXPO, identical extra transitions and value expansion.
-Its relative TD equation is not claimed to be new mathematics.
+The latest research candidate is a shared consequence metric: inverse-metric
+residual exploration and metric-weighted supervised absorption. First test
+whether directional sensitivity can be learned above replay noise; then isolate
+the two updates and compare with tuned scalar radii, learned full covariance,
+physical safety filters and EXPO using identical extra transitions and total
+cost. The earlier relative-advantage supervision is retained as an auxiliary
+comparison. Neither candidate is confirmed novel or validated on current EXPO.
 Current branch logs lack complete successor/reward data for RL, and the current
 student is supervised imitation. Implement those interfaces and the learner
 before claiming this loop is running. The friction-intervention proposal below
