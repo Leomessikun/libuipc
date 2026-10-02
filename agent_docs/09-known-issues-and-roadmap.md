@@ -1,5 +1,14 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Active dynamic dressing experiment — 2026-10-02
+
+The owner explicitly authorized corrected moving-arm teacher validation and,
+conditional on useful labels, history/current-only student training and DAgger.
+This supersedes the older research-only restrictions below for this experiment.
+The [protocol and status](performance/2026-10-02-observed-motion-student.md)
+separates the exact-state 6/6 pilot from the newly launched visible-cloud test.
+No point-cloud teacher or trained-student result is established yet.
+
 ## Backless-chair bilateral RL design — 2026-09-23
 
 The chair has **no backrest**. The owner is now considering a narrowed task

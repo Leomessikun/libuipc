@@ -2,13 +2,17 @@
 
 Reuses the anticipatory-dressing worktree's motion pilot unmodified (GRAB-driven Empty-FEM body, placement,
 policy client, success rule) and adds one planner run under three beliefs about the human during the
-candidate rollouts. Every condition uses the same candidates, score, hold length and simulation budget; the
-executed episode always follows the real GRAB motion.
+candidate rollouts. The legacy pilot used belief-dependent follow candidates.
+Use --candidate-set observed_common for common candidates, including follow
+actions computed only from observed clouds, under every planning belief.
+The executed episode always follows the real GRAB motion.
 
   current  the arm holds its present pose during the candidate rollouts
   causal   body vertices and joints extrapolated at their velocity over the last decision
   true     the actual GRAB future (privileged diagnostic)
   none     no planning: the checkpoint alone (sanity check against probe_arm_motion.py's r1)
+  observed visible-cloud GICP displacement field extrapolated over the horizon
+  gicp     checkpoint plus the same observed bounded one-step correction
 
 The snapshot covers the IPC world, the env's controller state and the motion state (clock, body target, target
 joints, current cells, meshes), so every candidate starts from the same human and cloth. Candidates are scored
@@ -36,8 +40,9 @@ sys.path.insert(0, str(HERE))       # our physical_sleeve / ipc_action_filter be
 
 from ipc_action_filter import arm_progress  # noqa: E402
 from physical_sleeve import DEFAULT_OBJ, SleeveSections, measure, read_obj  # noqa: E402
+from motion_observation import ObservedArmMotion  # noqa: E402
 
-CONDITIONS = ("none", "current", "causal", "true")
+CONDITIONS = ("none", "current", "causal", "true", "observed", "gicp")
 BASE_STATE = ("_anchor", "_offsets", "_last_progress", "_privileged", "_episode_step", "_force_trackers", "_violated")
 MOTION_STATE = ("motion_time_s", "motion_running", "_body_target", "_target_joints", "body_tracking_max_m",
                 "cells", "arm_meshes", "collider_meshes", "arm_vertices", "collider_vertices")
@@ -69,6 +74,14 @@ def parser():
     p.add_argument("--window-after", type=float, default=1., help="Seconds after the motion ends when planning stops")
     p.add_argument("--keep-rollout-obs", action="store_true",
                    help="Build the point-cloud observation inside candidate rollouts too (slower; same outcome)")
+    p.add_argument("--candidate-set", choices=("legacy", "observed_common"), default="legacy")
+    p.add_argument("--planning-window", type=float, nargs=2, default=None,
+                   help="Fixed elapsed-time window, independent of the GRAB onset/end metadata")
+    p.add_argument("--save-trajectory", action="store_true")
+    p.add_argument("--teacher-execution-probability", type=float, default=1.,
+                   help="1: teacher rollout initialization; 0: on-policy DAgger labels without intervention")
+    p.add_argument("--student-checkpoint", type=Path, default=None,
+                   help="Optional history student for roll-in; --checkpoint remains the frozen teacher proposal")
     return p
 
 
@@ -81,6 +94,15 @@ def make_env_class():
         plan_mode = None
         skip_plan_obs = True        # candidate rollouts never read the observation; the snapshot restores the rngs
         obs_wall_s = 0.
+
+        def reset(self, seeds=None):
+            # GenesisIPCDressingEnv.step resets even with reset_on_done=False
+            # when a candidate raises RuntimeError. Branches must retain the
+            # partially advanced world for the planner's snapshot restore;
+            # resetting here would replay stale forecast targets during settle.
+            if self.plan_mode is not None:
+                return self._obs_placeholder.copy()
+            return super().reset(seeds)
 
         def observation(self, positions=None):
             if self.plan_mode is not None and self.skip_plan_obs and hasattr(self, "_obs_placeholder"):
@@ -95,7 +117,7 @@ def make_env_class():
             if self.plan_mode in (None, "true"):
                 return super()._sim_step()
             self._plan_clock += self.cfg.dt
-            if self.plan_mode == "causal":
+            if self.plan_mode in ("causal", "observed"):
                 target = self._plan_base[0] + self._plan_velocity[0] * self._plan_clock
                 jump = float(np.max(np.linalg.norm(target - self._body_target, axis=1)))
                 if jump > self.max_body_substep_m:
@@ -112,7 +134,7 @@ def make_env_class():
 
 
 class MotionPlanner:
-    def __init__(self, env, sleeve, masses, *, horizon):
+    def __init__(self, env, sleeve, masses, *, horizon, candidate_set="legacy"):
         self.env, self.sleeve, self.horizon = env, sleeve, int(horizon)
         cfg = env.cfg
         self.indices = env._pickers[0]["anchor_idx"]
@@ -123,11 +145,17 @@ class MotionPlanner:
         self.noise_margin, self.replay_checked = .0002, False
         self.history = []                              # (body target, joints) at each executed decision
         self.fingers = []                              # observed fingertip at each executed decision
+        from uipc_manip.motion_controls import gicp, observed_arm_roi
+        self.observed = ObservedArmMotion(gicp, observed_arm_roi, dt=cfg.dt * cfg.action_repeat)
+        self.candidate_set = candidate_set
 
-    def record(self):
+    def record(self, observation=None):
         e = self.env
         self.history.append((e._body_target.copy(), e._target_joints.copy()))
         self.fingers.append(np.asarray(e.cells[0].finger, float).copy())
+        if observation is not None:
+            pos, flags, valid, extra = e.spec.unpack_numpy(observation)
+            self.observed.update(pos, flags, valid, extra[:3])
 
     def finger_shift(self, mode):
         """Fingertip displacement over the next decision under each belief; it enters the 'follow' candidates."""
@@ -168,12 +196,15 @@ class MotionPlanner:
     def _begin(self, mode):
         e = self.env
         e.plan_mode, e._plan_clock = mode, 0.
-        if mode == "causal":
+        if mode in ("causal", "observed"):
             now = (e._body_target.copy(), e._target_joints.copy())
             prev = self.history[-2] if len(self.history) >= 2 else now
             dt = e.cfg.dt * e.cfg.action_repeat
             e._plan_base = now
-            e._plan_velocity = ((now[0] - prev[0]) / dt, (now[1] - prev[1]) / dt)
+            if mode == "observed":
+                e._plan_velocity = tuple(self.observed.displacement(x) / dt for x in now)
+            else:
+                e._plan_velocity = ((now[0] - prev[0]) / dt, (now[1] - prev[1]) / dt)
 
     def evaluate(self, action, nominal, mode):
         e = self.env
@@ -218,7 +249,8 @@ class MotionPlanner:
 
     def improve(self, nominal, mode):
         nominal = np.clip(np.asarray(nominal, float), -1, 1)
-        shift = self.finger_shift(mode)
+        shift = (self.observed.displacement(self.env._anchor[0])
+                 if self.candidate_set == "observed_common" else self.finger_shift(mode))
         cands = self.candidates(nominal, shift)
         snap = self.snapshot()
         rows = []
@@ -240,7 +272,10 @@ class MotionPlanner:
         finally:
             self.restore(snap)
         return cands[best].astype(np.float32), dict(selected=best, candidates=rows, noise_margin=self.noise_margin,
-                                                     finger_shift_m=shift.tolist())
+                                                     follow_shift_m=shift.tolist(),
+                                                     label_valid=any(r.get("feasible", False) for r in rows),
+                                                     observed_motion=self.observed.diagnostics,
+                                                     observed_transform=self.observed.transform.tolist())
 
 
 def run(args):
@@ -274,14 +309,31 @@ def run(args):
     dt = cfg.dt * cfg.action_repeat
     motion_end = args.onset + float(motion.times[-1]) / args.motion_speed
     window = (args.onset - args.window_before, motion_end + args.window_after)
+    if args.planning_window is not None:
+        window = tuple(args.planning_window)
+    if not 0 <= args.teacher_execution_probability <= 1:
+        raise ValueError("Teacher execution probability must be in [0, 1]")
+    if args.interval < 1 or args.horizon < 1 or args.steps < 1 or window[1] < window[0]:
+        raise ValueError("Invalid planning budget/window")
     args_json = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
     PROBE["save_json"](args.out / "run.json", dict(
         arguments=args_json, checkpoint_sha256=sha256(args.checkpoint), motion_sha256=sha256(args.motion),
         motion=motion.metadata, placement=placement, decision_dt_s=dt, planning_window_s=window,
         worktree_revision=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=WT, text=True).strip(),
         revision=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=HERE, text=True).strip(),
-        success_rule="three interior sections wrap the arm and armhole upper fraction >= threshold for hold+1 consecutive states, valid grasp throughout"))
+        code_sha256={str(p): sha256(p) for p in (
+            Path(__file__), HERE / "motion_observation.py", HERE / "physical_sleeve.py",
+            WT / "python/uipc_manip/dressing_motion.py", WT / "python/uipc_manip/motion_controls.py")},
+        student_sha256=sha256(args.student_checkpoint) if args.student_checkpoint else None,
+        success_rule="FINAL hold+1 consecutive states: all interior sections wrap and armhole fraction >= threshold; valid grasp throughout",
+        observation_contract="obs[t] -> label/action[t] -> obs[t+1]; tool proprioception removes camera ego-motion",
+        observed_forecast="GICP of visible arm ROI; bounded constant rigid displacement field on current privileged body geometry; no true human velocity",
+        data_mode="teacher_initialization" if args.teacher_execution_probability == 1 else "dagger_mixture"))
     client = PROBE["make_client"](args)
+    student = None
+    if args.student_checkpoint:
+        from dynamic_student import StudentClient
+        student = StudentClient(args.student_checkpoint, args.policy_package_root, args.yaw)
     env = make_env_class()(cfg, motion, onset_s=args.onset, speed=args.motion_speed, drive_strength=args.drive_strength,
                            tracking_tolerance_m=args.tracking_tolerance,
                            cell_factory=PROBE["PreparedFactory"](live, cell, placement))
@@ -291,8 +343,21 @@ def run(args):
     try:
         for condition in args.conditions:
             obs = env.reset([args.seed])
-            planner = MotionPlanner(env, sleeve, masses, horizon=args.horizon)
-            planner.record()
+            planner = MotionPlanner(env, sleeve, masses, horizon=args.horizon, candidate_set=args.candidate_set)
+            planner.record(obs[0])
+            if student is not None:
+                student.reset()
+            mix_rng = np.random.default_rng(args.seed + 104729)
+            trajectory = dict(obs=[obs[0].copy()], actions=[], teacher_actions=[], queried=[],
+                              teacher_executed=[], nominal_actions=[], completion_hold=[], registration_valid=[])
+            initial = dict(positions=env.positions()[0].copy(), human_vertices=env.cells[0].human_points.copy(),
+                           tcp=env._anchor[0].copy())
+            if records:
+                PROBE["initial_state_difference"](reference_initial, initial)
+            else:
+                reference_initial = initial
+            if args.save_trajectory:
+                np.savez_compressed(args.out / f"{condition}_initial.npz", **initial)
             log = (args.out / f"{condition}_lookahead.jsonl").open("w")
             hold_count, first_success, failure, grasp_failure = 0, None, None, None
             plans = changed = 0
@@ -309,27 +374,46 @@ def run(args):
 
             last = endpoint_state()
             for step in range(args.steps):
-                pos, flags, valid, _ = env.spec.unpack_numpy(obs[0])
+                pos, flags, valid, extra = env.spec.unpack_numpy(obs[0])
                 policy = np.clip(client.act(pos[valid], flags[valid], np.zeros(3)), -1., 1.)
+                rollin = policy if student is None else np.clip(student.act(pos[valid], flags[valid], extra[:3]), -1, 1)
                 completion_hold = PROBE["endpoint_reached"](last, "interior_armhole", args.success)
-                action = np.zeros(6) if completion_hold else policy.copy()
+                action = np.zeros(6) if completion_hold else rollin.copy()
+                teacher_action = np.zeros(6) if completion_hold else policy.copy()
+                queried = teacher_executed = False
                 t = step * dt
-                if (condition != "none" and not completion_hold and window[0] <= t <= window[1]
+                if (condition not in ("none", "gicp") and not completion_hold and window[0] <= t <= window[1]
                         and step % args.interval == 0):
                     lookahead_started = time.monotonic()
-                    action, diag = planner.improve(action, condition)
+                    teacher_action, diag = planner.improve(policy, condition)
+                    queried = diag["label_valid"]
+                    teacher_executed = mix_rng.random() < args.teacher_execution_probability
+                    if teacher_executed:
+                        action = teacher_action.copy()
                     plans += 1
                     plan_wall += time.monotonic() - lookahead_started
                     changed += diag["selected"] != 0
                     log.write(json.dumps(dict(step=step, t=t, wall_s=time.monotonic() - lookahead_started, **diag),
                                          default=float) + "\n")
                     log.flush()
+                elif condition == "gicp":
+                    from uipc_manip.motion_controls import bounded_correction
+                    action[:3] += bounded_correction(planner.observed.transform, extra[:3], .01) / cfg.max_translation
+                    action = np.clip(action, -1, 1)
+                trajectory["actions"].append(np.asarray(action, np.float32).copy())
+                trajectory["teacher_actions"].append(np.asarray(teacher_action, np.float32).copy())
+                trajectory["queried"].append(queried)
+                trajectory["teacher_executed"].append(teacher_executed)
+                trajectory["nominal_actions"].append(policy.copy())
+                trajectory["completion_hold"].append(completion_hold)
+                trajectory["registration_valid"].append(planner.observed.diagnostics.get("valid", False))
                 obs, _, _, info = env.step(np.asarray(action, np.float32)[None], reset_on_done=False)
+                trajectory["obs"].append(obs[0].copy())
                 physics_failure, grasp_failure = PROBE["classify_failures"](info[0], step, grasp_failure)
                 if physics_failure is not None:
                     failure = physics_failure
                     break
-                planner.record()
+                planner.record(obs[0])
                 last = endpoint_state()
                 max_upper = max(max_upper, last["sleeve_armhole_upper_fraction"])
                 if grasp_failure is not None:
@@ -348,16 +432,23 @@ def run(args):
                           final_success=hold_count >= required and failure is None,
                           final_sections_wrapped=bool(last["sleeve_sections_wrapped"]),
                           first_success_step=first_success, failure=failure, plans=plans, changed=changed,
+                          valid_queries=int(np.sum(trajectory["queried"])),
+                          teacher_executed_decisions=int(np.sum(trajectory["teacher_executed"])),
                           max_armhole_upper_fraction=max_upper, final_armhole_upper_fraction=last["sleeve_armhole_upper_fraction"],
                           time_s=env.motion_time_s, body_tracking_max_m=env.body_tracking_max_m,
                           plan_wall_s=plan_wall, observation_wall_s=env.obs_wall_s,
                           elapsed_s=time.monotonic() - started)
             records.append(record)
+            if args.save_trajectory:
+                np.savez_compressed(args.out / f"{condition}_trajectory.npz",
+                                    **{k: np.asarray(v) for k, v in trajectory.items()})
             PROBE["save_json"](args.out / "metrics.json", records)
             print("[result] " + json.dumps(record, default=float), flush=True)
     finally:
         env.close()
         client.close()
+        if student is not None:
+            student.close()
 
 
 def main():

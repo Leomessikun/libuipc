@@ -110,6 +110,16 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Resume bounded dynamic single-sleeve teacher/student experiments.** The
+  owner explicitly approved the October 2 plan: one corrected validation with
+  common candidate actions, a common final success rule, and point-cloud motion
+  estimates; then dynamic data collection, matched history/current-only students
+  and DAgger, followed by held-out body/motion evaluation if the teacher remains
+  useful. This supersedes the September 22 research-only, no-teacher/student,
+  and bilateral-only restrictions for this experiment. Preserve existing jobs
+  and data; do not scale weak labels or present the pilot as a novel algorithm.
+  (Set 2026-10-02.)
+
 - **Selected task: dress both arms and the torso of a seated person.**
   The owner explicitly abandoned the single-human-arm research direction and
   selected dressing a person sitting in a chair with both human arms raised

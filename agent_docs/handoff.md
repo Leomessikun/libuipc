@@ -3865,3 +3865,23 @@ chords, 37 to 837 N on the arm against the expert's mostly under 35 N) and does 
 held successes snap past the shoulder. Feeding the IPC contact force to its FiLM made it worse (2
 of 10). Bridge FiLM support: fa6c0949 on `sac-stability`. Record updated; scripts in
 `scripts/wang_transfer/`.
+# 2026-10-02 — Corrected dynamic teacher validation authorized and launched
+
+On `research/expo-ft-dressing`, the owner authorized common-candidate,
+point-cloud-motion teacher validation and conditional matched student training.
+`motion_lookahead_probe.py` now supports observed/GICP conditions, explicit
+common candidates, a fixed planning window, full trajectory/label recording,
+and teacher/student mixture roll-in. `motion_observation.py` removes robot
+ego-motion and maintains causal episode-local history. Nine focused CPU checks
+and synthetic training/real-observation bridge smokes pass. The bounded queue
+now runs observed/pass and current/pass under
+`output/uipc_manip/m3_observed_20261002/`; no corrected success result yet.
+`dynamic_student.py` / `train_dynamic_student.py` implement frozen-r1 history
+adapters and identical-capacity current-only controls. `run_dynamic_pipeline.py`
+gates eight initialization episodes, matched CPU training, four actual student
+roll-ins and held-out evaluation on the corrected teacher's results. Check its
+`pipeline_status.json` before launching anything; do not start duplicate queues.
+The first observed/pass attempt crashed because the base environment reset
+inside a failed forecast branch. It is archived under `failed_attempts/`, and a
+retry uses branch-local reset suppression; the current-pose job was retained.
+Details and limits: `performance/2026-10-02-observed-motion-student.md`.
