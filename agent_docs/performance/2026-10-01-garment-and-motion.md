@@ -85,3 +85,10 @@ Mug lift, one run each (motion ends at 4 s; the planner stops at decision 50): p
 decision 156, after planning has ended; r1 + GICP loses it at 189; r1 alone lost it at 154 (fmvp_sim at 147); the
 current-pose planner loses it at 168. On this clip the failures come after the motion, where all conditions run the
 same unplanned policy, so the run-to-run variance seen for GICP can decide them; repeats are needed here as well.
+
+Mug pass repeat 2 (2026-10-02; GPU shared with another user's GR00T fine-tune and two other jobs, 82-91 of 94
+GiB, plans took about 330 s instead of 100-175 s): planner with causal motion succeeds again (held from decision
+151, final armhole fraction 0.75), planner with the true future succeeds again (149, 0.74), the current-pose
+planner fails at decision 13 again. Mug pass so far: causal 2 of 2, true future 2 of 2, current pose 0 of 2,
+r1 alone 0 of every run, r1 + GICP 1 of 5. Repeat 3 and the mug-lift repeats are queued.
+
