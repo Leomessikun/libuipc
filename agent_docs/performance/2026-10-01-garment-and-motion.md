@@ -92,3 +92,15 @@ GiB, plans took about 330 s instead of 100-175 s): planner with causal motion su
 planner fails at decision 13 again. Mug pass so far: causal 2 of 2, true future 2 of 2, current pose 0 of 2,
 r1 alone 0 of every run, r1 + GICP 1 of 5. Repeat 3 and the mug-lift repeats are queued.
 
+
+Mug pass repeat 3 (logs the end-state rule `final_success`): causal succeeds (held from 150, still dressed at
+decision 450), true future succeeds (145, still dressed), current pose fails at 13. Mug pass after three runs per
+planner condition: causal 3 of 3, true future 3 of 3, current pose 0 of 3, r1 alone 0 in every run, r1 + GICP
+1 of 5. With these counts causal vs GICP is 3/3 vs 1/5 (Fisher exact one-sided p = 0.07) and causal vs current
+3/3 vs 0/3 (p = 0.05): consistent but small. Mug lift so far: causal 1 of 1, current pose 0 of 2 (168, 159),
+true future 0 of 1 (156), GICP 0 of 1 (189), r1 0 of 1 (154); its repeats are running.
+
+Before scaling, the comparison is corrected (M2b): one success rule for every method (end state: endpoint held
+21 consecutive states at decision 450 with a valid grasp), one candidate set for every belief (the two
+follow-the-arm candidates, which won 2-4 of 44 plans, are dropped so the beliefs differ only in the human motion
+inside the rollouts), identical initial states checked per run, and GICP and r1 repeated on mug lift.
