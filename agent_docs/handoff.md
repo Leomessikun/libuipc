@@ -1,5 +1,26 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-02 — Owner restored the post-training mainline
+
+The owner rejected the contact-friction detour and supplied Perry Dong's
+post-training blog. The [corrected plan](performance/2026-10-02-post-training-mainline.md)
+selects an EXPO-style learner as the reference: existing base, learned editor,
+TD critic, online replay and supervised absorption into the base. Dynamic DAgger
+and both original generalization axes remain. The proposed research extension
+tests physical branch supervision of relative edit values, with matched extra
+data and value-expansion controls; its elementary difference loss is not a
+novelty claim. No EXPO learner was launched in this audit.
+
+Read-only data inspection found 456 candidate records across the two partial
+observed-motion runs, including 14 simulation-error branches. They lack branch
+successor observations and complete reward/terminal arrays; current student
+training consumes selected action labels, not a TD objective. These are concrete
+next interface changes, not an argument to discard existing rollouts.
+The September EXPO-fit note was annotated: the current Real-Time EXPO-FT paper
+does fine-tune its base, contradicting the old fully-frozen-base description.
+The untested friction proposal is marked not selected. Running jobs were left
+on their existing bounded pipeline.
+
 ## 2026-10-02 — Concrete contact-intervention learning proposal
 
 The owner asked to create a new method contribution. A primary-source and

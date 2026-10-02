@@ -1,5 +1,14 @@
 # Would Real-Time EXPO-FT finish this project? The one number that decides it
 
+**October 2 correction:** This historical protocol is not the current r1
+experiment. The statement below that Real-Time EXPO-FT freezes its whole base
+is contradicted by the [paper's appendix VII-E](https://arxiv.org/html/2609.18207v1),
+which specifies online flow-matching updates of the base. Its current paper also
+contains quantitative results. Treat the old page-availability and frozen-base
+claims as superseded. The edit-distance measurements characterize the specific
+old policy/controller pair, not every successful action or current EXPO support.
+See the [current post-training plan](2026-10-02-post-training-mainline.md).
+
 Date: 2026-09-21. Branch `research/expo-ft-dressing`, opened for this question.
 Read-only measurement, no simulation, no training. Script
 `scripts/measure_expo_edit_budget.py`, artifact

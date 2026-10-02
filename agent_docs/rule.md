@@ -110,6 +110,14 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Keep the current research centered on dressing post-training.** The owner
+  rejected switching the mainline to the proposed contact-friction mechanism
+  study and pointed to Perry Dong's universal post-training blog as the intended
+  reference. Develop post-training of the existing policy for moving arms and
+  ClothesNet generalization; preserve current experiments and use prior work
+  constructively as baselines. A new simulator-mechanism project is not a
+  prerequisite for this plan. (Clarified 2026-10-02.)
+
 - **Resume bounded dynamic single-sleeve teacher/student experiments.** The
   owner explicitly approved the October 2 plan: one corrected validation with
   common candidate actions, a common final success rule, and point-cloud motion

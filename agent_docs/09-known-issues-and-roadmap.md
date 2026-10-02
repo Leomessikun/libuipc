@@ -1,6 +1,23 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Selected mainline: dressing post-training — 2026-10-02
+
+The owner corrected the proposed direction: improve an existing dressing policy
+for moving arms and unseen garments, using the EXPO-related post-training recipe
+as a reference. The [concrete route](performance/2026-10-02-post-training-mainline.md)
+is a pretrained base, an RL action editor and critic, shared replay, and base
+updates that absorb improved behavior. Existing dynamic DAgger is the baseline.
+The research candidate is limited physical supervision of edit advantages,
+compared with ordinary EXPO, identical extra transitions and value expansion.
+Its relative TD equation is not claimed to be new mathematics.
+Current branch logs lack complete successor/reward data for RL, and the current
+student is supervised imitation. Implement those interfaces and the learner
+before claiming this loop is running. The friction-intervention proposal below
+is not selected and must not become a prerequisite. Existing M3 jobs continue.
+
 ## Proposed contact-intervention learning mechanism — 2026-10-02
+
+**Superseded as the next direction by the owner's clarification above.**
 
 The owner requested a concrete new contribution. The
 [research construction](performance/2026-10-02-executable-contact-interventions.md)

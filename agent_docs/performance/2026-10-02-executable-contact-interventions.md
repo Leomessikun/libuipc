@@ -1,5 +1,11 @@
 # Learning executable contact interventions — research proposal, 2026-10-02
 
+**Not selected.** The owner clarified that the mainline is post-training the
+existing dressing policy, following the EXPO-related recipe. The
+[corrected plan](2026-10-02-post-training-mainline.md) supersedes this proposal
+as the next action. Retain this record as an untested alternative; its friction
+experiments are not prerequisites for the active work.
+
 ## Decision and status
 
 The candidate is to learn **how ordinary robot actions change a measured
