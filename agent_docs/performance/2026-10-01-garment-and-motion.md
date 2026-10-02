@@ -113,3 +113,24 @@ Mug lift, more repeats: current pose fails again at 171 (0 of 3: 168, 159, 171);
 (held from 147, final_success true; 1 of 2 with the first run's loss at 156). Mug lift so far: causal 2 of 2,
 true future 1 of 2, current pose 0 of 3, GICP 0 of 1, r1 0 of 1; causal and true-future repeat 3 and two r1
 runs are running.
+
+### M2 pilot summary (complete, 2026-10-02)
+
+Body 14046, tshirt_26, onset 1 s, 450 decisions; success = dressed with a valid grasp at the end (end-state rule
+logged from repeat 3 on mug pass and for all mug-lift repeats; the earlier successes ended with armhole fraction
+0.72-0.75).
+
+| condition | mug pass | mug lift | both |
+|---|---|---|---|
+| r1 alone | 0 of every run (13) | 0 of 3 (154, 149, 158) | 0 |
+| r1 + GICP | 1 of 5 | 0 of 1 (189) | 1 of 6 |
+| planner, current pose | 0 of 3 (13, 13, 13) | 0 of 3 (168, 159, 171) | 0 of 6 |
+| planner, causal motion | 3 of 3 (held from 133, 151, 150) | 3 of 3 (131, 133, 146) | 6 of 6 |
+| planner, true future | 3 of 3 (145, 149, 145) | 2 of 3 (156 fail; 147, 184) | 5 of 6 |
+
+Causal vs GICP 6/6 vs 1/6 (Fisher exact two-sided p = 0.015); causal vs current pose 6/6 vs 0/6 (p = 0.002);
+causal vs true future 6/6 vs 5/6 (p = 1). Reading: on this body and these two clips, the same planner dresses the
+moving arm only when its rollouts move the arm; holding the current pose behaves like r1. A constant-velocity
+extrapolation of the simulator body state is as good as the true future. Limits: one body, two clips, one onset;
+the follow-the-arm candidates differ by belief; the causal belief reads the simulator's exact body state and the
+known motion window; GICP has a single run on mug lift. M2b corrects these before any claim.
