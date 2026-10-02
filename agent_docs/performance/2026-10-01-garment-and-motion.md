@@ -108,3 +108,8 @@ inside the rollouts), identical initial states checked per run, and GICP and r1 
 Mug lift repeat 2 (2026-10-02): causal succeeds again (held from 133, final_success true); current pose fails at
 159 (sleeve sections still wrapped when the grasp is lost). Mug lift so far: causal 2 of 2, current pose 0 of 2,
 true future 0 of 1, GICP 0 of 1, r1 0 of 1.
+
+Mug lift, more repeats: current pose fails again at 171 (0 of 3: 168, 159, 171); true future succeeds in repeat 2
+(held from 147, final_success true; 1 of 2 with the first run's loss at 156). Mug lift so far: causal 2 of 2,
+true future 1 of 2, current pose 0 of 3, GICP 0 of 1, r1 0 of 1; causal and true-future repeat 3 and two r1
+runs are running.
