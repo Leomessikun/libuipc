@@ -1,5 +1,19 @@
 # Dressing post-training: EXPO reference and consequence geometry
 
+## Dynamic baseline status
+
+M3's observed-motion teacher succeeds on pass but fails lift; current-pose
+planning succeeds lift under common candidates. Its independent-reset check
+then errors on a 0.136 mm cloth difference. No research student was trained.
+The [M4 baseline](2026-10-02-observed-motion-student.md#m4-privileged-causal-teacher-baseline)
+uses privileged recent-state causal forecasts only in the training teacher,
+two validation/evaluation repeats and a held-out passive-motion preflight.
+Students still use observable history. M4 must revalidate the teacher with common
+candidates; legacy 6/6 is insufficient. This supplies a bounded DAgger control
+and possible initialization for the post-training learner below, without
+changing the selected algorithm question or claiming a new teacher/student
+method. EXPO and the shared consequence metric are not implemented yet.
+
 ## Scope correction
 
 The owner clarified that the research remains **post-training an existing

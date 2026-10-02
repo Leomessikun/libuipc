@@ -13,6 +13,7 @@ The executed episode always follows the real GRAB motion.
   none     no planning: the checkpoint alone (sanity check against probe_arm_motion.py's r1)
   observed visible-cloud GICP displacement field extrapolated over the horizon
   gicp     checkpoint plus the same observed bounded one-step correction
+  hold     zero robot action for a passive prescribed-motion preflight
 
 The snapshot covers the IPC world, the env's controller state and the motion state (clock, body target, target
 joints, current cells, meshes), so every candidate starts from the same human and cloth. Candidates are scored
@@ -42,7 +43,7 @@ from ipc_action_filter import arm_progress  # noqa: E402
 from physical_sleeve import DEFAULT_OBJ, SleeveSections, measure, read_obj  # noqa: E402
 from motion_observation import ObservedArmMotion  # noqa: E402
 
-CONDITIONS = ("none", "current", "causal", "true", "observed", "gicp")
+CONDITIONS = ("none", "current", "causal", "true", "observed", "gicp", "hold")
 BASE_STATE = ("_anchor", "_offsets", "_last_progress", "_privileged", "_episode_step", "_force_trackers", "_violated")
 MOTION_STATE = ("motion_time_s", "motion_running", "_body_target", "_target_joints", "body_tracking_max_m",
                 "cells", "arm_meshes", "collider_meshes", "arm_vertices", "collider_vertices")
@@ -328,7 +329,9 @@ def run(args):
         success_rule="FINAL hold+1 consecutive states: all interior sections wrap and armhole fraction >= threshold; valid grasp throughout",
         observation_contract="obs[t] -> label/action[t] -> obs[t+1]; tool proprioception removes camera ego-motion",
         observed_forecast="GICP of visible arm ROI; bounded constant rigid displacement field on current privileged body geometry; no true human velocity",
-        data_mode="teacher_initialization" if args.teacher_execution_probability == 1 else "dagger_mixture"))
+        teacher_information="causal uses recent privileged body targets/joints; true uses actual future GRAB; observed uses visible-cloud registration",
+        data_mode="passive_motion_preflight" if args.conditions == ["hold"] else
+                  ("teacher_initialization" if args.teacher_execution_probability == 1 else "dagger_mixture")))
     client = PROBE["make_client"](args)
     student = None
     if args.student_checkpoint:
@@ -378,11 +381,11 @@ def run(args):
                 policy = np.clip(client.act(pos[valid], flags[valid], np.zeros(3)), -1., 1.)
                 rollin = policy if student is None else np.clip(student.act(pos[valid], flags[valid], extra[:3]), -1, 1)
                 completion_hold = PROBE["endpoint_reached"](last, "interior_armhole", args.success)
-                action = np.zeros(6) if completion_hold else rollin.copy()
+                action = np.zeros(6) if completion_hold or condition == "hold" else rollin.copy()
                 teacher_action = np.zeros(6) if completion_hold else policy.copy()
                 queried = teacher_executed = False
                 t = step * dt
-                if (condition not in ("none", "gicp") and not completion_hold and window[0] <= t <= window[1]
+                if (condition not in ("none", "gicp", "hold") and not completion_hold and window[0] <= t <= window[1]
                         and step % args.interval == 0):
                     lookahead_started = time.monotonic()
                     teacher_action, diag = planner.improve(policy, condition)

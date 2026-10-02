@@ -1,5 +1,25 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-02 — Privileged causal teacher baseline queued
+
+M3 finished with observed/pass success, observed/lift failure, current/pass
+failure, **current/lift success**, and two GICP failures. Its cross-process
+initial-state check then errored on a 0.136 mm cloth settling difference; human
+and tool starts matched. All six results remain preserved, and no student was
+trained. The old causal 6/6 used legacy candidates and must not be used as the
+new common-candidate teacher's result.
+
+The [M4 protocol](performance/2026-10-02-observed-motion-student.md#m4-privileged-causal-teacher-baseline)
+selects privileged recent-state causal forecasting for labels while keeping
+student inputs deployable. Two repeats per condition precede the fixed eight
+initialization episodes, three seeds per matched student, shared DAgger round
+and two held-out evaluation repeats. A passive preflight checks every held-out
+motion/fixture, including s3 phone call. The separate root waits for M3 to exit,
+reuses checked completed controls and reports independent cloth settles without
+calling them identical; exact within-planner restores are unchanged. Sixteen
+CPU checks pass. This is a DAgger baseline, not a novel prediction method or an
+implementation of EXPO; the post-training algorithm research remains pending.
+
 ## 2026-10-02 — Concrete algorithm delta from EXPO proposed
 
 The owner asked for a new post-training contribution relative to EXPO. The

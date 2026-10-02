@@ -38,7 +38,7 @@ def features(args):
             raise ValueError(f"Mixed base checkpoints in {directory}")
         for metric in json.loads((directory / "metrics.json").read_text()):
             condition = metric["condition"]
-            if condition != "observed":
+            if condition != args.teacher_condition:
                 continue
             failure = metric.get("failure")
             if failure and failure["kind"] == "invalid_physics":
@@ -67,13 +67,13 @@ def features(args):
             record = dict(path=str(file.resolve()), source=str(source.resolve()), sha256=content_hash,
                           body=run["motion"]["body_id"], motion_source_sha256=run["motion"]["source_sha256"],
                           subject=run["motion"]["source_info"]["sbj_id"], frames=len(obs), queries=int(query.sum()),
-                          final_success=metric["final_success"], data_mode=run["data_mode"])
+                          final_success=metric["final_success"], data_mode=run["data_mode"], teacher_condition=condition)
             records.append(record)
             print("[features] " + json.dumps(record), flush=True)
     if not records:
         raise ValueError("No dynamic teacher episodes")
     manifest = dict(episodes=records, base_checkpoint=str(args.base.resolve()), base_sha256=sha256(args.base),
-                    yaw=args.yaw, feature_dim=50, feature_rng_seed=0,
+                    yaw=args.yaw, feature_dim=50, feature_rng_seed=0, teacher_condition=args.teacher_condition,
                     extraction_sha256=sha256(Path(__file__).with_name("dynamic_student.py")))
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
@@ -154,6 +154,7 @@ def train(args):
                   feature_manifest_sha256=sha256(args.features / "manifest.json"),
                   train_code_sha256=sha256(__file__), runtime_sha256=sha256(Path(__file__).with_name("dynamic_student.py")),
                   parameters=sum(p.numel() for p in model.parameters()), policy="frozen r1 + history residual adapter",
+                  teacher_condition=manifest.get("teacher_condition", "observed"),
                   selection="fixed update budget; no test-set checkpoint selection")
     torch.save(dict(dynamic_student=config, adapter_state_dict=model.state_dict()), args.out / "student.pt")
     # This deployment-equivalent r1 control isolates fixed FPS / bridge effects
@@ -170,6 +171,7 @@ def main():
     f.add_argument("--episodes", type=Path, nargs="+", required=True)
     f.add_argument("--base", type=Path, default=BASE)
     f.add_argument("--yaw", type=float, default=267.)
+    f.add_argument("--teacher-condition", choices=("observed", "causal"), default="observed")
     t = sub.add_parser("train")
     t.add_argument("--features", type=Path, required=True)
     t.add_argument("--validation-bodies", type=int, nargs="+", required=True)

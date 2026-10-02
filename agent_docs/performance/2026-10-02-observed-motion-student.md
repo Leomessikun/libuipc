@@ -45,7 +45,7 @@ Implementation: `scripts/wang_transfer/motion_lookahead_probe.py`, with
   masks. Failed episodes are retained; invalid-physics episodes are not training
   data. Observations align as `obs[t] -> action[t] -> obs[t+1]`.
 
-Latest read-only inspection under `output/uipc_manip/m3_observed_20261002/`:
+Earlier inspection under `output/uipc_manip/m3_observed_20261002/`:
 pass/current completed with grasp failure at decision 13 (13 queries, no action
 changes); pass/GICP completed with grasp failure at decision 161 (maximum
 armhole fraction about 0.551). Pass/observed and lift/observed remain active;
@@ -140,8 +140,8 @@ The real-cloud feature-extraction fixture also checks that non-query frames use
 nominal r1 targets and completion holds use zero, even if an invalid candidate
 action remains in the raw teacher-action array.
 
-Native corrected simulation is in progress. No dynamic research student has
-been trained yet. The first nominal-action replay differed by about 6.8
+At the initial implementation check, native simulation was in progress and no
+dynamic research student had been trained. The first nominal-action replay differed by about 6.8
 micrometres; exact snapshot restoration passed. This is one local replay check,
 not proof of deterministic physics.
 
@@ -190,3 +190,75 @@ Review:
   distillation with history vs current-only students as the deliverable that existing evidence supports, (3)
   plain EXPO from that student with a declared episode budget, (4) the consequence-metric variant only if plain
   EXPO learns at that budget and its ranking errors are shown to matter.
+
+## M4: privileged causal teacher baseline
+
+The observed-only training-teacher requirement is relaxed for this bounded
+baseline. A training teacher may use privileged recent body targets and joints;
+the deployable students still receive only point-cloud features, base-policy
+outputs and measured robot state. The `causal` forecast extrapolates the last
+two prescribed body states; it does **not** sample the real future GRAB motion.
+It is not a perfect future oracle or a learned predictor.
+
+Use a new root, `output/uipc_manip/m4_privileged_20261002`, preserving M3's
+outputs and terminal error. The selected teacher remains subject to a common
+candidate-set check: M2's legacy 6/6 is not evidence of its performance with
+`observed_common`. M3's current-pose lift success also prevents attributing the
+old difference entirely to forecast quality.
+
+Protocol changes from M3:
+
+- Two repeats per clip and condition, with the same 12 candidates, H=4,
+  fixed 0–5 s window, physics and final success rule. Reuse M3's completed
+  current/GICP repeat-zero results after protocol and input-hash checks.
+  Four causal validation runs and four new comparator runs remain.
+- Predeclared feasibility gate: at least one causal success on each clip,
+  and more total successes than each comparator. This permits a bounded
+  learning pilot; it is neither a significance test nor proof of anticipation.
+- `--independent-resets` records cloth settling differences in
+  `initial_comparisons.json` instead of calling independent process resets
+  identical. Human/tool starts must still match within 10 micrometres and all
+  differences must be finite. Cloth differences have no numeric acceptance
+  cutoff in this mode; inspect the report before interpreting outcomes as
+  comparable. Exact candidate-state restoration inside each planner is unchanged.
+- On passing: eight causal teacher-initialization episodes, shared features,
+  history/current-only students with three seeds each, four student-roll-in
+  DAgger episodes, and one shared-data refit. Failed task episodes are retained;
+  invalid physics is excluded. Teacher condition is recorded in the feature
+  and checkpoint manifests, never fed to the student.
+- Before final evaluation, run six seconds of passive zero-action motion on
+  every fixed held-out body/clip cell, including s3/phone_call_1. Require valid
+  attachment, no physical error, and body tracking within 2 mm. This checks
+  motion/fixture compatibility; passive grasp loss alone does not prove that
+  the human motion is physically invalid. Stop for inspection without dropping
+  hard test cells or using their data for fitting.
+- Two evaluation repeats of each policy/cell: 72 episodes across four task
+  cells, three model seeds, and the original r1, GICP and fixed-encoder r1
+  controls. Repeats and seeds do not create additional independent task cells.
+
+Start the separate queue with:
+
+```bash
+/home/ge47gax/kun/genesis-world/.venv/bin/python -u \
+  scripts/wang_transfer/run_dynamic_pipeline.py \
+  --root output/uipc_manip/m4_privileged_20261002 \
+  --teacher-condition causal --validation-repeats 2 --evaluation-repeats 2 \
+  --reference-root output/uipc_manip/m3_observed_20261002 \
+  --wait-for-root output/uipc_manip/m3_observed_20261002 \
+  --preflight-heldout --independent-resets --max-jobs 2
+```
+
+The dependency waits for M3's owner and recorded jobs to exit; it never signals
+them. Configuration is saved and frozen per root. The queue still launches at
+most two own simulations, only below 70 GiB total GPU usage. Sixteen CPU checks
+pass, including causal input isolation, teacher-condition feature selection,
+same-data control ordering, configuration immutability, dependency waiting,
+independent-reset reporting and preflight stopping.
+
+This is the dynamic DAgger baseline in the post-training plan, not the proposed
+EXPO extension. Privileged planning plus history-based visual distillation has
+direct precedent in [GenH2R](https://arxiv.org/html/2401.00929v2). A history
+student win would establish useful history, not future prediction or algorithm
+novelty. The EXPO learner and shared consequence-metric candidate remain
+separate, unimplemented research work. No dynamic research student result is
+available at this update.

@@ -130,9 +130,53 @@ module.serve(SimpleNamespace(checkpoint=None, package_root=None, yaw=267))
             self.assertEqual(env.reset([7]), "real reset")
             reset.assert_called_once_with([7])
 
-    def run_mock_pipeline(self, root, observed_success):
+    def test_privileged_causal_forecast_does_not_read_future_motion(self):
+        from motion_lookahead_probe import MotionPlanner
+        p = MotionPlanner.__new__(MotionPlanner)
+        now = (np.ones((3, 3)), np.ones((2, 3)) * 2)
+        prev = (now[0] - .01, now[1] - .02)
+        p.env = SimpleNamespace(_body_target=now[0], _target_joints=now[1],
+                                cfg=SimpleNamespace(dt=.01, action_repeat=10),
+                                sample_future=lambda _: (_ for _ in ()).throw(AssertionError("Future accessed")))
+        p.history = [prev, now]
+        p._begin("causal")
+        np.testing.assert_allclose(p.env._plan_velocity[0], .1)
+        np.testing.assert_allclose(p.env._plan_velocity[1], .2)
+
+    def test_causal_labels_extract_without_privileged_student_inputs(self):
+        import train_dynamic_student as module
+        from dynamic_student import sha256
+        import types
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); episode = root / "episode"; episode.mkdir()
+            base = root / "base.pt"; base.write_bytes(b"fixed base")
+            (episode / "run.json").write_text(json.dumps(dict(checkpoint_sha256=sha256(base),
+                motion=dict(body_id=14047, source_sha256="motion", source_info=dict(sbj_id="s1")),
+                data_mode="teacher_initialization")))
+            (episode / "metrics.json").write_text(json.dumps([dict(condition="causal", failure=None,
+                                                                  final_success=False)]))
+            np.savez(episode / "causal_trajectory.npz", obs=np.zeros((4, 10), np.float32),
+                     queried=np.array([True, False, False]), teacher_actions=np.full((3, 6), .2),
+                     nominal_actions=np.full((3, 6), .1), completion_hold=np.array([False, False, True]))
+            bridge = types.ModuleType("uipc_manip.wang_bridge")
+            bridge.ReferencePolicy = lambda *a, **kw: SimpleNamespace(rotation=np.eye(3))
+            obs = types.ModuleType("uipc_manip.obs")
+            obs.ObsSpec = lambda _: SimpleNamespace(unpack_numpy=lambda _: (
+                np.zeros((1, 3)), np.zeros((1, 4)), np.ones(1, bool), np.zeros(3)))
+            args = SimpleNamespace(package_root=root, base=base, yaw=267., out=root / "cache",
+                                   episodes=[episode], teacher_condition="causal")
+            with patch.dict(sys.modules, {"uipc_manip.wang_bridge": bridge, "uipc_manip.obs": obs}), \
+                 patch.object(module, "encode", return_value=(np.zeros(50), np.zeros(6))):
+                module.features(args)
+            with np.load(args.out / "episode_0000.npz", allow_pickle=False) as data:
+                np.testing.assert_allclose(data["targets"], np.array([[.2] * 6, [.1] * 6, [0.] * 6]))
+                self.assertEqual(set(data.files), {"features", "logits", "tools", "targets", "queried", "holds"})
+            manifest = json.loads((args.out / "manifest.json").read_text())
+            self.assertEqual(manifest["teacher_condition"], "causal")
+
+    def run_mock_pipeline(self, root, observed_success, *, preflight_failure=False, settle_drift=0., **options):
         from run_dynamic_pipeline import Pipeline, save
-        pipeline = Pipeline(root, 2)
+        pipeline = Pipeline(root, 2, **options)
         (root / "motions").mkdir()
         calls = []
         def run_jobs(jobs, gpu=True):
@@ -143,10 +187,15 @@ module.serve(SimpleNamespace(checkpoint=None, package_root=None, yaw=267))
                 if gpu:
                     cmd = [str(x) for x in job["command"]]
                     condition = cmd[cmd.index("--conditions") + 1]
-                    success = condition == "observed" and observed_success
-                    save(output, [dict(condition=condition, final_success=success, failure=None)])
+                    success = condition == pipeline.teacher_condition and observed_success
+                    failure = dict(kind="invalid_grasp") if condition == "hold" and preflight_failure else None
+                    save(output, [dict(condition=condition, final_success=success, failure=failure,
+                                       time_s=6., body_tracking_max_m=.001)])
+                    cloth = np.zeros((3, 3))
+                    if condition == "current":
+                        cloth[:, 0] = settle_drift
                     np.savez(output.parent / f"{condition}_initial.npz",
-                             positions=np.zeros((3, 3)), human_vertices=np.zeros((3, 3)), tcp=np.zeros(3))
+                             positions=cloth, human_vertices=np.zeros((3, 3)), tcp=np.zeros(3))
                 elif "_train" in pipeline.status["stage"]:
                     save(output, dict(feature_manifest_sha256="same", base_sha256="same", updates=1000,
                                       batch=128, parameters=87942, validation_bodies=[14052]))
@@ -178,6 +227,65 @@ module.serve(SimpleNamespace(checkpoint=None, package_root=None, yaw=267))
             self.assertEqual(cmd[cmd.index("--teacher-execution-probability") + 1], "0.0")
         train = [job for job in calls if "_seed" in job["name"] and job["name"].startswith("round")]
         self.assertEqual(len(train), 12)
+
+    def test_causal_pipeline_uses_selected_teacher_and_repeated_evaluation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pipeline, calls = self.run_mock_pipeline(Path(directory), True, teacher_condition="causal",
+                validation_repeats=2, evaluation_repeats=2, preflight_heldout=True)
+        self.assertEqual(pipeline.status["stage"], "complete")
+        simulations = [job for job in calls if "--conditions" in [str(x) for x in job["command"]]]
+        self.assertEqual(sum(j["name"].startswith("validate_") for j in simulations), 12)
+        self.assertEqual(sum(j["name"].startswith("preflight_") for j in simulations), 4)
+        self.assertEqual(sum(j["name"].startswith("test_") for j in simulations), 72)
+        for job in simulations:
+            if job["name"].startswith(("init_", "dagger_")):
+                cmd = [str(x) for x in job["command"]]
+                self.assertEqual(cmd[cmd.index("--conditions") + 1], "causal")
+        for job in calls:
+            if job["name"] in ("round0_features", "round1_features"):
+                cmd = [str(x) for x in job["command"]]
+                self.assertEqual(cmd[cmd.index("--teacher-condition") + 1], "causal")
+                self.assertFalse(any("/test_" in x or "/preflight_" in x for x in cmd))
+
+    def test_failed_passive_preflight_blocks_heldout_scoring(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pipeline, calls = self.run_mock_pipeline(Path(directory), True, teacher_condition="causal",
+                preflight_heldout=True, preflight_failure=True)
+        self.assertEqual(pipeline.status["stage"], "heldout_preflight_failed")
+        self.assertFalse(any(j["name"].startswith("test_") for j in calls))
+
+    def test_changed_teacher_cannot_resume_an_existing_output_root(self):
+        from run_dynamic_pipeline import Pipeline
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            Pipeline(root, 2)
+            with self.assertRaisesRegex(ValueError, "configuration changed"):
+                Pipeline(root, 2, teacher_condition="causal")
+
+    def test_independent_settles_are_reported_and_strict_mode_still_rejects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "Initial states differ"):
+                self.run_mock_pipeline(root, True, settle_drift=.000135)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pipeline, _ = self.run_mock_pipeline(root, True, settle_drift=.000135, independent_resets=True)
+            report = json.loads((root / "initial_comparisons.json").read_text())
+            self.assertFalse(report["pass"]["exact_within_10um"])
+            self.assertAlmostEqual(report["pass"]["max_displacement_m"][0]["positions"], .000135)
+            self.assertEqual(pipeline.status["stage"], "complete")
+
+    def test_dependency_is_waited_for_without_signaling_processes(self):
+        import run_dynamic_pipeline as module
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); previous = root / "previous"; previous.mkdir()
+            own = root / "own"; own.mkdir()
+            module.save(previous / "pipeline_status.json", dict(stage="teacher_gate_failed", jobs={}))
+            module.save(previous / "pipeline_launch.json", dict(pid=123))
+            pipeline = module.Pipeline(own, 2, wait_for_root=previous)
+            with patch.object(module, "alive", side_effect=[True, False]), patch.object(module.time, "sleep") as sleep:
+                pipeline.wait_for_previous_queue()
+            sleep.assert_called_once_with(15)
 
 
 if __name__ == "__main__":

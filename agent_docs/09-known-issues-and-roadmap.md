@@ -1,5 +1,19 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Dynamic baseline update — 2026-10-02
+
+M3 completed all six validation jobs, then stopped on its strict independent
+initial-state check (cloth mismatch 0.136 mm). The visible-cloud teacher passed
+only mug pass; current-pose planning passed mug lift. No student result exists.
+[M4](performance/2026-10-02-observed-motion-student.md#m4-privileged-causal-teacher-baseline)
+uses a privileged causal teacher with common candidates and two repeats before
+bounded collection/training. Student inputs remain observation-only. It reports
+independent cloth settling variation, keeps strict human/tool starts and exact
+within-state candidate restores, and adds passive held-out motion checks plus
+two evaluation repeats. Inspect reset differences before drawing comparisons.
+History gains would not by themselves establish anticipation or novelty. This
+baseline does not replace the EXPO mainline below.
+
 ## Selected mainline: dressing post-training — 2026-10-02
 
 The owner corrected the proposed direction: improve an existing dressing policy
@@ -17,7 +31,8 @@ comparison. Neither candidate is confirmed novel or validated on current EXPO.
 Current branch logs lack complete successor/reward data for RL, and the current
 student is supervised imitation. Implement those interfaces and the learner
 before claiming this loop is running. The friction-intervention proposal below
-is not selected and must not become a prerequisite. Existing M3 jobs continue.
+is not selected and must not become a prerequisite. M3 is terminal; M4 continues
+the bounded DAgger baseline above.
 
 ## Proposed contact-intervention learning mechanism — 2026-10-02
 
