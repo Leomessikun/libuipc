@@ -135,8 +135,11 @@ class BatchedIPCActionFilter:
     Slots that are not active keep their nominal action during the candidate steps and are restored after.
     """
 
-    def __init__(self, env, slots, *, strength_gain=1., horizon=1):
+    def __init__(self, env, slots, *, strength_gain=1., horizon=1, value_model=None, value_margin=.01):
         self.env = env
+        # Optional learned continuation value (outcome_value.OutcomeValue): candidates are ranked by the
+        # predicted final-success probability at the end of their hold instead of the local progress score.
+        self.value_model, self.value_margin = value_model, float(value_margin)
         self.horizon = int(horizon)       # each candidate is held for this many decisions before scoring
         cfg = env.cfg
         initial = env.positions()
@@ -148,6 +151,7 @@ class BatchedIPCActionFilter:
                 sections=s['sleeve'], landmarks=s['landmarks'],
                 arm_length=float(np.linalg.norm(np.diff(s['landmarks'], axis=0), axis=1).sum()),
                 indices=idx, stiffness=cfg.constraint_strength * strength_gain * s['masses'][idx] / cfg.dt**2,
+                garment=s['cell'].garment,
                 edges=edges, rest=np.linalg.norm(initial[i][edges[:, 0]] - initial[i][edges[:, 1]], axis=1)))
         self.noise_margin = .0002
         self.replay_checked = False
@@ -173,7 +177,24 @@ class BatchedIPCActionFilter:
         if error > 1e-8 or int(e._world.frame()) != snap['frame']:
             raise RuntimeError(f'IPC snapshot did not restore exactly: {error} m')
 
-    def _score(self, i, positions, info, action, nominal):
+    def _grip(self, i, positions):
+        p = self.per_slot[i]
+        target = self.env._anchor[i] + self.env._offsets[i]
+        return float(np.linalg.norm((p['stiffness'][:, None] * (target - positions[p['indices']])).sum(0)))
+
+    def _value(self, i, positions, geometry, action, branch):
+        from outcome_value import state_features
+        p, e = self.per_slot[i], self.env
+        progress = e._last_progress[i]
+        features = state_features(
+            step=e._episode_step, tcp=e._anchor[i], finger=p['landmarks'][0], shoulder=p['landmarks'][2],
+            grip=branch['grip'][-1], grip_window=branch['grip'], track=branch['track'][-1],
+            track_window=branch['track'], upper=float(progress.upperarm_ratio), fore=float(progress.forearm_ratio),
+            cuff=float(geometry['cuff_s']), prox=float(geometry['proximal_upper_fraction']),
+            prox_before=branch['prox0'], upper_before=branch['upper0'], action=action, garment=p['garment'])
+        return float(self.value_model(features)[0])
+
+    def _score(self, i, positions, info, action, nominal, branch=None):
         p = self.per_slot[i]
         geometry = measure(p['sections'], positions, p['landmarks'])
         target = self.env._anchor[i] + self.env._offsets[i]
@@ -183,10 +204,15 @@ class BatchedIPCActionFilter:
         progress = arm_progress(geometry['rings'], p['arm_length'])
         score = progress - 2e-5 * max(force - 40., 0.) - .0002 * float(np.sum((action - nominal) ** 2))
         feasible = tracking <= .019 and np.quantile(stretch, .99) <= 2.25 and stretch.max() <= 4.
+        row = dict(progress_score=float(score), progress_m=progress, gripper_N=force, tracking_m=tracking,
+                   feasible=bool(feasible), wrapped=geometry['sleeve_wrapped'])
+        if self.value_model is not None and branch is not None:
+            row['value'] = self._value(i, positions, geometry, action, branch)
+            score = row['value']
         if not feasible:
             score -= 1. + 100. * max(tracking - .019, 0.)
-        return dict(score=float(score), progress_m=progress, gripper_N=force, tracking_m=tracking,
-                    feasible=bool(feasible), wrapped=geometry['sleeve_wrapped'])
+        row['score'] = float(score)
+        return row
 
     @staticmethod
     def candidates(nominal):
@@ -215,6 +241,13 @@ class BatchedIPCActionFilter:
             cands[i] += [cands[i][0]] * (K - len(cands[i]))
         snap = self.snapshot()
         snap['all_positions'] = self._positions()
+        start = {}
+        if self.value_model is not None:            # branch-start quantities for the value's window features
+            for i in active:
+                g0 = measure(self.per_slot[i]['sections'], snap['all_positions'][i], self.per_slot[i]['landmarks'])
+                start[i] = dict(prox0=float(g0['proximal_upper_fraction']),
+                                upper0=float(e._last_progress[i].upperarm_ratio),
+                                grip0=self._grip(i, snap['all_positions'][i]))
         rows = {i: [] for i in active}
         try:
             for k in range(K + (0 if self.replay_checked else 1)):
@@ -224,19 +257,25 @@ class BatchedIPCActionFilter:
                 for i in active:
                     acts[i] = cands[i][kk]
                 failed, worst = False, [0.] * len(acts)
+                branch = {i: dict(start[i], grip=[start[i]['grip0']], track=[0.]) for i in start}
                 for _ in range(self.horizon):
                     _, _, done, infos = e.step(acts)
                     failed = bool(done.any() or any(inf.get('sim_error') for inf in infos))
                     if failed:
                         break
                     worst = [max(w, float(inf['tracking_error'])) for w, inf in zip(worst, infos)]
+                    if branch:
+                        step_positions = self._positions()
+                        for i in branch:
+                            branch[i]['grip'].append(self._grip(i, step_positions[i]))
+                            branch[i]['track'].append(float(infos[i]['tracking_error']))
                 if not failed:                              # score feasibility on the worst step of the hold
                     for inf, w in zip(infos, worst):
                         inf['tracking_error'] = w
                 positions = None if failed else self._positions()
                 for i in active:
                     row = (dict(score=-np.inf, feasible=False, sim_error=True) if failed else
-                           self._score(i, positions[i], infos[i], cands[i][kk], nominals[i]))
+                           self._score(i, positions[i], infos[i], cands[i][kk], nominals[i], branch.get(i)))
                     if k < K:
                         row['action'] = cands[i][kk].tolist()
                         rows[i].append(row)
@@ -251,7 +290,8 @@ class BatchedIPCActionFilter:
         for i in active:
             scores = [r['score'] for r in rows[i]]
             best = int(np.argmax(scores))
-            if scores[best] < scores[0] + self.noise_margin:
+            margin = max(self.noise_margin, self.value_margin) if self.value_model is not None else self.noise_margin
+            if scores[best] < scores[0] + margin:
                 best = 0
             out[i] = np.asarray(cands[i][best], np.float32)
             diags[i] = dict(selected=best, candidates=rows[i], noise_margin=self.noise_margin)

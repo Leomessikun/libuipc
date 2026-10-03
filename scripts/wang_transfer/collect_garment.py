@@ -128,6 +128,10 @@ def parser():
     p.add_argument("--batched-lookahead-interval", type=int, default=0,
                    help="Batched worlds: every N decisions, pick each slot's action by one-decision IPC candidate "
                         "evaluation (BatchedIPCActionFilter), for slots past --lookahead-from above --lookahead-min-load.")
+    p.add_argument("--lookahead-value-model", type=Path, default=None,
+                   help="Rank batched-lookahead candidates by this outcome value (outcome_value.py) instead of local progress.")
+    p.add_argument("--lookahead-value-margin", type=float, default=.01,
+                   help="Minimum predicted success gain over the nominal action for a value-ranked candidate.")
     p.add_argument("--batched-lookahead-horizon", type=int, default=1,
                    help="Decisions each batched-lookahead candidate is held before its outcome is scored.")
     p.add_argument("--lookahead-from", type=int, default=80)
@@ -507,8 +511,14 @@ def main():
                 batched_planner = None
                 if args.batched_lookahead_interval:
                     from ipc_action_filter import BatchedIPCActionFilter
+                    value_model = None
+                    if args.lookahead_value_model is not None:
+                        from outcome_value import OutcomeValue
+                        value_model = OutcomeValue(args.lookahead_value_model)
                     batched_planner = BatchedIPCActionFilter(env, slots, strength_gain=profiles[0].grasp_strength_gain,
-                                                             horizon=args.batched_lookahead_horizon)
+                                                             horizon=args.batched_lookahead_horizon,
+                                                             value_model=value_model,
+                                                             value_margin=args.lookahead_value_margin)
                 macro_queue, progress_history, macro_cooldown_until = [], [], 0
                 body_dirs = {}
                 for i, b in enumerate(slot_body):
