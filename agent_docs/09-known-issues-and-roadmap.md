@@ -1,5 +1,17 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Retired training outputs cleaned — 2026-10-03
+
+The owner requested removal of obsolete training folders. Removed 47 retired
+pre-FMVP experiment directories and reclaimed 63.784 GiB net; see the
+[removal manifest](performance/2026-10-03-retired-training-cleanup.json).
+Compact historical evidence is hash-verified in
+`output/research_archive/retired_training_20261003/evidence.tar.gz`; old replay,
+optimizer state and checkpoints were intentionally removed. Historical links
+into those retired outputs must be read as archive member paths. M4 and its
+source/data dependencies, current baselines, garments and trajectories remain.
+Do not automatically recreate the deleted experiments or add evaluation runs.
+
 ## First-principles task framing supersedes finite-update proposal — 2026-10-03
 
 The owner rejected the joint correction/finite learner update direction. Retire

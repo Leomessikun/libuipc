@@ -1,0 +1,395 @@
+{
+  "date": "2026-10-03",
+  "authorization": "Owner explicitly requested removing old training folders that will not be used",
+  "archive": "output/research_archive/retired_training_20261003",
+  "retention": "All text configs, metrics, logs and scripts; non-checkpoint non-replay NPZ files up to 32 MiB. Full checkpoints, optimizer/replay state and generated simulation caches intentionally removed. Runs cannot be resumed from this archive.",
+  "archive_sha256": "bc240823822e3769064726e316432c6068f1c2ff9c8f2519262e30485d63dcdb",
+  "retained_files": 1498,
+  "retained_source_bytes": 231090868,
+  "runs": [
+    {
+      "path": "output/iaql",
+      "files": 6393,
+      "bytes": 1676295087,
+      "allocated_bytes": 1699495936,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/abl_base_s1",
+      "files": 19,
+      "bytes": 1203443291,
+      "allocated_bytes": 1203515392,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/abl_both_s1",
+      "files": 20,
+      "bytes": 2322794826,
+      "allocated_bytes": 2322866176,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/abl_both_s2",
+      "files": 19,
+      "bytes": 2039096321,
+      "allocated_bytes": 2039156736,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/abl_dense_s1",
+      "files": 19,
+      "bytes": 1212198988,
+      "allocated_bytes": 1212252160,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/abl_residual_s1",
+      "files": 19,
+      "bytes": 2053718276,
+      "allocated_bytes": 2053799936,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/expert_pretrain_20260917",
+      "files": 33,
+      "bytes": 125660348,
+      "allocated_bytes": 125734912,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/fql_pretrain_20260917",
+      "files": 108,
+      "bytes": 4660325278,
+      "allocated_bytes": 4660588544,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/motion_pretrain_20260918",
+      "files": 101,
+      "bytes": 5262124516,
+      "allocated_bytes": 5262422016,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/onepolicy_t26-t68_n48_h300_s1_0910_1458",
+      "files": 3,
+      "bytes": 377800,
+      "allocated_bytes": 385024,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/onepolicy_t26-t68_n48_h300_s1_0910_1507",
+      "files": 3,
+      "bytes": 382468,
+      "allocated_bytes": 389120,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/onepolicy_t26-t68_n48_h300_s1_0910_1654",
+      "files": 7,
+      "bytes": 255956401,
+      "allocated_bytes": 255971328,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/onepolicy_t26-t68_n48_h300_s1_priv_0910_1731",
+      "files": 3,
+      "bytes": 382046,
+      "allocated_bytes": 389120,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/pg_ctrl_s1",
+      "files": 16,
+      "bytes": 502853572,
+      "allocated_bytes": 502882304,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/pg_phys_s1",
+      "files": 14,
+      "bytes": 466052011,
+      "allocated_bytes": 466083840,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/pgsmoke_phys",
+      "files": 10,
+      "bytes": 118732296,
+      "allocated_bytes": 118751232,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/physics_gradient_actor",
+      "files": 25,
+      "bytes": 472846,
+      "allocated_bytes": 544768,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/physics_gradient_adjoint",
+      "files": 24,
+      "bytes": 41508829,
+      "allocated_bytes": 41558016,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/physics_gradient_finetune",
+      "files": 3,
+      "bytes": 410543,
+      "allocated_bytes": 417792,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/physics_gradient_probe",
+      "files": 12,
+      "bytes": 1887941,
+      "allocated_bytes": 1916928,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/physics_gradient_trajopt",
+      "files": 11,
+      "bytes": 86744,
+      "allocated_bytes": 110592,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/recovery_sac_20260917",
+      "files": 8,
+      "bytes": 81443410,
+      "allocated_bytes": 81465344,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_cloth_drag_pointnet2_seed1",
+      "files": 3,
+      "bytes": 36968,
+      "allocated_bytes": 45056,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_cloth_drag_seed1",
+      "files": 30,
+      "bytes": 652950735,
+      "allocated_bytes": 653025280,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_cloth_drag_transformer_r1_seed1",
+      "files": 14,
+      "bytes": 337735461,
+      "allocated_bytes": 337780736,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_cloth_drag_transformer_seed1",
+      "files": 14,
+      "bytes": 338268950,
+      "allocated_bytes": 338300928,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_dressing_h0_transformer_h150x6_curriculum_seed1",
+      "files": 30,
+      "bytes": 874286869,
+      "allocated_bytes": 874377216,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_dressing_h0_transformer_s1e4_alpha6_seed1",
+      "files": 14,
+      "bytes": 449824523,
+      "allocated_bytes": 449859584,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_dressing_h0_transformer_s1e4_seed1",
+      "files": 34,
+      "bytes": 2800882446,
+      "allocated_bytes": 2800984064,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_dressing_h0_transformer_s1e4_seed1_final_eval",
+      "files": 2,
+      "bytes": 367194,
+      "allocated_bytes": 372736,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_dressing_h0_transformer_seed1",
+      "files": 22,
+      "bytes": 1112258006,
+      "allocated_bytes": 1112322048,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/sac_dressing_h150x6_softcloth_seed1",
+      "files": 46,
+      "bytes": 1911181416,
+      "allocated_bytes": 1911300096,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/stab_both_s1",
+      "files": 5,
+      "bytes": 98813687,
+      "allocated_bytes": 98828288,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/stage0_20260921",
+      "files": 44,
+      "bytes": 3409701520,
+      "allocated_bytes": 3409838080,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/stage0_20260921_episode",
+      "files": 79,
+      "bytes": 9971152061,
+      "allocated_bytes": 9971421184,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/stage0_smoke",
+      "files": 14,
+      "bytes": 669557803,
+      "allocated_bytes": 669597696,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/state_ub_clean_s1",
+      "files": 94,
+      "bytes": 5390625635,
+      "allocated_bytes": 5390852096,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/state_upper_bound_s1_CONTAMINATED",
+      "files": 46,
+      "bytes": 2264473430,
+      "allocated_bytes": 2264588288,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/supervised_teacher_20260919",
+      "files": 17,
+      "bytes": 4606712,
+      "allocated_bytes": 4640768,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/teacher_r12_s1",
+      "files": 32,
+      "bytes": 3498903549,
+      "allocated_bytes": 3499003904,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/teacher_r14_s1",
+      "files": 30,
+      "bytes": 3269093577,
+      "allocated_bytes": 3269185536,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/teacher_r22_s1",
+      "files": 35,
+      "bytes": 3766685167,
+      "allocated_bytes": 3766792192,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/teacher_r4_s1",
+      "files": 17,
+      "bytes": 1702545293,
+      "allocated_bytes": 1702592512,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/wang_teacher_r13_s1",
+      "files": 60,
+      "bytes": 3718304652,
+      "allocated_bytes": 3718516736,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/wang_teacher_r13_s1_relaunch1_tripped_20260911",
+      "files": 5,
+      "bytes": 35792387,
+      "allocated_bytes": 35799040,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/wang_teacher_r13_s1_relaunch2_notether_20260911",
+      "files": 10,
+      "bytes": 248908553,
+      "allocated_bytes": 248930304,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    },
+    {
+      "path": "output/uipc_manip/wang_teacher_r13_s1_stalled_20260911",
+      "files": 5,
+      "bytes": 35790988,
+      "allocated_bytes": 35799040,
+      "reason": "Retired pre-FMVP SAC/FQL/physics-gradient/teacher/Stage-0 research; no active process dependency",
+      "status": "removed"
+    }
+  ],
+  "total_removed_allocated_bytes": 68615450624,
+  "archive_allocated_bytes": 127541248,
+  "net_reclaimed_allocated_bytes": 68487909376,
+  "verification": {
+    "removed_paths_absent": true,
+    "retained_evidence_hashes_verified": true,
+    "active_process_references_before_removal": 0
+  }
+}

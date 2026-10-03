@@ -110,6 +110,17 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Remove obsolete training outputs and finish a concrete research proposal.**
+  The owner explicitly authorized deleting old training folders that will not
+  be used, and requested sustained deep research on a new dressing post-training
+  contribution. Inspect active dependencies first; retain current pipelines,
+  usable dressing datasets/assets/checkpoints and compact historical evidence.
+  Deletion is authorized for retired experiment outputs, not unrelated work or
+  source worktrees. Keep an explicit removal manifest and verified evidence
+  archive. Finish an implementable method specification with nearest-prior-art
+  comparisons rather than another framing-only answer. Do not add repeated
+  evaluation campaigns. (Set 2026-10-03.)
+
 - **Return to dressing first principles; retire the finite-update proposal.**
   The owner rejected the joint-correction/learner-update ideas and asked what
   a real contribution to dressing would be. Do not implement that candidate

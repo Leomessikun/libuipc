@@ -1,5 +1,26 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Owner-authorized retired training cleanup
+
+Removed 47 retired pre-FMVP experiment directories (SAC/teacher ablations,
+Stage 0, FQL/motion pretraining, physics-gradient runs and `output/iaql`).
+Net allocated storage reclaimed: **63.784 GiB**. The
+[exact manifest](performance/2026-10-03-retired-training-cleanup.json) records
+all removed paths, file counts, sizes and status. Compact evidence is retained
+at `output/research_archive/retired_training_20261003/evidence.tar.gz`, with a
+complete source inventory in `inventory.csv.gz`. All 1,498 archived members
+were hash-verified before deletion. Configs, metrics, logs, scripts and small
+non-replay diagnostic NPZ files remain; old model/optimizer/replay state does
+not. These retired runs cannot be resumed from the archive. Historical output
+links for them now refer to archive member paths rather than live directories.
+
+No candidate was referenced by an active process command, open file or working
+directory. Current M4/M3 data, the r1 checkpoint, hanging initialization,
+FMVP/flow baselines, trajectory datasets, ClothesNet/GRAB assets and source
+worktrees were preserved. Existing jobs were not stopped or restarted.
+The owner also requested completing concrete method research; no additional
+simulation/evaluation campaign is authorized by that research task.
+
 ## 2026-10-03 — Finite-update proposal rejected; return to dressing physics
 
 The owner rejected the joint-correction/learner-update proposal and requested
