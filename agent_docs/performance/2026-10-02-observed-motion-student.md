@@ -261,7 +261,10 @@ direct precedent in [GenH2R](https://arxiv.org/html/2401.00929v2). A history
 student win would establish useful history, not future prediction or algorithm
 novelty. The EXPO learner and shared consequence-metric candidate remain
 separate, unimplemented research work. No dynamic research student result is
-available at this update.
+available at this update. The October 3
+[prior-art review](2026-10-02-post-training-mainline.md#research-assessment-and-bounded-continuation--2026-10-03)
+downgrades the separate shared-metric candidate and specifies the bounded
+continuation decision.
 
 ## M4 validation results — 2026-10-03
 
@@ -305,3 +308,26 @@ resume the existing feasibility gate and eight-episode collection regardless
 of whether GICP succeeds. If it is invalid again, retain both and stop for
 diagnosis rather than retrying until a usable result appears. No other completed
 validation is rerun. This recovery does not establish an algorithm contribution.
+
+### Bounded retry completed; initialization collection started
+
+The single unchanged GICP retry was physically valid and failed through grasp
+loss at decision 166 (final fraction 0.5191, maximum human tracking error about
+0.460 mm). The valid GICP aggregate is now **0/4**, with **one additional
+invalid-physics attempt** retained separately. Causal remains 4/4 and current
+pose 2/4. `teacher_gate.json` records `passed: true`; it is a feasibility gate,
+not a statistical significance test.
+
+All eight CPU motion preparations completed. The queue entered
+`teacher_initialization`, with `init_body14047_pass` and `init_body14047_lift`
+active at inspection. No dynamic student has been trained yet. The queue and
+its fixed collection/training/evaluation budget are unchanged.
+
+A read-only audit of the four causal logs also limits the interpretation:
+the first changed action is at elapsed time 1.1-1.2 s, after motion starts at
+1.0 s. Planning takes about 146-189 s per query on average, and each successful
+episode takes 2.2-2.9 hours for 45 s of simulated time. These results motivate
+distilling a slow planner, but do not demonstrate pre-onset anticipation or a
+new teacher/student algorithm. The GICP comparator is our registration proxy,
+not a reproduction of all components of Dressing in Motion. See the
+[research assessment](2026-10-02-post-training-mainline.md#research-assessment-and-bounded-continuation--2026-10-03).

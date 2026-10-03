@@ -1,12 +1,13 @@
-# Dressing post-training: EXPO reference and consequence geometry
+# Dressing post-training: evidence, prior art, and the continuation decision
 
 ## Dynamic baseline status
 
 October 3 update: the common-candidate privileged causal teacher completes 4/4
-valid runs, current-pose planning 2/4 (both lift), and GICP 0/3 valid runs plus
-one physics-invalid episode. A single same-settings diagnostic retry of that
-episode precedes continuation into the existing eight-episode student pilot;
-the original invalid attempt remains in the report. See the
+valid runs, current-pose planning 2/4 (both lift), and GICP 0/4 valid runs plus
+one separately retained physics-invalid attempt. The single same-settings retry
+was physically valid and lost the grasp at decision 166. The feasibility gate
+passed; all eight training-motion preparations finished, and the first two
+teacher initialization episodes are running. See the
 [M4 results](2026-10-02-observed-motion-student.md#m4-validation-results--2026-10-03).
 No dynamic student is trained yet. These results support bounded distillation
 on the pilot, not a new algorithm or generalization claim.
@@ -17,11 +18,126 @@ then errors on a 0.136 mm cloth difference. No research student was trained.
 The [M4 baseline](2026-10-02-observed-motion-student.md#m4-privileged-causal-teacher-baseline)
 uses privileged recent-state causal forecasts only in the training teacher,
 two validation/evaluation repeats and a held-out passive-motion preflight.
-Students still use observable history. M4 must revalidate the teacher with common
-candidates; legacy 6/6 is insufficient. This supplies a bounded DAgger control
-and possible initialization for the post-training learner below, without
+Students still use observable history. M4 has revalidated the teacher with common
+candidates; legacy 6/6 is not pooled with this result. This supplies a bounded
+DAgger control and possible initialization for the post-training learner below, without
 changing the selected algorithm question or claiming a new teacher/student
-method. EXPO and the shared consequence metric are not implemented yet.
+method. EXPO and the shared consequence metric are not implemented yet. The
+literature audit below downgrades the metric proposal's novelty and priority.
+
+## Research assessment and bounded continuation — 2026-10-03
+
+**Recommendation:** finish the already bounded M4 student experiment, but do not
+scale collection or describe the current implementation as a new post-training
+algorithm. The project has a useful simulator and an encouraging teacher pilot;
+it does not yet have a demonstrated dynamic student, joint garment/motion
+generalization, or a defensible new policy-improvement operator. This assessment
+does not stop or reconfigure the running queue.
+
+### What is actually running
+
+The teacher tries 12 candidate actions with H=4 held-action continuations
+(0.4 seconds). Its causal forecast extrapolates recent **privileged body states**;
+it does not read the actual future GRAB sequence. The selected action becomes a
+supervised target. The student adds a small four-frame residual MLP to frozen
+r1 features/actor logits, using action MSE plus a residual penalty. DAgger adds
+labels at student-visited states. There is no critic, RL editor, learned human
+forecast head, or diffusion/flow learner in this pipeline.
+
+Each of the four successful teacher runs takes about 2.2-2.9 hours for 45 seconds
+of simulated execution; individual planning queries take about 146-189 seconds
+on average. Distillation therefore has a concrete computational purpose. It is
+not already a novel algorithm merely because it removes this online cost.
+
+In all four runs the first selected action differing from r1 occurs at 1.1 or
+1.2 seconds, after the 1.0-second motion onset. The human motion lasts only the
+early part of the episode, and planning is restricted to elapsed time 0-5 s.
+These runs support improved response to motion; they do not demonstrate
+pre-onset anticipation or continuous dressing under sustained human motion.
+The current-pose planner already succeeds on both lift repeats. Two clips on
+one body cannot establish generalization or a population-level success rate.
+
+### Primary-source prior-art audit
+
+The search followed overlaps from privileged imitation to dressing MPC and then
+to post-training objectives. It is not a proof of exhaustive coverage or absence
+of prior art. Recent arXiv work is treated as a preprint, not verified external
+replication. The most consequential overlaps are:
+
+| Proposed claim | Closest prior art | Consequence for our claim |
+|---|---|---|
+| Privileged future-aware planner teaches a history point-cloud policy | [GenH2R, CVPR 2024](https://arxiv.org/html/2401.00929v2): privileged demonstration planning, historical point-cloud imitation and auxiliary future prediction for handover | The teacher/student recipe is established, although handover differs from cloth dressing |
+| Human prediction plus MPC enables dressing | [Synchronous dressing support, 2026](https://link.springer.com/article/10.1186/s40648-026-00350-9): predicted human/force states in MPC | Prediction plus dressing is not new. Its hemiplegia-inspired protocol keeps the assisted arm still and differs from our moving-recipient-arm setup |
+| Predict cloth consequences and improve a dressing controller | [Garment diffusion models, RA-L 2025](https://spiral.imperial.ac.uk/entities/publication/a0176f43-5eb7-4530-93d8-35c0118514df): action-conditioned garment-opening dynamics, MPC and iterative learning | Diffusion here models dynamics; adding prediction/optimization to dressing is already explored. This entry is based on the official abstract |
+| Static dressing policy plus registration is the complete competitor | [Dressing in Motion, 2026](https://arxiv.org/html/2609.04759v1): diffusion policy, PDE-based region representation and hierarchical motion adaptation | Our r1+GICP is a registration proxy, not a full reproduction of Sun et al.; beating it does not establish beating that paper |
+| Learn corrections, select with value, absorb into a pretrained policy | [EXPO](https://arxiv.org/html/2507.07986v3), [EXPO-FT](https://arxiv.org/html/2605.25477v2) | This is an existing reference method, not our algorithm contribution |
+| Query consequences at key states, compare candidates, post-train the policy | [WISE, 2026 preprint](https://arxiv.org/html/2609.03681v1): scheduled bounded imagination, repeated candidate ranking and relative policy feedback | Replacing a learned world model with IPC is insufficient by itself; even selective querying and repeat-based filtering overlap |
+| Weight imitation by the consequences of action error | [Levine et al., JMLR 2016, section 4.3](https://www.jmlr.org/papers/volume17/15-522/15-522.pdf): teacher-precision-weighted supervised updates; [MPC Q-loss, CDC 2023](https://publications.syscop.de/Ghezzi2023b.pdf): exact cost-to-go loss and a Gauss-Newton approximation | The earlier metric proposal has stronger prior art than the initial review recorded; generic consequence weighting and inverse/direct precision coupling cannot carry novelty |
+| Adapt privileged supervision to what the student can observe | [A2D, ICML 2021](https://proceedings.mlr.press/v139/warrington21a.html), [GPO](https://arxiv.org/html/2505.15418v1) | An information gap is a plausible diagnostic, but teacher/student alignment is itself an established research problem |
+
+Adjacent overlap also matters: [CRAFT](https://arxiv.org/html/2605.04470v1)
+combines counterfactual advantages with grounded interactive corrections;
+[CritiQ/ReTRy](https://arxiv.org/html/2505.09546v1) address difficult privileged
+distillation with selective queries and recovery resets;
+[CLIC](https://arxiv.org/html/2502.07645v3) uses action-set supervision. None is
+the same dressing system, but their ingredients must not be repackaged as new.
+
+### What would justify further research
+
+The concrete question remains: **which training signal turns limited expensive
+physical interaction into a deployable policy improvement on unseen garments
+and human motions, beyond standard corrective imitation and established
+post-training methods?** Success per total simulation/learning hour is an
+endpoint, not an algorithm. A new mechanism still has to be identified and
+compared with its closest existing solution.
+
+The next three experiments should answer distinct questions, in this order:
+
+1. **Finish M4, without expanding its budget.** Eight teacher initialization
+   episodes (including the held-out validation body), matched history/current
+   students with three training seeds, four shared DAgger roll-ins, then the
+   existing held-out body/sequence evaluation. Report every task cell and seed,
+   sustained completion, grasp failures, invalid physics, runtime and cost.
+   This tests whether the teacher's improvement transfers to an observable
+   policy. It does not test ClothesNet generalization or establish anticipation.
+2. **Check simpler explanations before calling it predictive control.** On a
+   small fixed held-out set, compare the best student with a bounded observable
+   follow/pause controller and a fixed early-correction controller. Vary motion
+   onset and speed, use matched schedules and two repeats, and retain the
+   current-pose planner comparison. If simple early corrections explain the
+   gain, use that finding and narrow the claim. This is a proposed follow-up,
+   not a job launched in this review.
+3. **Run one bounded mechanism test only if a consequential gap remains.** For
+   12-24 recoverable teacher/student states, compare base, teacher and student
+   actions using the same human motion and a fixed continuation policy after
+   the first action. Repeat a subset to separate ranking noise from effects.
+   Relate action error to downstream progress/grasp outcomes. If the student
+   cannot fit decisions, check frozen-feature information/capacity with a
+   privileged-input diagnostic and an observable geometry/history alternative
+   on the same labels before attributing failure to the learning objective.
+   Privileged input is diagnostic, not deployable. Existing endpoint-only
+   branch logs cannot substitute for complete saved states and continuations;
+   any added replay/collection cost must be counted. If cost-sensitive fitting
+   is indicated, ordinary MPC Q-loss/GPS-style weighting is the first control,
+   not a new method to rename.
+
+Predeclare a practically meaningful gain before further scaling (for example,
+10 percentage points of held-out completion at a fixed total budget), and size
+the subsequent task set for that question. The four-cell M4 holdout is a screen,
+not sufficient statistical power for that target. Analyze at task-cell level,
+accounting for shared bodies, motion sequences and training seeds; candidate
+branches do not create new tasks. Report uncertainty rather than interpreting
+a nonsignificant result as equivalence.
+
+**Continue** if observable students show a reproducible, practically useful
+gain and the remaining failure has a testable mechanism beyond simpler controls.
+**Stop scaling the current teacher/adapter route** if the fixed pilot and one
+targeted diagnostic fail to produce such a gain. A frozen-feature adapter's
+failure does not prove all dressing learning impossible. If established methods
+already solve the problem, pursue a clearly scoped systems/empirical dressing
+contribution or stop the algorithm-novelty claim; do not keep collecting until
+a familiar method can be relabeled as new. Hardware transfer and both garment
+and motion holdouts remain untested, rather than promised consequences.
 
 ## Scope correction
 
@@ -102,11 +218,11 @@ outcomes distinct from the old uncalibrated force-based teacher score.
 
 ## Focused research extension: physically calibrated edit advantages
 
-**Status update:** this relative-value loss is retained as an auxiliary baseline.
-The more specific algorithm candidate below couples exploration and absorption
-using a learned action-consequence metric. Neither candidate is a verified
-novel method or an established explanation of current failures. The EXPO
-implementation route and running M3 baseline are unchanged.
+**October 3 status:** retain this relative-value loss as an auxiliary baseline.
+The metric candidate below is also downgraded after the GPS/Q-loss literature
+audit. Neither is a verified novel method or an established explanation of
+current failures. Finish the bounded M4 baseline before committing to either
+extension or a larger EXPO implementation campaign.
 
 Research question: **Can a limited number of physical comparisons teach a critic
 which local policy edits actually help, so online post-training improves more
@@ -171,6 +287,11 @@ noisy contact simulation, with enough specificity to outperform those controls.
 Calling EXPO plus IPC a new algorithm is insufficient. No priority claim is made.
 
 ## New algorithm candidate: a shared consequence metric for editing and absorption
+
+**Historical proposal, downgraded on October 3:** GPS already uses
+teacher-precision-weighted imitation, and MPC Q-loss directly optimizes the
+consequences of student actions. The following construction remains documented
+for comparison, not selected as a novel contribution or the immediate experiment.
 
 ### Proposed contribution relative to EXPO
 
@@ -307,6 +428,8 @@ over learned covariance and weighted-regression controls at equal total cost.
 | Prior | Existing contribution / overlap | What the proposed experiment must add |
 |---|---|---|
 | [EXPO](https://arxiv.org/html/2507.07986v3), [EXPO-FT](https://arxiv.org/html/2605.25477v2) | Learned edits, Q selection, stable supervised base updates | A consequence-supervised shared metric must improve the update at equal total cost |
+| [Guided Policy Search, JMLR 2016](https://www.jmlr.org/papers/volume17/15-522/15-522.pdf), section 4.3 | Teacher covariance controls supervised precision; cost-sensitive directions receive more fitting weight | Inverse exploration covariance/direct imitation precision is not by itself a new coupling |
+| [MPC exact Q-loss and Gauss-Newton approximation, CDC 2023](https://publications.syscop.de/Ghezzi2023b.pdf) | Fit actions through their cost-to-go, with a local second-order surrogate | Demonstrate a difference beyond consequence-weighted imitation and local quadratic approximations |
 | [Task Space Exploration in Robot RL](https://www.ias.informatik.tu-darmstadt.de/uploads/Team/PuzeLiu/MasterThesisJohannesHeeg.pdf) | Jacobian-based action sampling and covariance design already exist | Do not claim Jacobian preconditioning or anisotropic exploration as new; test the coupled exploration/absorption rule for pretrained policies |
 | [Optimal Transport TRPO manuscript](https://openreview.net/references/pdf?id=YFOHPrGY1) | General transport costs define policy trust regions | A physical action metric is not a new general trust-region principle or theorem |
 | [Online Safety Filter for Deformable Object Manipulation](https://arxiv.org/abs/2605.01069) | Learned consequence dynamics and a barrier filter; reported experiments concern fluids | Demonstrate learning/absorption gains over an explicit filter with the same consequence data; make no safety guarantee |
@@ -321,6 +444,9 @@ If the result reduces to a tuned covariance or a safety filter with no additiona
 learning benefit, narrow or abandon the algorithm claim.
 
 ### Three next experiments and stopping criteria
+
+These are retained candidate-specific tests, conditional on surviving the
+October 3 prior-art and mechanism review above. They are not the immediate queue.
 
 1. **Identify the mechanism before training a new policy.** Use existing logs
    for a cheap response/rank check. Then, if needed, propose a bounded set of 24
@@ -393,14 +519,14 @@ claim. These outcomes refine the post-training method, not the application scope
 
 ## Immediate work and status
 
-The next implementation unit is a shared replay/outcome interface plus a small
-EXPO editor/critic learner, followed by paired-branch export with correct
-successor states, task-geometry fields and temporal semantics. The shared-metric
-candidate first needs the cheap directional-response diagnostic above; the
-relative-value loss remains a comparison rather than the headline contribution.
-The existing M3 queue remains a teacher/DAgger baseline; its final result is
-pending. No EXPO dressing learner
-or new post-training result was produced during this literature/data audit.
-The present commit corrects the plan and identifies the concrete missing data
-and learner components. Resource-heavy experiments retain the existing bounded
-queue discipline.
+Finish the existing bounded M4 student pilot and use the decision protocol at
+the top of this document. M3 is terminal. M4 passed its teacher feasibility gate
+and is collecting initialization episodes; no dynamic student result exists yet.
+No new simulation or training was launched during this literature review.
+
+If later evidence justifies an EXPO comparison, its first implementation unit
+is still a shared replay/outcome interface with complete successor states,
+rewards, termination and consistent temporal semantics, followed by the editor
+and critic. The current candidate logs are not Bellman replay. The metric and
+relative-value extensions remain unimplemented comparison ideas; the new
+literature findings do not justify presenting either as a discovered algorithm.

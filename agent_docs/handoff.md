@@ -1,5 +1,26 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Prior-art review and bounded continuation decision
+
+The owner asked what the work contributes and whether to continue. A
+[code/results and primary-literature audit](performance/2026-10-02-post-training-mainline.md#research-assessment-and-bounded-continuation--2026-10-03)
+finds no established algorithmic novelty in the current privileged planner,
+history adapter and DAgger pipeline. GenH2R, dressing MPC and WISE overlap with
+the broad recipe; GPS precision-weighted imitation and MPC Q-loss substantially
+weaken the earlier shared-metric proposal. That candidate is downgraded, not
+launched. Complete M4's fixed budget, check simple motion-response explanations,
+and run at most one targeted mechanism diagnostic before further scaling.
+Preserve moving arms and ClothesNet as the task scope; neither joint
+generalization nor an EXPO learner has been demonstrated.
+
+The one GICP retry finished as a physically valid grasp failure at decision
+166. Valid validation totals are teacher 4/4, current pose 2/4, and GICP 0/4,
+plus the separately retained invalid attempt. The feasibility gate passed;
+all eight CPU motion preparations are complete and the first two initialization
+rollouts are active. No dynamic student result exists yet. No jobs were changed
+or launched during this research review. The teacher's first corrections follow
+motion onset, so do not call this demonstrated pre-onset anticipation.
+
 ## 2026-10-03 — Common-candidate causal teacher succeeds 4/4
 
 M4 validation gives causal teacher 4/4, current-pose planner 2/4 (both lift),
