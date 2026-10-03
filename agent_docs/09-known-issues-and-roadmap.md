@@ -1,5 +1,22 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Current decision: retire M4 and withdraw the B+C implementation agenda — 2026-10-03
+
+The owner authorized stopping launched dressing jobs if their remaining work
+is not justified. The M4 automatic queue and obsolete project monitors have
+been stopped; two complete successful initialization trajectories and partial
+diagnostic logs are retained. No student training had started. All 72 planned
+evaluations are cancelled; see the [stop record](performance/2026-10-03-dressing-job-stop.json).
+This supersedes the older instructions below to finish M4's entire budget.
+Do not restart its pending collection/training/evaluation under the old approval.
+Unrelated workloads remain outside this stop request.
+
+The B+C interaction-supervised proposal has insufficient justification over a
+same-data unstructured model to warrant implementation as the main method.
+It remains documented as a hypothesis. No replacement algorithm is validated;
+method research continues without launching another evaluation campaign. See
+[the current decision](performance/2026-10-02-post-training-mainline.md#current-decision-withdraw-implementation-priority-and-stop-the-old-queue--2026-10-03).
+
 ## Selected method proposal: motion changes correction utility — 2026-10-03
 
 The [complete specification](performance/2026-10-02-post-training-mainline.md#selected-research-proposal-learn-how-motion-changes-action-usefulness--2026-10-03)

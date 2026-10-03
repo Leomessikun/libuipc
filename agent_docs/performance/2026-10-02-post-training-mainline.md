@@ -1,8 +1,34 @@
 # Dressing post-training: evidence, prior art, and the continuation decision
 
+## Current decision: withdraw implementation priority and stop the old queue — 2026-10-03
+
+The owner challenged the value of the interaction-supervised proposal and
+authorized stopping launched jobs when continuation is not justified. The B+C
+proposal below remains a recorded hypothesis, **not the selected implementation
+agenda**. Its decomposition reconstructs the ordinary dynamic action gain;
+there is no established transfer advantage over a model given the same data,
+and the additional physical queries have not earned their cost. Neither the
+primary bottleneck nor a useful structural assumption has been established.
+
+The M4 teacher/student pipeline was stopped under the owner's conditional
+stop authorization. Its remaining budget would answer a conventional
+distillation question, not establish the missing post-training contribution.
+Preserve its results and partial logs; do not restart its queued collection,
+training or 72-episode evaluation. Two complete successful initialization
+trajectories were retained; no student was trained. See the operational record in
+[the M4 report](2026-10-02-observed-motion-student.md).
+
+The research target remains autonomous improvement on new garments and human
+motions when the current policy and short-horizon labeler cannot supply useful
+corrections. This is a capability target, not a new algorithm. Recovery learning,
+MPC and RL already have substantial prior art. A replacement proposal needs a
+specific justified learning mechanism and a credible total-cost advantage;
+another renamed decomposition is not an adequate deliverable.
+
 ## Selected research proposal: learn how motion changes action usefulness — 2026-10-03
 
-**Status: a concrete, unimplemented method proposal.** This section supersedes
+**Status: unimplemented candidate, no longer selected; see the decision above.**
+This section originally superseded
 the framing-only next step below. The selected question is whether explicitly
 learning the interaction between a robot correction and human motion makes
 post-training more data efficient and transferable across garments. It does not

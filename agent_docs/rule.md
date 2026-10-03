@@ -110,6 +110,18 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Stop dressing experiments that lack sufficient current research value.**
+  The owner requested an audit of launched terminal jobs and explicitly
+  authorized stopping them if continuation is not justified. This supersedes
+  the earlier requirement to finish the M4 budget: retire its automatic
+  teacher/student queue, retain completed results and partial diagnostic logs,
+  and stop obsolete project monitoring loops. A nearly finished worker may
+  drain for at most ten minutes to save its trajectory. Preserve unrelated
+  projects, agent sessions, datasets and checkpoints. Do not automatically
+  restart the cancelled queue or launch the unvalidated B+C proposal. Continue
+  method research without another repeated evaluation campaign. (Set
+  2026-10-03, after the owner questioned the proposal's research value.)
+
 - **Remove obsolete training outputs and finish a concrete research proposal.**
   The owner explicitly authorized deleting old training folders that will not
   be used, and requested sustained deep research on a new dressing post-training

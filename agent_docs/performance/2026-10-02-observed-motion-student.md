@@ -1,5 +1,41 @@
 # Observed-motion teacher and matched students — 2026-10-02
 
+## Stopped after the owner's review — 2026-10-03
+
+The owner authorized stopping launched dressing jobs if further work lacked
+sufficient research value. M4 remained a conventional privileged-teacher
+distillation baseline and did not implement a new post-training algorithm.
+Its remaining automatic collection/training/evaluation budget is cancelled;
+this supersedes the continuation approvals recorded below.
+
+At inspection, one of eight initialization episodes had finished and two were
+running. The queue (PID 1058515), reporter (1486967), newly started body-14048
+pass worker (2243778) and its inference server were stopped. The other worker
+(1132541) had completed all 51 expensive planning calls and was allowed at most
+ten minutes to finish saving; it completed and exited within that bound.
+Five stale shell monitors (1023005, 4041806, 4050841, 4070488, 4078518) were
+also terminated after confirming that their target jobs were no longer live.
+
+| Retained initialization episode | Final success | Decisions | First success | Planning calls | Elapsed |
+|---|---|---|---|---|---|
+| body14047 pass | Yes | 450 | 148 | 51 (49 valid labels) | 10,385 s |
+| body14047 lift | Yes | 450 | 174 | 51 (51 valid labels) | 9,615 s |
+
+These are training-data episodes, not an independent generalization test.
+Both complete trajectory archives passed ZIP CRC checks; hashes are in the
+[stop record](2026-10-03-dressing-job-stop.json). The interrupted body14048
+pass run retains seven complete candidate-query records and its initial state,
+but no complete trajectory. It is not counted as a policy failure.
+
+Five initialization episodes were cancelled before launch. Student training,
+DAgger and all 72 held-out evaluations had not started; no student model or
+held-out result exists. The pipeline status and report now show the owner stop
+and cancelled evaluation episodes. Pre-stop snapshots and the exact process
+manifest remain in `output/uipc_manip/m4_privileged_20261002/stop_20261003/`.
+All selected processes were verified exited. Existing data, checkpoints,
+source worktrees and unrelated workloads remain available. No new experiment
+was launched. Respect `STOP_REQUESTED.json` before any future launch.
+
 ## Scope and evidence
 
 The owner authorized a corrected small validation, followed by dynamic teacher

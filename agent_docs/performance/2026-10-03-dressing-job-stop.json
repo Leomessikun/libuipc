@@ -1,0 +1,94 @@
+{
+  "requested_at": "2026-10-03T14:56:09.820876+02:00",
+  "completed_at": "2026-10-03T14:59:25.152946+02:00",
+  "reason": "Owner authorized stopping dressing jobs without sufficient current research value. Retire the fixed teacher/student queue; preserve results. No replacement experiment is authorized by this stop.",
+  "state": "stopped",
+  "drain_result": "Worker completed naturally, saved a valid complete trajectory, and exited before the ten-minute deadline.",
+  "remaining_selected_processes": [],
+  "completed_initialization": [
+    {
+      "name": "init_body14047_pass",
+      "metrics": [
+        {
+          "condition": "causal",
+          "steps": 450,
+          "success": true,
+          "final_success": true,
+          "final_sections_wrapped": true,
+          "first_success_step": 148,
+          "failure": null,
+          "plans": 51,
+          "changed": 41,
+          "valid_queries": 49,
+          "teacher_executed_decisions": 51,
+          "max_armhole_upper_fraction": 0.7051099569181456,
+          "final_armhole_upper_fraction": 0.7021662549923594,
+          "time_s": 44.99999999999873,
+          "body_tracking_max_m": 0.001205122736200097,
+          "plan_wall_s": 9852.109680762514,
+          "observation_wall_s": 17.27145075937733,
+          "elapsed_s": 10385.207548421808
+        }
+      ],
+      "trajectory": "/home/ge47gax/kun/libuipc/output/uipc_manip/m4_privileged_20261002/init_body14047_pass/causal_trajectory.npz",
+      "trajectory_sha256": "303e2d9564ea21bf765fc8980175183ff7ad271247df6fa22898425c527fe43e"
+    },
+    {
+      "name": "init_body14047_lift",
+      "metrics": [
+        {
+          "condition": "causal",
+          "steps": 450,
+          "success": true,
+          "final_success": true,
+          "final_sections_wrapped": true,
+          "first_success_step": 174,
+          "failure": null,
+          "plans": 51,
+          "changed": 40,
+          "valid_queries": 51,
+          "teacher_executed_decisions": 51,
+          "max_armhole_upper_fraction": 0.8054060562455405,
+          "final_armhole_upper_fraction": 0.8054060562455405,
+          "time_s": 44.99999999999873,
+          "body_tracking_max_m": 0.00030131977137103257,
+          "plan_wall_s": 9007.981592656579,
+          "observation_wall_s": 19.032004124950618,
+          "elapsed_s": 9615.346601065248
+        }
+      ],
+      "trajectory": "/home/ge47gax/kun/libuipc/output/uipc_manip/m4_privileged_20261002/init_body14047_lift/causal_trajectory.npz",
+      "trajectory_sha256": "d7c8f93a92e230909515ec270151966fcfb9d70b43754ec8852746087c34d8ce"
+    }
+  ],
+  "interrupted_initialization": [
+    {
+      "name": "init_body14048_pass",
+      "complete_trajectory": false,
+      "complete_lookahead_records": 7
+    }
+  ],
+  "cancelled_initialization": [
+    "init_body14048_lift",
+    "init_body14050_pass",
+    "init_body14050_lift",
+    "init_body14052_pass",
+    "init_body14052_lift"
+  ],
+  "student_training_started": false,
+  "heldout_evaluation_started": false,
+  "cancelled_evaluation_episodes": 72,
+  "new_experiments_launched": false,
+  "manifest": "/home/ge47gax/kun/libuipc/output/uipc_manip/m4_privileged_20261002/stop_20261003/manifest.json",
+  "stopped_root_pids": [
+    1058515,
+    1486967,
+    2243778,
+    1023005,
+    4041806,
+    4050841,
+    4070488,
+    4078518
+  ],
+  "preserved": "All existing datasets, checkpoints, completed trajectories, candidate logs, source worktrees and unrelated workloads."
+}

@@ -1,5 +1,36 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — M4 stopped after the owner's research-value review
+
+The owner asked what was running and authorized stopping jobs if continuation
+was not justified. M4 was still collecting teacher initialization data; no
+student training had started. Its automatic queue, CPU reporter, newly started
+body-14048 pass worker and associated inference server were stopped. Five
+obsolete project shell monitors were also stopped. The body-14047 pass worker
+had finished its expensive planning window and was allowed up to ten minutes
+to save its trajectory; it completed naturally within that bound. All selected
+processes are now exited. Unrelated workloads and agent sessions were preserved.
+
+Retained new initialization results: body 14047 pass and lift both completed
+450 decisions with final success (148/174 first-success steps, respectively).
+Each used 51 planning queries and about 2.9/2.7 hours. These are two training
+episodes, not held-out student evidence. Body-14048 pass has seven partial
+candidate-query records, no complete trajectory, and is marked interrupted
+rather than failed. Five unstarted initialization jobs and all 72 planned
+held-out evaluations are cancelled. No dynamic student checkpoint exists.
+
+The [stop record](performance/2026-10-03-dressing-job-stop.json) links the full
+process manifest and preserved pre-stop status/report snapshots. Both complete
+trajectory archives passed CRC checks and have recorded SHA-256 hashes. The
+output root carries `STOP_REQUESTED.json`; this records the stop instruction
+and must be respected by future launchers. Do not auto-resume the old queue.
+This entry supersedes older instructions below to finish its entire budget.
+
+The B+C proposal is no longer the selected implementation agenda: its extra
+simulation cost and advantage over same-data ordinary outcome learning lack
+sufficient justification. The proposal and earlier results remain available
+for reference. Continue method research; no replacement experiment was launched.
+
 ## 2026-10-03 — Concrete interaction-supervised post-training proposal
 
 The owner requested sustained deep research until a concrete method is
