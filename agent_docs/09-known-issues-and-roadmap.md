@@ -1,5 +1,22 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Selected method proposal: motion changes correction utility — 2026-10-03
+
+The [complete specification](performance/2026-10-02-post-training-mainline.md#selected-research-proposal-learn-how-motion-changes-action-usefulness--2026-10-03)
+replaces the previous framing-only next step. It proposes crossed action/motion
+interventions, anchored reference/interaction outcome models, causal future
+marginalization, and weighted post-training of the initialized policy. Immediate
+development: full snapshot/history branch records and identical-budget
+structured/direct outcome learners. One bounded new-method study is specified;
+none was launched. Preserve the already running M4 budget.
+
+Open risks: novelty beyond known factorization/counterfactual methods; whether
+motion changes action rankings beyond geometric compensation and noise; model
+benefit at equal total query cost; visible-history observability; compatible
+continuation/score semantics; held-out garment/motion transfer. Existing M4
+logs do not contain the new four-outcome targets. The report includes decisive
+failure conditions, not a demand for more repetitions of the old controllers.
+
 ## Retired training outputs cleaned — 2026-10-03
 
 The owner requested removal of obsolete training folders. Removed 47 retired

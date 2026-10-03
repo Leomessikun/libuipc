@@ -1,5 +1,33 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Concrete interaction-supervised post-training proposal
+
+The owner requested sustained deep research until a concrete method is
+specified. The [selected proposal](performance/2026-10-02-post-training-mainline.md#selected-research-proposal-learn-how-motion-changes-action-usefulness--2026-10-03)
+learns how human motion changes the benefit of a robot correction. From a full
+shared snapshot, cross base/corrected actions with reference/alternative human
+continuations; learn reference gain B and the four-outcome interaction C;
+marginalize causal motion uncertainty before constructing a weighted policy
+improvement target. The report specifies losses, flow-policy updates, physical
+validity/causality constraints, data contracts, cost accounting and a bounded
+new-method study. This is designed, not implemented or empirically validated.
+
+New primary-source comparisons include SIDO, full GDM methods, IADD-TR, Deep
+Coordination Graphs, Structure Detection for Contextual RL and DPP, alongside
+EXPO/WISE/FMVP. Neither the contrast identity, pairwise value factorization,
+weighted imitation nor static-to-dynamic adaptation is claimed as new. The
+remaining claim is finite-budget benefit from the complete crossed-intervention
+post-training procedure; it must beat same-data unstructured outcome learning.
+
+Existing static candidate logs and mesh trajectories can support compatible
+warm-start supervision. M4 does not contain crossed motion branches from the
+same snapshot, and its H-step held-action scores are not the proposed
+first-action-plus-causal-continuation outcomes. Do not manufacture new labels
+by subtracting separate runs. The next implementation work is a separate full
+snapshot/history query interface and matched structured/direct learners, not
+another old-teacher comparison. No new simulation, training or evaluation was
+launched; M4 remains active at teacher initialization with its existing budget.
+
 ## 2026-10-03 — Owner-authorized retired training cleanup
 
 Removed 47 retired pre-FMVP experiment directories (SAC/teacher ablations,

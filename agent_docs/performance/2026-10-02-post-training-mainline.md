@@ -1,5 +1,394 @@
 # Dressing post-training: evidence, prior art, and the continuation decision
 
+## Selected research proposal: learn how motion changes action usefulness — 2026-10-03
+
+**Status: a concrete, unimplemented method proposal.** This section supersedes
+the framing-only next step below. The selected question is whether explicitly
+learning the interaction between a robot correction and human motion makes
+post-training more data efficient and transferable across garments. It does not
+restore the rejected optimizer-through-training proposal. No new simulator,
+training or evaluation jobs were launched for this review.
+
+The owner also requested deletion of obsolete training folders. That work is
+complete: 47 retired experiment directories removed, 63.784 GiB reclaimed net,
+with compact evidence retained and verified. See the
+[cleanup manifest](2026-10-03-retired-training-cleanup.json). Current dressing
+data, baselines and M4 dependencies remain available.
+
+### 1. The proposed contribution, in operational terms
+
+> Post-train an existing dressing policy by learning how human motion changes
+> the relative usefulness of its possible corrections. Obtain this supervision
+> through crossed robot-action and human-motion interventions from identical
+> physical states, reuse static interaction data, and marginalize uncertain
+> human futures before producing deployable policy targets.
+
+For example, a small forward pull can help when a sleeve can slide, but become
+counterproductive when arm motion tightens the fabric. The learner needs to
+change which correction it prefers in response to that interaction. A predicted
+arm position alone does not specify the cloth response. This is a physical
+hypothesis, not a diagnosis established by our grasp-tracking failures.
+
+The intended technical deliverable is an **interaction-supervised policy
+improvement operator** with a specified data construction, model and update.
+The scientific claim would be that it needs fewer dynamic physical queries than
+an otherwise matched unstructured outcome model or winner-action imitation.
+Transfer to unseen garments is a separate required result. The four-term
+subtraction, residual networks, history conditioning and weighted imitation
+are established tools; none is an original mathematical claim here.
+
+### 2. What the existing evidence actually motivates
+
+| Evidence or constraint | Consequence for this proposal |
+|---|---|
+| Static r1 improved over its initialization; substantially more static labels did not consistently help r2 | Preserve the useful initialization. This does not identify the cause of saturation |
+| Corrected M4 validation has four valid causal-teacher successes over two clips; current-pose planning has two | Dynamic information can matter in this small pilot; it does not establish a general contact mechanism |
+| One current planning query evaluates 12 candidates and takes minutes | Count every branch, reset, render and continuation; data construction must justify its extra cost |
+| Old static datasets include observations, cloth vertices, actions and geometric task signals | Reuse them for initialization, geometry supervision and compatible static outcome targets |
+| The current dynamic trajectory format saves observations/actions, while its planner log saves candidate outcomes under one motion model | These files do not supply matched crossed interventions under different motion continuations |
+| The deployed input is partial visual history | Future ground truth may supervise training, but cannot be passed to the actor or used to choose a different immediate action in each hypothetical future |
+
+Full FMVP already uses real visual/force post-training for moving arms. Our
+comparison checkpoint `fmvp_sim` is only its simulation component. An eventual
+real-data-efficiency claim must compare against the full method's training
+setting. [FMVP, sections 3–5](https://arxiv.org/html/2509.12741v1).
+
+### 3. Why separate static and motion data can be insufficient
+
+Consider the illustrative scalar outcome family
+
+$$
+Y_c(u,m)=u+\tfrac12m+c\,u m,
+$$
+
+where `u` is a correction relative to the base action and `m` denotes a change
+in human continuation. Every value of `c` gives identical data on both axes:
+`Y_c(u,0)=u` and `Y_c(0,m)=m/2`. Nevertheless, the benefit of `u=1` at `m=1`
+is `1+c`: positive for `c=0` and negative for `c=-2`.
+
+Thus unlimited data on those two axes alone cannot identify the interaction
+without a structural assumption. Joint interventions supply the missing
+information. This elementary example is an identifiability illustration,
+**not a new theorem, a measured dressing result, or proof that existing dynamic
+manipulation methods fail**. Ordinary dynamic data can also identify the
+interaction with sufficient coverage; the proposal concerns query efficiency.
+
+### 4. State, interventions and the target to learn
+
+Let `s` contain the simulator's cloth configuration/velocity, articulated body,
+grasp state and controller state. Let `h` contain only available point-cloud,
+robot-pose and past-action history. Let `a0=pi0(h)` be a frozen reference-policy
+action, initially r1. Candidate actions `{a_j}` include `a0` and common bounded
+corrections. Candidate construction is identical across motion branches.
+
+Let `m` specify a short human joint trajectory and `m0` a reference continuation
+from the **same current state**. For an initially stationary arm, `m0` can remain
+stationary. For an already moving arm it must preserve the initial position and
+velocity and decelerate smoothly; instantaneously freezing a moving body would
+confound the target with a reset impulse. Log both trajectories and check body
+tracking independently of task outcomes.
+
+Represent `m` by the parameters of a continuation law relative to the current
+body, with `m0` the fixed braking/reference law. Its physical realization uses
+the simulator state only inside training branches. The policy does not receive
+hidden joint coordinates or true velocities through a reference-motion token.
+The learned motion distribution and branch sampling must cover the deployment
+conditional distribution; arbitrary motion randomization need not produce
+correct posterior action values under occlusion.
+
+Define `Y_H(s,a,m)` as the expected bounded task outcome of executing `a` for
+one decision, followed by the same frozen, causal continuation policy for
+`H-1` decisions, under human continuation `m`. Start with `H=4`; record the
+whole outcome trace. The initial scalar target uses normalized sleeve progress
+and an explicitly versioned grasp-validity penalty, with geometric validity
+reported separately. It does not require matching simulated forces. A solver
+or body-tracking failure gives a missing/invalid sample, not a bad-action label.
+
+This is a **short-horizon outcome**, not an optimal Q-function or a guarantee
+of final dressing success. Backing off with benefits beyond `H` can still be
+misranked. A later terminal-value extension would require additional, correctly
+aligned supervision; it is not silently assumed in this proposal.
+
+Collect the following four outcomes from an identical complete snapshot:
+
+| | Reference continuation `m0` | Alternative continuation `m` |
+|---|---|---|
+| Base action `a0` | `Y00` | `Y01` |
+| Candidate action `a` | `Y10` | `Y11` |
+
+Define the reference action gain and motion-induced change in that gain:
+
+$$
+B(s,a)=Y_{10}-Y_{00},\qquad
+C(s,a,m)=Y_{11}-Y_{01}-Y_{10}+Y_{00}.
+$$
+
+Then the dynamic gain is exactly
+
+$$
+A(s,a,m)=Y_H(s,a,m)-Y_H(s,a_0,m)=B(s,a)+C(s,a,m).
+$$
+
+`C` asks whether human motion changes the benefit of choosing this correction.
+It is not a force estimate, a contact label or merely an extra input feature.
+Nonzero `C` can also arise from geometry or a nonlinear score; it does not by
+itself prove contact-mediated coupling. Include an articulated geometric
+transport baseline to test whether simple motion compensation explains it.
+
+The identities hold for expectations. Independent repeats are still needed to
+estimate uncertainty; restoring a seed does not make IPC deterministic. Reuse
+shared baseline branches, but retain covariance when computing contrast errors.
+
+### 5. Model and learning losses
+
+Use the same history encoder and parameter budget in the structured and
+unstructured comparisons. Garment geometry and observed cloth motion belong
+in `h`; garment IDs or hidden simulator contact states are not deployment
+inputs. Arm-relative coordinates and material sleeve-section supervision are
+reasonable shared preprocessing, not new contributions.
+
+Parameterize observable reference gain and interaction as
+
+$$
+\widehat B_\phi(h,a)=b_\phi(h,a)-b_\phi(h,a_0),
+$$
+$$
+\widehat C_\psi(h,a,m)=
+g_\psi(h,a,m)-g_\psi(h,a,m_0)
+-g_\psi(h,a_0,m)+g_\psi(h,a_0,m_0).
+$$
+
+This enforces zero gain for the reference action and zero interaction on either
+reference axis. It is an anchored functional decomposition, not a novel identity.
+No low-rank assumption is required. Low-rank payoff models already exist and
+contact transitions need not be low rank; that extension is not selected.
+
+With robust regression loss `ell`, train
+
+$$
+L_{\rm outcome}=
+\sum_i w_i\{\ell(\widehat B_i-B_i)
++\lambda_C\ell(\widehat C_i-C_i)
++\lambda_A\ell(\widehat B_i+\widehat C_i-A_i)\}.
+$$
+
+`w_i` masks invalid physical branches and caps any precision weighting derived
+from repeat variability. A near-zero contrast stays near zero; it must not be
+normalized into a large advantage. The last term checks reconstruction of
+actual dynamic action gain. A matched control fits `A` directly with the same
+data, capacity and optimization budget. Removing the `C` term tests whether
+motion-dependent interactions are useful at all.
+
+With unlimited capacity and data, a full outcome model can reconstruct the
+same contrasts. There is no claim of a more expressive hypothesis class. The
+proposed benefit must come from finite-budget supervision and transfer. If the
+loss merely behaves like an alternative regression weighting without improving
+that tradeoff, it is too weak to carry the paper.
+
+Partial observability means these models estimate conditional averages given
+`h`, not the exact hidden cloth state. If important interactions remain visually
+indistinguishable, more privileged labels cannot make a visual actor recover
+information it does not possess.
+
+### 6. How this updates the existing policy
+
+Fit a causal motion distribution `p_omega(m|h)` using training-subject GRAB
+sequences and observed motion histories. A finite-difference forecaster with
+training-calibrated residual samples is the simple starting baseline. Any
+learned forecaster must use the same observations in all policy comparisons.
+Evaluate the consequence model at the same possible **immediate action** for
+every sampled future, then average:
+
+$$
+\overline A_j(h)=\widehat B(h,a_j)+
+\mathbb E_{m\sim p_\omega(\cdot|h)}\widehat C(h,a_j,m).
+$$
+
+Do not optimize a different immediate action for each true future and then
+average those oracle actions. The base continuation also receives only causal
+observations. This preserves the information available at deployment.
+
+Choose a positive proposal prior `mu_j` over the finite candidates, biased
+toward small edits around `a0`. It is a specified proposal distribution, not
+an invented tractable density of the implicit FMVP/flow policy. Form targets
+
+$$
+q_j^*(h)=\frac{\mu_j\exp(\overline A_j/\tau)}
+{\sum_k\mu_k\exp(\overline A_k/\tau)}.
+$$
+
+This is the standard solution of a KL-regularized improvement problem. The
+proposed change is the physically supervised construction of `overline A`, not
+the exponential weighting. Fit the policy to these weighted **action samples**
+and retained successful static examples. Do not average incompatible corrections
+into a single MSE target.
+
+For the existing flow-policy family, a concrete update is positive-weighted
+conditional flow matching:
+
+$$
+L_\pi=\mathbb E_{h,j\sim q^*,z,t}
+\|v_\theta((1-t)z+t a_j,t,h)-(a_j-z)\|^2
++\lambda_{\rm keep}L_{\rm static},
+\qquad \theta\leftarrow\theta-\eta\nabla_\theta L_\pi.
+$$
+
+Use `t~Uniform[0,1]`, Gaussian `z` and the common action normalization. A
+categorical selector over corrections provides a simpler implementation control.
+The flow backbone itself is not the contribution. At deployment only the
+post-trained history policy runs; IPC and hypothetical human futures are
+training resources. This replaces hard winner-action targets with an
+interaction-supervised improvement distribution, without requiring a complete
+successful privileged-teacher trajectory for every garment/motion pair.
+
+The local KL update has no automatic global success guarantee. A simple useful
+bound is: if every candidate's estimated expected gain differs from truth by at
+most `epsilon`, the estimated greedy candidate loses at most `2 epsilon`
+against the true best candidate. This familiar bound says why gain/ranking
+accuracy matters; it is not a new theoretical result or a claim about final
+episode return.
+
+### 7. Algorithm and exact reuse of existing data
+
+1. Preserve r1, the existing flow initialization and static success anchors.
+   Warm geometry features and compatible reference outcome targets from existing
+   data. Record horizon, controller, score version and continuation semantics.
+2. Visit training garment/body states with the current policy. At selected
+   states capture complete physics, controller and observation-history snapshots.
+   Cross a common candidate-action set with a small set of plausible human
+   continuations; share the baseline row/column and retain all branch outcomes.
+3. Fit `B` and `C`, with held-out garments/sequences for model selection. Train
+   the causal motion model on training subjects only.
+4. Marginalize motion futures to obtain `q*`; update the initialized policy with
+   weighted imitation plus static retention. Revisit states with the updated
+   policy only within an explicitly budgeted next collection round.
+
+Actual files inspected in this review:
+
+- Static v5 sample `tshirt_4/.../body_3033_seed_2026292600/baseline_rep1.npz`:
+  235 observations, 234 six-dimensional actions, 5,761 cloth vertices per frame,
+  executed translations, validity and geometric sleeve signals. These can
+  support representation/outcome supervision, subject to controller and score
+  compatibility. They are not complete restorable IPC snapshots.
+- Cloth3D DAgger `lookahead.jsonl` files retain all candidate actions and their
+  progress/tracking/feasibility values, not just selected labels. These are
+  useful static supervision when their horizon and scoring contract match.
+- M4 `validate_pass_causal_rep0/causal_trajectory.npz` has 451 observations and
+  450 actions/teacher actions, with query flags. Its planner log evaluates one
+  motion belief at a time. Separate condition rollouts are not matched snapshot
+  interventions and cannot be subtracted to fabricate `C`.
+
+Current `MotionPlanner.evaluate` **holds the candidate for all H decisions**.
+The proposed first-action-plus-causal-continuation target has different semantics.
+It needs a separate query path and complete history restoration; old H=4 labels
+cannot be relabeled as that target. Legacy H=1 data can warm compatible heads,
+but are not H=4 supervision. Do not edit or reinterpret the live M4 pipeline.
+
+For K candidates including the base and M human continuations including the
+reference, a full block costs **K*M branches**, each of H simulator decisions,
+plus setup, rendering and roll-in. A two-by-two contrast costs four outcomes;
+sharing anchors avoids naive repeated evaluation, but does not make the data
+free. Paired collection can cost more per state than ordinary labels. The
+method must earn that cost by needing fewer states/episodes. No speedup or
+sample-complexity theorem is established.
+
+The new record contract must contain `snapshot_id`, snapshot/history hashes,
+garment/body/motion split IDs, reference-policy hash, common candidate array,
+continuation-law parameters, H and action duration, continuation-policy hash,
+score version, outcome/validity traces, repeat ID, random state and wall time.
+`snapshot_id` must identify the full actual restored state, not just a seed or
+the first cloth positions. Unpaired legacy records remain separately labeled.
+
+### 8. Prior-art attack and the remaining claim
+
+| Primary source and scope read | Existing contribution | Difference this proposal must demonstrate |
+|---|---|---|
+| [EXPO, section 4](https://arxiv.org/html/2507.07986v3) | Gaussian edits, Q-based selection/TD backups, supervised absorption into an expressive policy | A motion-interaction target and acquisition design improve the quality/cost of corrections. Editing and absorbing actions are not new |
+| [WISE, sections 3 and appendices](https://arxiv.org/html/2609.03681v1) | Scheduled bounded counterfactual imagination and policy refinement | Cross interventions on human continuation and robot correction identify reusable interaction supervision; merely replacing its world model with IPC is insufficient |
+| [SIDO, sections 4.1–4.3](https://arxiv.org/html/2607.27890v1) | Static-data action morphing preserves hand-object relative pose; dynamics-aware variant models robot tracking | Learn changes in action usefulness during sustained deformable interaction; compare against its geometric idea with the same motion information |
+| [GDM, sections III–IV](https://spiral.imperial.ac.uk/bitstreams/0da51527-b0f6-4c04-a2c5-0203c612982e/download) | Partial-cloud garment-opening dynamics and MPC, trained iteratively in simulation; assumes a stationary recipient | Learn policy correction gains under exogenous motion and amortize them. Predicting an opening or using MPC is not new |
+| [IADD-TR, section III](https://arxiv.org/html/2608.10634v1) | Zero-action-anchored action/intermediate-state/natural-evolution factorization, targeted actor-critic regularization | Direct crossed outcome supervision for two interventions rather than identifying its latent two-stage dynamics. Anchoring causal models itself is not new |
+| [Deep Coordination Graphs, sections 1–2](https://proceedings.mlr.press/v119/boehmer20a/boehmer20a.pdf) | Pairwise payoff/value factorization, parameter sharing and low-rank models in cooperative MARL | Human motion is exogenous and marginalized, with measured crossed branch targets. Pairwise interaction terms or low rank cannot be claimed as new |
+| [Structure Detection for Contextual RL, section 3](https://ojs.aaai.org/index.php/AAAI/article/download/40137/44098) | Decomposes policy-transfer performance into source, target and interaction terms to select training tasks | Our quantity is within-state action gain and our output updates a deployable policy. ANOVA-style decomposition or structure-aware task selection is not original |
+| [DPP, method and limitations](https://arxiv.org/html/2609.33172v1) | Counterfactual observation/context planning reuses static skills for moving targets | A strong simpler competitor; improvements must require learning additional interaction response, not just eliciting an existing skill |
+| [Dressing in Motion](https://arxiv.org/html/2609.04759v1) and [FMVP](https://arxiv.org/html/2509.12741v1) | Reactive motion adaptation, or real force/vision post-training | Dynamic dressing itself is established. Require an explicit data-efficiency/generalization comparison |
+
+The review found substantial overlap in the components and **did not establish
+worldwide novelty**. The remaining defensible candidate is the complete
+cross-intervention training procedure and its garment/motion transfer benefit.
+If a matched unstructured learner achieves the same performance and cost, the
+extra decomposition has not earned a method contribution. Changing notation or
+calling the contrast causal does not rescue it.
+
+### 9. Candidate hypotheses considered
+
+| Observation → mechanism → method → prediction | Decision |
+|---|---|
+| Dynamic failure → missing history → privileged teacher/history distillation → history helps | Existing M4 baseline; substantial prior art, not the new contribution |
+| Target motion → pose mismatch → geometric action/observation transport → static data suffice | Strong simpler baseline; SIDO/DPP already cover the broad idea |
+| Occluded cloth → missing dynamics → predict complete opening and plan → better decisions | GDM already provides the broad method |
+| Costly queries → low-rank response → matrix completion → fewer physical branches | Low-rank RL/DCG prior art and unverified contact-rank assumption; not selected |
+| Motion changes correction utility → static effects fail to compose → crossed interaction supervision → better action ranking and post-training at equal cost | Selected, conditional on direct comparison with unstructured outcome learning |
+| Privileged labels disagree under identical histories → unobservable interaction → belief/active sensing → informative actions help | Real possible limitation, but not diagnosed here; do not invent it to justify a new module |
+
+### 10. One bounded new-method experiment, not another teacher rerun
+
+This is an implementation protocol, **not a newly launched experiment**. The
+first deliverable is the crossed-branch data contract and learner above. Do not
+append further r1/current-pose/GICP repetition campaigns while designing it.
+
+**Initial data budget:** 24 training/validation root states spanning eight
+training-pool garments and three dressing stages, four candidates including
+the base, three human continuations including the reference, and two physical
+repeats: at most 576 branches, 2,304 H=4 decisions before roll-in/setup cost.
+Keep two of those garments exclusively for model validation. Use training
+motion subjects; final test garments, bodies and motion subjects are separate.
+This is a small development set, not sufficient evidence of population success.
+A repeat quantifies local disagreement; two repeats do not certify reliability.
+
+**Three matched learners:** (i) same paired data, fit dynamic gains directly;
+(ii) reference gains plus the learned interaction; (iii) remove the interaction
+and retain the same history/motion information in the common geometric baseline.
+Keep a winner-action imitation control on the same measured candidates. Use
+three learner seeds, identical policy architecture and initialization. Include
+EXPO as an algorithm baseline for a subsequent paper-scale study; do not call
+these local supervised controls full EXPO reproductions.
+
+**First measurements:** held-out candidate regret/rank reversals, error on
+gain differences, invalid prediction rate, total simulator/CPU wall time, and
+static retention. Split by garment/trajectory, never by neighboring frames.
+Compare paired collection with an equal-total-cost ordinary collection control;
+same-label-count alone is not a fair cost comparison. All H=4 continuation
+render/inference cost counts.
+
+**Final closed-loop comparison:** once this method is implemented, freeze one
+test matrix crossing unseen garments with unseen body/motion sequences. Report
+success and geometric progress, whole-episode attachment validity, and runtime.
+Cluster uncertainty by garment and motion sequence; report learner seeds
+separately. Test a prespecified practical improvement margin at matched cost,
+with paired intervals. Do not treat adjacent states or two repeats as independent
+tasks or insist that every pilot clip must succeed. A real-transfer claim still
+needs robot evidence and a budget for real adaptation.
+
+**Decisive failure conditions:**
+
+1. Motion does not change useful action rankings beyond repeat variability after
+   geometric compensation: the selected mechanism is not useful in this regime.
+2. A direct outcome model matches the structured model on held-out ranking and
+   closed-loop performance at equal cost: no benefit from the proposed operator.
+3. Gains require future ground truth, hidden simulator inputs, favorable data
+   filtering or different candidate actions: no deployable post-training claim.
+4. Gains disappear on held-out garments: a motion result only, not the original
+   garment-by-motion generalization contribution.
+5. Extra branch/continuation cost exceeds the data savings: no efficiency claim.
+
+The next three development actions are therefore: implement the complete
+crossed-branch record/restore interface; implement the structured and direct
+outcome learners plus identical policy updates; run one frozen-budget study of
+the new operator. Existing M4 remains a bounded application baseline. No new
+method, dynamic student result or publication-level improvement is claimed by
+this research specification alone.
+
 ## First-principles correction — 2026-10-03
 
 **The owner rejected the finite-update/joint-correction proposal below. It is
