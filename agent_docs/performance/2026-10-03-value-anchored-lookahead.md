@@ -75,3 +75,30 @@ hazard value learned from the policy's own failures for the rest**, and showing 
 where local scores could not, (ii) iterating (refit V on the new policy) keeps improving instead of saturating
 after one round, (iii) transfer to unseen garments and moving arms. If plain POLO-style planning explains all of
 it, the contribution is an empirical finding for deformable post-training, not a new algorithm.
+
+## First live results and what they changed (2026-10-04)
+
+Protocol note: test bodies 1-14 (in sorted order) are now the development set for teacher variants; bodies
+15-41 are kept for a final check and are not used for any decision.
+
+1. Value with action and grip-force features (bodies 1-7, tshirt_26): replays of one candidate differed by 0.25
+   in value, so no candidate cleared the margin. Retrained without them.
+2. Value without action/grip, all states (bodies 1-7, tshirt_26): teacher 4/7, r1 4/7 on the same units. The
+   teacher chose "stop" in most late plans: the archive's accepted episodes end with a verified zero-action
+   hold, so the value learned that standing still near the top means success. It delayed grasp loss (e.g. body
+   1032: r1 at decision 225, teacher at 506) without preventing it; late plans had no feasible candidate left.
+3. Value on decision states only (`value_v3_decision.npz`, hold excluded, AUC 0.877; bodies 8-14, tshirt_26):
+   teacher 3/7, r1 2/7 (1:0, the rescued unit was an r1 non-grasp failure). The four grasp losses were again
+   delayed by 20-120 decisions, not prevented. Stopped after one job.
+
+Why lookahead from decision 40 can only delay: on held-out archived r1 episodes, 49 % of eventual failures
+already have V < 0.2 at decision 40 (5 % of successes), 37 % are below it for good by decision 60, and the outcome
+is separable from decision 5 (AUC 0.71) and decision 20 (0.82). At decision 40, failures have the gripper
+further along the arm (0.26 vs 0.19 of arm length) while the cuff has barely advanced over the hand (0.003 vs
+0.007): the hand missed or only grazed the sleeve opening and the robot kept pulling. Hospital gown is
+over-represented among failures. The decisive decisions are in the entry phase, before the lookahead started.
+
+Next variant (running, `value_teacher_entry_20261004`, bodies 8-14): plan from decision 5, no minimum-load gate
+(no contact yet during entry), add two retreat candidates (reverse the mean of the last six executed
+translations, once and twice), same value and margin.
+
