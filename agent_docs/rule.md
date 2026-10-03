@@ -110,6 +110,17 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Implement and try the interaction-goal post-training candidate.** The
+  owner approved the proposed implementation and bounded repair pilot, then
+  requested more parallel project work. Reuse existing trajectories, train the
+  proposal controller, and run the two predeclared physical replays in separate
+  workers. Keep the initial pilot's combined ceiling of 5,000 IPC decisions or
+  eight GPU-worker hours, including setup, rejected branches and retries.
+  Continue necessary fixes and launches without asking again. This does not
+  reinstate M4 or authorize interference with unrelated workloads. Report
+  failed hypotheses and do not equate offline fitting with successful repair.
+  (Set 2026-10-03.)
+
 - **Develop a creative, concrete dressing post-training method.** The owner
   renewed this request after rejecting prior framing-only responses. Produce
   an implementable learning/data-generation mechanism with primary-source

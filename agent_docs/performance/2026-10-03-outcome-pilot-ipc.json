@@ -1,0 +1,490 @@
+{
+  "status": "root20 complete: no valid repairs; earlier-intervention diagnostic running",
+  "source_root": "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003",
+  "root20": [
+    {
+      "seed": 20261003,
+      "status": {
+        "status": "completed",
+        "results": 4,
+        "budget": {
+          "substeps": 554,
+          "decision_equivalents": 92.33333333333333,
+          "charged_decisions": 93,
+          "snapshot_restores": 12,
+          "wall_seconds": 111.46483970293775,
+          "phase": "generic/seed20261003/candidate2/search",
+          "maximum_decisions": 2494,
+          "maximum_hours": 3.99
+        },
+        "policy_updated": false
+      },
+      "root": {
+        "geometry": {
+          "progress_m": 0.0,
+          "armhole_upper_fraction": -1.3943552594363524,
+          "wrapped": false,
+          "reached": false,
+          "valid": true,
+          "tracking_m": 0.007768306836480728,
+          "gripper_N": 114.53771615244567,
+          "edge_p99": 1.2486768425355326,
+          "edge_max": 1.515476020318076
+        },
+        "frame": 152,
+        "state": 20,
+        "target_sections": {
+          "cuff_vertex_indices": [
+            398,
+            399,
+            400,
+            401,
+            402,
+            403,
+            404,
+            405,
+            406,
+            407,
+            408,
+            409,
+            410,
+            411,
+            412,
+            413,
+            414,
+            415,
+            416
+          ],
+          "section_fractions": [
+            0.0,
+            0.25,
+            0.4,
+            0.75
+          ],
+          "section_point_counts": [
+            19,
+            41,
+            52,
+            61
+          ],
+          "armhole_vertex_indices": [
+            4560,
+            4491,
+            4412,
+            4215,
+            4330,
+            4529
+          ],
+          "section_rest_centers": [
+            [
+              -0.28774033999999993,
+              0.04815302894736841,
+              1.2909186673684212
+            ],
+            [
+              -0.26822293041555617,
+              0.04855889552043885,
+              1.3162019503692126
+            ],
+            [
+              -0.25912093670128195,
+              0.04835368482477103,
+              1.3334104114192231
+            ],
+            [
+              -0.22659622114944397,
+              0.0475738380025537,
+              1.364693989621347
+            ]
+          ]
+        },
+        "sources": [
+          {
+            "distance": 0.23497581481933594,
+            "episode": 2,
+            "start": 0,
+            "source": "/home/ge47gax/kun/libuipc/output/uipc_manip/fmvp_scaled_multigarment_v5_20260926/hospital_gown/batches/policy_off0_5_0_10032x7/body_13032_seed_2026492600/baseline_rep0.npz",
+            "source_garment": "hospital_gown"
+          },
+          {
+            "distance": 0.3160329759120941,
+            "episode": 5,
+            "start": 16,
+            "source": "/home/ge47gax/kun/libuipc/output/uipc_manip/fmvp_scaled_multigarment_v5_20260926/hospital_gown/batches/retry_off0_5_0_19034x5/body_19034_seed_2026492601/baseline_rep1.npz",
+            "source_garment": "hospital_gown"
+          }
+        ]
+      },
+      "branches": [
+        {
+          "method": "geometry",
+          "candidate": 0,
+          "decisions": 7,
+          "valid": false,
+          "tracking_m": 0.021599553783053387,
+          "success": false
+        },
+        {
+          "method": "geometry",
+          "candidate": 1,
+          "decisions": 5,
+          "valid": false,
+          "tracking_m": 0.02275893735417182,
+          "success": false
+        },
+        {
+          "method": "geometry",
+          "candidate": 2,
+          "decisions": 5,
+          "valid": false,
+          "tracking_m": 0.02280271138328244,
+          "success": false
+        },
+        {
+          "method": "action_noise",
+          "candidate": 0,
+          "decisions": 7,
+          "valid": false,
+          "tracking_m": 0.022151116702714534,
+          "success": false
+        },
+        {
+          "method": "action_noise",
+          "candidate": 1,
+          "decisions": 3,
+          "valid": false,
+          "tracking_m": 0.02261838566045276,
+          "success": false
+        },
+        {
+          "method": "action_noise",
+          "candidate": 2,
+          "decisions": 10,
+          "valid": false,
+          "tracking_m": 0.020120888642928852,
+          "success": false
+        },
+        {
+          "method": "tcp_transfer",
+          "candidate": 0,
+          "decisions": 7,
+          "valid": false,
+          "tracking_m": 0.02175355317850368,
+          "success": false
+        },
+        {
+          "method": "tcp_transfer",
+          "candidate": 1,
+          "decisions": 4,
+          "valid": false,
+          "tracking_m": 0.021583376288821596,
+          "success": false
+        },
+        {
+          "method": "tcp_transfer",
+          "candidate": 2,
+          "decisions": 4,
+          "valid": false,
+          "tracking_m": 0.023029583608298303,
+          "success": false
+        },
+        {
+          "method": "generic",
+          "candidate": 0,
+          "decisions": 7,
+          "valid": false,
+          "tracking_m": 0.02123174345445482,
+          "success": false
+        },
+        {
+          "method": "generic",
+          "candidate": 1,
+          "decisions": 4,
+          "valid": false,
+          "tracking_m": 0.02052468680751241,
+          "success": false
+        },
+        {
+          "method": "generic",
+          "candidate": 2,
+          "decisions": 4,
+          "valid": false,
+          "tracking_m": 0.02110116702656178,
+          "success": false
+        }
+      ]
+    },
+    {
+      "seed": 20261004,
+      "status": {
+        "status": "completed",
+        "results": 4,
+        "budget": {
+          "substeps": 572,
+          "decision_equivalents": 95.33333333333333,
+          "charged_decisions": 96,
+          "snapshot_restores": 12,
+          "wall_seconds": 90.94816916109994,
+          "phase": "geometry/seed20261004/candidate2/search",
+          "maximum_decisions": 2494,
+          "maximum_hours": 3.99
+        },
+        "policy_updated": false
+      },
+      "root": {
+        "geometry": {
+          "progress_m": 0.0,
+          "armhole_upper_fraction": -1.401153970911227,
+          "wrapped": false,
+          "reached": false,
+          "valid": true,
+          "tracking_m": 0.004945677361302678,
+          "gripper_N": 62.30701624379075,
+          "edge_p99": 1.2366641304340606,
+          "edge_max": 1.4490847354207284
+        },
+        "frame": 152,
+        "state": 20,
+        "target_sections": {
+          "cuff_vertex_indices": [
+            398,
+            399,
+            400,
+            401,
+            402,
+            403,
+            404,
+            405,
+            406,
+            407,
+            408,
+            409,
+            410,
+            411,
+            412,
+            413,
+            414,
+            415,
+            416
+          ],
+          "section_fractions": [
+            0.0,
+            0.25,
+            0.4,
+            0.75
+          ],
+          "section_point_counts": [
+            19,
+            41,
+            52,
+            61
+          ],
+          "armhole_vertex_indices": [
+            4560,
+            4491,
+            4412,
+            4215,
+            4330,
+            4529
+          ],
+          "section_rest_centers": [
+            [
+              -0.28774033999999993,
+              0.04815302894736841,
+              1.2909186673684212
+            ],
+            [
+              -0.26822293041555617,
+              0.04855889552043885,
+              1.3162019503692126
+            ],
+            [
+              -0.25912093670128195,
+              0.04835368482477103,
+              1.3334104114192231
+            ],
+            [
+              -0.22659622114944397,
+              0.0475738380025537,
+              1.364693989621347
+            ]
+          ]
+        },
+        "sources": [
+          {
+            "distance": 0.19766277074813843,
+            "episode": 2,
+            "start": 0,
+            "source": "/home/ge47gax/kun/libuipc/output/uipc_manip/fmvp_scaled_multigarment_v5_20260926/hospital_gown/batches/policy_off0_5_0_10032x7/body_13032_seed_2026492600/baseline_rep0.npz",
+            "source_garment": "hospital_gown"
+          },
+          {
+            "distance": 0.28236547112464905,
+            "episode": 1,
+            "start": 0,
+            "source": "/home/ge47gax/kun/libuipc/output/uipc_manip/fmvp_scaled_multigarment_v5_20260926/hospital_gown/batches/retry_off0_5_0_9038x5/body_11038_seed_2026492601/baseline_rep0.npz",
+            "source_garment": "hospital_gown"
+          }
+        ]
+      },
+      "branches": [
+        {
+          "method": "generic",
+          "candidate": 0,
+          "decisions": 7,
+          "valid": false,
+          "tracking_m": 0.02116444556618264,
+          "success": false
+        },
+        {
+          "method": "generic",
+          "candidate": 1,
+          "decisions": 5,
+          "valid": false,
+          "tracking_m": 0.021307215894576452,
+          "success": false
+        },
+        {
+          "method": "generic",
+          "candidate": 2,
+          "decisions": 5,
+          "valid": false,
+          "tracking_m": 0.020801325159319824,
+          "success": false
+        },
+        {
+          "method": "tcp_transfer",
+          "candidate": 0,
+          "decisions": 6,
+          "valid": false,
+          "tracking_m": 0.020230148360170234,
+          "success": false
+        },
+        {
+          "method": "tcp_transfer",
+          "candidate": 1,
+          "decisions": 4,
+          "valid": false,
+          "tracking_m": 0.023707060758679867,
+          "success": false
+        },
+        {
+          "method": "tcp_transfer",
+          "candidate": 2,
+          "decisions": 4,
+          "valid": false,
+          "tracking_m": 0.022590688085436586,
+          "success": false
+        },
+        {
+          "method": "action_noise",
+          "candidate": 0,
+          "decisions": 6,
+          "valid": false,
+          "tracking_m": 0.0201077580929238,
+          "success": false
+        },
+        {
+          "method": "action_noise",
+          "candidate": 1,
+          "decisions": 12,
+          "valid": false,
+          "tracking_m": 0.020668737985162413,
+          "success": false
+        },
+        {
+          "method": "action_noise",
+          "candidate": 2,
+          "decisions": 4,
+          "valid": false,
+          "tracking_m": 0.02079209177218126,
+          "success": false
+        },
+        {
+          "method": "geometry",
+          "candidate": 0,
+          "decisions": 7,
+          "valid": false,
+          "tracking_m": 0.021190700719473404,
+          "success": false
+        },
+        {
+          "method": "geometry",
+          "candidate": 1,
+          "decisions": 5,
+          "valid": false,
+          "tracking_m": 0.02080860338901049,
+          "success": false
+        },
+        {
+          "method": "geometry",
+          "candidate": 2,
+          "decisions": 5,
+          "valid": false,
+          "tracking_m": 0.020753981152725025,
+          "success": false
+        }
+      ]
+    }
+  ],
+  "interpretation": "All 24 search branches, including eight no-edit repeats, exceeded the 0.02 m tracking criterion before completing 24 decisions. No positive correction labels or r1 update.",
+  "early_launch": {
+    "workers": [
+      {
+        "pid": 735366,
+        "seed": 20261003,
+        "command": [
+          "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+          "-u",
+          "scripts/wang_transfer/probe_outcome_repairs.py",
+          "--features",
+          "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003/features_canonical",
+          "--models",
+          "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003/models_canonical",
+          "--out",
+          "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003/ipc_seed20261003_early",
+          "--max-decisions",
+          "2401",
+          "--gpu-hours",
+          "3.9622288228308835",
+          "--replay-seeds",
+          "20261003",
+          "--root-step",
+          "5"
+        ],
+        "log": "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003/ipc_seed20261003_early.log",
+        "prior_charged_decisions": 99,
+        "prior_wall_seconds": 125.97623780881986
+      },
+      {
+        "pid": 735367,
+        "seed": 20261004,
+        "command": [
+          "/home/ge47gax/kun/genesis-world/.venv/bin/python",
+          "-u",
+          "scripts/wang_transfer/probe_outcome_repairs.py",
+          "--features",
+          "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003/features_canonical",
+          "--models",
+          "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003/models_canonical",
+          "--out",
+          "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003/ipc_seed20261004_early",
+          "--max-decisions",
+          "2398",
+          "--gpu-hours",
+          "3.9679192733010535",
+          "--replay-seeds",
+          "20261004",
+          "--root-step",
+          "5"
+        ],
+        "log": "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003/ipc_seed20261004_early.log",
+        "prior_charged_decisions": 102,
+        "prior_wall_seconds": 105.4906161162071
+      }
+    ],
+    "reason": "At root20 all methods exceed tracking tolerance within 3-12 decisions; test earlier intervention at root5, same source models/methods",
+    "combined_max_decisions_including_prior": 5000,
+    "combined_max_gpu_hours_including_prior": 8
+  }
+}

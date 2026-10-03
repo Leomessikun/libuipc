@@ -1,0 +1,78 @@
+{
+  "status": "CPU training complete; physical repair result pending",
+  "root": "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003",
+  "episodes": 40,
+  "valid_decisions": 11156,
+  "training_episodes": 32,
+  "validation_episodes": 8,
+  "validation_garment": "tshirt_4 (held out of adapter training, not FMVP pretraining)",
+  "initial_single_action_result": {
+    "geometry": {
+      "update": 1200,
+      "train_mse": 1.8779880875765577e-14,
+      "validation_mse": 1.6647062078974616e-14,
+      "base_validation_mse": 1.3601791439314063e-14,
+      "shuffled_goal_mse": 1.93184430583547e-14,
+      "goal_action_rms": 8.297038789351063e-08
+    },
+    "generic": {
+      "update": 1200,
+      "train_mse": 2.23434162475002e-14,
+      "validation_mse": 1.9552227539928677e-14,
+      "base_validation_mse": 1.3601791439314063e-14,
+      "shuffled_goal_mse": 1.9448526990262227e-14,
+      "goal_action_rms": 3.9164838483429776e-08
+    },
+    "no_goal": {
+      "update": 1200,
+      "train_mse": 2.8804937628927954e-14,
+      "validation_mse": 2.2603490937691054e-14,
+      "base_validation_mse": 1.3601791439314063e-14,
+      "shuffled_goal_mse": 2.2603490937691054e-14,
+      "goal_action_rms": 0.0
+    }
+  },
+  "canonical_chunk8_result": {
+    "geometry": {
+      "update": 1200,
+      "train_mse": 0.015024595893919468,
+      "validation_mse": 0.014780133962631226,
+      "base_validation_mse": 0.017141325399279594,
+      "shuffled_goal_mse": 0.016881197690963745,
+      "goal_action_rms": 0.05466284602880478
+    },
+    "generic": {
+      "update": 1200,
+      "train_mse": 0.015082581900060177,
+      "validation_mse": 0.013654612004756927,
+      "base_validation_mse": 0.017141325399279594,
+      "shuffled_goal_mse": 0.016884636133909225,
+      "goal_action_rms": 0.05833752825856209
+    },
+    "no_goal": {
+      "update": 1200,
+      "train_mse": 0.015727290883660316,
+      "validation_mse": 0.014120901934802532,
+      "base_validation_mse": 0.017141325399279594,
+      "shuffled_goal_mse": 0.014120901934802532,
+      "goal_action_rms": 0.0
+    }
+  },
+  "train_samples": 8529,
+  "validation_samples": 1950,
+  "bridge_check": {
+    "history_restore_max_error": 0.0,
+    "feature_cache_max_error": 0.0,
+    "shape": [
+      8,
+      6
+    ],
+    "finite": true,
+    "maximum_action": 0.514146089553833
+  },
+  "limitations": [
+    "One CPU training seed; source-generated action targets, not physical realization metrics",
+    "Structured geometry is not better than generic goals or no-goal forecasting on held-out action MSE",
+    "No post-training update to r1 yet"
+  ]
+}

@@ -1,5 +1,28 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Goal-transfer feasibility implementation — 2026-10-03
+
+The approved [pilot](performance/2026-10-03-garment-outcome-posttraining.md#12-implemented-pilot-and-initial-evidence)
+now has extracted data, trained CPU proposal controllers and two bounded IPC
+workers. The first root-20 probe completed with no valid repairs (24 branches
+exceeded the grasp-tracking threshold). Two workers now test whether moving
+the intervention to decision 5 helps, within the same aggregate budget.
+A concrete failed objective was found: hindsight cloning of the
+deterministic base's next action learns zero correction. The implemented
+eight-action decoder avoids identical full-chunk targets but still requires
+physical evidence of controllability. Structured goal MSE is worse than generic
+goals and no-goal forecasting; there is no demonstrated representation advantage.
+
+Next: read the new repair branches/continuations, count all initialization and
+failed-query costs, and decide from verified corrections whether there is data
+worth absorbing into r1. Do not add another old-policy evaluation campaign.
+The target's exact material cuts are generated independently of the legacy
+success extractor's .4/.5 fallback, with geometry validation before GPU setup.
+The two replays share a combined cap of 5,000 decisions / eight GPU-worker
+hours; no automatic expansion or r1 update is configured. Five focused checks
+and CPU inference/history parity passed. Output root:
+`output/uipc_manip/outcome_pilot_20261003/`.
+
 ## Current research design: transfer interaction goals for post-training — 2026-10-03
 
 The [candidate specification](performance/2026-10-03-garment-outcome-posttraining.md)

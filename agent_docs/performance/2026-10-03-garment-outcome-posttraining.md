@@ -1,6 +1,12 @@
 # A concrete post-training candidate: transfer interaction goals, verify new repairs
 
-Date: 2026-10-03. Status: **research design, not implemented or validated**.
+Date: 2026-10-03. Status: **prototype implemented; first bounded physical
+probe found no repairs; earlier-intervention diagnostic running**.
+
+The owner subsequently approved implementation and requested parallel launches.
+Section 12 records the actual implementation, a failed initial objective and
+the revised pilot. Earlier design/budget paragraphs describe the proposal at
+the time of the literature review.
 
 The owner asks for a creative, concrete way to post-train the dressing policy.
 The recommendation in this note is a candidate for method development, not a
@@ -187,10 +193,12 @@ A stochastic head can retain multiple valid realizations. Flow matching can
 replace this supervised loss if needed, using an existing flow policy, but
 changing the backbone is not the research contribution.
 
-At runtime within a repair, the decoder receives fresh observations each
-decision. It does not hold one action for the entire horizon. Past failed
-windows teach achievable local changes; they are not labelled successful
-dressing or globally good actions.
+The implemented pilot encodes observations each decision, predicts eight-action
+chunks and replans every eight decisions. It executes the distinct actions in
+each chunk. Single-action hindsight imitation collapsed to the original policy
+on its own deterministic data (Section 12), motivating this bounded change.
+Past failed windows teach recorded local changes; they are not labelled
+successful dressing or globally good actions.
 
 ### 5.4 Search and physically realize repairs
 
@@ -395,3 +403,139 @@ learning repair realizations and explicitly targets missing target-garment
 corrections. It is worth a small implementation study, with the stated novelty
 and feasibility risks. It is not grounds to restart a large collection queue
 or to claim that the paper contribution is already finished.
+
+## 12. Implemented pilot and initial evidence
+
+The owner approved this candidate and then requested more concurrent project
+work. Implementation is on `research/expo-ft-dressing`:
+
+- `scripts/wang_transfer/outcome_goals.py`: ordered material coordinates,
+  goal transport, tool-relative goal inputs and a residual chunk decoder.
+- `train_outcome_goals.py`: valid-prefix extraction, whole-garment split and
+  matched geometry/generic/no-goal CPU training.
+- `outcome_policy.py`: CPU inference with explicitly restored causal history.
+- `probe_outcome_repairs.py`: full IPC snapshots, three proposals per method,
+  selected replay and physical continuation under a strict budget.
+- `test_outcome_goals.py`: five checks covering rigid-pose invariance,
+  stationary transport, valid-prefix boundaries, unsupported correspondence
+  and charging setup/partial decisions against the budget.
+
+### Data and the rejected single-action initialization
+
+The fixed 40-episode v5 sample supplies 11,156 valid decisions. The source
+policy is r1. Failed episodes contribute only valid prefixes; first invalid
+transitions and successful completion holds are excluded. Four garments
+(32 episodes) train the adapter; `tshirt_4` (eight episodes) is reserved for
+validation. It was seen by FMVP pretraining, so this is only an adapter split.
+No ClothesNet episode trains the proposal models or enters source retrieval.
+
+The first implementation predicted a residual for the next action. Its
+zero-residual validation MSE was **1.36e-14**: the saved actions are already
+the deterministic base outputs under the matched encoder/action convention.
+Changing the goal changed actions by only **8.30e-8 RMS** after fitting.
+This objective provides no reason to learn a correction. More identical-policy
+trajectories do not resolve that degeneracy. These models are retained as a
+negative diagnostic and are not used for physical experiments.
+
+The revised proposal predicts eight distinct actions from current history and
+a three-waypoint future goal path, then executes the chunk and replans. Its
+targets are the recorded eight-action subsequences. The four allowed action
+components remain translation xyz and world-z rotation; corrections are bounded
+to +/-0.5 around the current nominal action. This is ordinary conditional
+sequence learning, not a new objective. It still needs physical evidence that
+changing the requested outcome produces the requested interaction.
+
+### Fixed CPU result, one seed and 1,200 updates per model
+
+There are 8,529 training windows and 1,950 validation windows. These overlap
+within episodes; they are not independent statistical samples.
+
+| Proposal | Held-out action-chunk MSE | MSE after shuffling goals |
+|---|---:|---:|
+| Repeat current r1 action | 0.017141 | n/a |
+| Geometric interaction goals | 0.014780 | 0.016881 |
+| Generic frozen-encoder goals | 0.013655 | 0.016885 |
+| History with no goal | 0.014121 | n/a |
+
+The geometry decoder responds to goals (action RMS change 0.05466), but its
+offline prediction is worse than both generic goals and history-only. This
+does **not** support an advantage for the proposed representation. The physical
+probe tests goal realization/repair directly; it cannot be replaced by these
+imitation metrics. [Exact CPU results](2026-10-03-outcome-pilot-cpu.json).
+
+### Material correspondence and runtime checks
+
+The descriptor uses cuff, exact .25 and .5 sleeve cuts, and armhole, each with
+arm-normalized center, oriented normal, radius mean/deviation and winding flag.
+The earlier fifth ring was removed because the existing extractor's final
+interior fraction varies between .75 and .55. Cached point features were reused
+with a documented coordinate selection; no encoder retraining was needed.
+
+The first two IPC starts exposed another fallback: on `cn_tcsc_top558`, the
+historical success extractor chooses .4 instead of .5 because its point-count
+ratio is 62/41, slightly above 1.5. Those starts exited before any repair and
+each consumed 32 physical substeps (six charged decisions). The probe now
+constructs exact closed goal sections independently, verifies they remain
+near the sleeve, and retains the original sections for the success rule.
+Unsupported geometry is checked before creating a GPU world. This is explicit
+goal correspondence, not reassignment of .4 to .5.
+
+The archived initial anchor offsets recover the scaled, rotated original hang
+with maximum error **1.80e-16 m**. The new world re-settles that original rest
+geometry; archived deformed positions are never used as a new rest mesh.
+The single-world replay is not claimed to reproduce a historical batched
+trajectory. CPU bridge checks found exactly matching cached features and
+exact history restoration. All five coordinate/boundary tests passed.
+
+### Physical work launched
+
+Target: training garment `cn_tcsc_top558`, body 1032, root after 20 nominal
+decisions. Two separate workers use replay seeds 20261003/20261004; each
+compares geometry goals, generic feature goals, source TCP-path transfer and
+smooth action perturbations. These are simple proposal controls, not a full
+EXPO or HIQL implementation. Within each worker, all methods restore the same
+full root and controller history. Two reconstructed replays are not independent
+garments, bodies or tasks.
+
+Each method tries no edit and two proposals for up to 24 decisions, then
+replays the selected proposal and permits up to 450 continuation decisions.
+Search ranks valid terminal arm progress; only a completed physical dressing
+continuation can populate a future positive repair buffer. This inexpensive
+ranking is a pilot limitation, not an outcome-value estimator. Every rejected
+branch, selected replay and initialization is charged.
+
+Each corrected worker is capped at 2,494 decisions and 3.99 hours. Together
+with the two initial setup failures this stays within **5,000 decisions and
+eight summed GPU-worker hours**. Budget exhaustion censors an unfinished
+continuation. No full policy update or broader queue is automatic.
+
+Artifacts: `output/uipc_manip/outcome_pilot_20261003/`. Models used are in
+`models_canonical/`; `features_canonical/manifest.json` preserves source paths,
+hashes and splits. `launch_canonical.json`, per-worker logs, `budget.json`,
+`branches.jsonl`, `results.json` and `status.json` record the physical runs.
+The machine's system NVIDIA userspace library differed from the loaded kernel;
+only these workers use an existing matching 595.84 library directory via
+`LD_LIBRARY_PATH`. No system driver or unrelated process was modified.
+
+### First physical result and one bounded diagnostic
+
+Both root-20 workers completed. **All 24 branches failed the 0.02 m grasp
+tracking criterion before completing 24 decisions**, including the eight
+no-edit repeats and four edited proposals from each of four methods. Geometry
+proposals failed after five decisions in all four attempts. No continuation
+was eligible, no positive repair was found, and r1 was not updated. These are
+development failures, not independent task-level success estimates.
+
+The two roots were valid (tracking 7.77/4.95 mm) and unthreaded; the failure
+does not prove that a late root is unrecoverable. To test intervention timing,
+two additional workers start from nominal decision **5** with the same target,
+models, methods and seeds. Their archives additionally retain achieved
+interaction descriptors and goal-position/normal errors. This diagnostic is
+adaptive and must not be pooled into a preregistered benchmark.
+
+All previous costs are deducted. The early workers have respectively
+**2,401 / 2,398** decisions left, and approximately 3.962 / 3.968 worker-hours.
+The combined ceiling including the two initial setup failures and root-20
+runs remains 5,000 decisions / eight worker-hours. No expansion beyond this
+diagnostic is queued. Read `launch_early.json` and `ipc_seed*_early/`, plus the
+[compact physical record](2026-10-03-outcome-pilot-ipc.json).

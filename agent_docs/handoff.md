@@ -1,5 +1,34 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Goal-transfer prototype trained; bounded IPC pilot launched
+
+The owner approved implementation and then requested parallel work. New
+`outcome_goals.py`, `train_outcome_goals.py`, `outcome_policy.py` and
+`probe_outcome_repairs.py` implement the
+[candidate](performance/2026-10-03-garment-outcome-posttraining.md#12-implemented-pilot-and-initial-evidence).
+The CPU stage reused 40 episodes / 11,156 valid decisions. Single-action
+residual imitation collapsed to r1 (zero-residual MSE 1.36e-14), so the actual
+pilot uses eight-action conditional chunks, replanned every eight decisions.
+Geometry-goal validation MSE 0.014780 is worse than generic goals 0.013655 and
+no-goal forecasting 0.014121. Goal sensitivity alone does not establish useful
+control or novelty. Five geometry/data/budget checks and the binary inference
+history-restore check passed. No r1 weights have been updated.
+
+The first two workers finished the same training case (ClothesNet
+`cn_tcsc_top558`, body 1032), seeds 20261003/20261004: all 24 branches exceeded
+the grasp-tracking limit; no repair or positive correction label was found.
+Two earlier-intervention workers now test root step 5 instead of 20, keeping
+the same models and proposal methods. Their archives also record achieved
+interaction descriptors and goal error. Root:
+`output/uipc_manip/outcome_pilot_20261003/`. Read `launch_canonical.json` and
+`launch_early.json` and the corresponding budgets/status/results. The initial workers exited
+at an unsupported .4/.5 material-section correspondence check; exact goal
+sections are now built explicitly, keeping historical success sections intact.
+Their costs are included: early workers have 2,401 / 2,398 decisions remaining,
+so combined work including setup failures and root-20 runs remains below 5,000
+decisions / eight GPU-worker hours. M4 stays stopped; no broader collection,
+evaluation campaign or policy update is automatically queued.
+
 ## 2026-10-03 — Concrete post-training design using transferred interaction goals
 
 The owner renewed the request for creative post-training method research.
