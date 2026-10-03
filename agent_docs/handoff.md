@@ -1,5 +1,42 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Effect-code study completed without verified improvement
+
+The owner approved the Discrete Forcing-inspired proposal. The new finite
+study has collected 72 branches near measured sleeve events, costing 1,854
+charged decisions. It reuses 40 nominal episodes and fits matched flat flow,
+action-code flow, physical-effect-code flow and shuffled-effect controls.
+Each has 285,512 parameters, 1,600 updates and two training seeds. All eight
+heads have finished training. Weak offline effect-code shuffling differences
+are not evidence of physical controllability.
+
+The initial eight-step design was changed to 24-step chunks because only
+3/48 first-root probes had a persistent wrapping event by step eight, versus
+36/48 by step 24. The original collector processes were allowed to finish.
+The source dataset and all new training codebooks exclude validation body
+2034 and adapter-validation garment `tshirt_4`; the frozen base had seen
+`tshirt_4` in pretraining. `cn_tcsc_top558` is excluded from fitting new heads
+but is a previously inspected development case, not a sealed test.
+
+Supervisor PID 2159619 and children 2170384 / 2170385 have finished both
+physical cases. On `cn_tcsc_083` / body 2034 the nominal policy succeeds;
+all four methods choose nominal fallback after short-score ties. On
+`cn_tcsc_top558` / body 1032 the nominal policy fails and no method repairs it.
+Only an ordinary action-code proposal survives the 24-step search; its
+verification fails at step 40. Effect-code requests do not yield distinct
+realized effect classes within either case. Read
+`output/uipc_manip/effect_codes_20261003/pipeline/status.json` for current
+state. Final cost is **4,091 charged decisions / 2,036.45 summed worker-seconds**,
+below this study's separate 8,000-decision / four-worker-hour cap. No actor
+update occurred. The completed 4,212-decision earlier pilot remains separate.
+Do not scale the unchanged prototype: observed-outcome clustering has not
+established controllable improvements over the nominal policy. The two
+development roots are not a general impossibility result or sealed benchmark.
+Twelve focused tests pass; trained-bridge context parity is exact and restored
+sampling is identical. See
+[implementation and limits](performance/2026-10-03-garment-outcome-posttraining.md#15-approved-effect-code-implementation-and-finite-study)
+and the [complete evidence](performance/2026-10-03-effect-code-evidence.json).
+
 ## 2026-10-03 — Continuation finished; Discrete Forcing assessed
 
 Both inverse-control seeds and their physical probes finished normally. None

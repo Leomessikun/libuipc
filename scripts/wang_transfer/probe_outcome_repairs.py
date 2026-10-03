@@ -1,9 +1,10 @@
-"""One capped IPC repair-discovery pilot using transferred interaction goals.
+"""Capped IPC repair probes for goal transfer or matched effect-code policies.
 
 Three 24-decision proposals (including no edit), one selected replay, and one
 450-decision continuation per method/replay. All setup and replay costs count
-toward the global 5,000-decision/eight-hour cap. This is a development probe,
-not an independent-garment benchmark or an EXPO implementation.
+toward the invoking study's total cap. The legacy goal study has a combined
+5,000-decision limit; run_effect_study.py separately accounts for its approved
+8,000-decision study. These are development probes, not task-level benchmarks.
 """
 from __future__ import annotations
 
@@ -188,8 +189,11 @@ def retrieve(manifest, current, feature, target_landmarks, horizon):
 
 
 def main(args):
+    effect_mode = args.effect_models is not None
     if args.max_decisions > 5000 or args.gpu_hours > 8 or args.horizon != 24:
         raise ValueError('This authorization is limited to the documented pilot budget')
+    if effect_mode and args.collect_only:
+        raise ValueError('Effect evaluation and exploration collection are separate stages')
     if len(set(args.replay_seeds)) != len(args.replay_seeds) or not set(args.replay_seeds) <= {20261003, 20261004}:
         raise ValueError('Use the two predeclared replay seeds, once each')
     args.out.mkdir(parents=True, exist_ok=False)
@@ -224,7 +228,12 @@ def main(args):
     try:
         saved = json.loads((args.target.parent / 'config.json').read_text())
         cfg = config_from_record(DressingConfig(), saved['config'])
-        cfg = replace(cfg, cells=(tuple(cfg.cells[0]),), workspace=str((args.out / 'scene').resolve()),
+        with np.load(args.target, allow_pickle=False) as archive:
+            target_body = json.loads(str(archive['metadata_json']))['body']
+        matching = [tuple(c) for c in cfg.cells if c[1] == target_body]
+        if len(matching) != 1:
+            raise ValueError('Saved batch does not uniquely identify the requested body')
+        cfg = replace(cfg, cells=(matching[0],), workspace=str((args.out / 'scene').resolve()),
                       horizon=2000, contact_force_readout=False, live=replace(cfg.live, body=replace(cfg.live.body, device='cpu')))
         cell, reconstruction = reconstruct_cell(args.target, cfg)
         template = Path('output/uipc_manip/clothesnet_assets/raw') / f'{cell.garment}.obj'
@@ -238,8 +247,9 @@ def main(args):
         manifest = json.loads((args.features / 'manifest.json').read_text())
         if any(r['garment'] == cell.garment for r in manifest['episodes']):
             raise ValueError('Target garment contaminated the source dataset')
+        methods = ('flat', 'action', 'effect', 'shuffled_effect') if effect_mode else METHODS
         run = dict(arguments=vars(args), target_garment=cell.garment, target_body=cell.human,
-                   reconstruction=reconstruction, methods=METHODS, replay_seeds=args.replay_seeds,
+                   reconstruction=reconstruction, methods=methods, replay_seeds=args.replay_seeds,
                    feature_manifest_sha256=sha256(args.features / 'manifest.json'),
                    code_sha256=sha256(__file__), environment_sha256=sha256(PACKAGE / 'uipc_manip/dressing_env.py'),
                    models={k: sha256(args.models / f'{k}.pt') for k in ('geometry', 'generic')},
@@ -248,7 +258,7 @@ def main(args):
                    success='armhole upper fraction >=0.7, all interior sections wrapped, 20 zero-action hold decisions, valid grasp',
                    notes='Development training cell; two RNG/numerical replays of one root are not independent task samples')
         write_json(args.out / 'run.json', run)
-        client = OutcomeClient(args.models)
+        client = OutcomeClient(args.models, args.effect_models)
         factory = SimpleNamespace(cfg=cfg.live, build=lambda garment, human: copy.deepcopy(cell))
         env = ProbeEnv(cfg, num_envs=1, cell_factory=factory)
         obs = env.reset([20261003])
@@ -260,9 +270,10 @@ def main(args):
         rest_lengths = np.linalg.norm(cell.cloth[sections.edges[:, 0]] - cell.cloth[sections.edges[:, 1]], axis=1)
         spec = ObsSpec(cfg.point_budget)
 
-        def observe(observation):
+        def observe(observation, previous_action=None):
             pos, flags, valid, extra = spec.unpack_numpy(observation[0])
-            actions, feature = client.request('observe', pos=pos[valid], flags=flags[valid], tool=extra[:3])
+            previous = {} if previous_action is None else dict(previous_action=previous_action)
+            actions, feature = client.request('observe', pos=pos[valid], flags=flags[valid], tool=extra[:3], **previous)
             return actions[0], feature
 
         def state(info=None):
@@ -297,7 +308,7 @@ def main(args):
             obs, row = transition(base)
             if not row['valid']:
                 raise ValueError('Nominal rollout invalid before predeclared repair root')
-            base, feature = observe(obs)
+            base, feature = observe(obs, base)
             observation_history.append(obs[0].copy())
         root_state = state()
         root = snapshotter.snapshot(); client.request('save')
@@ -320,7 +331,7 @@ def main(args):
 
         def branch(method, candidate, seed, suffix=False):
             nominal = restore(seed)
-            source = sources[candidate - 1] if candidate and method != 'exploration' else None
+            source = sources[candidate - 1] if candidate and method != 'exploration' and not effect_mode else None
             repair_steps = args.probe_steps if method == 'exploration' else args.horizon
             rng = np.random.default_rng(seed + candidate * 101)
             knots = rng.normal(0., .3, (3, 4))
@@ -329,11 +340,20 @@ def main(args):
             row = root_state.copy()
             budget.phase = f'{method}/seed{seed}/candidate{candidate}/' + ('verification' if suffix else 'search')
             first_success, held = None, 0
+            requested_code = None
+            if effect_mode and candidate:
+                chunk_actions, control = client.request('effect_sample', variant=method,
+                                                       rank=candidate - 1, seed=seed + 101 * candidate)
+                requested_code = int(control[0])
             for t in range(repair_steps + (450 if suffix else 0)):
                 if suffix and first_success is not None:
                     action = np.zeros(6, np.float32)
                 elif t >= repair_steps or candidate == 0:
                     action = nominal
+                elif effect_mode:
+                    action = nominal.copy()
+                    axes = [0, 1, 2, 5]
+                    action[axes] = np.clip(nominal[axes] + np.clip(chunk_actions[t, axes] - nominal[axes], -.5, .5), -1., 1.)
                 elif method == 'exploration':
                     if candidate == 1:
                         correction = np.clip(-nominal[[0, 1, 2, 5]], -.5, .5)
@@ -392,11 +412,26 @@ def main(args):
                         held += 1
                         if held == 20:
                             break
-                nominal, _ = observe(next_obs)
+                nominal, _ = observe(next_obs, action)
             score = float(row.get('progress_m', -1.)) if row['valid'] else -1e6
+            if effect_mode and row['valid']:
+                # Identical ranking for all methods; complete dressing remains
+                # the acceptance criterion. Require persistence in three states.
+                stable = np.asarray(descriptors[-3:])[:, :, 8].min(0) > .5
+                score += .05 * float(stable.sum())
             result = dict(method=method, seed=seed, candidate=candidate, verification=suffix,
                           decisions=len(actions), score=score, final=row, first_success=first_success,
                           success=bool(suffix and held == 20 and row['valid']), budget=budget.state())
+            if effect_mode:
+                from effect_codes import effect_vector, nearest
+                result['requested_code'] = requested_code
+                result['effect_model_directory'] = str(args.effect_models)
+                end = min(repair_steps, len(descriptors) - 1)
+                if end >= 3 and np.isfinite(np.asarray(descriptors[:end + 1])).all():
+                    effect = effect_vector(descriptors[:end + 1], [r['valid'] for r in geometries[:end]])
+                    with np.load(args.effect_models / 'partition.npz') as partition:
+                        result['realized_effect_code'] = int(nearest(effect[None], partition['effect_centers'])[0])
+                    result['measured_effect'] = effect.tolist()
             name = f'{method}_{seed}_{candidate}_' + ('verification' if suffix else 'search')
             np.savez_compressed(args.out / (name + '.npz'), obs=np.asarray(observations), actions=np.asarray(actions),
                                 history_obs=np.asarray(observation_history[-4:-1]),
@@ -416,8 +451,13 @@ def main(args):
                     results.append(branch('exploration', candidate, seed))
                     write_json(args.out / 'results.json', results)
                 continue
+            if effect_mode:
+                baseline = branch('nominal', 0, seed, suffix=True)
+                baseline['status'] = 'baseline_verified' if baseline['success'] else 'baseline_failed'
+                results.append(baseline)
+                write_json(args.out / 'results.json', results)
             # Balanced order: reverse in the second replay to reduce time/load effects.
-            for method in (METHODS if seed == 20261003 else METHODS[::-1]):
+            for method in (methods if seed == 20261003 else methods[::-1]):
                 trials = [branch(method, candidate, seed) for candidate in range(3)]
                 best = max(range(3), key=lambda k: trials[k]['score'])
                 if trials[best]['score'] <= -1e6:
@@ -427,6 +467,8 @@ def main(args):
                     result = branch(method, best, seed, suffix=True)
                     result['status'] = 'verified' if result['success'] else 'verification_failed'
                 results.append(result)
+                if effect_mode:
+                    result['improves_failed_baseline'] = bool(result['success'] and not baseline['success'])
                 write_json(args.out / 'results.json', results)
         status = 'completed'
     except BudgetExhausted as exc:
@@ -451,6 +493,7 @@ if __name__ == '__main__':
     p.add_argument('--target', type=Path, default=TARGET)
     p.add_argument('--features', type=Path, required=True)
     p.add_argument('--models', type=Path, required=True)
+    p.add_argument('--effect-models', type=Path, help='Matched effect-code study models with 24-decision chunks')
     p.add_argument('--out', type=Path, required=True)
     p.add_argument('--root-step', type=int, default=20)
     p.add_argument('--replay-seeds', type=int, nargs='+', default=[20261003, 20261004])

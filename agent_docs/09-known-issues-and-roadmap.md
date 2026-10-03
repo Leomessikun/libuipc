@@ -1,5 +1,28 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Completed effect-code post-training pilot — 2026-10-03
+
+Implementation and two-seed training are complete for matched flat flow,
+ordinary action codes, physical outcome codes and shuffled-outcome controls.
+Collection near actual event states yielded 72 branch attempts. The study
+uses 24-decision chunks, causal cloud/tool/action history and whole-body/garment
+validation splits. A partition of observed effects is implemented; calibrated
+effect distributions and task-improving actor absorption are not yet established.
+
+Both physical cases completed: no verified improvement. The easier case
+selects nominal fallback for every method after score ties; on the failing
+case all selected continuations fail. Different effect-code requests do not
+produce different nearest realized classes within a case. Final cost is
+4,091 charged decisions / 2,036.45 summed worker-seconds under the separate
+8,000-decision / four-worker-hour cap. No actor update occurred. Read
+`output/uipc_manip/effect_codes_20261003/pipeline/status.json` and
+[the evidence record](performance/2026-10-03-effect-code-evidence.json).
+Do not scale the unchanged prototype. A new objective would need to distinguish
+observed outcome diversity from controllable improvement over nominal behavior;
+neither lower action MSE nor nominal fallback success establishes that.
+The prior failed pilot remains recorded below. See
+[the new implementation record](performance/2026-10-03-garment-outcome-posttraining.md#15-approved-effect-code-implementation-and-finite-study).
+
 ## Completed consequence-learning stage and paper-inspired method work — 2026-10-03
 
 The finite continuation finished both CPU seeds and physical probes; none

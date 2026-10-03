@@ -2,7 +2,8 @@
 
 Date: 2026-10-03. Status: **prototype and consequence-learning continuation
 completed without verified repairs; Discrete Forcing research assessment in
-Section 14 proposes an unvalidated next mechanism**.
+Section 14 proposes an unvalidated next mechanism; its approved matched pilot
+is implemented and completed without verified improvement in Section 15**.
 
 The owner subsequently approved implementation and requested parallel launches.
 Section 12 records the actual implementation, a failed initial objective and
@@ -12,8 +13,9 @@ the time of the literature review.
 The owner asks for a creative, concrete way to post-train the dressing policy.
 The recommendation in this note is a candidate for method development, not a
 claim that a new algorithm has already been established. All M4 jobs remain
-stopped. This work used primary literature, source inspection and a small CPU
-analysis of existing trajectories; it launched no simulation or training.
+stopped. The initial review used primary literature, source inspection and a
+small CPU analysis of existing trajectories. Subsequent authorized simulation
+and training are recorded in Sections 12-15.
 
 ## 1. Recommendation
 
@@ -797,3 +799,170 @@ event prediction accuracy are diagnostics, not task completion. If ordinary
 action codes or flat corrections do as well, there is no established advantage
 for the proposed physical partition. No additional GPU jobs or new flow
 training were launched during this paper assessment.
+
+## 15. Approved effect-code implementation and finite study
+
+The owner approved implementation after the paper review. This new study is
+separate from the completed 4,212-decision goal-transfer pilot. Its combined
+ceiling is **8,000 charged IPC decisions and four summed worker-hours**, with
+at most two physical workers at once. Setup, failed branches, nominal
+continuations and verification replays all count. M4 remains retired.
+
+### Data and action effects
+
+Three isolated `cn_tcsc_083` roots use bodies 1032 / 3041 for training and
+body 2034 exclusively for validation. Archived event locations suggested
+roll-in decisions 58 / 32 / 50 respectively; the actual new worlds are fully
+reconstructed and rolled in. These roots are development choices, not a
+randomly sampled benchmark. Each root has 12 proposal recipes in two replays,
+up to 24 decisions each. Random proposal knots differ between replay seeds;
+only nominal/suppression/reversal recipes repeat. Do not describe all pairs
+as repetitions of identical open-loop commands.
+
+All **72 branch attempts** completed, costing **1,854 charged decisions**.
+In the first two roots, 38/48 branches have a raw wrapping-flag change and
+36/48 retain a change under a three-state persistence rule. Only 3/48 have a
+persistent change in the first eight decisions. This motivated using complete
+**24-decision action chunks** in the matched learners and probes; an eight-step
+action target would omit most measured changes. The supervisor was reloaded
+for this horizon correction while collection continued undisturbed.
+
+Existing canonical features from 40 Cloth3D episodes are retained. Exact-root
+action alternatives are explicitly upweighted, with half of training batches
+drawn from nominal data and half from valid intervention windows. The new
+dataset has **2,641 windows: 2,139 training and 502 validation**, including
+45 / 24 complete intervention windows respectively. Three shorter invalid
+branches supply no complete 24-step generative target; their raw archives and
+failed outcomes are retained. A further **1,033 windows** contain a persistent
+wrapping event; overlapping windows are not independent demonstrations.
+
+Validation holds out all `tshirt_4` adapter data and all intervention branches
+of body 2034. `tshirt_4` was seen by FMVP pretraining. No `cn_tcsc_top558` data
+enter these new heads, including the old 256-transition diagnostic; that
+garment is a held-out development case, not a sealed research test.
+
+### Matched learner implementation
+
+`effect_codes.py` defines a 33-dimensional outcome vector: normalized section
+center/radius changes, normal changes, persistent net/acquired/lost wrapping
+flags, and validity. The first implementation fits an eight-center k-means
+partition of measured outcome vectors. This is an initialization from observed
+effects, **not a calibrated distribution of causal effects**, an exact topology
+representation, or a new clustering algorithm. Generative fitting uses valid
+prefixes, so it has no learned grasp-failure class at this stage.
+
+`train_effect_codes.py` fits four heads on identical data, sampled batches,
+updates and action support:
+
+1. `flat`: continuous flow from Gaussian noise;
+2. `action`: k-means action-chunk codes and a code-conditioned coarse anchor;
+3. `effect`: codes learned from measured physical outcomes;
+4. `shuffled_effect`: the same effect labels shuffled within training
+   bodies/episodes, preserving marginal frequencies without future leakage.
+
+The action-code comparison is a generic learned-quantization control, not a
+full reproduction of Discrete Forcing's per-scalar token architecture. The
+flow backbone is reused from `uipc_manip.flow_policy`; only its input adapter
+changes. Each variant has **285,512 parameters** and receives 1,600 updates
+for each of two seeds, 20261005 / 20261006. The observation context contains
+four frozen FMVP point-feature/tool frames, three previous executed actions,
+and the current nominal action. No outcome, simulator mesh, future frame,
+body ID or episode clock enters the actor.
+
+The coded variants mix 0.3 of a learned action anchor with 0.7 noise before
+flow refinement. Losses combine flow matching, one-step reconstruction,
+anchor fitting and code classification. The continuous-only variant uses
+pure noise with the same network shapes. These losses are existing building
+blocks; this prototype's research question concerns the physical partition.
+At execution all variants use four flow evaluations and the same +/-0.5
+correction limit around each contemporaneous r1 action, in the original four
+action axes. No candidate is exempt from grasp/geometry checks.
+
+### What offline training establishes
+
+Both seeds have completed. Autonomous validation MSE is approximately
+0.0392 / 0.0390 for flat, 0.0360 / 0.0355 for action codes, and
+0.0375 / 0.0352 for effect codes. These are action-fitting metrics, not dressing
+success. Correct versus shuffled oracle effect codes changes MSE only slightly;
+no useful physical effect-control advantage is established by these numbers.
+
+Six focused tests cover persistent events, invalid geometry, causal action
+history, online/episode history parity and partition inputs; the six existing
+goal/budget tests also pass. A trained-model bridge check has **zero context
+error**, exact snapshot/history restoration and finite **24 x 6** action
+output. Extending the binary reply size is confined to the optional effect
+models; the old eight-action interface remains supported.
+
+### Physical work and next decision
+
+`run_effect_study.py` records collection, preparation, training and simulation
+child PIDs/commands/exit codes. The current physical workers use:
+
+- body 2034 / `cn_tcsc_083`, root 50, model seed 20261005;
+- body 1032 / `cn_tcsc_top558`, root 5, model seed 20261006.
+
+Within each root all four methods share a full snapshot and causal history,
+try nominal plus two proposals, and verify the selected candidate with up to
+450 nominal continuation decisions and the existing 20-decision hold rule.
+A shared nominal continuation is measured first. All methods use the same
+selection score and success test. Model seed and case are coupled in this
+small pilot; it cannot isolate training-seed variance or estimate generalization.
+
+Full success beyond a failed paired nominal continuation is required for a
+positive repair. The active pipeline does not automatically absorb short
+progress, oracle labels or invalid branches into the base actor. If a verified
+improvement is found, it supplies the next absorption-stage input; if none is
+found, do not claim that the code partition solved post-training.
+
+Output root: `output/uipc_manip/effect_codes_20261003/`. Live status is
+`pipeline/status.json`; `collect_body*/`, `data/manifest.json`,
+`models_*/summary.json`, `bridge_check.json` and `physical_*/` preserve the
+actual evidence. All collection, training and physical workers have now exited
+normally; the supervisor reports `completed` and zero positive repairs.
+
+### Completed physical results
+
+| Development case | Nominal r1 | Flat | Action codes | Effect codes | Shuffled effect codes |
+| --- | --- | --- | --- | --- | --- |
+| `cn_tcsc_083`, body 2034, root 50 | Success | Nominal fallback succeeds | Nominal fallback succeeds | Nominal fallback succeeds | Nominal fallback succeeds |
+| `cn_tcsc_top558`, body 1032, root 5 | Tracking invalid after 21 decisions | No valid 24-step proposal | Proposal survives 24 steps; verification fails at 40 | No valid 24-step proposal | No valid 24-step proposal |
+
+In the first case all three candidates tie at short-horizon score 0.05 for
+every method; tie-breaking selects nominal candidate 0. The four successes
+are therefore **fallback successes, not successes of learned corrections**.
+All eight generated candidates remain valid for 24 steps and realize the
+same nearest effect class, 7. The effect model requested classes 3 and 7;
+requesting class 7 adds nothing beyond the nominal branch, while class 3 is
+not realized. This also exposes a selection limit: the common short score
+cannot rank the valid alternatives. Their full continuations were not all
+evaluated, so the result does not establish that every alternative would fail.
+
+In the second case only one of eight generated proposals remains valid through
+24 steps, from ordinary action codes. Its continuation exceeds the tracking
+threshold at step 40. Effect-code proposals terminate at steps 20 and 19;
+their nearest class is 4, but a class assignment to a truncated invalid branch
+is **not successful effect realization**. Grasp validity here means the
+documented held-vertex tracking and deformation guards, not physical finger-slip
+or human-comfort validation.
+
+The study totals **4,091 charged decisions / 2,036.45 summed worker-seconds**
+(1,854 collection; 1,912 first case; 325 second case), below its separate cap.
+No actor update occurred. The two cases and coupled training seeds cannot
+support a population success-rate claim or establish that the whole method
+family is impossible. They do establish no verified advantage for this tested
+implementation. Do not enlarge the unchanged training/evaluation campaign.
+
+The concrete limitation is that an outcome cluster labels what happened;
+the present objective does not learn which alternative improves on the
+nominal policy from the same state. Persistent event coverage increased,
+but controllable, beneficial alternatives were not established. Any next
+method revision must address that distinction explicitly; more tokens or
+lower action MSE do not do so. A possible relative-outcome/preference objective
+remains a hypothesis, not an implemented or novel contribution.
+
+The tracked [evidence JSON](2026-10-03-effect-code-evidence.json) preserves
+all 72 branch outcomes, matched offline results, physical search/verification
+summaries, exact costs, the bridge check and 116 data/model hashes. The finite
+supervisor's live-cost aggregation was also corrected to read per-worker
+`budget.json` during active simulation; completed accounting already used
+the final worker records and was unaffected.

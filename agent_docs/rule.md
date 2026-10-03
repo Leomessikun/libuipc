@@ -110,6 +110,18 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Implement the Discrete Forcing-inspired physical-effect partition study.**
+  The owner approved the proposal following the paper review. Reuse existing
+  rollout features, acquire same-root action alternatives near measured contact
+  transitions, and compare flat continuous correction, ordinary action codes,
+  and physical-effect codes under matched data and physical-query budgets.
+  Include shuffled-effect supervision as a control. This is a new finite
+  study after the prior 4,212-decision pilot: cap the new work at 8,000 charged
+  IPC decisions and four summed worker-hours, including setup and retries,
+  with visible process/status records. Preserve unrelated work and require
+  verified improvement before actor absorption. No novelty or task success
+  claim follows from offline fitting alone. (Approved 2026-10-03.)
+
 - **Implement and try the interaction-goal post-training candidate.** The
   owner approved the proposed implementation and bounded repair pilot, then
   requested more parallel project work. Reuse existing trajectories, train the
