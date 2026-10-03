@@ -1,6 +1,129 @@
 # Dressing post-training: evidence, prior art, and the continuation decision
 
+## First-principles correction — 2026-10-03
+
+**The owner rejected the finite-update/joint-correction proposal below. It is
+retired as the selected development direction.** Its assumed fitting-interference
+bottleneck was not established in this task. Do not implement it or use a new
+evaluation campaign to defend it. This revision changes the research framing
+and documentation only; existing jobs and data are unchanged.
+
+### What the task actually requires
+
+Single-sleeve dressing requires moving a deformable garment into the correct
+enclosing relationship with an articulated human arm through a feasible sequence
+of contacts. The robot acts at a limited grasp region; the rest of the garment
+responds indirectly. A geometrically correct gripper target does not uniquely
+determine sleeve deformation, sliding, or whether a fold catches. Human motion
+changes those relationships while also changing the target geometry.
+
+Garment variation changes the same interaction: sleeve dimensions, compliance,
+folds and the connection to the rest of the garment affect what can slide where.
+Thus garment generalization and motion handling are coupled through garment-body
+interaction. Treating them only as more task IDs or pose offsets misses this
+structure. This is a task analysis, not a claim that registration or generic
+policies can never solve particular cases.
+
+Observations constrain what can be learned. If two hidden configurations give
+the same available observation history but require different actions, a visual
+history policy cannot reliably distinguish them without another informative
+observation or interaction. A privileged teacher does not remove that limit.
+Likewise, an unexpected motion cannot be predicted before any informative cue.
+Robust response and pre-onset anticipation are different capabilities.
+
+### Three corrections to the current evidence story
+
+1. **The full FMVP method already addresses moving arms.** Its real-world
+   post-training uses both vision and force. `fmvp_sim` is its simulation-trained
+   component; showing that this checkpoint fails does not establish that the
+   complete prior method cannot handle dynamic dressing. The potential gap is
+   how much real dynamic interaction data are needed and what a useful dynamic
+   simulator can transfer. See [FMVP, sections 3-5](https://arxiv.org/html/2509.12741v1).
+2. **Current grasp loss is an attachment-tracking proxy.** The environment used
+   by the motion probe sets `grasp_valid` by comparing maximum held-vertex target
+   error against 0.02 m. See
+   `/home/ge47gax/kun/libuipc-anticipatory-dressing/python/uipc_manip/dressing_env.py`
+   (`grasp_tracking_tolerance_m`, `_tracking_error`, and the `grasp_valid`
+   assignment). This is useful simulation bookkeeping, but not a measured real
+   gripper slip, a diagnosed sleeve snag, or a human-comfort threshold. The
+   separate human-body tracking tolerance is 0.002 m. Do not conflate them.
+3. **Unreliable simulated force does not make real force uninformative.** FMVP
+   explicitly uses real force to help with occluded interactions. A geometry-only
+   policy is a sensing assumption to justify, not a deduction from noisy force
+   readout in IPC. No sensor or runtime interface is changed by this review.
+
+### Recommended contribution target
+
+The strongest project-specific target is:
+
+> Use simulated dynamic garment-body interaction to post-train a dressing
+> policy that transfers its interaction handling to unseen garments and human
+> motions, with less real dynamic dressing data, including appropriate recovery
+> when following the arm alone is insufficient.
+
+This states a **desired contribution**, not an achieved result or a verified
+unoccupied literature gap. A useful demonstration would involve physically
+different situations that require different choices: advancing when cloth can
+slide; changing direction or temporarily backing off when continued pulling
+worsens the configuration; and resuming dressing after the relationship becomes
+favorable. Recovery, prediction, or a pause primitive alone is not novel.
+
+The key method question becomes: **what action-relevant interaction information
+can be learned in simulation and inferred at deployment, despite garment
+variation, occlusion and inaccurate simulated forces?** One task-grounded
+hypothesis is to supervise an observation/action-conditioned representation of
+relative garment-body progress and sliding/obstruction transitions. Full mesh
+state can supply training supervision; the deployed policy must infer only what
+its sensor history supports and retain uncertainty where it cannot. ClothesNet
+then varies the geometry, while GRAB varies the exogenous motion.
+
+This is a possible learning target, not a selected architecture or a claim of a
+new loss. Exact force reconstruction, full cloth reconstruction and privileged
+action imitation are different possible targets with different transfer costs.
+The scientific burden is to show why the selected representation improves
+physical task decisions and transfer compared with direct policy post-training
+and established predictive controllers. Merely adding contact labels, a graph,
+or a future-prediction head does not establish that contribution.
+
+### Relevant task prior art and the remaining burden
+
+| Primary work | What it already establishes | Implication |
+|---|---|---|
+| [One Policy to Dress Them All, RSS 2023](https://roboticsproceedings.org/rss19/p008.pdf) | Learned dressing over garment and pose variation | Garment diversity itself is not new |
+| [FMVP](https://arxiv.org/html/2509.12741v1) | Static simulation pretraining followed by real visual/force post-training for arm motion | Compare the complete method and real-data cost, not only `fmvp_sim` |
+| [Dressing in Motion](https://arxiv.org/html/2609.04759v1), section V-B | Static-demonstration policy plus motion adaptation; simulation and real policies trained separately | Transferring dynamic simulation learning is a different claim from reactive registration, but must actually be shown |
+| [Deep Haptic MPC, ICRA 2018](https://sites.gatech.edu/hrl/haptic-mpc/) | Predicts garment forces on the body and mitigates catches around fists/elbows | Contact prediction and avoiding snags are established |
+| [Garment Diffusion Models, RA-L 2025](https://spiral.imperial.ac.uk/entities/publication/a0176f43-5eb7-4530-93d8-35c0118514df) | Partial-observation opening dynamics, MPC, and transfer to new garments/body configurations | Predicting garment dynamics under occlusion alone is not a new method; this entry uses the official abstract |
+| [Active Boundary Component Models, IROS 2016](https://noah.nrw/ubbihs/download/pdf/5133742) | Tracks garment openings with constrained boundary models | Focusing on sleeve openings or garment topology alone is established |
+| [Sparse Meets Dense, 2026 preprint](https://arxiv.org/html/2608.01083v1) | Task/contact-aware correspondences and constraint control for rigid-deformable manipulation | Relational garment-object representations are not new by themselves. Its reported tasks include hanger/bag insertion rather than dynamic human dressing |
+
+A publication-level result could combine a new, justified transferable
+interaction representation/learning mechanism with convincing dynamic dressing
+and real-data-efficiency evidence. It need not invent a universal RL optimizer.
+Conversely, IPC plus GRAB plus existing distillation is presently an infrastructure
+and application pipeline, not an established method contribution.
+
+### What the existing project can and cannot support
+
+Existing rollouts, checkpoints and dynamic simulation are useful starting
+assets. They do not yet show generalized contact recovery, real comfort, or
+reduced real-data requirements. The fixed grasp/action interface also cannot
+support claims of learned regrasping without additional functionality. Current
+results concern one sleeve; they do not establish complete torso/bilateral
+dressing. GRAB sequences prescribe arm motion and do not model how a person
+changes motion in response to the robot.
+
+The next intellectual deliverable is a task-grounded interaction representation
+and learning target, with a clear difference from the predictive/correspondence
+methods above. Do not start another teacher-versus-r1 table to manufacture this
+difference. Do not assume the snag/sliding hypothesis is diagnosed by the grasp
+proxy. This first-principles correction authorizes no new simulation campaign
+and does not restore the rejected contact-friction mechanism study.
+
 ## Method development takes priority — 2026-10-03
+
+**Retired candidate:** the owner subsequently rejected the method proposed in
+this section. Preserve it as research history, not the next implementation plan.
 
 **Latest owner instruction:** create a concrete post-training contribution and
 investigate its prior art now. Do not keep expanding evaluations of existing
@@ -801,11 +924,12 @@ claim. These outcomes refine the post-training method, not the application scope
 
 ## Immediate work and status
 
-Develop the joint correction/update proposal at the top of this document now;
-do not wait for M4 or add repeated old-controller evaluations. Preserve M4's
-already authorized budget and existing reporting. The dynamic status above is
-the last inspected snapshot, not a new runtime check. This literature/method
-revision changed no jobs and produced no new experimental result.
+Use the first-principles task framing at the top of this document. The joint
+correction/update proposal is retired following the owner's rejection. Do not
+add repeated old-controller evaluations or implement that proposal by default.
+Preserve M4's already authorized budget and existing reporting. The dynamic
+status above is the last inspected snapshot, not a new runtime check. This
+literature/method revision changed no jobs and produced no new experimental result.
 
 If later evidence justifies an EXPO comparison, its first implementation unit
 is still a shared replay/outcome interface with complete successor states,

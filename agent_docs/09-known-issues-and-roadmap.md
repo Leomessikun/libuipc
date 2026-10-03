@@ -1,5 +1,22 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## First-principles task framing supersedes finite-update proposal — 2026-10-03
+
+The owner rejected the joint correction/finite learner update direction. Retire
+the implementation agenda in the next section. The
+[new framing](performance/2026-10-02-post-training-mainline.md#first-principles-correction--2026-10-03)
+targets transfer of dynamic garment-body interaction handling across garments
+and motions with reduced real-data needs. The unresolved method question is
+which action-relevant interaction state and transitions can be learned in
+simulation and inferred from deployment observations. This is not a confirmed
+new algorithm. Contact prediction, garment openings, relational correspondences
+and dynamic dressing already have substantial prior art.
+
+Do not interpret the simulator's 2 cm held-vertex tracking threshold as real
+gripper slip, snag identification or a comfort threshold. Compare eventual
+claims against complete FMVP, not just its `fmvp_sim` checkpoint. Keep existing
+jobs/data; do not append repeated evaluations or revive the friction detour.
+
 ## Method design now; no added evaluation campaign — 2026-10-03
 
 The owner explicitly requests creating a new post-training contribution rather

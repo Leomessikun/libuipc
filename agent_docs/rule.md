@@ -110,6 +110,15 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Return to dressing first principles; retire the finite-update proposal.**
+  The owner rejected the joint-correction/learner-update ideas and asked what
+  a real contribution to dressing would be. Do not implement that candidate
+  as the selected next step. Start with the missing dressing capability,
+  available observations/actions and physical interaction, then justify a
+  learning mechanism. Do not invent a bottleneck or novelty to preserve an
+  optimizer proposal. The instruction against additional repeated evaluations
+  remains in force. (Set 2026-10-03, after commit 607764ca.)
+
 - **Develop the new post-training method now; do not keep adding evaluations.**
   The owner explicitly redirected effort toward creating a concrete method
   contribution through deep research when the existing contribution is

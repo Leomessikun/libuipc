@@ -1,5 +1,25 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Finite-update proposal rejected; return to dressing physics
+
+The owner rejected the joint-correction/learner-update proposal and requested
+first-principles reasoning about a real dressing contribution. That candidate
+is retired; do not implement the previous entry's next steps. The
+[corrected framing](performance/2026-10-02-post-training-mainline.md#first-principles-correction--2026-10-03)
+centers on transferable handling of garment-body interaction under new garment
+geometry and human motion, potentially reducing real dynamic post-training data.
+This is a contribution target, not a completed algorithm or established gap.
+
+Key source/code corrections: full FMVP already handles moving arms using real
+vision/force post-training; `fmvp_sim` is only its simulation component. Current
+grasp failure means held-vertex target error above 2 cm, not demonstrated real
+slip or sleeve snagging. Force simulation noise does not imply real force sensing
+is unnecessary. Existing haptic MPC, garment-opening dynamics and relational
+correspondence methods are direct prior art. An interaction representation and
+learning target must be justified against them before naming a new method.
+No simulation, training, evaluation or process changes were made. The instruction
+against additional repeated evaluations remains active.
+
 ## 2026-10-03 — Owner prioritizes method creation over repeated evaluations
 
 The owner redirected work toward developing a new post-training contribution
