@@ -1,5 +1,29 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Concrete post-training design using transferred interaction goals
+
+The owner renewed the request for creative post-training method research.
+The [new design](performance/2026-10-03-garment-outcome-posttraining.md)
+specifies extracting garment-relative interaction paths from existing rollouts,
+learning a goal-conditioned repair controller, transferring the paths to new
+garments, physically realizing and verifying repairs in IPC, then updating the
+pretrained actor. It is a candidate for implementation study, not a validated
+algorithm or confirmed novelty claim. EXPO, HIQL/HILP, RecoveryChaining,
+Skill-Space Shooting, DeformGen, DIDP and garment dynamics MPC are explicit
+prior-art challenges and comparisons. Generic repair-and-distill is not claimed
+as original. The proposed distinction is a useful transfer-and-realize operator
+for garment-relative interaction changes at equal total physical-query cost.
+
+A CPU audit of 40 existing v5 archives found non-monotonic saved proximal
+progress in 22/23 collector-labelled successes and 17/17 failures. This does not
+establish that retreat is causal or that the descriptor equals the planner's
+score; exact paths and limitations are in the
+[audit](performance/2026-10-03-existing-progress-audit.json).
+No simulation, training or new evaluation was launched. M4 remains stopped.
+Next proposed implementation deliverables are an offline goal-window extractor,
+an explicit cross-garment section-coordinate transport interface and a repair
+decoder; no queue is authorized to auto-resume from this research note.
+
 ## 2026-10-03 — M4 stopped after the owner's research-value review
 
 The owner asked what was running and authorized stopping jobs if continuation

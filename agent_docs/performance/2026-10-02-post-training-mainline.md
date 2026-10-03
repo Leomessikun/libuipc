@@ -1,5 +1,17 @@
 # Dressing post-training: evidence, prior art, and the continuation decision
 
+## Latest method-design response — 2026-10-03
+
+The owner requests a creative, implementable post-training method. See the
+[new interaction-goal transfer design](2026-10-03-garment-outcome-posttraining.md)
+for the candidate algorithm, primary-source comparisons, data audit and
+bounded development protocol. It proposes transferring local garment–body
+interaction goals and re-solving their robot realization in the target
+garment's physics. It does not claim that generic goal conditioning, repair
+search or distillation is new. The specific transport operator's novelty and
+advantage are research hypotheses, not results. No new GPU job was launched;
+the stop instruction below remains in force.
+
 ## Current decision: withdraw implementation priority and stop the old queue — 2026-10-03
 
 The owner challenged the value of the interaction-supervised proposal and

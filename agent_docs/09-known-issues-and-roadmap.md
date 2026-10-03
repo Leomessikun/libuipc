@@ -1,5 +1,22 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Current research design: transfer interaction goals for post-training — 2026-10-03
+
+The [candidate specification](performance/2026-10-03-garment-outcome-posttraining.md)
+provides a concrete route to generate corrections on new garments: extract
+interaction paths from old rollouts, transfer their garment-relative goals,
+realize them under target IPC dynamics, verify continuations, and fine-tune the
+pretrained policy. The transport operator, its finite-budget advantage and
+novelty beyond hierarchical learning and deformable trajectory transfer remain
+unproven. The note specifies losses, information contracts, data reuse,
+comparisons, implementation interfaces, cost caps and rejection criteria.
+
+Only literature/code review and a CPU analysis of old archives were performed.
+All previously stopped dressing jobs stay stopped. The next proposed work
+builds the new method's offline data/transport interface, not another repeat of
+the old r1/GICP evaluation. This research design does not validate or reinstate
+any retired proposal below.
+
 ## Current decision: retire M4 and withdraw the B+C implementation agenda — 2026-10-03
 
 The owner authorized stopping launched dressing jobs if their remaining work

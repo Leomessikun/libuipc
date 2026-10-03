@@ -110,6 +110,14 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Develop a creative, concrete dressing post-training method.** The owner
+  renewed this request after rejecting prior framing-only responses. Produce
+  an implementable learning/data-generation mechanism with primary-source
+  comparisons and an explicit account of what is a hypothesis versus an
+  established result. Research does not reinstate the stopped M4 queue or
+  authorize another repeated old-controller evaluation campaign. Reuse
+  preserved experience and preserve unrelated changes. (Reaffirmed 2026-10-03.)
+
 - **Stop dressing experiments that lack sufficient current research value.**
   The owner requested an audit of launched terminal jobs and explicitly
   authorized stopping them if continuation is not justified. This supersedes
