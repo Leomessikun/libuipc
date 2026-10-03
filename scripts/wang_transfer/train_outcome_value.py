@@ -61,7 +61,10 @@ def main():
     for r in rows:
         with np.load(r["file"], allow_pickle=False) as z:
             n = len(z["tcp"])
-            steps = list(range(args.min_step, n, args.stride))
+            # Decision states only: an accepted episode's verified hold after its success state is not a
+            # decision the policy has to make, and teaches "standing still near the top means success".
+            end = int(r["success_state"]) if r.get("accepted") and r.get("success_state") is not None else n
+            steps = list(range(args.min_step, end, args.stride))
             if not steps:
                 continue
             X.append(archive_features(z, r["garment"], steps))

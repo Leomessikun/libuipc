@@ -130,6 +130,9 @@ def parser():
                         "evaluation (BatchedIPCActionFilter), for slots past --lookahead-from above --lookahead-min-load.")
     p.add_argument("--lookahead-value-model", type=Path, default=None,
                    help="Rank batched-lookahead candidates by this outcome value (outcome_value.py) instead of local progress.")
+    p.add_argument("--lookahead-retreat", action="store_true",
+                   help="Add retreat candidates to the batched lookahead: reverse the mean recent executed translation, once and twice.")
+    p.add_argument("--lookahead-retreat-window", type=int, default=6)
     p.add_argument("--lookahead-value-margin", type=float, default=.01,
                    help="Minimum predicted success gain over the nominal action for a value-ranked candidate.")
     p.add_argument("--batched-lookahead-horizon", type=int, default=1,
@@ -691,7 +694,9 @@ def main():
                                   and float(np.linalg.norm(buffers[i]["gripper_force"][-1])) > args.lookahead_min_load]
                         if active:
                             lookahead_started = time.monotonic()
-                            actions, diagnostics = batched_planner.improve(actions, active)
+                            recent = {i: np.asarray(buffers[i]["executed_translation"][-args.lookahead_retreat_window:])
+                                      for i in active} if args.lookahead_retreat else None
+                            actions, diagnostics = batched_planner.improve(actions, active, recent=recent)
                             timing["lookahead_s"] += time.monotonic() - lookahead_started
                             for i, diagnostic in diagnostics.items():
                                 planner_choices[i] = diagnostic["selected"]

@@ -214,8 +214,7 @@ class BatchedIPCActionFilter:
         row['score'] = float(score)
         return row
 
-    @staticmethod
-    def candidates(nominal):
+    def candidates(self, nominal, recent=None):
         nominal = np.clip(np.asarray(nominal, float), -1, 1)
         out = [nominal.copy(), nominal * .5, np.zeros(6)]
         no_rotation = nominal.copy()
@@ -226,16 +225,23 @@ class BatchedIPCActionFilter:
                 c = nominal.copy()
                 c[axis] += direction * .25
                 out.append(np.clip(c, -1, 1))
+        if recent is not None and len(recent):
+            # Retreat: undo the recent approach direction (successful episodes often step back before success).
+            back = -np.asarray(recent, float)[:, :3].mean(0) / self.env.cfg.max_translation
+            for gain in (1., 2.):
+                c = np.zeros(6)
+                c[:3] = back * gain
+                out.append(np.clip(c, -1, 1))
         unique = {}
         for c in out:
             unique.setdefault(tuple(c), c)
         return list(unique.values())
 
-    def improve(self, nominals, active):
+    def improve(self, nominals, active, recent=None):
         """Best candidate per active slot; returns the new action array and one diagnostic per active slot."""
         e = self.env
         nominals = np.clip(np.asarray(nominals, float), -1, 1)
-        cands = {i: self.candidates(nominals[i]) for i in active}
+        cands = {i: self.candidates(nominals[i], None if recent is None else recent.get(i)) for i in active}
         K = max(len(c) for c in cands.values())
         for i in active:
             cands[i] += [cands[i][0]] * (K - len(cands[i]))
