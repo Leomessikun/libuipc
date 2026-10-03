@@ -483,9 +483,13 @@ std::vector<Vector2i> brute_froce_query_point(span<const LinearBVHAABB> aabbs)
 
     std::vector<Vector3> points(aabbs.size());
 
+    // The return type must be spelled out. Deduced, it is the cast expression,
+    // which holds a reference to the temporary Vector3f built from center() and
+    // outlives it, so every centre was read back from dead stack memory.
     std::ranges::transform(aabbs,
                            points.begin(),
-                           [](const auto& aabb) {
+                           [](const auto& aabb) -> Vector3
+                           {
                                return Eigen::Vector3f{aabb.center()}.cast<Float>();
                            });
 

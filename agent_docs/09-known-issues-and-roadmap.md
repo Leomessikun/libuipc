@@ -281,25 +281,23 @@ which the current branch collector omits. Short survival is not a viability
 certificate. Boundary-jump and universal query-cost interpretations in the old
 analysis have been narrowed; the task-level learning question remains open.
 
-## The lbvh point-query check is defective — 2026-09-20
+## The lbvh point-query check was defective, now fixed — 2026-10-03
 
-`apps/tests/backends/cuda/lbvh.cu:614` fails on about half of all runs: 5 of 8 on the
-`bunny0.msh` section, 3 of 6 on the whole `uipc_test_backend_cuda` target. A single
-green `ctest` hides it, which is why it has gone unnoticed.
+`apps/tests/backends/cuda/lbvh.cu:614` used to fail on about half of all runs. The
+instability was its own reference, not the query under test: the GPU returned a stable
+101,802 pairs while `brute_froce_query_point` returned 0 in the runs that passed and
+94,728 in the runs that failed.
 
-The instability is in the test's reference, not the query under test. The GPU result is
-stable at 101,802 pairs; `brute_froce_query_point` returns 0 in the runs that pass and
-94,728 in the runs that fail. Zero is impossible — every AABB contains its own centre,
-so a correct reference has at least `num_aabb` = 15,788 pairs — so **the passing runs
-are the broken ones**, an empty reference making `CHECK(diff.empty())` vacuous. The
-same zero appears on a twelve-AABB mesh earlier in the same target. The point-query
-path has therefore never been meaningfully checked.
+Recomputing the reference independently in numpy over the same mesh gives **101,802**,
+with no empty box and no non-finite centre, so the GPU was right throughout. The
+reference's centre lambda had a deduced return type, which is the cast expression
+holding a reference to the temporary `Vector3f` built from `center()`; every centre was
+read from dead stack memory. Spelling the return type `-> Vector3` fixes it. The
+reference now reports 101,802 on every run and the target passes 8 of 8 against 3 of 6
+before. Evidence: [the coverage audit](performance/2026-09-20-ipc-capability-coverage.md).
 
-Open: why the reference collapses, and whether it varies with anything other than run
-order. An empty `AlignedBox` carries `min = +inf`, `max = -inf` and so a NaN centre
-that `contains` rejects, which is the first thing to examine; it does not by itself
-explain run-to-run variation on one binary and one mesh. See
-[the coverage audit](performance/2026-09-20-ipc-capability-coverage.md).
+The general lesson for this code base: a lambda returning an Eigen expression built
+from a temporary dangles, and `std::ranges::transform` will happily copy the garbage.
 
 ## Behavioural coverage of the scene-config contract — 2026-09-20
 

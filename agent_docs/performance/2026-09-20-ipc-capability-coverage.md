@@ -75,7 +75,7 @@ and its vertex positions never move, so a position comparison reads the same res
 in every run. `96` was written with `AffineBodyConstitution` first and reported a
 difference of exactly zero for two clearly different `d_hat` values.
 
-## Found defective: `uipc_test_backend_cuda`'s `lbvh` case
+## Found defective, then fixed: `uipc_test_backend_cuda`'s `lbvh` case
 
 `apps/tests/backends/cuda/lbvh.cu:614` compares the GPU point query against a
 brute-force reference, and **fails on about half of all runs** — 5 of 8 on the
@@ -95,11 +95,24 @@ earlier in the target, where the reference also returns zero. So this check has 
 meaningfully verified the point-query path — it has alternated between passing
 vacuously and failing.
 
-Not established here: why the reference collapses. An empty `AlignedBox` has
-`min = +inf`, `max = -inf` and therefore a NaN centre, which `contains` rejects, so
-degenerate boxes are the first thing to look at; but that does not by itself explain
-why the outcome changes between runs of the same binary on the same mesh. Fixing it is
-separate work and should not be folded into a coverage commit.
+**Root cause, found and fixed (2026-10-03).** Not degenerate geometry: recomputing the
+reference independently in numpy over the same mesh shows no empty box, no non-finite
+centre, and all 15,788 boxes containing their own centre. That computation also gives
+the correct answer, **101,802 pairs** - exactly what the GPU returns in every run. So
+the GPU point query was right all along and the reference was wrong in every run.
+
+The reference built its centres with
+
+```cpp
+[](const auto& aabb) { return Eigen::Vector3f{aabb.center()}.cast<Float>(); }
+```
+
+whose deduced return type is the cast *expression*, which holds a reference to the
+temporary `Vector3f` built from `center()` and outlives it. Every centre was therefore
+read back from dead stack memory, which is why the count was garbage and why the
+garbage differed between runs. Spelling the return type `-> Vector3` forces the
+materialisation. After the fix the reference reports 101,802 on every run, matching the
+GPU exactly, and `uipc_test_backend_cuda` passes 8 of 8 against 3 of 6 before.
 
 ## Reproduce
 
