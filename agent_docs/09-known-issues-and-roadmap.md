@@ -1,21 +1,28 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
-## Active consequence-learning continuation — 2026-10-03
+## Completed consequence-learning stage and paper-inspired method work — 2026-10-03
 
-The owner asked why work had stopped. A finite continuation is now active:
-distinct short action probes -> goal-conditioned inverse-control training ->
-physical realization of transferred goals. Collection added 256 valid action
-transitions without fabricating successful dressing. Root history is retained
-and entire second-world branches validate the local learner; this is not a
-new-body/garment generalization test. Six data/geometry/budget checks pass.
+The finite continuation finished both CPU seeds and physical probes; none
+of its eight method/replay outcomes produced a verified dressing repair.
+Total cost including earlier pilots and collection is 4,212 charged decisions
+and 2,903.00 summed worker-seconds. No r1 update occurred. Read
+`output/uipc_manip/outcome_pilot_20261003/counterfactual_pipeline/status.json`
+for the completed record; its stored PIDs are no longer live jobs.
 
-Inspect `output/uipc_manip/outcome_pilot_20261003/counterfactual_pipeline/status.json`
-for the actual stage and worker PIDs. CPU fitting finished for two seeds;
-two IPC probes are running within the original remaining budget (maximum cumulative
-4,933 charged decisions). The original nominal-only proposal remains negative;
-the new learner's effectiveness is unknown. Its geometry action MSE improved,
-but shuffling goals did not worsen that metric. No full policy update or M4 restart
-is automatic. [Details](performance/2026-10-03-garment-outcome-posttraining.md#13-follow-through-learn-from-distinct-actions-at-a-common-root).
+The new short-action collection has 256 valid transitions, but a CPU audit
+finds no wrapping-flag transition in any of its 32 branches. It does not
+establish controllable contact-event alternatives. Geometry goal shuffling
+also failed to worsen local action MSE. These findings limit the existing
+prototype, rather than proving that dressing post-training cannot work.
+
+The owner's Discrete Forcing paper motivates a
+[specific unvalidated mechanism](performance/2026-10-03-garment-outcome-posttraining.md#14-discrete-forcing-useful-inspiration-and-a-narrower-research-hypothesis):
+learn action groups from physical intervention outcomes and refine within
+the selected group. A small same-data/query-budget study must beat flat
+correction and ordinary action quantization, with shuffled outcome labels
+as an ablation. Contact hierarchies, flow conditioning and adaptive
+discretization already exist; novelty is not established. This paper review
+launched no new GPU queue or full actor training.
 
 ## Goal-transfer feasibility implementation — 2026-10-03
 

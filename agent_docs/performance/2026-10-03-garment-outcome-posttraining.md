@@ -1,7 +1,8 @@
 # A concrete post-training candidate: transfer interaction goals, verify new repairs
 
-Date: 2026-10-03. Status: **first prototype failed; consequence-learning
-continuation active within the remaining physical-query budget**.
+Date: 2026-10-03. Status: **prototype and consequence-learning continuation
+completed without verified repairs; Discrete Forcing research assessment in
+Section 14 proposes an unvalidated next mechanism**.
 
 The owner subsequently approved implementation and requested parallel launches.
 Section 12 records the actual implementation, a failed initial objective and
@@ -584,7 +585,7 @@ The owner challenged the absence of project jobs after the negative report.
 The initial workers had all exited; the visible GPU jobs were another user's
 GR00T training and this account's unrelated FoE evaluation. This was a gap in
 our follow-through, not a failed launch caused by their occupancy. The next
-finite development stage is now running.
+finite development stage was launched and has now completed.
 
 ### New data, with no fabricated success labels
 
@@ -660,7 +661,139 @@ geometry decoder learned useful goal control. Generic-goal models show a
 clearer shuffling effect, but still need physical evidence. Complete metrics
 are in `counterfactual_learning_summary.json` under the output root.
 
-The supervisor has advanced to `ipc_goal_realization`; both new GPU workers
-are running. At the recorded check, one geometric proposal survived the
-24-decision repair interval and entered a continuation. Final dressing success
-is pending. Short validity or reduced action MSE is not counted as a repair.
+The supervisor and both GPU children subsequently completed normally. All
+eight method/replay outcomes were negative; two TCP-transfer outcomes had no
+valid repair candidate, and six selected continuations failed. Geometry
+continuations exceeded the grasp-tracking threshold after 146 / 163 decisions.
+Both action-noise continuations and one generic-goal continuation retained
+grasp through 474 decisions but did not wrap the sleeve around the arm.
+The other generic continuation failed tracking after 31 decisions.
+
+Total cost including the earlier pilots and short collection is **4,212
+charged decisions / 2,903.00 summed worker-seconds**. No r1 weights were
+updated. The stage is finished, not still training or queued. See the
+[compact evidence record](2026-10-03-discrete-forcing-evidence.json).
+
+## 14. Discrete Forcing: useful inspiration and a narrower research hypothesis
+
+The owner supplied [Discrete Forcing, arXiv:2609.39526](https://arxiv.org/pdf/2609.39526).
+Its main transferable idea is to make a coarse prediction define the source
+of continuous action refinement. It quantizes each normalized action scalar
+into 255 bins, predicts the bins, and mixes the dequantized action with noise
+before a continuous flow step. Training uses masked-token classification,
+flow matching and a one-step reconstruction loss. These are action bins,
+not labels for physical contact events. The paper learns from demonstrations;
+it does not supply missing successful dressing corrections. Its real-world
+74.9% number is task progress, not binary success. These distinctions matter
+when proposing an adaptation rather than reproducing its architecture.
+
+### What the current data add
+
+A CPU audit of all 32 new eight-decision probe archives finds all 256
+transitions grasp-valid, but **zero changes in any of the four saved section
+wrapping flags**. All four flags remain zero throughout. Continuous section
+positions do change. Thus the new probes expose action alternatives without
+examples of changing this measured garment/body relation. This does not prove
+that other contact events are absent or that all action effects are identical.
+Paths, hashes and limitations are in the evidence record above.
+
+Combined with the weak goal-shuffling effect and failed physical repairs,
+this suggests a specific question: can post-training allocate its action
+alternatives by their physically distinct effects, instead of spending its
+budget on many variations within the same ineffective behavior? This is a
+hypothesis, not a diagnosed cause of every failure.
+
+### Candidate mechanism: learn an action partition from intervention outcomes
+
+Keep the pretrained point-cloud policy and its ordinary replay buffer. At
+selected live failure roots, compare bounded action chunks from the same full
+snapshot and causal controller history. Represent the observed outcome with:
+
+- the ordered changes in material-section wrapping;
+- grasp tracking validity and available geometry-validity checks;
+- continuous clearance/opening changes and the time of any transition.
+
+These measurements are training labels. The deployed controller sees causal
+point-cloud/tool/action history, not future states or a privileged mesh.
+Threshold crossings need hysteresis and repeated checks; they are not perfect
+topological invariants or human comfort measurements.
+
+Learn coarse action codes using observed outcome differences. For a fixed
+root, action chunks with similar physical outcomes may share a code; chunks
+with reliably different events should be separated even when their command
+vectors are close. A practical first implementation fits an action-conditioned
+outcome classifier, groups outcome distributions into a small codebook, and
+trains a history-conditioned proposal decoder for each code. This does not
+assume that all states share the same absolute action prototype.
+
+The two levels would be:
+
+    z ~ p_phi(z | observation history)
+    A ~ pi_theta(A | observation history, z)
+
+The continuous decoder can use a code-conditioned action anchor plus noise as
+its flow source, following the supplied paper. Post-training changes which
+codes are proposed and how their actions are realized, using actual same-root
+branch outcomes. Fine refinement must be rechecked for the intended physical
+effect: proximity in action space is not a guarantee that contact behavior
+is preserved.
+
+An implementable update uses (i) outcome-prediction supervision from every
+valid branch, including task failures; (ii) code classification and ordinary
+conditional flow fitting on action/outcome pairs; and (iii) return-weighted
+code selection and actor absorption only when verified continuation data
+support an improvement. Soft weights can be formed from paired continuation
+returns, w_i proportional to exp((R_i - R_base) / temperature), with equal
+information and total rollout budgets across controls. This weighting and
+the standard flow loss are established ingredients, not novelty claims. If
+all outcomes are equivalent or uncertain, they do not create a positive repair
+label merely because a classifier can separate them.
+
+The proposed methodological focus is **an intervention-derived action
+partition that preserves relevant physical outcome differences during
+post-training**, with more proposals allocated to unresolved useful event
+transitions. A learned classifier is fallible; final repair acceptance still
+requires real simulator execution. The current 32 branches cannot establish
+useful event codes because their recorded wrapping events do not vary.
+
+### Closest prior art and boundaries of the claim
+
+| Primary source | Existing contribution | Implication |
+|---|---|---|
+| [Discrete Forcing](https://arxiv.org/pdf/2609.39526) | Quantized-action source followed by continuous refinement | The two-stage architecture and source initialization are borrowed. |
+| [HyDo](https://arxiv.org/abs/2411.14913) | Hybrid discrete contact selection and continuous diffusion RL | Discrete contact choices plus diffusion alone are not new. |
+| [Implicit Contact Diffuser](https://arxiv.org/html/2410.16571) | Contact-relation sequences, learned reachability and MPC for deformable objects | Contact subgoals, variable horizon and relation transfer are already covered. |
+| [PDP](https://arxiv.org/html/2606.00336) | Trajectory-geometry-aligned latent behavior control | A searchable behavior space or geometry-conditioned generator is not enough. |
+| [CATok project](https://causalactiontokenizer.github.io/) | Ordered action tokens coupled to stages of flow reconstruction | A causal-token name or token intervention inside a decoder is not physical causal-effect learning. The inspected page lists an anonymous submission and a forthcoming PDF. |
+| [SA-VLA](https://arxiv.org/abs/2606.30113) | State-conditioned action decoding | State-dependent prototypes alone are not new. |
+| [Adaptive discretization](https://papers.nips.cc/paper/2020/hash/285baacbdf8fda1de94b19282acd23e2-Abstract.html) | Adaptive partitions for efficient model-based RL | Adaptive resolution is established; its name cannot carry the contribution. |
+
+EXPO, skill-space repair, goal-conditioned control and action abstraction
+remain relevant objections from Section 3. This review does **not** establish
+that the complete proposed procedure is novel. Its defensible research target
+is whether physically supervised code construction improves correction yield
+and policy improvement per simulator query, beyond generic action codes or
+existing contact-guided control.
+
+### Smallest next method experiment
+
+Use existing trajectories to identify varied pre-entry and near-contact
+contexts, then reconstruct live roots without treating archived deformation
+as rest geometry. First establish at least two reproducible achievable effects
+at several roots. All branches are charged, including acquisition of examples
+with different effects. Simple bounded retreat/reorientation/advance sequences
+are candidate probes, not claimed expert labels or guaranteed repairs.
+
+On one fixed data/query budget, compare a flat continuous correction learner,
+an action-quantized coarse/continuous learner, and the proposed outcome-based
+partition. Match encoder, parameter/update budget, proposal horizon and action
+support. A shuffled-effect-label control tests whether the proposed supervision
+matters. Split by root and garment, never by frames of the same branch.
+
+Measure distinct reproducible effects per query, success of requested effects,
+verified dressing repairs per total simulator decision, and then improvement
+of the absorbed actor on held-out garments. Local validity, decoder MSE and
+event prediction accuracy are diagnostics, not task completion. If ordinary
+action codes or flat corrections do as well, there is no established advantage
+for the proposed physical partition. No additional GPU jobs or new flow
+training were launched during this paper assessment.

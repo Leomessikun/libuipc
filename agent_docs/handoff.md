@@ -1,28 +1,33 @@
 # Handoff — Current State of the Repo
 
-## 2026-10-03 — Finite consequence-learning continuation resumed
+## 2026-10-03 — Continuation finished; Discrete Forcing assessed
 
-The owner questioned why project work had stopped. The prior negative pilot
-had completed; another user's GR00T and this account's FoE jobs were the
-remaining GPU users. Two new short action-probe collectors have now completed:
-32 branches, 256 valid transitions, 278 charged decisions including setup.
-They preserve exact causal root history and actual geometric outcomes, with
-no task-success labels. Total physical cost so far: 1,933 charged decisions.
-
-`run_outcome_continuation.py` is active. Both CPU seeds finished fitting
-geometry/generic/no-goal one-step models; two bounded IPC goal-realization
-probes are now running. Local geometry action MSE improved, but goal shuffling
-did not worsen it, so useful goal control is still unproven. One geometric
-proposal survived 24 decisions and entered physical continuation; completion
-is pending. Read
+Both inverse-control seeds and their physical probes finished normally. None
+of the eight method/replay outcomes produced a verified dressing repair.
+Geometry proposals retained grasp longer but failed tracking during
+continuation. Action noise and one generic proposal retained grasp through
+474 decisions without wrapping the sleeve. No r1 update occurred. Total
+cost including earlier pilots and collection: 4,212 charged decisions /
+2,903.00 summed worker-seconds. The supervisor/PIDs in
 `output/uipc_manip/outcome_pilot_20261003/counterfactual_pipeline/status.json`
-for actual phase/PIDs and `launch_continuation.json` for the supervisor.
-The remaining probes have at most 1,500 decisions each, total ceiling 4,933
-including all prior attempts. Old Cloth3D trajectories remain the transferred
-goal bank; new target-garment probes teach local action realization. This is a
-same-body/same-garment development test, not zero-shot generalization evidence.
-No r1 update or M4 restart is queued. See
-[implementation details](performance/2026-10-03-garment-outcome-posttraining.md#13-follow-through-learn-from-distinct-actions-at-a-common-root).
+are completed, not live workers. No new queue was launched for this review.
+
+The owner supplied Discrete Forcing (2609.39526). Its quantized-action source
+for continuous flow refinement is relevant, but it is not a source of better
+dressing supervision. A CPU audit of all 32 short action branches found
+256 valid transitions and zero changes in their four measured wrapping flags.
+This is an event-coverage observation on one body/garment, not proof of
+identical dynamics or a universal failure mechanism.
+
+The [paper assessment and candidate](performance/2026-10-03-garment-outcome-posttraining.md#14-discrete-forcing-useful-inspiration-and-a-narrower-research-hypothesis)
+proposes learning action groups from same-root physical outcome differences,
+then continuous refinement and verified actor post-training. It specifies
+comparison against ordinary action quantization/flat correction and a
+shuffled-effect control. HyDo, Implicit Contact Diffuser, PDP, CATok, SA-VLA,
+adaptive discretization and EXPO constrain novelty; this is an unvalidated
+method hypothesis, not an established contribution. Exact new results and
+archive hashes are in
+[the evidence record](performance/2026-10-03-discrete-forcing-evidence.json).
 
 ## 2026-10-03 — Goal-transfer prototype tested; no verified repairs
 
