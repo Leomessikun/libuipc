@@ -1,5 +1,19 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Student evaluation confirmed; result reporter active
+
+The owner approved finishing the bounded evaluation. M4 still collects its
+first two initialization trajectories; students are not trained yet. The
+existing queue already proceeds through training/DAgger to 72 held-out runs.
+[The protocol and reporting record](performance/2026-10-02-observed-motion-student.md#student-evaluation-authorized-and-reporting-prepared--2026-10-03)
+freeze the four body/motion cells, two repeats and nine controllers/checkpoints.
+A bounded CPU-only reporter writes `evaluation_report.json` without launching
+or changing simulation jobs. It separates pending and invalid outcomes from
+policy failures and reports history/current seed comparisons within task cells.
+Four focused reporting tests pass. No new student result or algorithm novelty
+claim follows from this setup; the contribution is still insufficient for a
+new-method claim and the purpose is to test deployable student improvement.
+
 ## 2026-10-03 — Prior-art review and bounded continuation decision
 
 The owner asked what the work contributes and whether to continue. A

@@ -1,5 +1,17 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Bounded student evaluation approved — 2026-10-03
+
+Continue the already running M4 collection/training/evaluation queue. The
+[evaluation protocol](performance/2026-10-02-observed-motion-student.md#student-evaluation-authorized-and-reporting-prepared--2026-10-03)
+and `evaluation_report.json` distinguish its 72 planned episodes from four
+held-out task cells. The CPU reporting companion is bounded to 72 hours and
+stops on queue failure instead of restarting experiments. No student has yet
+been evaluated. Pending/invalid trials must not become task failures, and
+temporary success must not replace the common sustained final criterion.
+The existing CUDA memory guard works despite broken NVML; keep current GPU
+limits. Four focused report tests pass.
+
 ## Research continuation decision — 2026-10-03
 
 The [updated primary-source audit](performance/2026-10-02-post-training-mainline.md#research-assessment-and-bounded-continuation--2026-10-03)

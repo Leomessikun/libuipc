@@ -331,3 +331,48 @@ distilling a slow planner, but do not demonstrate pre-onset anticipation or a
 new teacher/student algorithm. The GICP comparator is our registration proxy,
 not a reproduction of all components of Dressing in Motion. See the
 [research assessment](2026-10-02-post-training-mainline.md#research-assessment-and-bounded-continuation--2026-10-03).
+
+## Student evaluation authorized and reporting prepared — 2026-10-03
+
+The owner approved completing the bounded evaluation after the novelty review.
+The existing pipeline is healthy and remains in teacher initialization, with
+the first pass/lift episodes active. No student checkpoint or held-out student
+success rate exists yet. Evaluation starts automatically after the existing
+eight initialization episodes, matched training, four DAgger roll-ins, shared
+refit and passive held-out checks; no additional simulation was launched here.
+
+`evaluation_protocol.json` records the fixed 72-run grid and shared success
+criteria before any held-out policy results: bodies 14054/14055, s2 mug pass
+and s3 phone call, two evaluation repeats, and nine checkpoints/controllers.
+The latter are r1, GICP, zero-adapter/fixed-encoder r1, and three seeds each of
+history/current-only students. These remain four task cells, not 72 independent
+generalization tasks. The pilot does not test ClothesNet generalization.
+
+`scripts/wang_transfer/report_dynamic_evaluation.py` writes
+`evaluation_report.json` in the experiment root. It reports each checkpoint's
+valid-success denominator, task failures, pending/running jobs and invalid
+physics separately; history/current comparisons remain nested in task cells.
+It checks the final evaluation manifest against the fixed grid and rejects
+success records without the full valid endpoint. It does not compute a
+significance test from repeated seeds, and partial results do not constitute
+the final comparison.
+
+A CPU-only companion watches the existing queue for at most 72 hours, recording
+its PID/command in `evaluation_report_launch.json`. It starts no simulation,
+does not alter or restart jobs, and exits on completion, queue failure, loss of
+the owner process, protocol mismatch or its time limit. Its log is
+`evaluation_report_watch.log`. The current report correctly shows 72 pending
+evaluation episodes. Four focused CPU tests cover invalid/pending denominators,
+final rather than temporary success, seed pairing, and changed protocols.
+
+Manual report refresh, when the companion is not holding its lock:
+
+```bash
+python3 scripts/wang_transfer/report_dynamic_evaluation.py \
+  --root output/uipc_manip/m4_privileged_20261002
+```
+
+The local NVML version mismatch remains, but the pipeline's CUDA memory query
+works (about 74.7 GiB used at inspection). Keep its existing limit of two own
+simulation jobs and launch threshold below 70 GiB; do not change drivers or
+restart unrelated GPU work for reporting.

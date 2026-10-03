@@ -126,7 +126,10 @@ record it here in the same commit.**
   useful. This supersedes the September 22 research-only, no-teacher/student,
   and bilateral-only restrictions for this experiment. Preserve existing jobs
   and data; do not scale weak labels or present the pilot as a novel algorithm.
-  (Set 2026-10-02.)
+  The owner reconfirmed proceeding to the bounded student evaluation after the
+  novelty review; finish the existing collection/training/evaluation budget
+  before deciding whether to scale the method. (Set 2026-10-02; confirmed
+  2026-10-03.)
 
 - **Selected task: dress both arms and the torso of a seated person.**
   The owner explicitly abandoned the single-human-arm research direction and
