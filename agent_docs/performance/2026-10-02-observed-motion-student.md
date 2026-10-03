@@ -262,3 +262,46 @@ student win would establish useful history, not future prediction or algorithm
 novelty. The EXPO learner and shared consequence-metric candidate remain
 separate, unimplemented research work. No dynamic research student result is
 available at this update.
+
+## M4 validation results — 2026-10-03
+
+All planned validation jobs exited. The common-candidate causal teacher now
+has four valid successes, establishing its pilot result independently of M2's
+legacy candidates. The current-pose planner also succeeds on both lift repeats.
+
+| Condition | Mug pass | Mug lift | Valid successes / valid runs |
+|---|---|---|---|
+| Privileged causal teacher | 2/2 | 2/2 | 4/4 |
+| Current-pose planner | 0/2 (grasp lost at decision 13 twice) | 2/2 | 2/4 |
+| Observed GICP correction | 0/2 (grasp lost at 161 and 13) | 0/1 valid; one invalid-physics run | 0/3, plus one invalid run |
+
+Teacher first sustained success decisions are 149/157 for pass and 138/160
+for lift. Current-pose lift succeeds from 165/180. Every success remains valid
+through the 450-decision endpoint. These are repeats of two clips on body 14046,
+not four independent tasks or evidence of unseen-motion generalization. The
+observed advantage is on pass; there is no success-rate advantage on lift.
+
+The queue stopped before its gate table and before collection/training because
+`validate_lift_gicp_rep1` raised a human target tracking error at 16.0667 s:
+2.03787 mm versus the unchanged 2 mm validity limit. Do not count that run as a
+valid policy failure. The base environment resets after a simulator exception,
+so that run's summary `time_s=0` and tiny `body_tracking_max_m` are post-reset
+values; the retained exception is the diagnostic evidence. This is not evidence
+that the exact clip is physically impossible or that the error is pure noise.
+All M4 processes were confirmed exited despite stale `running` entries in the
+terminal queue status. No teacher initialization or research student exists yet.
+
+An initial-array audit found matched human/tool starts and maximum cloth
+settling differences of 0.1571 mm across the planned comparisons. These are the
+declared independent resets, not identical states.
+
+Recovery is bounded to one same-command, same-seed repeat of the invalid GICP
+job, without changing physics, success criteria or the teacher. Preserve its
+entire original output, launch metadata and log in
+`m4_privileged_20261002/failed_attempts/validate_lift_gicp_rep1_attempt0/` and
+record the retry in `physics_retry.json`. Keep the invalid attempt visible in
+all reports; the retry does not erase it. If the retry is physically valid,
+resume the existing feasibility gate and eight-episode collection regardless
+of whether GICP succeeds. If it is invalid again, retain both and stop for
+diagnosis rather than retrying until a usable result appears. No other completed
+validation is rerun. This recovery does not establish an algorithm contribution.

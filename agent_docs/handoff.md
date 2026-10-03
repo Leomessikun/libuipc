@@ -1,5 +1,17 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Common-candidate causal teacher succeeds 4/4
+
+M4 validation gives causal teacher 4/4, current-pose planner 2/4 (both lift),
+and GICP 0/3 valid runs plus one human-tracking invalid run at 2.03787 mm.
+The queue exited before collection; stale `running` entries are not live jobs.
+[The result and bounded recovery](performance/2026-10-02-observed-motion-student.md#m4-validation-results--2026-10-03)
+preserve the invalid run and repeat it once with identical settings and seed.
+A physically valid retry resumes the existing gate/collection pipeline; a
+second invalid run stops for diagnosis. No student has been trained. Teacher
+benefit is supported on pass; current-pose lift is also 2/2. These remain two
+pilot clips on one body, not a generalization or novelty result.
+
 ## 2026-10-02 — Privileged causal teacher baseline queued
 
 M3 finished with observed/pass success, observed/lift failure, current/pass

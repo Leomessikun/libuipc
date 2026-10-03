@@ -2,6 +2,15 @@
 
 ## Dynamic baseline status
 
+October 3 update: the common-candidate privileged causal teacher completes 4/4
+valid runs, current-pose planning 2/4 (both lift), and GICP 0/3 valid runs plus
+one physics-invalid episode. A single same-settings diagnostic retry of that
+episode precedes continuation into the existing eight-episode student pilot;
+the original invalid attempt remains in the report. See the
+[M4 results](2026-10-02-observed-motion-student.md#m4-validation-results--2026-10-03).
+No dynamic student is trained yet. These results support bounded distillation
+on the pilot, not a new algorithm or generalization claim.
+
 M3's observed-motion teacher succeeds on pass but fails lift; current-pose
 planning succeeds lift under common candidates. Its independent-reset check
 then errors on a 0.136 mm cloth difference. No research student was trained.

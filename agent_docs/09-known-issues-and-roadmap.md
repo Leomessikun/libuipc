@@ -1,5 +1,18 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## M4 validation and recovery — 2026-10-03
+
+Common-candidate causal teacher: 4/4 successes. Current-pose planner: 2/4,
+both lift. GICP: 0/3 valid runs and one invalid-physics episode. This blocks the
+queue before student collection. Preserve the complete invalid attempt and
+make one same-settings retry; retain invalid-rate reporting and stop if it
+recurs. See the [result record](performance/2026-10-02-observed-motion-student.md#m4-validation-results--2026-10-03).
+Simulator exceptions reset the base environment, so the failing run's final
+clock/tracking summaries describe its reset state; use the saved exception
+(16.0667 s, 2.03787 mm) for diagnosis. No threshold is relaxed. Initial human/tool
+starts match; maximum independent cloth settling difference is 0.1571 mm.
+No dynamic student result or held-out generalization evidence exists yet.
+
 ## Dynamic baseline update — 2026-10-02
 
 M3 completed all six validation jobs, then stopped on its strict independent
