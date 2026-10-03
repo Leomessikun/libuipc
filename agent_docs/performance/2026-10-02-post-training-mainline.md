@@ -1,5 +1,282 @@
 # Dressing post-training: evidence, prior art, and the continuation decision
 
+## Method development takes priority — 2026-10-03
+
+**Latest owner instruction:** create a concrete post-training contribution and
+investigate its prior art now. Do not keep expanding evaluations of existing
+controllers. The earlier sequence of finishing M4, adding simple controls, then
+running a mechanism diagnostic is superseded as the immediate research agenda.
+The already authorized bounded M4 pipeline remains a baseline; it is not a
+prerequisite for the method work below. This revision launches no simulations,
+training, evaluations, or additional monitoring processes.
+
+**Assessment:** the implemented planner/history-student/DAgger combination is
+not yet a defensible new algorithm. The following is a concrete method candidate,
+not a claim that its novelty or effectiveness is established. Its technical
+focus is **joint selection of corrections using their effect on the updated
+policy across states**, including states from other garments and motions.
+
+### Research question and evidence boundary
+
+Can a small physical-query budget improve a pretrained visual controller more
+effectively when corrections are selected through the learner's actual update,
+rather than selecting each teacher action independently and subsequently fitting
+them all? In particular, can this retain useful motion corrections without
+damaging previously successful garment configurations?
+
+The existing evidence motivates expensive-interaction post-training: some
+physical corrections help, label scaling has not consistently improved the
+policy, and online planning is expensive. It **does not establish** that fitting
+interference causes r2 saturation or that dynamic M4 students fail to absorb
+their teacher. A weak teacher, limited action coverage, frozen features, short
+planning horizons and ordinary optimization are competing explanations. The
+candidate addresses fitting interference only when physically useful alternatives
+and sufficient observable information exist. It cannot repair an unreachable
+start or manufacture useful supervision from indistinguishable branch outcomes.
+
+### Concrete proposal: choose corrections jointly through the learner
+
+Keep the current pretrained controller and a trainable adapter initially. Let
+`h_i` be a deployable observation history and `s_i` a saved simulator state used
+only for training. Keep several candidate corrections at each training history,
+including the original action. A slightly lower-scoring correction can be
+preferable if the resulting shared policy executes it accurately and preserves
+other useful behavior.
+
+The procedure has two feedback paths:
+
+1. **Physical response:** what happens if a particular action is executed at
+   a saved state, followed by a specified continuation?
+2. **Learning response:** after training on a proposed correction, how do the
+   policy's actions change at *all* sampled histories, including other garments?
+
+Use the learning response to propose a joint correction batch; use actual
+closed-loop physical branches of the updated visual policy to refine that
+proposal. The physical query evaluates what the student will execute. There is
+no requirement to build a stronger privileged teacher first.
+
+#### Finite update and the proposed search variables
+
+Let `Z = {z_j}` denote correction targets at fixed, real training histories.
+Let `U_K(theta, optimizer_state; Z, D_anchor)` be exactly K updates of the chosen
+supervised post-training routine, including its anchor mixture and optimizer
+state. Define:
+
+$$
+\theta_Z=U_K(\theta,m;Z,D_{\rm anchor}),\qquad
+A_i(Z)=\pi_{\theta_Z}(h_i).
+$$
+
+`Z` is a set of optimization targets; it need not equal an expert's favorite
+action. Every executed action still passes through the actual controller and
+its actuator limits. Start with a small number of target directions derived
+from the existing correction candidates, not unconstrained edits to a large
+visual network. Retain an explicit no-update alternative: setting targets to
+current actions is not necessarily a no-op with Adam momentum or weight decay.
+
+For one plain SGD step on unnormalized squared error, without anchors, the
+first-order learning response is
+
+$$
+A_i(Z)\approx\pi_\theta(h_i)
+ -\eta\sum_j J_iJ_j^\top(\pi_\theta(h_j)-z_j),
+\qquad J_i=\frac{\partial\pi_\theta(h_i)}{\partial\theta}.
+$$
+
+This is an existing neural tangent kernel identity, not a new theorem. Its
+off-diagonal blocks explicitly describe how a correction at history j changes
+the action at history i. With several Adam steps, use the derivative of the
+actual finite training computation or exact cloned updates; do not substitute
+the SGD identity and call it exact. Matrix-vector products avoid materializing
+the full stacked Jacobian or every pairwise response block.
+
+#### A concrete proposal rule and the physical outer objective
+
+Use local action-consequence fits `q_hat_i` with a fixed base-policy continuation
+to propose targets jointly:
+
+$$
+Z_{\rm prop}=\arg\max_{Z\in\mathcal Z}
+ \sum_i w_i\widehat q_i(A_i(Z);\pi_\theta)
+ -\lambda\sum_{i\in\mathcal I_{\rm anchor}}
+ \|A_i(Z)-\pi_\theta(h_i)\|^2.
+$$
+
+The fitted `q_hat_i` are finite-horizon local outcome surrogates, not intrinsic
+action quality and not a claim of critic-free learning. Their continuation,
+human-motion realization, time step and horizon must be recorded. Restrict
+optimization to supported regions; unqueried actions require new physical
+feedback rather than confident interpolation across contact failures. An action
+distance penalty at anchor histories is a trust mechanism, not a guarantee of
+retained task success.
+
+To correct the surrogate, score the resulting *whole policy update* with
+training-state branches:
+
+$$
+F_H(Z)=\mathbb E_{(s,h)\sim\mu_{\rm train},\,\omega}
+ [G_H(s,h,\pi_{\theta_Z};\omega)
+  -G_H(s,h,\pi_\theta;\omega)]-\lambda C_{\rm anchor}(\theta_Z,\theta).
+$$
+
+Here `G_H` is the discounted task return of H **closed-loop** decisions, including
+grasp termination. `omega` includes future human motion and simulator randomness.
+The visual policy receives fresh observations and a correctly restored history
+on each branch. GRAB continuation is environment input during training; it is
+not provided to the student. Matching an external motion schedule does not make
+CUDA/contact randomness identical. A short-horizon score is only a surrogate
+for complete dressing, even if all branches are physically valid.
+
+The proposed practical solver is to alternate cheap joint target proposals with
+bounded physical feedback on their actual finite updates. Crucially, a
+fixed-base-continuation action score and an updated-policy closed-loop score are
+different quantities. Do not pool the latter into `q_hat_i(action)` as though
+the continuation were unchanged. Instead retain an update-level discrepancy:
+
+$$
+f_{\rm local}(Z)=\sum_i w_i[
+ \widehat q_i(A_i(Z);\pi_\theta)
+ -\widehat q_i(\pi_\theta(h_i);\pi_\theta)]-\lambda C_{\rm anchor},
+\qquad e(Z)=F_H(Z)-f_{\rm local}(Z).
+$$
+
+Fit a local residual `e_hat(Z)` only in the small target-coordinate neighborhood
+already queried, then propose with `f_local + e_hat` inside that neighborhood.
+With too few points for such a fit, use the discrepancy to shrink the proposal
+region rather than invent a confident correction. This residual accounts for
+both the action-surrogate error and changed continuation; it is not an unbiased
+estimator or a generalization guarantee. Keeping the previous policy as a
+candidate, commit the selected cloned policy **and its optimizer state**.
+Do not average the weights of several tested policies into an untested policy.
+This is a local surrogate optimization procedure, not a global optimality or
+monotonic-improvement guarantee.
+
+```text
+snapshot the learner, optimizer, and a small batch of training states/histories
+retain alternative corrections and old-task anchors
+compute the finite learner response to correction targets
+jointly propose a target batch using local physical outcome fits
+clone the real learner update and execute its visual policy in training branches
+feed observed outcomes back into the proposal; obey a fixed interaction budget
+commit one selected update, or the unchanged learner
+```
+
+The cross-state coupling and the physical feedback must both be present in the
+candidate implementation. Merely selecting a successful teacher action, adding
+data weights, or performing a line search over the BC learning rate does not
+implement the proposed solver.
+
+This solver inherits ordinary model-management/trust-region ideas; the
+discrepancy correction itself is not a novelty claim. Its practical question is
+whether coupling corrections before purchasing expensive policy branches makes
+the search more useful than independent target selection or direct guided ES.
+
+#### Fit to this repository and computation budget
+
+The current `train_dynamic_student.py` trains on CPU with Adam, gradient clipping,
+per-episode/query weights and a squared-logit-residual penalty. Its world action
+includes tanh, coordinate rotation and clipping. A functional update must match
+all of those operations. `dynamic_student.py` already supplies the four-frame
+adapter and frozen encoder interface. Student checkpoints currently contain the
+adapter weights and configuration, not a resumable Adam state; a new ongoing
+post-training runner must either explicitly initialize Adam or save its state.
+
+`motion_lookahead_probe.py` currently holds a candidate action for H decisions
+and skips branch observations. A branch executing an updated policy must build
+observations and preserve each branch's observation history. Existing snapshots
+restore simulator/controller/motion state; they do not automatically restore an
+external student's deque. A first implementation can use the exact small adapter
+update and cached training features; large-encoder or flow-policy hypergradients
+are not required to investigate the proposed operator.
+
+For B proposed updates, S training snapshots and horizon H, a full comparison
+with a base branch uses roughly `(B+1)*S*H` simulator decisions per motion
+realization, plus B cloned K-step neural updates. This cost must be charged to
+training. The small target coordinate system and response products may make the
+neural part cheap; they do not make IPC cheap. There is no current measurement
+showing this solver saves wall time. A full-state/global-return HaDES search
+would be an especially poor default for the present simulator throughput.
+
+#### Why the joint choice can differ: an analytical example
+
+This is an illustrative construction, not a dressing measurement. Consider a
+policy with actions `a_1=theta` and `a_2=2 theta`, initialized at zero. State 1
+rewards action 1; state 2 gives reward 1 at action 1 and 0.9 at action 2, with
+narrow successful intervals around those actions. Independently selecting the
+highest-scoring teacher action gives targets `(1,1)`. One SGD step with learning
+rate 0.2 on `0.5[(theta-z_1)^2+(2theta-z_2)^2]` produces `theta=0.6`, actions
+`(0.6,1.2)`, and zero return when the interval radii are 0.05.
+
+Selecting targets `(1,2)` produces `theta=1`, actions `(1,2)`, and combined return
+1.9. The lower-scoring second correction fits the shared policy better. HaDES,
+cost-sensitive policy optimization and other existing methods can also address
+such examples; it illustrates the mechanism, not novelty or superiority.
+
+### Prior-art attack: where a contribution could and could not remain
+
+The recursive search expanded from EXPO/DAgger to privileged teacher adaptation,
+performance-based data curation, bilevel teaching, derivative-free optimization,
+and constrained kernel policy updates. Broad slogans failed the novelty test:
+
+| Closest primary source | Existing overlap | Narrow remaining question for this candidate |
+|---|---|---|
+| [EXPO](https://arxiv.org/html/2507.07986v3) | Value-guided edits followed by supervised absorption into a base policy | Can explicitly coupling correction choices through the finite base update reduce lost improvements per interaction budget? EXPO's RL/editor structure itself is not ours |
+| [WISE](https://arxiv.org/html/2609.03681v1) | Scheduled counterfactual imagination, candidate feedback, policy post-training | Physics branches alone are not new; the proposed query concerns an updated policy, with joint target choices |
+| [Guided Policy Search as Approximate Mirror Descent](https://proceedings.neurips.cc/paper_files/paper/2016/file/a00e5eb0973d24649a4a920fc53d9564-Paper.pdf) | Local improvement coupled to fitting a representable global policy | Local/global agreement and projection are established; the candidate needs a useful solver through the finite optimizer rather than a renamed agreement penalty |
+| [Student-Informed Teacher Training](https://arxiv.org/html/2412.09149v2) | Teacher rewards and gradients account for student mismatch | The candidate optimizes joint corrections through a particular updated student's physical execution, not just action/KL agreement; student awareness is not new |
+| [CUPID](https://cupid-curation.github.io/) | Uses influence estimates to rank existing demonstrations by closed-loop policy performance | Joint synthesis/selection of correction targets and direct branch feedback differ from independent data ranking; data influence itself is established |
+| [Meta Pseudo Labels](https://openaccess.thecvf.com/content/CVPR2021/papers/Pham_Meta_Pseudo_Labels_CVPR_2021_paper.pdf) | Teacher targets adapt using the student's post-update supervised performance | Looking through a learner update is established; substituting a robotic task alone is insufficient |
+| [Behaviour Distillation / HaDES](https://arxiv.org/html/2406.15042v1) | Synthetic state-action data optimized by the return of the policy trained on them; ES outer loop and fixed-initialization variant | The generic bilevel objective above is already covered. Only a demonstrably efficient local physical-query solver for ongoing post-training could distinguish our candidate |
+| [Guided Evolutionary Strategies](https://proceedings.mlr.press/v97/maheswaranathan19a/maheswaranathan19a.pdf) | Surrogate gradients guide a low-dimensional black-box search | Sampling parameter directions from imitation gradients is not a contribution; compare with such direct search |
+| [Constrained policy gradient using NTK](https://arxiv.org/abs/2107.09139) | Uses predicted cross-state policy changes and auxiliary training signals to enforce action-probability constraints | The response kernel and constraint synthesis are not new; the candidate must add useful physical-outcome-driven joint correction selection. This entry is based on the primary abstract |
+| [CLIC](https://arxiv.org/html/2502.07645v3) | Supervision by desirable action sets | Keeping several acceptable actions is not by itself new; ordinary set-valued fitting is a necessary simpler comparator |
+
+**Potential contribution, stated narrowly:** a practical post-training solver
+that uses cross-state responses of a finite learner update to jointly allocate
+physical correction targets, and spends limited reset-based interactions on the
+behavior those targets actually induce. The claimed benefit would be fewer
+lost corrections and fewer regressions across garment/motion contexts at equal
+total computation. This search has **not established novelty for the complete
+solver**. Its objective, response identity, trust regions and outer-loop search
+all have precedents. A version equivalent to HaDES in another parameterization,
+ordinary GPS/Q-loss, or gradient weighting would not justify a new-method claim.
+
+### Development deliverables, without another baseline-evaluation campaign
+
+1. **Specify the update operator and its interfaces.** The formulation above
+   is the research deliverable now. The next implementation unit is a functional
+   clone of the existing adapter/optimizer update, exposing its response to
+   targets at a batch of real histories. Include no-update behavior, anchors
+   and exact action scaling. Do not switch architectures at the same time.
+2. **Implement joint target proposals and a training branch callback.** Separate
+   the local physical surrogate from the learner response, and record every
+   executed action/observation/return/termination. Existing held-action endpoint
+   logs can seed candidate proposals, but cannot be silently relabeled as
+   closed-loop updated-policy returns. M4 completion is not needed to develop
+   these interfaces. None of this candidate is implemented yet.
+3. **Use one bounded method-training comparison after implementation.** The
+   scientific question is whether joint target selection retains more physical
+   benefit than independent targets and simpler performance-based selection,
+   with shared initial checkpoint, observation interface, task objective and
+   total interaction/learning budget. This is a later proposal, not a new job or
+   permission to append repeated M4 controller comparisons. Preserve a separate
+   untouched garment/motion holdout for final reporting.
+
+Cheap ablations remove the off-diagonal learning response, substitute a scalar
+learning-rate search, or fit independent action sets using the same physical
+data. Existing methods, particularly EXPO, GPS/Q-loss and performance-based data
+selection, remain substantive alternatives. If the joint response has no useful
+effect beyond those controls, or costs more than its gains justify, retire this
+candidate's algorithm claim. If useful physical corrections are absent, it is
+the wrong mechanism to pursue. Do not infer this condition just from r2's older
+aggregate result, and do not claim an absorption failure before observing one.
+
+Both research axes remain: moving arms supply temporal histories and changing
+contact situations; ClothesNet supplies different geometries and opportunities
+for beneficial or harmful transfer between corrections. Their inclusion in the
+training objective does not guarantee unseen-category generalization. A broad
+contact-rich post-training claim would ultimately require another task as well.
+
 ## Dynamic baseline status
 
 October 3 update: the common-candidate privileged causal teacher completes 4/4
@@ -26,6 +303,11 @@ method. EXPO and the shared consequence metric are not implemented yet. The
 literature audit below downgrades the metric proposal's novelty and priority.
 
 ## Research assessment and bounded continuation — 2026-10-03
+
+**Historical ordering:** the later method-development instruction above
+supersedes the follow-up evaluation sequence in this section. Its evidence and
+prior-art cautions remain applicable; its proposed additional evaluations are
+not the active work queue.
 
 **Recommendation:** finish the already bounded M4 student experiment, but do not
 scale collection or describe the current implementation as a new post-training
@@ -519,10 +801,11 @@ claim. These outcomes refine the post-training method, not the application scope
 
 ## Immediate work and status
 
-Finish the existing bounded M4 student pilot and use the decision protocol at
-the top of this document. M3 is terminal. M4 passed its teacher feasibility gate
-and is collecting initialization episodes; no dynamic student result exists yet.
-No new simulation or training was launched during this literature review.
+Develop the joint correction/update proposal at the top of this document now;
+do not wait for M4 or add repeated old-controller evaluations. Preserve M4's
+already authorized budget and existing reporting. The dynamic status above is
+the last inspected snapshot, not a new runtime check. This literature/method
+revision changed no jobs and produced no new experimental result.
 
 If later evidence justifies an EXPO comparison, its first implementation unit
 is still a shared replay/outcome interface with complete successor states,

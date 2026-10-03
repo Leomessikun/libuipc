@@ -1,5 +1,28 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-03 — Owner prioritizes method creation over repeated evaluations
+
+The owner redirected work toward developing a new post-training contribution
+now, without more rounds of old-controller evaluations. Preserve the bounded
+M4 pipeline; its completion is not a prerequisite for research. The
+[new method specification](performance/2026-10-02-post-training-mainline.md#method-development-takes-priority--2026-10-03)
+defines joint correction selection through the actual finite learner update,
+using cross-state action responses and physical feedback from updated-policy
+branches. It includes equations, an analytical counterexample to independent
+target selection, implementation interfaces, and a primary-source prior-art
+matrix. No new simulation, training, evaluation, or monitoring was launched.
+
+This is an unimplemented hypothesis, not established novelty. HaDES already
+optimizes synthetic data by the resulting policy's return; CUPID selects data
+by performance influence; GPS couples local improvement with global fitting;
+NTK-constrained policy gradients already use cross-state update responses.
+Any contribution must reside in a demonstrably useful and efficient joint
+physical-query solver, beyond those existing ideas. Current r2/M4 evidence
+does not establish fitting interference as the bottleneck. Next development
+work is the finite-update response interface and joint target optimizer, not
+another evaluation gate. The earlier additional-control/diagnostic sequence
+below is superseded as the immediate agenda.
+
 ## 2026-10-03 — Student evaluation confirmed; result reporter active
 
 The owner approved finishing the bounded evaluation. M4 still collects its

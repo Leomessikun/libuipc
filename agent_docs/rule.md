@@ -110,6 +110,16 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Develop the new post-training method now; do not keep adding evaluations.**
+  The owner explicitly redirected effort toward creating a concrete method
+  contribution through deep research when the existing contribution is
+  insufficient. Do not make completion of M4 or another round of old-controller
+  comparisons a prerequisite for method design. Preserve the already authorized
+  bounded pipeline and its data; this instruction does not request terminating
+  existing jobs. Add no repeat evaluation campaigns under this research request.
+  Deliver an explicit update rule, primary-source comparisons, and a candid
+  distinction between a new proposal and established novelty. (Set 2026-10-03.)
+
 - **Keep the current research centered on dressing post-training.** The owner
   rejected switching the mainline to the proposed contact-friction mechanism
   study and pointed to Perry Dong's universal post-training blog as the intended

@@ -1,5 +1,24 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Method design now; no added evaluation campaign — 2026-10-03
+
+The owner explicitly requests creating a new post-training contribution rather
+than repeatedly evaluating the existing controllers. Method development must
+not wait for M4 completion. The bounded previously authorized pipeline remains
+unchanged. The [current specification](performance/2026-10-02-post-training-mainline.md#method-development-takes-priority--2026-10-03)
+proposes joint physical correction selection through the finite learner update:
+track how each target changes actions across training histories, jointly choose
+targets, and refine them with physical feedback on the updated policy.
+
+Unresolved: the complete solver's novelty, useful fitting interference in this
+task, affordable branch cost, outcome-surrogate accuracy, and retained behavior
+outside sampled training states. HaDES, GPS, CUPID, constrained NTK updates and
+action-set imitation are material prior art. The objective and kernel identity
+are not original claims. Next deliverables are the finite-update response and
+joint target-proposal interfaces; no new experiment was launched for this
+research revision. The follow-up evaluation ordering in older sections below
+is superseded, and must not become an automatic queue extension.
+
 ## Bounded student evaluation approved — 2026-10-03
 
 Continue the already running M4 collection/training/evaluation queue. The
