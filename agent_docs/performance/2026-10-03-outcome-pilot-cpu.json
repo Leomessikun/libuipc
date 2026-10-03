@@ -1,5 +1,5 @@
 {
-  "status": "CPU training complete; physical repair result pending",
+  "status": "CPU stage complete; physical pilot subsequently completed with zero verified repairs; see 2026-10-03-outcome-pilot-ipc.json",
   "root": "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003",
   "episodes": 40,
   "valid_decisions": 11156,

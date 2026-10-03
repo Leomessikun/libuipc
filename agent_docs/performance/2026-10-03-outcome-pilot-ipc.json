@@ -1,5 +1,5 @@
 {
-  "status": "root20 complete: no valid repairs; earlier-intervention diagnostic running",
+  "status": "completed: no verified repairs; no actor update",
   "source_root": "/home/ge47gax/kun/libuipc/output/uipc_manip/outcome_pilot_20261003",
   "root20": [
     {
@@ -427,7 +427,7 @@
       ]
     }
   ],
-  "interpretation": "All 24 search branches, including eight no-edit repeats, exceeded the 0.02 m tracking criterion before completing 24 decisions. No positive correction labels or r1 update.",
+  "interpretation": "Root20 found no valid 24-step proposals. Root5 produced one valid action-noise proposal per replay, but both 24+450 decision verifications failed dressing. Geometry, generic and TCP transfer produced no valid 24-step edited proposals. This pilot supports neither successful policy post-training nor a benefit of the geometric proposal; it does not establish general impossibility.",
   "early_launch": {
     "workers": [
       {
@@ -486,5 +486,693 @@
     "reason": "At root20 all methods exceed tracking tolerance within 3-12 decisions; test earlier intervention at root5, same source models/methods",
     "combined_max_decisions_including_prior": 5000,
     "combined_max_gpu_hours_including_prior": 8
+  },
+  "root5": [
+    {
+      "seed": 20261003,
+      "method": "geometry",
+      "candidate": 0,
+      "verification": false,
+      "decisions": 22,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3393016433546627,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.02080897936221558,
+        "gripper_N": 317.83000579768833,
+        "edge_p99": 1.2485094757504276,
+        "edge_max": 1.9785444073759506
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "geometry",
+      "candidate": 1,
+      "verification": false,
+      "decisions": 18,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.2508191283028365,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.020297806551041908,
+        "gripper_N": 422.29476699827654,
+        "edge_p99": 1.2658411794634798,
+        "edge_max": 1.6656032466895025,
+        "goal_center_error_m": 0.48268112540245056,
+        "goal_normal_error": 0.6267801523208618
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "geometry",
+      "candidate": 2,
+      "verification": false,
+      "decisions": 20,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.4373336303291178,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.023310767248849215,
+        "gripper_N": 337.87016949941597,
+        "edge_p99": 1.2512401500175827,
+        "edge_max": 1.6751563974729942,
+        "goal_center_error_m": 0.23069852590560913,
+        "goal_normal_error": 0.12526188790798187
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "action_noise",
+      "candidate": 0,
+      "verification": false,
+      "decisions": 22,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3926773135284662,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.021377922958451877,
+        "gripper_N": 362.31513158341613,
+        "edge_p99": 1.2603834938569263,
+        "edge_max": 1.5769833834057077
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "action_noise",
+      "candidate": 1,
+      "verification": false,
+      "decisions": 22,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.5324956667904706,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.02242120269657477,
+        "gripper_N": 341.26972322934574,
+        "edge_p99": 1.255681523561347,
+        "edge_max": 2.4480537832216376,
+        "goal_center_error_m": 0.16537223756313324,
+        "goal_normal_error": 0.18654191493988037
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "action_noise",
+      "candidate": 2,
+      "verification": false,
+      "decisions": 24,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.6348297844459845,
+        "wrapped": false,
+        "reached": false,
+        "valid": true,
+        "tracking_m": 0.0027390187396779462,
+        "gripper_N": 22.44650278025266,
+        "edge_p99": 1.2647470821724602,
+        "edge_max": 1.8219389070129046,
+        "goal_center_error_m": 0.184197336435318,
+        "goal_normal_error": 0.054527800530195236
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "action_noise",
+      "candidate": 2,
+      "verification": true,
+      "decisions": 474,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": 4.323250981085923,
+        "wrapped": false,
+        "reached": false,
+        "valid": true,
+        "tracking_m": 0.00084564409003167,
+        "gripper_N": 8.382374580001091,
+        "edge_p99": 1.2552984965123921,
+        "edge_max": 1.4611340771894195
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "tcp_transfer",
+      "candidate": 0,
+      "verification": false,
+      "decisions": 23,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.2691970867060685,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.02054608356119035,
+        "gripper_N": 352.53405342935696,
+        "edge_p99": 1.2561995157524277,
+        "edge_max": 1.9790943008668453
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "tcp_transfer",
+      "candidate": 1,
+      "verification": false,
+      "decisions": 13,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3726535441649328,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.020421532773274863,
+        "gripper_N": 376.385795717376,
+        "edge_p99": 1.2546475766260161,
+        "edge_max": 1.807772441298361,
+        "goal_center_error_m": 0.10926848649978638,
+        "goal_normal_error": 0.10434538125991821
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "tcp_transfer",
+      "candidate": 2,
+      "verification": false,
+      "decisions": 14,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3577062031935574,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.02428151450845851,
+        "gripper_N": 363.3901694451524,
+        "edge_p99": 1.231155762711834,
+        "edge_max": 1.9664336936402356,
+        "goal_center_error_m": 0.08449438214302063,
+        "goal_normal_error": 0.08033258467912674
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "generic",
+      "candidate": 0,
+      "verification": false,
+      "decisions": 23,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3101124716218462,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.021513696114218012,
+        "gripper_N": 329.2239747559983,
+        "edge_p99": 1.2633390993309839,
+        "edge_max": 2.1196986633271324
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "generic",
+      "candidate": 1,
+      "verification": false,
+      "decisions": 21,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3910336811717514,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.02248370883852621,
+        "gripper_N": 355.6115638971623,
+        "edge_p99": 1.27915335483272,
+        "edge_max": 2.029609547859166,
+        "goal_center_error_m": 0.18014644086360931,
+        "goal_normal_error": 0.23413094878196716
+      }
+    },
+    {
+      "seed": 20261003,
+      "method": "generic",
+      "candidate": 2,
+      "verification": false,
+      "decisions": 18,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3206449304113432,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.0208082884131229,
+        "gripper_N": 278.89024075002226,
+        "edge_p99": 1.2317025850706642,
+        "edge_max": 1.725995685829016,
+        "goal_center_error_m": 0.11337913572788239,
+        "goal_normal_error": 0.04940961301326752
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "generic",
+      "candidate": 0,
+      "verification": false,
+      "decisions": 23,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.2714556872682665,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.020739006341278995,
+        "gripper_N": 361.02962999354656,
+        "edge_p99": 1.2591291401471085,
+        "edge_max": 1.946322592439939
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "generic",
+      "candidate": 1,
+      "verification": false,
+      "decisions": 22,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3612436176010976,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.021894962114687225,
+        "gripper_N": 297.1779313320803,
+        "edge_p99": 1.2565116721285354,
+        "edge_max": 2.0717920187080674,
+        "goal_center_error_m": 0.32837316393852234,
+        "goal_normal_error": 0.43167638778686523
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "generic",
+      "candidate": 2,
+      "verification": false,
+      "decisions": 20,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3839365107857609,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.02003074249025426,
+        "gripper_N": 296.3603271255271,
+        "edge_p99": 1.2657409441477916,
+        "edge_max": 1.5914080648716749,
+        "goal_center_error_m": 0.10804111510515213,
+        "goal_normal_error": 0.06234189122915268
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "tcp_transfer",
+      "candidate": 0,
+      "verification": false,
+      "decisions": 22,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.2791207115248016,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.02073053782138902,
+        "gripper_N": 299.2334872714496,
+        "edge_p99": 1.2597748725346805,
+        "edge_max": 2.113684879589328
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "tcp_transfer",
+      "candidate": 1,
+      "verification": false,
+      "decisions": 12,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3715688615007868,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.020316971428621232,
+        "gripper_N": 287.6309050767216,
+        "edge_p99": 1.25361848690264,
+        "edge_max": 1.9142495475072288,
+        "goal_center_error_m": 0.1043366938829422,
+        "goal_normal_error": 0.12449288368225098
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "tcp_transfer",
+      "candidate": 2,
+      "verification": false,
+      "decisions": 13,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3479257927476374,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.022859383078624743,
+        "gripper_N": 401.67199929800546,
+        "edge_p99": 1.2288975596969784,
+        "edge_max": 1.79956794487786,
+        "goal_center_error_m": 0.07941249758005142,
+        "goal_normal_error": 0.10871420800685883
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "action_noise",
+      "candidate": 0,
+      "verification": false,
+      "decisions": 23,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3716489832304053,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.02152367572678814,
+        "gripper_N": 412.4815839659819,
+        "edge_p99": 1.2530705418947206,
+        "edge_max": 1.5505637370891276
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "action_noise",
+      "candidate": 1,
+      "verification": false,
+      "decisions": 17,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.3706472230997935,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.021879553143640162,
+        "gripper_N": 464.69245271024994,
+        "edge_p99": 1.242710347987508,
+        "edge_max": 1.5692094163100554,
+        "goal_center_error_m": 0.09877827763557434,
+        "goal_normal_error": 0.11384356766939163
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "action_noise",
+      "candidate": 2,
+      "verification": false,
+      "decisions": 24,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.4734268874878227,
+        "wrapped": false,
+        "reached": false,
+        "valid": true,
+        "tracking_m": 0.004793224298294364,
+        "gripper_N": 14.40986077933562,
+        "edge_p99": 1.26452354326175,
+        "edge_max": 1.9998246769511032,
+        "goal_center_error_m": 0.10040033608675003,
+        "goal_normal_error": 0.09153732657432556
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "action_noise",
+      "candidate": 2,
+      "verification": true,
+      "decisions": 474,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": 3.170540497126776,
+        "wrapped": false,
+        "reached": false,
+        "valid": true,
+        "tracking_m": 0.0015043755337698396,
+        "gripper_N": 7.657662456092343,
+        "edge_p99": 1.2442647312647088,
+        "edge_max": 1.4898676013463927
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "geometry",
+      "candidate": 0,
+      "verification": false,
+      "decisions": 23,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.292534713370555,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.02211076331949986,
+        "gripper_N": 432.36494496030366,
+        "edge_p99": 1.2633253939074156,
+        "edge_max": 2.186294639743483
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "geometry",
+      "candidate": 1,
+      "verification": false,
+      "decisions": 23,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.4873402605518447,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.022317139772191366,
+        "gripper_N": 429.55883275853296,
+        "edge_p99": 1.234923017829954,
+        "edge_max": 2.3493894838127893,
+        "goal_center_error_m": 0.16342085599899292,
+        "goal_normal_error": 0.24311396479606628
+      }
+    },
+    {
+      "seed": 20261004,
+      "method": "geometry",
+      "candidate": 2,
+      "verification": false,
+      "decisions": 22,
+      "success": false,
+      "final": {
+        "progress_m": 0.0,
+        "armhole_upper_fraction": -1.4685135648471954,
+        "wrapped": false,
+        "reached": false,
+        "valid": false,
+        "tracking_m": 0.023096917771367947,
+        "gripper_N": 442.2312460676018,
+        "edge_p99": 1.2304815549076018,
+        "edge_max": 2.161298409660088,
+        "goal_center_error_m": 0.13439953327178955,
+        "goal_normal_error": 0.08561054617166519
+      }
+    }
+  ],
+  "all_run_status": [
+    {
+      "path": "output/uipc_manip/outcome_pilot_20261003/ipc_seed20261003",
+      "status": {
+        "status": "error",
+        "results": 0,
+        "budget": {
+          "substeps": 32,
+          "decision_equivalents": 5.333333333333333,
+          "charged_decisions": 6,
+          "snapshot_restores": 0,
+          "wall_seconds": 14.511398105882108,
+          "phase": "setup",
+          "maximum_decisions": 2500,
+          "maximum_hours": 4.0
+        },
+        "policy_updated": false
+      }
+    },
+    {
+      "path": "output/uipc_manip/outcome_pilot_20261003/ipc_seed20261004",
+      "status": {
+        "status": "error",
+        "results": 0,
+        "budget": {
+          "substeps": 32,
+          "decision_equivalents": 5.333333333333333,
+          "charged_decisions": 6,
+          "snapshot_restores": 0,
+          "wall_seconds": 14.542446955107152,
+          "phase": "setup",
+          "maximum_decisions": 2500,
+          "maximum_hours": 4.0
+        },
+        "policy_updated": false
+      }
+    },
+    {
+      "path": "output/uipc_manip/outcome_pilot_20261003/ipc_seed20261003_canonical",
+      "status": {
+        "status": "completed",
+        "results": 4,
+        "budget": {
+          "substeps": 554,
+          "decision_equivalents": 92.33333333333333,
+          "charged_decisions": 93,
+          "snapshot_restores": 12,
+          "wall_seconds": 111.46483970293775,
+          "phase": "generic/seed20261003/candidate2/search",
+          "maximum_decisions": 2494,
+          "maximum_hours": 3.99
+        },
+        "policy_updated": false
+      }
+    },
+    {
+      "path": "output/uipc_manip/outcome_pilot_20261003/ipc_seed20261004_canonical",
+      "status": {
+        "status": "completed",
+        "results": 4,
+        "budget": {
+          "substeps": 572,
+          "decision_equivalents": 95.33333333333333,
+          "charged_decisions": 96,
+          "snapshot_restores": 12,
+          "wall_seconds": 90.94816916109994,
+          "phase": "geometry/seed20261004/candidate2/search",
+          "maximum_decisions": 2494,
+          "maximum_hours": 3.99
+        },
+        "policy_updated": false
+      }
+    },
+    {
+      "path": "output/uipc_manip/outcome_pilot_20261003/ipc_seed20261003_early",
+      "status": {
+        "status": "completed",
+        "results": 4,
+        "budget": {
+          "substeps": 4346,
+          "decision_equivalents": 724.3333333333334,
+          "charged_decisions": 725,
+          "snapshot_restores": 13,
+          "wall_seconds": 473.59362859185785,
+          "phase": "generic/seed20261003/candidate2/search",
+          "maximum_decisions": 2401,
+          "maximum_hours": 3.9622288228308835
+        },
+        "policy_updated": false
+      }
+    },
+    {
+      "path": "output/uipc_manip/outcome_pilot_20261003/ipc_seed20261004_early",
+      "status": {
+        "status": "completed",
+        "results": 4,
+        "budget": {
+          "substeps": 4370,
+          "decision_equivalents": 728.3333333333334,
+          "charged_decisions": 729,
+          "snapshot_restores": 13,
+          "wall_seconds": 475.2131544491276,
+          "phase": "geometry/seed20261004/candidate2/search",
+          "maximum_decisions": 2398,
+          "maximum_hours": 3.9679192733010535
+        },
+        "policy_updated": false
+      }
+    }
+  ],
+  "source_support": {
+    "train_source_starts": 1056,
+    "validation_starts": 241,
+    "validation_nearest_distance_percentiles": {
+      "0": 0.002585840877145529,
+      "25": 0.004356659483164549,
+      "50": 0.006338910665363073,
+      "75": 0.0101397056132555,
+      "90": 0.013498559594154358,
+      "95": 0.014863910153508186,
+      "99": 0.02171611674129963,
+      "100": 0.025961805135011673
+    },
+    "target_states": [
+      {
+        "seed": 20261003,
+        "root": 20,
+        "distance": 0.23497581481933594,
+        "percentile_of_validation": 100.0
+      },
+      {
+        "seed": 20261003,
+        "root": 5,
+        "distance": 0.2666897177696228,
+        "percentile_of_validation": 100.0
+      },
+      {
+        "seed": 20261004,
+        "root": 20,
+        "distance": 0.19766277074813843,
+        "percentile_of_validation": 100.0
+      },
+      {
+        "seed": 20261004,
+        "root": 5,
+        "distance": 0.2766771912574768,
+        "percentile_of_validation": 100.0
+      }
+    ],
+    "limitation": "Descriptive distance in the selected representation; not a reachability or policy-confidence certificate"
+  },
+  "totals": {
+    "charged_decisions": 1655,
+    "physical_substeps": 9906,
+    "decision_equivalents": 1651.0,
+    "summed_worker_seconds": 1180.2736369660124,
+    "search_branches": 48,
+    "verification_branches": 2,
+    "verified_repairs": 0
   }
 }

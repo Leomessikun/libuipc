@@ -1,6 +1,6 @@
 # Handoff — Current State of the Repo
 
-## 2026-10-03 — Goal-transfer prototype trained; bounded IPC pilot launched
+## 2026-10-03 — Goal-transfer prototype tested; no verified repairs
 
 The owner approved implementation and then requested parallel work. New
 `outcome_goals.py`, `train_outcome_goals.py`, `outcome_policy.py` and
@@ -17,17 +17,23 @@ history-restore check passed. No r1 weights have been updated.
 The first two workers finished the same training case (ClothesNet
 `cn_tcsc_top558`, body 1032), seeds 20261003/20261004: all 24 branches exceeded
 the grasp-tracking limit; no repair or positive correction label was found.
-Two earlier-intervention workers now test root step 5 instead of 20, keeping
-the same models and proposal methods. Their archives also record achieved
+Two earlier-intervention workers also completed root step 5 instead of 20,
+keeping the same models and proposal methods. Their archives record achieved
 interaction descriptors and goal error. Root:
 `output/uipc_manip/outcome_pilot_20261003/`. Read `launch_canonical.json` and
 `launch_early.json` and the corresponding budgets/status/results. The initial workers exited
 at an unsupported .4/.5 material-section correspondence check; exact goal
 sections are now built explicitly, keeping historical success sections intact.
-Their costs are included: early workers have 2,401 / 2,398 decisions remaining,
-so combined work including setup failures and root-20 runs remains below 5,000
-decisions / eight GPU-worker hours. M4 stays stopped; no broader collection,
-evaluation campaign or policy update is automatically queued.
+Costs including setup failures and both roots: 1,655 charged decisions and
+1,180.27 summed worker-seconds. Early intervention let action noise retain
+grasp for 24 decisions in each replay, but both full continuations failed to
+dress. Geometry/generic/TCP edits all exceeded the tracking tolerance before
+24 decisions. Zero verified repairs; no r1 update. All workers have exited.
+The target's nearest-source geometry distance is above the maximum in the
+held-out adapter-validation sample; this is a coverage warning, not a causal
+explanation. Preserve the code and branch evidence, but do not scale this
+unvalidated decoder or resume M4. See the
+[completed physical record](performance/2026-10-03-outcome-pilot-ipc.json).
 
 ## 2026-10-03 — Concrete post-training design using transferred interaction goals
 

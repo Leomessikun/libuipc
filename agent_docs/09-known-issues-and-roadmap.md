@@ -3,23 +3,27 @@
 ## Goal-transfer feasibility implementation — 2026-10-03
 
 The approved [pilot](performance/2026-10-03-garment-outcome-posttraining.md#12-implemented-pilot-and-initial-evidence)
-now has extracted data, trained CPU proposal controllers and two bounded IPC
-workers. The first root-20 probe completed with no valid repairs (24 branches
-exceeded the grasp-tracking threshold). Two workers now test whether moving
-the intervention to decision 5 helps, within the same aggregate budget.
+completed data extraction, CPU training and two parallel waves of IPC probes.
+Both root-20 and earlier root-5 intervention produced no verified repairs.
+Only action noise at root 5 retained valid grasp through 24 decisions; both
+450-decision continuations then failed dressing. Geometry/generic/TCP edits
+all exceeded the tracking threshold within 24 decisions. All workers exited.
 A concrete failed objective was found: hindsight cloning of the
 deterministic base's next action learns zero correction. The implemented
 eight-action decoder avoids identical full-chunk targets but still requires
 physical evidence of controllability. Structured goal MSE is worse than generic
 goals and no-goal forecasting; there is no demonstrated representation advantage.
 
-Next: read the new repair branches/continuations, count all initialization and
-failed-query costs, and decide from verified corrections whether there is data
-worth absorbing into r1. Do not add another old-policy evaluation campaign.
+There are no verified corrections to absorb into r1. Do not scale nominal
+cloning or claim a method advantage from this prototype. The next method work
+must address physical goal controllability and counterfactual action coverage;
+the retained branch transitions provide concrete failure evidence. Do not add
+another old-policy evaluation campaign.
 The target's exact material cuts are generated independently of the legacy
 success extractor's .4/.5 fallback, with geometry validation before GPU setup.
-The two replays share a combined cap of 5,000 decisions / eight GPU-worker
-hours; no automatic expansion or r1 update is configured. Five focused checks
+Actual cost was 1,655 charged decisions / 1,180.27 summed worker-seconds,
+including failed initialization. No automatic expansion or r1 update is
+configured. Five focused checks
 and CPU inference/history parity passed. Output root:
 `output/uipc_manip/outcome_pilot_20261003/`.
 

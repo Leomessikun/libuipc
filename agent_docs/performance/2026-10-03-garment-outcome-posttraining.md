@@ -1,7 +1,7 @@
 # A concrete post-training candidate: transfer interaction goals, verify new repairs
 
-Date: 2026-10-03. Status: **prototype implemented; first bounded physical
-probe found no repairs; earlier-intervention diagnostic running**.
+Date: 2026-10-03. Status: **prototype implemented and bounded physical study
+completed; no verified repairs or actor improvement**.
 
 The owner subsequently approved implementation and requested parallel launches.
 Section 12 records the actual implementation, a failed initial objective and
@@ -539,3 +539,40 @@ The combined ceiling including the two initial setup failures and root-20
 runs remains 5,000 decisions / eight worker-hours. No expansion beyond this
 diagnostic is queued. Read `launch_early.json` and `ipc_seed*_early/`, plus the
 [compact physical record](2026-10-03-outcome-pilot-ipc.json).
+
+### Completed result
+
+Both early workers also finished. All geometry, generic-goal and TCP-transfer
+edited branches exceeded the 0.02 m tracking limit before 24 decisions. Early
+geometry branches lasted 18, 20, 23 and 22 decisions. Smooth action noise
+produced one valid 24-decision branch in each replay, but both selected replays
+plus 450-decision continuations failed to dress: the sleeve was not wrapped
+around the arm. Preserving grasp alone was insufficient.
+
+| Root decision | Geometry: valid edits / 4 | Generic goals | TCP transfer | Action noise | Verified dressing repairs |
+|---|---:|---:|---:|---:|---:|
+| 20 | 0 | 0 | 0 | 0 | 0 |
+| 5, adaptive timing diagnostic | 0 | 0 | 0 | 2 | 0 |
+
+Across all runs, including initialization failures, the study charged **1,655
+decision equivalents rounded up per worker** (9,906 actual substeps, 1,651
+unrounded equivalents), and **1,180.27 summed worker-seconds**. There were
+48 search branches and two full verification branches. All workers exited
+naturally. The remaining budget was not consumed by further repeats.
+
+A descriptive coverage check used 1,056 source-window starts and 241
+`tshirt_4` validation starts under the same retrieval distance. Median and
+maximum validation nearest distances were 0.00634 / 0.02596; the four target
+roots had nearest distances 0.19766–0.27668. Thus this target lies outside the
+sample's validation range in the chosen representation. This does not prove
+that coverage caused failure, that more nominal rollouts would solve it, or
+that the desired repairs are physically impossible.
+
+**Decision:** this prototype has not demonstrated a useful repair operator or
+post-training contribution. Do not scale its nominal-data cloning or count its
+goal sensitivity as controllability. No positive actor correction buffer was
+created and no r1 weights were updated. Keep the negative single-action result,
+trained chunk controls and actual branch transitions for method development.
+The missing evidence is a decoder that can physically realize distinct useful
+interaction goals; deterministic-policy imitation alone did not establish it.
+No new GPU or training queue is running from this pilot.
