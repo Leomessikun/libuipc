@@ -1,7 +1,7 @@
 # A concrete post-training candidate: transfer interaction goals, verify new repairs
 
-Date: 2026-10-03. Status: **prototype implemented and bounded physical study
-completed; no verified repairs or actor improvement**.
+Date: 2026-10-03. Status: **first prototype failed; consequence-learning
+continuation active within the remaining physical-query budget**.
 
 The owner subsequently approved implementation and requested parallel launches.
 Section 12 records the actual implementation, a failed initial objective and
@@ -575,4 +575,92 @@ created and no r1 weights were updated. Keep the negative single-action result,
 trained chunk controls and actual branch transitions for method development.
 The missing evidence is a decoder that can physically realize distinct useful
 interaction goals; deterministic-policy imitation alone did not establish it.
-No new GPU or training queue is running from this pilot.
+At the end of this first stage, no GPU or training queue remained running.
+The owner's follow-up and subsequent continuation are recorded below.
+
+## 13. Follow-through: learn from distinct actions at a common root
+
+The owner challenged the absence of project jobs after the negative report.
+The initial workers had all exited; the visible GPU jobs were another user's
+GR00T training and this account's unrelated FoE evaluation. This was a gap in
+our follow-through, not a failed launch caused by their occupancy. The next
+finite development stage is now running.
+
+### New data, with no fabricated success labels
+
+`probe_outcome_repairs.py --collect-only` restores the same root for each of
+16 eight-decision action probes, separately in two worlds/replay seeds.
+Probes include nominal actions, bounded suppression/reversal and smooth
+perturbations. Every correction stays within the decoder's +/-0.5 action
+support. Actual observations, actions, tool poses, geometry and the three
+observations preceding the root are saved. The causal history is restored for
+each branch. The collector adds **256 valid physical transitions**, with
+**278 charged decisions** including setup, at a combined 220.21 worker-seconds.
+All branches completed their short horizon; none is labelled successful
+dressing. These data supply action alternatives missing from deterministic
+policy self-cloning.
+
+`train_outcome_goals.py branches` caches those observations and combines them
+with the existing 40-episode cache. It trains on the first collection world
+and validates on the entire second world, while retaining the original
+`tshirt_4` adapter-validation split. Context observations enter history but
+their missing geometry is NaN and is never a supervised target. The branch
+world split is a local-control diagnostic on the **same body and garment**,
+not evidence of generalization to an unseen recipient or garment.
+
+### Learning and execution change
+
+The decoder now learns **one-step inverse control** from the actually reached
+next geometry, alongside retained nominal transitions. It receives observed
+history and the requested geometric outcome. In the failed first attempt,
+every label at a state was exactly r1's own action; now different branches
+provide distinct action/outcome pairs. Whether the finite data support useful
+inverse control remains an empirical question. The same ordinary supervised
+loss is used; it is not claimed as a novel objective.
+
+Two CPU training seeds each fit geometry, generic-feature and no-goal models
+for 1,200 updates. Separate counterfactual validation errors and within-domain
+goal-shuffling errors are logged. A new data-boundary test verifies that root
+context cannot leak into action/goal targets; all six focused tests pass.
+
+The inference bridge supports one- and eight-action models. With
+`--one-step-goals`, the physical probe requests the next point on the same
+transferred source path and replans after every decision. The source goal bank
+remains the original Cloth3D training garments; the target's new data teach
+local realization, not successful target-garment goal trajectories.
+
+### Finite active pipeline and cost accounting
+
+`run_outcome_continuation.py` trains both CPU seeds, then launches two physical
+probes using the new decoders. It records stage, child PID, command, log and
+exit status in:
+
+`output/uipc_manip/outcome_pilot_20261003/counterfactual_pipeline/status.json`
+
+Top-level launch metadata is `launch_continuation.json`; log is
+`continuation.log`. Collection is in `counterfactual_seed*/`, combined caches
+in `features_counterfactual/`, new models in `models_inverse_*/`, and physical
+results in `inverse_seed*/`. A worker error stops the finite stage and is
+recorded; there is no endless retry loop or M4 resumption.
+
+Physical costs so far are **1,933 charged decisions**. Each pending probe
+gets at most 1,500 further decisions and half a GPU-worker hour. The combined
+ceiling is therefore **4,933 charged decisions**, below the original 5,000
+budget; actual accumulated times are also checked against eight worker-hours.
+No full-r1 update is queued. A physical repair would still need verified
+dressing completion before becoming a positive actor label.
+
+### Initial continuation status
+
+Both CPU training seeds have completed. On the local counterfactual validation
+transitions, nominal-action MSE is 0.03839. Geometry models reach 0.03023 / 0.02954;
+no-goal controls reach 0.03025 / 0.03135. Shuffling geometric goals gives
+0.03017 / 0.02915, so the error reduction does **not** establish that the
+geometry decoder learned useful goal control. Generic-goal models show a
+clearer shuffling effect, but still need physical evidence. Complete metrics
+are in `counterfactual_learning_summary.json` under the output root.
+
+The supervisor has advanced to `ipc_goal_realization`; both new GPU workers
+are running. At the recorded check, one geometric proposal survived the
+24-decision repair interval and entered a continuation. Final dressing success
+is pending. Short validity or reduced action MSE is not counted as a repair.

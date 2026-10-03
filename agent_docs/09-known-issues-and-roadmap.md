@@ -1,5 +1,22 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Active consequence-learning continuation — 2026-10-03
+
+The owner asked why work had stopped. A finite continuation is now active:
+distinct short action probes -> goal-conditioned inverse-control training ->
+physical realization of transferred goals. Collection added 256 valid action
+transitions without fabricating successful dressing. Root history is retained
+and entire second-world branches validate the local learner; this is not a
+new-body/garment generalization test. Six data/geometry/budget checks pass.
+
+Inspect `output/uipc_manip/outcome_pilot_20261003/counterfactual_pipeline/status.json`
+for the actual stage and worker PIDs. CPU fitting finished for two seeds;
+two IPC probes are running within the original remaining budget (maximum cumulative
+4,933 charged decisions). The original nominal-only proposal remains negative;
+the new learner's effectiveness is unknown. Its geometry action MSE improved,
+but shuffling goals did not worsen that metric. No full policy update or M4 restart
+is automatic. [Details](performance/2026-10-03-garment-outcome-posttraining.md#13-follow-through-learn-from-distinct-actions-at-a-common-root).
+
 ## Goal-transfer feasibility implementation — 2026-10-03
 
 The approved [pilot](performance/2026-10-03-garment-outcome-posttraining.md#12-implemented-pilot-and-initial-evidence)

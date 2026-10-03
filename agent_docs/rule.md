@@ -121,6 +121,16 @@ record it here in the same commit.**
   failed hypotheses and do not equate offline fitting with successful repair.
   (Set 2026-10-03.)
 
+- **Follow through on the authorized dressing work after a negative pilot.**
+  After requesting more parallel launches, the owner questioned why only
+  unrelated jobs remained visible. Report actual process state plainly and
+  continue the authorized method implementation using the remaining budget.
+  The finite continuation collects distinct short action consequences, trains
+  conditional control, and checks physical goal realization; it is not an M4
+  restart or an instruction to modify another user's processes. Keep a visible
+  stage/PID record and distinguish CPU training from GPU simulation. (Clarified
+  2026-10-03.)
+
 - **Develop a creative, concrete dressing post-training method.** The owner
   renewed this request after rejecting prior framing-only responses. Produce
   an implementable learning/data-generation mechanism with primary-source

@@ -8,6 +8,7 @@ import numpy as np
 
 from outcome_goals import InteractionCoordinates, future_indices, transport, valid_prefix
 from probe_outcome_repairs import Budget, BudgetExhausted
+from train_outcome_goals import dataset
 
 
 def sleeve_and_arm():
@@ -71,6 +72,22 @@ class TestOutcomeGoals(unittest.TestCase):
             with self.assertRaises(BudgetExhausted):
                 budget.before_substep()
             self.assertEqual(budget.state()['charged_decisions'], 1)
+
+    def test_branch_context_is_never_a_goal_or_action_training_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / 'branch.npz'
+            descriptors = np.zeros((12, 4, 9)); descriptors[:3] = np.nan
+            np.savez(file, features=np.ones((12, 50)), tools=np.zeros((12, 3)), rotation=np.eye(3),
+                     descriptor=descriptors, base=np.zeros((12, 6)), actions=np.zeros((11, 6)),
+                     landmarks=np.array([[0., 0., 0.], [.5, 0., 0.], [.7, .3, 0.]]))
+            manifest = dict(horizon=1, validation_garment='old_holdout', episodes=[dict(
+                path=str(file), valid_decisions=11, start_decision=3, garment='training_target',
+                validation=True, counterfactual=True)])
+            data = dataset(manifest, frames=4, seed=0, chunk=1)
+            self.assertEqual(len(data['action']), 4)
+            self.assertTrue(np.isfinite(data['geometry']).all())
+            self.assertTrue(data['val'].all())
+            self.assertTrue(data['counterfactual'].all())
 
 
 if __name__ == '__main__':

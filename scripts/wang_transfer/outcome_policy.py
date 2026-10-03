@@ -72,8 +72,8 @@ class OutcomePolicy:
                 raise ValueError('Base policy changed')
             if sha256(Path(__file__).with_name('outcome_goals.py')) != config['geometry_sha256']:
                 raise ValueError('Goal/controller code changed after training')
-            if config['chunk'] != 8:
-                raise ValueError('This pilot bridge supports eight-decision chunks')
+            if config['chunk'] not in (1, 8):
+                raise ValueError('This pilot bridge supports one- or eight-decision chunks')
             model = proposal_net(config['input_dim'], config['chunk']); model.load_state_dict(d['state_dict']); model.eval()
             self.models[kind] = (model, d['mean'], d['std'])
         self.config = config
@@ -104,7 +104,8 @@ class OutcomePolicy:
             with torch.no_grad():
                 action, _ = residual_action(model, torch.from_numpy((x - mean) / std)[None],
                                              torch.from_numpy(self.action)[None])
-            return action[0].numpy(), self.feature
+            result = action[0].numpy()
+            return np.repeat(result, 8, axis=0) if len(result) == 1 else result, self.feature
         elif op == 'reset':
             self.features.clear(); self.tools.clear()
         else:

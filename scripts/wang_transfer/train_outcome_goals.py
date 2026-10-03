@@ -98,13 +98,68 @@ def canonicalize(args):
     (args.out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 
 
+def branches(args):
+    """Add observed action consequences, retaining the exact causal root history.
+
+    Entire second-world replays validate local inverse control. This split is
+    not a held-out body or garment claim; no target episode was a task success.
+    """
+    sys.path.insert(0, str(PACKAGE))
+    import torch
+    from uipc_manip.obs import ObsSpec
+    from uipc_manip.wang_bridge import ReferencePolicy
+    torch.set_num_threads(1)
+    manifest = json.loads((args.features / 'manifest.json').read_text())
+    policy = ReferencePolicy(manifest['base_checkpoint'], device='cpu', yaw_deg=manifest['yaw'])
+    spec = ObsSpec(768)
+    args.out.mkdir(parents=True, exist_ok=False)
+    count = 0
+    for directory in args.runs:
+        run = json.loads((directory / 'run.json').read_text())
+        if json.loads((directory / 'status.json').read_text())['status'] != 'completed':
+            raise ValueError(f'Incomplete consequence collection: {directory}')
+        for source in sorted(directory.glob('exploration_*_search.npz')):
+            with np.load(source, allow_pickle=False) as d:
+                meta = json.loads(str(d['metadata_json']))
+                end = valid_prefix(d['grasp_valid'], {})
+                if end < 1:
+                    continue
+                context = d['history_obs']
+                observations = np.concatenate((context, d['obs'][:end + 1]))
+                actions = np.concatenate((np.zeros((len(context), 6)), d['actions'][:end]))
+                descriptor = np.concatenate((np.full((len(context), 4, 9), np.nan), d['descriptor'][:end + 1]))
+                landmarks = d['landmarks']
+            features, bases, tools = [], [], []
+            for observation in observations:
+                pos, flags, valid, extra = spec.unpack_numpy(observation)
+                feature, logits = encode(policy, pos[valid], flags[valid])
+                features.append(feature); bases.append(base_action(logits, policy.rotation)); tools.append(extra[:3])
+            file = args.out / f'branch_{count:03d}.npz'
+            np.savez_compressed(file, features=np.asarray(features), base=np.asarray(bases), tools=np.asarray(tools),
+                                actions=actions, descriptor=descriptor, landmarks=landmarks, rotation=policy.rotation)
+            record = dict(path=str(file.resolve()), source=str(source.resolve()), source_sha256=sha256(source),
+                          garment=run['target_garment'], body=run['target_body'], valid_decisions=end + len(context),
+                          start_decision=len(context), counterfactual=True, validation=meta['seed'] == args.validation_seed,
+                          collector_success=False, candidate=meta['candidate'], replay_seed=meta['seed'])
+            manifest['episodes'].append(record); count += 1
+            print('[consequences] ' + json.dumps(record), flush=True)
+    if count == 0:
+        raise ValueError('No valid action-consequence transitions')
+    manifest.update(parent_manifest_sha256=sha256(args.features / 'manifest.json'), horizon=1,
+                    counterfactual_episodes=count, counterfactual_validation_seed=args.validation_seed,
+                    branch_extraction_sha256=sha256(__file__),
+                    context_contract='history_obs precedes root; context geometry is NaN and never used as a target',
+                    claim='local inverse-control diagnostic; task success and garment transfer remain unproved')
+    (args.out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+
+
 def dataset(manifest, frames, seed, chunk):
     rng = np.random.default_rng(seed)
-    rows = {k: [] for k in ('history', 'geometry', 'generic', 'duration', 'base', 'action', 'val', 'episode')}
+    rows = {k: [] for k in ('history', 'geometry', 'generic', 'duration', 'base', 'action', 'val', 'episode', 'counterfactual')}
     for episode, record in enumerate(manifest['episodes']):
         with np.load(record['path'], allow_pickle=False) as d:
             history = history_inputs(d['features'], d['tools'] @ d['rotation'].T, frames)
-            for t in range(0, record['valid_decisions'] - chunk + 1, 2):
+            for t in range(record.get('start_decision', 0), record['valid_decisions'] - chunk + 1, 2):
                 # Full-length and shorter remaining paths share the same decoder.
                 for h in {min(manifest['horizon'], record['valid_decisions'] - t),
                           int(rng.integers(chunk, min(manifest['horizon'], record['valid_decisions'] - t) + 1))}:
@@ -115,8 +170,9 @@ def dataset(manifest, frames, seed, chunk):
                     rows['duration'].append([h / manifest['horizon']])
                     rows['base'].append(d['base'][t])
                     rows['action'].append(d['actions'][t:t + chunk])
-                    rows['val'].append(record['garment'] == manifest['validation_garment'])
+                    rows['val'].append(record.get('validation', False) or record['garment'] == manifest['validation_garment'])
                     rows['episode'].append(episode)
+                    rows['counterfactual'].append(record.get('counterfactual', False))
     return {k: np.asarray(v) for k, v in rows.items()}
 
 
@@ -165,13 +221,22 @@ def train(args):
                     if goal.shape[1]:
                         # Same observations, permuted desired outcomes.
                         goal_slice = slice(data['history'].shape[1], -1)
-                        shuffled[:, goal_slice] = shuffled[torch.randperm(len(val_idx)), goal_slice]
+                        for group in (False, True):
+                            local = np.flatnonzero(data['counterfactual'][val_idx] == group)
+                            if len(local) > 1:
+                                permuted = local[torch.randperm(len(local)).numpy()]
+                                shuffled[local, goal_slice] = x[val_idx[permuted], goal_slice]
                     shuffled_pred, _ = residual_action(model, shuffled, base[val_idx])
                 row = dict(update=update, train_mse=float((fitted - target[train_idx]).square().mean()),
                            validation_mse=float((pred - target[val_idx]).square().mean()),
                            base_validation_mse=float((base[val_idx, None] - target[val_idx]).square().mean()),
                            shuffled_goal_mse=float((shuffled_pred - target[val_idx]).square().mean()),
                            goal_action_rms=float((pred - shuffled_pred).square().mean().sqrt()))
+                cf = torch.from_numpy(data['counterfactual'][val_idx])
+                if cf.any():
+                    row.update(counterfactual_validation_mse=float((pred[cf] - target[val_idx][cf]).square().mean()),
+                               counterfactual_base_mse=float((base[val_idx, None][cf] - target[val_idx][cf]).square().mean()),
+                               counterfactual_shuffled_mse=float((shuffled_pred[cf] - target[val_idx][cf]).square().mean()))
                 log.write(json.dumps(row) + '\n'); log.flush()
                 print(f'[train {kind}] ' + json.dumps(row), flush=True)
         log.close()
@@ -203,10 +268,14 @@ def main():
     t.add_argument('--updates', type=int, default=1200)
     c = sub.add_parser('canonicalize')
     c.add_argument('--features', type=Path, required=True)
-    for command in (f, t, c):
+    b = sub.add_parser('branches')
+    b.add_argument('--features', type=Path, required=True)
+    b.add_argument('--runs', type=Path, nargs='+', required=True)
+    b.add_argument('--validation-seed', type=int, default=20261004)
+    for command in (f, t, c, b):
         command.add_argument('--out', type=Path, required=True)
     args = p.parse_args()
-    dict(extract=extract, train=train, canonicalize=canonicalize)[args.stage](args)
+    dict(extract=extract, train=train, canonicalize=canonicalize, branches=branches)[args.stage](args)
 
 
 if __name__ == '__main__':

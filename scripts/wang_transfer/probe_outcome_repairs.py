@@ -289,6 +289,7 @@ def main(args):
             return next_obs, row
 
         base, feature = observe(obs)
+        observation_history = [obs[0].copy()]
         if not state()['valid']:
             raise ValueError('Regenerated initial state is physically invalid')
         budget.phase = 'roll_in'
@@ -297,6 +298,7 @@ def main(args):
             if not row['valid']:
                 raise ValueError('Nominal rollout invalid before predeclared repair root')
             base, feature = observe(obs)
+            observation_history.append(obs[0].copy())
         root_state = state()
         root = snapshotter.snapshot(); client.request('save')
         root_anchor = env._anchor[0].copy()
@@ -318,7 +320,8 @@ def main(args):
 
         def branch(method, candidate, seed, suffix=False):
             nominal = restore(seed)
-            source = sources[candidate - 1] if candidate else None
+            source = sources[candidate - 1] if candidate and method != 'exploration' else None
+            repair_steps = args.probe_steps if method == 'exploration' else args.horizon
             rng = np.random.default_rng(seed + candidate * 101)
             knots = rng.normal(0., .3, (3, 4))
             observations, actions, geometries = [obs[0].copy()], [], []
@@ -326,21 +329,36 @@ def main(args):
             row = root_state.copy()
             budget.phase = f'{method}/seed{seed}/candidate{candidate}/' + ('verification' if suffix else 'search')
             first_success, held = None, 0
-            for t in range(args.horizon + (450 if suffix else 0)):
+            for t in range(repair_steps + (450 if suffix else 0)):
                 if suffix and first_success is not None:
                     action = np.zeros(6, np.float32)
-                elif t >= args.horizon or candidate == 0:
+                elif t >= repair_steps or candidate == 0:
                     action = nominal
+                elif method == 'exploration':
+                    if candidate == 1:
+                        correction = np.clip(-nominal[[0, 1, 2, 5]], -.5, .5)
+                    elif candidate == 2:
+                        correction = np.clip(-2 * nominal[[0, 1, 2, 5]], -.5, .5)
+                    else:
+                        phase = t * 2 / max(repair_steps - 1, 1)
+                        lo = min(int(phase), 1); fraction = phase - lo
+                        correction = np.clip((1 - fraction) * knots[lo] + fraction * knots[lo + 1], -.5, .5)
+                    action = nominal.copy()
+                    action[[0, 1, 2, 5]] = np.clip(action[[0, 1, 2, 5]] + correction, -1., 1.)
                 elif method == 'geometry':
-                    if t % 8 == 0:
-                        chunk_actions, _ = client.request('geometry', goals=source['goals'][future_indices(t, args.horizon - t)],
-                                                         landmarks=landmarks, remaining=args.horizon - t)
-                    action = chunk_actions[t % 8]
+                    chunk = 1 if args.one_step_goals else 8
+                    if t % chunk == 0:
+                        remaining = 1 if args.one_step_goals else args.horizon - t
+                        chunk_actions, _ = client.request('geometry', goals=source['goals'][future_indices(t, remaining)],
+                                                         landmarks=landmarks, remaining=remaining)
+                    action = chunk_actions[t % chunk]
                 elif method == 'generic':
-                    if t % 8 == 0:
-                        chunk_actions, _ = client.request('generic', goals=source['generic'][future_indices(t, args.horizon - t)],
-                                                         remaining=args.horizon - t)
-                    action = chunk_actions[t % 8]
+                    chunk = 1 if args.one_step_goals else 8
+                    if t % chunk == 0:
+                        remaining = 1 if args.one_step_goals else args.horizon - t
+                        chunk_actions, _ = client.request('generic', goals=source['generic'][future_indices(t, remaining)],
+                                                         remaining=remaining)
+                    action = chunk_actions[t % chunk]
                 elif method == 'tcp_transfer':
                     action = np.zeros(6, np.float32)
                     action[:3] = (root_anchor + source['tcp'][t + 1] - env._anchor[0]) / cfg.max_translation
@@ -381,6 +399,7 @@ def main(args):
                           success=bool(suffix and held == 20 and row['valid']), budget=budget.state())
             name = f'{method}_{seed}_{candidate}_' + ('verification' if suffix else 'search')
             np.savez_compressed(args.out / (name + '.npz'), obs=np.asarray(observations), actions=np.asarray(actions),
+                                history_obs=np.asarray(observation_history[-4:-1]),
                                 descriptor=np.asarray(descriptors), tcp=np.asarray(tools), landmarks=landmarks,
                                 grasp_valid=np.array([r['valid'] for r in geometries]),
                                 geometry_json=json.dumps(geometries), metadata_json=json.dumps(result))
@@ -392,6 +411,11 @@ def main(args):
         status = 'running'
         write_json(args.out / 'status.json', dict(status=status, budget=budget.state(), policy_updated=False))
         for seed in args.replay_seeds:
+            if args.collect_only:
+                for candidate in range(args.probe_count):
+                    results.append(branch('exploration', candidate, seed))
+                    write_json(args.out / 'results.json', results)
+                continue
             # Balanced order: reverse in the second replay to reduce time/load effects.
             for method in (METHODS if seed == 20261003 else METHODS[::-1]):
                 trials = [branch(method, candidate, seed) for candidate in range(3)]
@@ -433,4 +457,8 @@ if __name__ == '__main__':
     p.add_argument('--horizon', type=int, default=24)
     p.add_argument('--max-decisions', type=int, default=5000)
     p.add_argument('--gpu-hours', type=float, default=8.)
+    p.add_argument('--collect-only', action='store_true', help='Collect distinct short action consequences; no repair selection or success labels')
+    p.add_argument('--probe-count', type=int, default=16)
+    p.add_argument('--probe-steps', type=int, default=8)
+    p.add_argument('--one-step-goals', action='store_true', help='Realize the next interaction goal and replan after every decision')
     main(p.parse_args())
