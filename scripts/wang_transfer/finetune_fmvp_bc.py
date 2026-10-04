@@ -227,6 +227,15 @@ def train(args) -> None:
             cat["targets"][m] = teacher(x[torch.from_numpy(m)])[:, :3].tanh().numpy()
         print(f"[train] {int(m.sum())} post-handoff states labelled by {args.teacher_trunk}", flush=True)
     base = torch.from_numpy(cat["logits"]).float()[:, :6].tanh()
+    if args.trust_anchor is not None:
+        # Anchor the trust term to this checkpoint's outputs (e.g. r1, the init and the post-handoff teacher)
+        # instead of the encoder checkpoint's logits recorded at feature time (fmvp_sim by default).
+        anchor = torch.nn.Sequential(torch.nn.Linear(50, 1024), torch.nn.ReLU(), torch.nn.Linear(1024, 1024),
+                                     torch.nn.ReLU(), torch.nn.Linear(1024, 12))
+        astate = torch.load(str(args.trust_anchor), map_location="cpu", weights_only=False)["model_state_dict"]
+        anchor.load_state_dict({k[len("trunk."):]: v for k, v in astate.items() if k.startswith("trunk.")}, strict=True)
+        with torch.no_grad():
+            base = anchor(x)[:, :6].tanh()
     target = torch.from_numpy(cat["targets"]).float()
     w = torch.from_numpy(weight)
     rng = np.random.default_rng(args.seed)
@@ -299,6 +308,8 @@ def main() -> None:
     t.add_argument("--dagger-weight", type=float, default=3.0)
     t.add_argument("--init", type=Path, default=None, help="Start the trunk from this checkpoint instead.")
     t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--trust-anchor", type=Path, default=None,
+                   help="Checkpoint whose trunk outputs the trust term keeps the student near (default: feature-time logits).")
     t.add_argument("--teacher-trunk", type=Path, default=None,
                    help="Checkpoint whose trunk labels kind-8 (post-handoff DAgger) states, e.g. r1.")
     t.add_argument("--state-weights", type=Path, default=None,
