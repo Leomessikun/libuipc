@@ -110,6 +110,16 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Study post-training gains that survive sim-to-real transfer.** Read the
+  October 5 brief at `67e0c5fa`; complete its questions 1–3 prior-art map before
+  running question 4, paired physics/observation perturbations of fmvp_sim, r1
+  and flow. Use only the first fourteen development bodies; keep later bodies
+  reserved. Deliver one or two concrete candidates with falsifiable predictions,
+  strongest prior-art objections, and the smallest decisive experiment/cost.
+  **One simulation worker; total GPU memory below 90 GiB**, superseding the
+  brief's older 80 GiB limit. Do not restart cancelled queues or interfere with
+  unrelated workloads. (Set 2026-10-05.)
+
 - **Implement the Discrete Forcing-inspired physical-effect partition study.**
   The owner approved the proposal following the paper review. Reuse existing
   rollout features, acquire same-root action alternatives near measured contact

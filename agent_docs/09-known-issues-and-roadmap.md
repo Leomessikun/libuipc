@@ -1,5 +1,16 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Sim-to-real gain retention study — 2026-10-05
+
+Questions 1–3 primary-source map completed; see
+[the study](performance/2026-10-05-sim2real-posttraining-study.md). Next is the
+authorized paired physics/observation robustness measurement of existing
+fmvp_sim/r1/flow checkpoints, followed by one or two falsifiable method candidates.
+Do not interpret simulated robustness as hardware transfer, or CVaR/KL/ensemble
+acceptance as new algorithms. One worker, total GPU use below 90 GiB; initial
+89.57 GiB usage leaves insufficient launch headroom. Reserved test bodies and
+cancelled queues stay untouched.
+
 ## Completed effect-code post-training pilot — 2026-10-03
 
 Implementation and two-seed training are complete for matched flat flow,

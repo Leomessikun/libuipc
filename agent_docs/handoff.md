@@ -1,5 +1,20 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-05 — Sim-to-real post-training study
+
+The owner requested the study in brief `67e0c5fa`, with questions 1–3 before the
+question-4 robustness measurement. The primary-source map is now in
+[the study](performance/2026-10-05-sim2real-posttraining-study.md). Key correction:
+Dressing in Motion trains its hardware policy on 210 real demonstrations and
+explicitly does not evaluate sim-to-real transfer. DPPO has transfer evidence but
+its hardware experiment uses estimated state; robust relative improvement and
+real-data calibration already have substantial prior art.
+
+No new simulation has been launched at this stage. The GPU was at 89.57 GiB
+despite no dressing worker. Owner limit: one worker and total below 90 GiB; do
+not affect other projects. Q4 implementation/measurement and concrete method
+candidates are outstanding. M4 and composite DAgger remain stopped.
+
 ## 2026-10-03 — Effect-code study completed without verified improvement
 
 The owner approved the Discrete Forcing-inspired proposal. The new finite
