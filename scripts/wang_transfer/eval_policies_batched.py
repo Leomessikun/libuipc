@@ -117,6 +117,8 @@ def main():
     p.add_argument("--max-bodies", type=int, help="Evaluate only the first N bodies of the split.")
     p.add_argument("--skip-bodies", type=int, default=0,
                    help="Skip the first N bodies of the split (a second driver can take a later body group).")
+    p.add_argument("--body-list", type=Path, default=None,
+                   help="Text file of body ids to use instead of the first --max-bodies of the split.")
     p.add_argument("--collector-args", default="",
                    help="Extra collector options for every job, one quoted string (e.g. '--align-target cuff').")
     args = p.parse_args()
@@ -132,6 +134,9 @@ def main():
     policies = dict(s.split("=", 1) for s in args.policies)
     index = json.loads(args.index.read_text())["episodes"]
     bodies = sorted({e["body"] for e in index if e["split"] == args.split})[:args.max_bodies][args.skip_bodies:]
+    if args.body_list is not None:
+        wanted = {int(b) for b in args.body_list.read_text().split()}
+        bodies = [b for b in sorted({e["body"] for e in index if e["split"] == args.split}) if b in wanted]
     done = set()
     if (args.out / "results.jsonl").exists():
         done = {(r["policy"], r["garment"], r["body"]) for r in map(json.loads, (args.out / "results.jsonl").read_text().splitlines())}
