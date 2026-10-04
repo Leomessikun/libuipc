@@ -275,3 +275,25 @@ receives states it knows, and distills the composite into the single point-cloud
 
 The translation-only teacher beats r1 by 20 : 1 on the 69 development units (64 vs 45; flow 48). The method claim stands only if the distilled student, without privileged input, keeps a clear part of
 that gain on the held-out test bodies.
+
+### First distilled student: plain BC loses the entry (2026-10-04)
+
+Composite rollouts on the first 28 training bodies (all from body regions 1-2): 132 of 138 accepted, 30,686
+states (8,957 expert entry, 19,089 r1 continuation, 2,640 hold). Fine-tuned from r1 (trust 0.5, 3 epochs,
+`pctd_20261004/model`). On held-out training bodies the trunk follows the expert's entry direction (median
+cosine 0.93, r1 as is 0.68) and keeps r1's own actions; weaker trust (0.05, 10 epochs) reaches 0.96.
+
+The student alone (no expert), development bodies 1-14 x 5 garments (`pctd_eval_dev_20261004`): **31/69,
+below r1's 45/69**. 30 of its 38 failures never cover 60 % of the forearm, i.e. the entry fails. Bodies 1-7
+(regions 1-4) 23/35 (r1 29), bodies 8-14 (regions 4-8) 8/34 (r1 16): the student generalizes poorly beyond the
+two body regions it was trained on, and open-loop imitation of the expert's states leaves it without
+corrections once it drifts.
+
+Next (running, `dagger_chain.sh` in the session scratchpad):
+
+1. Composite rollouts on one training body from each of regions 3-27 (25 bodies), student v2 on all 53 bodies
+   (trust 0.1, 8 epochs).
+2. DAgger round: v2 executes on 25 further training bodies (one per region 3-27) with the expert running in
+   shadow (`--variants dagger_entry`); entry states before the 60 % handoff are labelled with the expert's
+   translation (`finetune_fmvp_bc.py --expert-dagger`, kind 7), accepted episodes add their own continuation.
+3. Student v3 on the aggregate, evaluated alone on development bodies 1-14.
