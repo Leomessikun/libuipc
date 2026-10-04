@@ -297,3 +297,36 @@ Next (running, `dagger_chain.sh` in the session scratchpad):
    shadow (`--variants dagger_entry`); entry states before the 60 % handoff are labelled with the expert's
    translation (`finetune_fmvp_bc.py --expert-dagger`, kind 7), accepted episodes add their own continuation.
 3. Student v3 on the aggregate, evaluated alone on development bodies 1-14.
+
+### DAgger round 1 and the shadow-expert label bug (2026-10-04)
+
+Student v2 (composite BC on 53 training bodies, regions 1-27, trust 0.1, 8 epochs) executed on 25 further
+training bodies with the expert in shadow (`pctd_dagger1_20261004`): 43 of 100 started episodes accepted. The
+recorded shadow commands were wrong: 93 % pointed back along the arm (median cosine -0.81 with the
+finger-to-shoulder axis; the composite expert's own commands +0.80). The scripted expert is a stage machine
+that leaves "move to the hover point above the finger" only when its own gripper reaches that point; under a
+student that passes the hand without touching it, it keeps pulling back. `expert_relabel.py` recomputes the
+expert's translation from the stored state with a state-based stage (hover point reached within 12 mm or passed
+along the arm). On composite episodes it reproduces the executed expert command exactly (median cosine 1.000,
+0.3 % of states below 0.9); on the DAgger states its labels point forward (median +0.69).
+
+The frozen 50-d gripper feature is not the bottleneck: fitting the expert's entry direction generalizes to
+held-out body regions (median cosine 0.92, training regions 0.96, r1 as is 0.71).
+
+| student (alone, development bodies 1-14 x 5 garments) | success | vs r1 (win : loss) | entry failures |
+|---|---|---|---|
+| r1 | 45/69 | | |
+| composite teacher (privileged) | 64/69 | 20 : 1 | |
+| v1: composite BC, 28 bodies of regions 1-2 | 31/69 | 3 : 17 | 30 of 38 |
+| v3r: + 25 regions + DAgger round 1 (relabelled entry) | 43/69 | 9 : 11 | 8 of 26 |
+
+v3r by garment: gown 10 (r1 8), tshirt_68 10 (9), tshirt_4 11 (11), tshirt_392 10 (11), tshirt_26 2 (6).
+Remaining failures: on tshirt_26 the student reaches 60 % of the forearm on time but its gripper force then
+stays at 80-105 N (teacher 25-37 N), the signature of a late handoff: without a notion of the handoff it blends
+the expert's push with r1's continuation. Five more lose the grasp in the first 20-40 decisions.
+
+Fix (`d129b6bc`): every DAgger state gets the composite teacher's label, the relabelled expert route before the
+student crosses 60 % of the forearm and r1's own trunk output after it (computed at training time from the same
+frozen feature, `train --teacher-trunk`), failed episodes included. Student v4 (75 bodies, 10,149 post-handoff
+states labelled by r1) executes DAgger round 2 on 25 further training bodies (`pctd_dagger2_20261004`); v5 on the
+aggregate is then evaluated on the development bodies.
