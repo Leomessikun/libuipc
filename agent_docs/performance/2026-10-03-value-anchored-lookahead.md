@@ -130,3 +130,15 @@ advantage-weighted regression with an asymmetric privileged critic; the establis
 weighting, the question is whether failure data with a hazard critic improves a pretrained dressing policy where
 success-only imitation does not.
 
+### Result: advantage weighting from failures hurts (2026-10-04)
+
+`haw_eval_dev_20261004`, development bodies 1-14, stopped after 18 of 20 jobs (one HAW tshirt_26 job lost to a
+CUDA start-up fault): r1 39 of 55, success-only control 37 of 56, HAW 33 of 55; HAW vs r1 2:8 (p = 0.11), HAW vs
+control 1:4. Per-step credit from differences of a correlational value (V(s_{t+8}) - V(s_t)) is not reliable
+enough to reweight actions; it suppresses useful ones. Together with the four value-teacher variants, every
+local correction (one-action lookahead, value ranking, reweighting, distillation) lands at or below r1 on
+static Cloth3D. 37 of r1's 71 test failures fail for all eleven evaluated policies, all derived from FMVP: a
+shared blind spot that local post-training around the base behaviour does not leave. A scripted-expert and an
+r1-to-expert handoff run on tshirt_26 and hospital gown (bodies 1-14) are measuring whether those units are
+solvable at all (`expert_headroom_20261004`, `handoff_headroom_20261004`).
+
