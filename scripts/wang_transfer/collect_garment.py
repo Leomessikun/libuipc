@@ -28,7 +28,7 @@ from rollout_controls import crop_observation, force_input, load_profiles, profi
 
 
 ROOT = Path("/home/ge47gax/kun/libuipc")
-VARIANTS = {"baseline": 1.0, "half": 0.5, "quarter": 0.25, "handoff": 1.0, "expert": 1.0, "entry": 1.0}
+VARIANTS = {"baseline": 1.0, "half": 0.5, "quarter": 0.25, "handoff": 1.0, "expert": 1.0, "entry": 1.0, "dagger_entry": 1.0}
 
 
 def sha256(path):
@@ -543,7 +543,7 @@ def main():
                 buffers = [{k: [] for k in ["obs", "positions", "tcp", "tcp_rotation", "gripper_force", "arm_force", "body_force",
                             "upperarm_ratio", "forearm_ratio", "actions", "policy_actions", "rewards",
                             "executed_translation", "tracking_error", "early_turn", "grasp_valid", "speed_scale", "controller_id",
-                            "policy_force", "tracking_scale", "planner_choice"]}
+                            "policy_force", "tracking_scale", "planner_choice", "expert_actions"]}
                            for _ in range(n)]
                 policy_forces = np.zeros((n, 3), np.float32)
                 if sleeve is not None:
@@ -595,7 +595,7 @@ def main():
                     tracking_scales = np.ones(n)
                     planner_choices = np.full(n, -1, dtype=np.int16)
                     controllers = np.full(n, 2, dtype=np.int8)  # 0 FMVP, 1 scripted expert, 2 hold
-                    need_expert = any(v in ("expert", "handoff", "entry") for v in variants)
+                    need_expert = any(v in ("expert", "handoff", "entry", "dagger_entry") for v in variants)
                     if need_expert:
                         if getattr(env, "_heuristic", None) is None:
                             from uipc_manip.dressing_heuristic import HeuristicDressingPolicy
@@ -610,7 +610,7 @@ def main():
                                 env._heuristic._align_steps[i] = 0
                                 env._heuristic._best_upper[i] = buffers[i]["upperarm_ratio"][-1]
                                 print(f"[handoff] body={body} state={step} forearm={buffers[i]['forearm_ratio'][-1]:.3f}", flush=True)
-                            if variant == "entry" and handoff_at[i] is None and buffers[i]["forearm_ratio"][-1] >= args.entry_forearm:
+                            if variant in ("entry", "dagger_entry") and handoff_at[i] is None and buffers[i]["forearm_ratio"][-1] >= args.entry_forearm:
                                 handoff_at[i] = step
                                 print(f"[entry] body={body} state={step} forearm={buffers[i]['forearm_ratio'][-1]:.3f} -> policy", flush=True)
                         expert = env.scripted_actions()
@@ -733,7 +733,10 @@ def main():
                     for i in range(n):
                         if completed[i]:
                             continue
+                        # The scripted expert's command at this state (zeros without it): DAgger labels when the
+                        # policy executes ('dagger_entry' labels the entry phase, before handoff_state).
                         values = dict(actions=actions[i].copy(), policy_actions=proposed[i].copy(), controller_id=controllers[i],
+                                      expert_actions=expert[i].copy() if expert is not None else np.zeros(env.action_dim, np.float32),
                                       tracking_scale=tracking_scales[i],
                                       planner_choice=planner_choices[i],
                                       rewards=float(rewards[i]), speed_scale=float(scales[i]),

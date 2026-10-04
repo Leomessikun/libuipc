@@ -69,6 +69,29 @@ def dagger_episodes(dirs: list[Path]) -> list[dict]:
     return out
 
 
+def expert_dagger_episodes(datasets: list[Path]) -> list[dict]:
+    """Policy-executed episodes with the scripted expert's shadow command (collect_garment 'dagger_entry').
+    Entry states, before the handoff, are labelled with the expert's translation whatever the outcome;
+    after the handoff an accepted episode contributes its own executed actions, a failed one nothing."""
+    out = []
+    for dataset in datasets:
+        for line in (dataset / "attempts.jsonl").read_text().splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            path = Path(row["path"])
+            with np.load(path, allow_pickle=False) as data:
+                n = len(data["actions"])
+            handoff = n if row.get("handoff_state") is None else min(int(row["handoff_state"]), n)
+            key = digest(path)
+            out.append(dict(path=str(path), body=int(row["body"]), sha256=key, labels=list(range(handoff)),
+                            target="expert_actions"))
+            if row.get("accepted") and handoff < n:
+                out.append(dict(path=str(path), body=int(row["body"]), sha256=key + "-own", labels=list(range(handoff, n)),
+                                target="actions"))
+    return out
+
+
 def encode_worker(args) -> str:
     episodes, out_path, checkpoint, yaw = args
     os.environ.setdefault("OMP_NUM_THREADS", "1")
@@ -89,6 +112,7 @@ def encode_worker(args) -> str:
             obs = np.asarray(data["obs"][:-1], np.float32)
             actions = np.asarray(data["actions"], np.float32)
             controller = np.asarray(data["controller_id"], np.int8)
+            source = np.asarray(data[episode.get("target", "actions")], np.float32)
         labels = episode.get("labels")
         steps = (range(0, len(actions), int(episode.get("stride", 1))) if labels is None
                  else [t for t in labels if t < len(actions)])
@@ -102,7 +126,11 @@ def encode_worker(args) -> str:
                 out = policy.trunk(row)[0]
             feats.append(row[0].numpy())
             logits.append(out.numpy())
-            if labels is not None:                          # IPC lookahead's choice at a visited state
+            if episode.get("target") == "expert_actions":  # scripted expert's shadow command at a policy state
+                targets.append(np.clip(source[t, :3] @ rotation.T, -1, 1)); kinds.append(7)
+            elif episode.get("target") == "actions":       # own executed action of an accepted DAgger episode
+                targets.append(np.clip(actions[t, :3] @ rotation.T, -1, 1)); kinds.append(int(controller[t]))
+            elif labels is not None:                        # IPC lookahead's choice at a visited state
                 targets.append(np.clip(actions[t, :3] @ rotation.T, -1, 1)); kinds.append(6)
             elif controller[t] == 2:                        # verified hold: stand still
                 targets.append(np.zeros(3, np.float32)); kinds.append(2)
@@ -121,7 +149,8 @@ def encode_worker(args) -> str:
 def features(args) -> None:
     from multiprocessing import get_context
 
-    episodes = accepted_episodes(args.datasets) + dagger_episodes(args.dagger)
+    episodes = (accepted_episodes(args.datasets) + dagger_episodes(args.dagger)
+                + expert_dagger_episodes(args.expert_dagger))
     if args.exclude_bodies:
         episodes = [e for e in episodes if e["body"] not in set(args.exclude_bodies)]
     args.out.mkdir(parents=True, exist_ok=True)
@@ -149,7 +178,7 @@ def train(args) -> None:
     per_body = dict(zip(bodies.tolist(), counts.tolist()))
     weight = np.array([1.0 / per_body[b] for b in cat["bodies"]], np.float32)
     weight *= np.where(cat["kinds"] == 2, args.hold_weight, 1.0)
-    weight *= np.where(cat["kinds"] == 6, args.dagger_weight, 1.0)
+    weight *= np.where(np.isin(cat["kinds"], (6, 7)), args.dagger_weight, 1.0)
     if args.state_weights is not None:
         # Per-state weights aligned with each shard (e.g. advantage weights from compute_advantage_weights.py).
         extra = np.concatenate([np.load(args.state_weights / p.name)["weights"] for p in shards])
@@ -219,6 +248,8 @@ def main() -> None:
     f.add_argument("--datasets", type=Path, nargs="+", required=True)
     f.add_argument("--dagger", type=Path, nargs="*", default=[],
                    help="Directories of lookahead-labelled attempts (accepted or not).")
+    f.add_argument("--expert-dagger", type=Path, nargs="*", default=[],
+                   help="Datasets of policy-executed episodes with the scripted expert's shadow labels (attempts.jsonl).")
     f.add_argument("--exclude-bodies", type=int, nargs="*", default=[])
     f.add_argument("--checkpoint", type=Path, default=Path("/home/ge47gax/Desktop/fmvp_sim.pt"))
     f.add_argument("--yaw", type=float, default=267.0)
