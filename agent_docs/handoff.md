@@ -10,10 +10,21 @@ explicitly does not evaluate sim-to-real transfer. DPPO has transfer evidence bu
 its hardware experiment uses estimated state; robust relative improvement and
 real-data calibration already have substantial prior art.
 
-No new simulation has been launched at this stage. The GPU was at 89.57 GiB
-despite no dressing worker. Owner limit: one worker and total below 90 GiB; do
-not affect other projects. Q4 implementation/measurement and concrete method
-candidates are outstanding. M4 and composite DAgger remain stopped.
+Q4 is implemented in `scripts/wang_transfer/run_sim2real_audit.py`. Frozen protocol:
+first seven development bodies, tshirt_26, three policies, eight single-factor
+shifts plus nominal/identical nominal repeat: 210 attempts, 30 sequential batches.
+One world/worker, CPU inference, admission below 84 GiB, terminate only our process
+group at 89.75 GiB, 24 worker-hour cap. Supervisor PID 2288111 is launched; its
+initial state is `waiting_for_gpu`, not simulation running. Read
+`output/uipc_manip/sim2real_audit_20261005/{status,protocol,summary}.json` and
+`supervisor.log` for current status. M4/composite DAgger remain stopped.
+
+Three measurement integrity tests pass. A CPU-only replay of 49 preserved states
+finds r1/flow no more action-sensitive than fmvp_sim under the selected camera
+shifts; this does not measure success-gain retention. See the study for numbers
+and a concrete, conditional candidate based on calibrated three-way outcome
+comparisons. S-HCI-GIBO and Sim2Act substantially narrow the novelty claim; no new
+algorithm or real transfer result is established. Physical Q4 results are pending.
 
 ## 2026-10-03 — Effect-code study completed without verified improvement
 

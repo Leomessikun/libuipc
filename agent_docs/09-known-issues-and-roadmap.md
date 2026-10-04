@@ -5,7 +5,11 @@
 Questions 1–3 primary-source map completed; see
 [the study](performance/2026-10-05-sim2real-posttraining-study.md). Next is the
 authorized paired physics/observation robustness measurement of existing
-fmvp_sim/r1/flow checkpoints, followed by one or two falsifiable method candidates.
+fmvp_sim/r1/flow checkpoints. Code and frozen 210-attempt pilot are ready;
+supervisor 2288111 initially waits for GPU headroom. No completed new closed-loop
+results at this stage. CPU action-sensitivity diagnostic completed; a conditional
+ternary-comparison calibration candidate and its strongest prior-art objections
+are documented, with the proposed follow-up experiment explicitly not launched.
 Do not interpret simulated robustness as hardware transfer, or CVaR/KL/ensemble
 acceptance as new algorithms. One worker, total GPU use below 90 GiB; initial
 89.57 GiB usage leaves insufficient launch headroom. Reserved test bodies and

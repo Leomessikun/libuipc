@@ -61,6 +61,10 @@ evidence of geometric accuracy against hardware.
 | Optimize a pessimistic dynamics model consistent with data | [RAMBO-RL, 2022](https://arxiv.org/abs/2204.12581) | Model pessimism is established and can become overly conservative; need a budget-matched robust baseline. |
 | Fit models for decision/value accuracy instead of reconstructing every state coordinate | [VAML, 2017](https://proceedings.mlr.press/v54/farahmand17a.html); [calibrated VAML, ICML 2025](https://proceedings.mlr.press/v267/voelcker25a.html) | Task-aware calibration is also established. A contact-feature loss or value-aware model is not independently new. |
 | Validate that simulation preserves real policy rankings and behavioral sensitivities | [SIMPLER, CoRL 2024](https://arxiv.org/html/2405.05941v1) | Predictive simulation is an empirical claim requiring paired real tests; simulator fidelity alone does not establish it. |
+| Actively probe task-relevant parameters | [Task-oriented exploration, RSS 2020](https://arxiv.org/html/2006.01952v1); [SPI-Active, 2025](https://arxiv.org/abs/2505.14266) | Choosing informative real experiments, including task-aware probing, is established. |
+| Learn simulation bias and query simulation/robot for high-confidence policy improvements | [S-HCI-GIBO, 2024/2025](https://arxiv.org/html/2411.14246v1) | Particularly strong prior art: dual-source Gaussian processes and gradient-information acquisition already do this for black-box policy parameters. Its smoothness/GP assumptions do not directly describe contact-event labels, but simply removing those assumptions is not a novelty proof. |
+| Calibrate residual simulator error and perceived-environment uncertainty, then adapt policies | [Neural Fidelity Calibration, 2025](https://arxiv.org/html/2504.08604v1) | A learned residual fidelity distribution plus selective adaptation is already covered, with real navigation evidence. |
+| Preserve decision-critical action rankings through simulator calibration and grouped perturbations | [Sim2Act, 2026](https://arxiv.org/html/2603.09053v1) | Explicitly overlaps even with “calibrate rankings, not average state error.” Its experiments concern supply chains, but that application difference does not give us algorithmic novelty. |
 
 For a target-model set M, the familiar robust improvement objective is
 
@@ -105,10 +109,221 @@ Shrinking gain under a selected perturbation establishes **fragility to that
 shift**. It alone does not prove simulator exploitation, identify the real-world
 error distribution, or establish the cause of a hardware failure.
 
-## 5. Method candidates
+### 4.1 Fixed first screen (prepared before any new rollout)
 
-Pending the Q4 measurement. The target is a transferable improvement signal,
-with uniform DR, robust-baseline-regret filtering, and real-data anchoring as
-explicit alternatives. Newness must lie in a specific estimator, experiment
-selection rule, or update mechanism that beats those alternatives at equal cost.
-No new algorithm is declared successful or novel in this preliminary record.
+Executable: `scripts/wang_transfer/run_sim2real_audit.py --run`.
+Manifest and live status: `output/uipc_manip/sim2real_audit_20261005/`.
+
+- Seven first development bodies: 1032, 1041, 2034, 2035, 3041, 3047, 4038.
+- Original primary garment `tshirt_26`; all three frozen policies.
+- **210 attempts, 30 sequential batches**, one world of seven slots at a time.
+  This is a single-garment screen, not the entire 70-unit development benchmark.
+- Nominal and one identical nominal repeat; eight one-factor interventions below.
+  Other parameters, hang, body sizing, placement offset `[0,5,0]` mm, horizon and
+  success criterion are fixed. No adaptive choice of a better start.
+- Separate CPU inference clients per slot prevent another body's termination
+  from changing the flow random-number stream. The contemporary nominal control
+  uses the same clients; historical aggregate scores are context, not controls.
+- The bridge voxel is **62.5 mm**, not 6.25 mm. The voxel experiment shifts its
+  grid origin by half a cell; it does not translate the point cloud.
+
+| Intervention | Nominal → perturbed | Interpretation |
+|---|---|---|
+| Friction | 0.3 → 0.6 | Global IPC contact-table coefficient; includes cloth/body contact, not an isolated body-only coefficient. |
+| Young's modulus | 6,000 → 12,000 Pa | Membrane material change, other coefficients fixed. |
+| Bending coefficient | 0.1 → 0.2 | Discrete-shell bending coefficient. |
+| Density | 750 → 1,125 kg/m³ | Coupled mass/grasp change noted above. |
+| Half-thickness/contact radius | 0.15 → 0.225 mm | Coupled contact/mass/grasp change; not a solver-model replacement. |
+| Point noise | 0 → 3 mm SD per coordinate | Independent Gaussian camera-point noise, not a calibrated D435i noise model. |
+| Dropout | 0 → 30% | Independent point removal, not a full structured occlusion model. |
+| Voxel origin | `[0,0,0]` → `[31.25,31.25,31.25]` mm | Same cell width and first-point selection; tool point always retained. |
+
+The material values are stress levels, not estimates of the real garments.
+No downward parameter sweep or unseen garment is included in this first screen.
+The runner requires total usage below 84 GiB to reserve 6 GiB for startup; it
+terminates only its own process group if total usage reaches 89.75 GiB. Sampling
+cannot prevent instantaneous allocations by unrelated jobs. Admission and
+termination events, hashes, worker cost, missing cases and initialization hashes
+are recorded. No infrastructure-censored run is converted to a task failure.
+The worker-time cap is 24 hours; historical median batch cost suggests about
+18 hours, excluding resource waiting. The estimate is not a completion promise.
+
+Validation: three CPU integrity tests pass (protected observation fields,
+zero-shift equivalence to the actual bridge, and paired statistics including
+grasp failures). Collector CLI parsing and Python compilation pass.
+
+### 4.2 Completed CPU diagnostic; closed-loop measurement still pending
+
+While the GPU admission condition was unmet, replayed **49 preserved r1 states**
+(seven fixed times on each of the seven bodies) through all three policies on
+CPU. Nominal and perturbed flow calls use identical sampled noise. The following
+are **median / 90th-percentile changes in raw translation proposal, in mm**:
+
+| Camera perturbation | fmvp_sim | r1 | flow |
+|---|---:|---:|---:|
+| 3 mm coordinate noise | 0.72 / 3.63 | 0.51 / 3.30 | 0.53 / 3.29 |
+| 30% dropout | 1.22 / 4.53 | 1.18 / 3.44 | 1.19 / 3.39 |
+| Half-cell voxel-origin shift | 1.31 / 3.34 | 1.04 / 3.20 | 1.05 / 3.19 |
+
+This costs 7.86 CPU wall-seconds for inference/analysis after loading preserved
+states, and zero new simulator interaction. In this sample r1/flow are not more
+action-sensitive than fmvp_sim. It **does not** show retention of success gains:
+states come from r1 trajectories, responses can compound in closed loop, and
+within-body states are correlated. Do not turn these 49 states into 49 independent
+task trials. Reproduce with `audit_observation_sensitivity.py` in the `curl` env;
+raw output is `observation_sensitivity.json` beside the protocol.
+The committed [evidence snapshot](2026-10-05-sim2real-posttraining-evidence.json)
+records hashes, intervention settings, and these completed CPU results.
+
+At the recorded launch, supervisor PID 2288111 was **waiting for GPU headroom**;
+no new success counts or McNemar results existed. Read `status.json` and
+`summary.json` for later completion. The complete task question remains open
+until the physical rollouts finish.
+
+## 5. One concrete candidate: post-training with calibrated comparison labels
+
+**Status: a falsifiable method proposal, not an established new algorithm.**
+The measured failure mechanism is not yet known. In particular the CPU diagnostic
+does not support claiming that r1's encoder became more noise-sensitive. Proceed
+with this candidate only if Q4 or a small target-domain check reveals unreliable
+improvement ordering beyond repeatability noise. If all selected simulated gains
+persist, first test that ordering on hardware instead of inventing a robustness
+defect.
+
+### Mechanism and proposed distinction
+
+Keep the pretrained policy as an explicit fallback. IPC supplies alternative
+entry action chunks; a small amount of target data calibrates **whether each
+alternative really improves on that fallback**. Train the actor from supported
+comparisons; preserve the base output on inconclusive comparisons.
+
+The proposed technical unit is a **three-outcome comparison law** (+1 improvement,
+0 tie, -1 regression), conditioned on deployable observation history. Both failure
+and both success are ties, not discarded examples or an arbitrary winner. Estimate
+it using repeated paired complete rollouts, including the continuation after the
+entry chunk. This addresses finite-margin misranking without treating a noisy
+one-step progress score or inaccurate absolute force as an action oracle.
+
+This has two concrete differences from the closest inspected implementations:
+
+1. Calibrate the discrete **relative outcome distribution** directly from target
+   comparisons; do not fit next-state errors as Sim2Act does, or a differentiable
+   global return surface over controller parameters as S-HCI-GIBO does.
+2. Carry both ties and replica uncertainty into the distillation weights. Test
+   whether doing so saves target trials near an irreversible entry boundary,
+   rather than merely making the policy more conservative.
+
+Neither difference alone is a novelty claim. Their value must be demonstrated
+against calibrated score models and ordinary robust improvement under matched
+data/query budgets. In particular, a reward-preference model or Bayesian ranking
+model could be an equivalent implementation. This is the strongest objection,
+not something resolved by giving the method a new name.
+
+### Minimal formulation
+
+Let h be causal point-cloud/tool/action history, m a model of physics and sensing,
+and pi_0 the frozen fallback. Let u be a candidate 16-decision entry chunk from the
+existing flow policy; after it, use the same pi_0 continuation. All evaluation
+endpoints are full task outcomes. This is an initial data-generation choice, not
+a requirement to execute 16 steps open-loop on hardware.
+
+For each independently reset paired replicate r:
+
+`d_{m,r}(h,u) = Y_{m,r}(u then pi_0) - Y_{m,r}(pi_0) in {-1,0,+1}`.
+
+Starting states and perturbations are matched. Random seeds do not make IPC
+bitwise deterministic; the repeated pair distribution, not one pair, is the
+quantity estimated. For real experiments use randomized execution order and
+matched reset blocks; never claim identical hidden cloth state from similar
+point clouds alone.
+
+With modest pseudocount smoothing, aggregate a simulated prior p_sim(d | h,u).
+Fit a low-capacity, regularized multinomial correction from target comparisons:
+
+`p_psi(d | h,u) = softmax_d[log p_sim(d | h,u) + b_psi,d(z(h,u))]`,
+
+`L_cal = -sum_real log p_psi(d_real | h,u) + lambda_cal ||psi||^2`.
+
+Initially z should be a small, fixed feature vector (simulated three-way
+probabilities, between-model disagreement, and observable recent garment motion),
+not a new large point-cloud network trained on a few dozen trials. Keep reset
+blocks/garments separated in fitting and validation. A lower confidence estimate
+L(h,u) for `p_psi(+1) - p_psi(-1)` determines positive imitation weights:
+
+`w(h,u) = max(0, L(h,u))`;
+
+`L_actor = E[w L_flow(h,u)] + lambda_keep E[L_keep(pi_theta(h), pi_0(h))]`.
+
+Use the existing flow-matching loss and an explicit reference-output retention
+loss; no IPC gradients or accurate force targets are assumed. Confidence is
+empirical and must be checked on held-out reset blocks; it is not a theorem for
+unseen real garments. Deployed pi_theta gets observations only. Distillation
+error can destroy a teacher advantage, so evaluate the actual resulting actor.
+
+For expensive target-query selection, prioritize comparisons where plausible
+models disagree on the **sign of improvement**, weighted by their expected
+effect on the proposed update. Compare this optional acquisition rule with
+uniform queries; task-oriented active probing itself is established prior art.
+
+### Falsifiable prediction and smallest decisive experiment
+
+**Prediction:** at the same target-comparison budget, the calibrated comparison
+method selects fewer harmful entry updates than uniform DR and a calibrated
+absolute-score model, while retaining at least as much positive gain. In a pilot,
+predeclare a meaningful effect as halving the harmful-update fraction and improving
+target success by at least 10 percentage points; report uncertainty rather than
+treating these thresholds as a significance test. A method that succeeds only by
+rejecting almost every change has failed the prediction.
+
+**First rejection test, before another actor training:** use 8 development entry
+cases, pi_0 and two fixed flow-generated candidate chunks, 3 source physics models,
+and 2 independent replicas. This is **144 full continuations** (8×3×3×2). Use a
+fourth, predeclared held-out model (a new joint shift, not a Q4 condition selected
+after seeing its results) as a synthetic target: reveal at most **12 paired comparisons
+(24 rollouts)** to calibrate; score the frozen selection rule on held-out cases
+with **36 more rollouts** (6×3×2). Cases, source/target models and chunks are frozen
+before viewing target outcomes. Count all prefix replay/setup/retries. Do not
+reset a deformed cloth into another material and pretend its history is valid;
+replay the physical prefix from the common initial state.
+
+Compare: uncalibrated nominal selection; uniform-domain robust baseline-regret
+selection; DROPO-style parameter calibration; a regularized absolute-outcome
+calibrator using exactly the same target data; the proposed ternary calibrator;
+direct regression on signed paired differences with uncertainty; and the
+tie-discarding ablation. All share the candidate bank, rollouts and target
+budget. Selection regret and harmful-update frequency use unrevealed target
+outcomes. Use block-level resampling; do not count action candidates or replicas
+as independent bodies. The 12 calibration pairs are too few for a strong asymptotic
+claim—this test is intended to reject an unpromising mechanism cheaply.
+
+**Cost ceiling:** 204 complete simulated attempts, at most 157,080 decisions if
+all reach the existing 770-decision maximum, plus explicitly charged prefix
+replays if starting from intermediate states. The current seven-body historical
+batch rate suggests roughly **12–24 single-worker hours**, to be re-estimated
+from Q4 before execution. Calibration itself is CPU minutes. This is a proposed
+experiment, **not launched by this study**. Existing Q4 trajectories may reduce
+the nominal-control cost, but cannot substitute for new candidate continuations.
+
+If this test survives, first verify the comparison mechanism on a static
+manikin using **12 randomized matched pairs with two repetitions = 48 real
+attempts**, then test a trained actor on a separate garment/body set. At 2–4
+minutes per attempt including reset, the comparison pilot alone is roughly
+1.6–3.2 robot-hours; actor evaluation costs extra. No amount of simulated
+calibration establishes transfer without this physical check.
+
+**Failure criteria:** stop this candidate if the base-relative sign is already
+stable, if target comparisons are mostly indistinguishable ties, if a simple
+absolute-score calibrator is as good, if the tie/uncertainty terms do not help,
+or if corrected labels fail to improve the deployed student. If the only winning
+component is ordinary DR or real BC anchoring, report that finding and use the
+known method; do not advertise a new post-training algorithm.
+
+### What would count as a contribution
+
+The defensible prospective contribution is a demonstrated reduction in **real
+data required to obtain a transferable policy update**, using a specific
+comparison estimator and its handling of ties/model disagreement. The task,
+IPC engine, pretrained checkpoint, flow parameterization, residual formulation,
+KL anchor, and worst-case ensemble check are not independently new. Broadly
+describing the proposal as “rank-aware sim-to-real post-training” would overlap
+with existing work. The narrow claim remains unproven pending the experiment.

@@ -1,0 +1,212 @@
+{
+  "recorded_utc": "2026-10-04T22:44:02.053277+00:00",
+  "phase": "prior_art_and_instrumentation_complete; physical_screen_waiting_for_resources",
+  "protocol_path": "output/uipc_manip/sim2real_audit_20261005/protocol.json",
+  "status_snapshot": {
+    "stage": "running",
+    "supervisor_pid": 2288111,
+    "time": 1791153841.3161583,
+    "job": {
+      "id": 0,
+      "condition": "nominal",
+      "policy": "fmvp_sim",
+      "garment": "tshirt_26",
+      "bodies": [
+        1032,
+        1041,
+        2034,
+        2035,
+        3041,
+        3047,
+        4038
+      ],
+      "extra": [],
+      "seed": 2026100500,
+      "offset_mm": [
+        0,
+        5,
+        0
+      ]
+    },
+    "worker_pid": 2331340,
+    "total_gpu_mib": 82874.0,
+    "log": "/home/ge47gax/kun/libuipc/output/uipc_manip/sim2real_audit_20261005/runs/job000_nominal_fmvp_sim_attempt0.log",
+    "worker_seconds_so_far": 268.016073607374
+  },
+  "measured_bodies": [
+    1032,
+    1041,
+    2034,
+    2035,
+    3041,
+    3047,
+    4038
+  ],
+  "garments": [
+    "tshirt_26"
+  ],
+  "planned_batches": 30,
+  "planned_episodes": 210,
+  "checkpoint_sha256": {
+    "fmvp_sim": "eef38b84f95a0ca099d03cb92bbf00da0af29b58640837fe307d3d2635b4af97",
+    "r1": "c4dde3d9e5537b3b2e754c82b173634e74e090107ff9956a2edf80ee3f7a5997",
+    "flow": "9b0c3feca5ad83d7c180655e0416cf265d226fcaa2738c8252e6b1eaad302b97"
+  },
+  "code_sha256": {
+    "/home/ge47gax/kun/libuipc/output/uipc_manip/sim2real_audit_20261005/source/collect_garment.py": "ef6cd5ba3e02d166aea2f53f7676ab1c4f6e7b721f6ae39c3aa8cacbe0cb2815",
+    "/home/ge47gax/kun/libuipc/output/uipc_manip/sim2real_audit_20261005/source/sim2real_perturbations.py": "7a6700a072c0470de2c7c133f61e8702adf6fb0cf92ff68f519c57e740b19b2f",
+    "/home/ge47gax/kun/libuipc/output/uipc_manip/sim2real_audit_20261005/source/run_sim2real_audit.py": "7395c7c6a2109a1de516dd56b3c79d847c9a048b29abfdaba6dad70d21c0f147",
+    "/home/ge47gax/kun/libuipc/output/uipc_manip/sim2real_audit_20261005/source/rollout_controls.py": "36e98f6e139bc5f923614a0b40b62284c06da29c072dcacc681a02d00a79fd94",
+    "/home/ge47gax/kun/libuipc/.claude/worktrees/residual-rl/python/uipc_manip/dressing_env.py": "5786e4b31f63df0f2a0013fb4b99613e9f99907a433060b250c643faf6052844",
+    "/home/ge47gax/kun/libuipc/.claude/worktrees/residual-rl/python/uipc_manip/wang_bridge.py": "2941a779b2491d70d288eb2a96d721ccca806f29efa4e93d2ec3bf93a2ea1742",
+    "/home/ge47gax/kun/libuipc/.claude/worktrees/residual-rl/python/uipc_manip/wang_client.py": "8f6f94c35a038ea5738764b99bec49a89842a13132497768548ff0ca24425d32",
+    "/home/ge47gax/kun/libuipc/.claude/worktrees/residual-rl/python/uipc_manip/flow_policy.py": "dc09868e609a437c800e44050b6c3623192d3a03b20cd8502cd4f9465a8cda0f",
+    "/home/ge47gax/kun/libuipc/.claude/worktrees/residual-rl/python/uipc_manip/obs.py": "2eb3fddab830c12d0eb498d61e3d7176762a5f59586c4e66e085abe71dd1df57"
+  },
+  "conditions": [
+    {
+      "name": "nominal",
+      "args": []
+    },
+    {
+      "name": "friction_x2",
+      "args": [
+        "--friction",
+        ".6"
+      ]
+    },
+    {
+      "name": "youngs_x2",
+      "args": [
+        "--cloth-youngs",
+        "12000"
+      ]
+    },
+    {
+      "name": "bending_x2",
+      "args": [
+        "--cloth-bending-stiffness",
+        ".2"
+      ]
+    },
+    {
+      "name": "density_x1p5",
+      "args": [
+        "--cloth-density",
+        "1125"
+      ]
+    },
+    {
+      "name": "thickness_x1p5",
+      "args": [
+        "--cloth-thickness",
+        ".000225"
+      ]
+    },
+    {
+      "name": "point_noise_3mm",
+      "args": [
+        "--observation-noise-m",
+        ".003"
+      ]
+    },
+    {
+      "name": "point_dropout_30pct",
+      "args": [
+        "--observation-dropout",
+        ".3"
+      ]
+    },
+    {
+      "name": "voxel_origin_half_cell",
+      "args": [
+        "--observation-voxel-shift-m",
+        ".03125",
+        ".03125",
+        ".03125"
+      ]
+    },
+    {
+      "name": "nominal_repeat",
+      "args": []
+    }
+  ],
+  "completed_cpu_diagnostic": {
+    "summary": {
+      "fmvp_sim": {
+        "noise_3mm": {
+          "states": 49,
+          "median_change_mm": 0.7187408569649297,
+          "p90_change_mm": 3.625407545449499,
+          "direction_reversals": 1
+        },
+        "dropout_30pct": {
+          "states": 49,
+          "median_change_mm": 1.2220630556197536,
+          "p90_change_mm": 4.534421004826347,
+          "direction_reversals": 1
+        },
+        "voxel_origin_half_cell": {
+          "states": 49,
+          "median_change_mm": 1.3060681675037695,
+          "p90_change_mm": 3.3433151584507588,
+          "direction_reversals": 1
+        }
+      },
+      "r1": {
+        "noise_3mm": {
+          "states": 49,
+          "median_change_mm": 0.51306792389913,
+          "p90_change_mm": 3.2983946888621243,
+          "direction_reversals": 1
+        },
+        "dropout_30pct": {
+          "states": 49,
+          "median_change_mm": 1.1784317223475458,
+          "p90_change_mm": 3.4354065887437235,
+          "direction_reversals": 2
+        },
+        "voxel_origin_half_cell": {
+          "states": 49,
+          "median_change_mm": 1.0443816639977825,
+          "p90_change_mm": 3.1982401945812273,
+          "direction_reversals": 1
+        }
+      },
+      "flow": {
+        "noise_3mm": {
+          "states": 49,
+          "median_change_mm": 0.5328426343996103,
+          "p90_change_mm": 3.2866695052310124,
+          "direction_reversals": 1
+        },
+        "dropout_30pct": {
+          "states": 49,
+          "median_change_mm": 1.1942302752828042,
+          "p90_change_mm": 3.386970391383191,
+          "direction_reversals": 1
+        },
+        "voxel_origin_half_cell": {
+          "states": 49,
+          "median_change_mm": 1.047267302779274,
+          "p90_change_mm": 3.1858415360754297,
+          "direction_reversals": 1
+        }
+      }
+    },
+    "wall_seconds": 7.864982995670289,
+    "checkpoint_sha256": {
+      "fmvp_sim": "eef38b84f95a0ca099d03cb92bbf00da0af29b58640837fe307d3d2635b4af97",
+      "r1": "c4dde3d9e5537b3b2e754c82b173634e74e090107ff9956a2edf80ee3f7a5997",
+      "flow": "9b0c3feca5ad83d7c180655e0416cf265d226fcaa2738c8252e6b1eaad302b97"
+    },
+    "states_per_policy": 49,
+    "limits": "Open-loop on preserved r1 states. Nominal/perturbed flow share noise per state. Actions are raw translation proposals, not executed control or success. States within body are correlated."
+  },
+  "closed_loop_results": null,
+  "limits": [
+    "No real-robot evidence.",
+    "No new closed-loop success results at this snapshot.",
+    "CPU action sensitivity cannot establish retention of task-success gains."
+  ]
+}

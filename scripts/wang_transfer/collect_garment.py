@@ -25,6 +25,7 @@ import time
 import numpy as np
 
 from rollout_controls import crop_observation, force_input, load_profiles, profile_dict, rigid_rotation, tracking_scale
+from sim2real_perturbations import perturb_observation
 
 
 ROOT = Path("/home/ge47gax/kun/libuipc")
@@ -95,6 +96,12 @@ def parser():
                    help="Scale the reference yaw increment; max_translation/0.025 preserves FMVP's rotation per metre.")
     p.add_argument("--bridge-voxel", type=float, default=None,
                    help="Override the policy bridge voxel size; 0 avoids downsampling an already voxelized observation twice.")
+    p.add_argument("--observation-noise-m", type=float, default=0., help="Camera-point Gaussian coordinate noise, metres per axis.")
+    p.add_argument("--observation-dropout", type=float, default=0., help="Independent camera-point dropout probability.")
+    p.add_argument("--observation-voxel-shift-m", type=float, nargs=3,
+                   help="Shift bridge voxel-grid origin in tool-relative metres, without translating points.")
+    p.add_argument("--isolated-policy-clients", action="store_true",
+                   help="Separate CPU inference clients per slot, avoiding shared flow RNG across bodies.")
     p.add_argument("--collision-geometry", choices=("arm", "full_body"), default="arm",
                    help="IPC cloth collider: historical right arm or the complete SMPL-X body.")
     p.add_argument("--placement-offset-mm", type=float, nargs=3, default=[0., 0., 0.],
@@ -107,6 +114,10 @@ def parser():
                    help="Diagnostic only: keep simulating after a grasp failure. By default save and end an already-invalid attempt.")
     p.add_argument("--cloth-density", type=float, default=None,
                    help="Optional kg/m^3 material-density override; save and extract separately from default physics.")
+    p.add_argument("--cloth-youngs", type=float, default=None, help="Optional cloth Young's modulus override (Pa).")
+    p.add_argument("--cloth-bending-stiffness", type=float, default=None, help="Optional cloth shell bending coefficient override.")
+    p.add_argument("--cloth-thickness", type=float, default=None,
+                   help="Optional IPC cloth radius/half-thickness (m); also changes mass and grasp stiffness.")
     p.add_argument("--garment", default="tshirt_26")
     p.add_argument("--sleeve-template", type=Path,
                    help="Rest mesh for the physical-sleeve sections (same topology as the baked garment); "
@@ -181,6 +192,16 @@ def main():
         raise ValueError("--cloth-density must be positive")
     if args.cloth_strain_rate is not None and args.cloth_strain_rate <= 0:
         raise ValueError("--cloth-strain-rate must be positive")
+    for field in ("cloth_youngs", "cloth_bending_stiffness", "cloth_thickness"):
+        value = getattr(args, field)
+        if value is not None and (not np.isfinite(value) or value <= 0):
+            raise ValueError(f"--{field.replace('_', '-')} must be finite and positive")
+    if not np.isfinite(args.observation_noise_m) or args.observation_noise_m < 0:
+        raise ValueError("--observation-noise-m must be finite and nonnegative")
+    if not np.isfinite(args.observation_dropout) or not 0 <= args.observation_dropout < 1:
+        raise ValueError("--observation-dropout must be in [0, 1)")
+    if args.observation_voxel_shift_m is not None and not np.isfinite(args.observation_voxel_shift_m).all():
+        raise ValueError("--observation-voxel-shift-m must be finite")
     if not np.isfinite(args.rotation_gain) or args.rotation_gain < 0:
         raise ValueError("--rotation-gain must be finite and nonnegative")
     if args.bridge_voxel is not None and (not np.isfinite(args.bridge_voxel) or args.bridge_voxel < 0):
@@ -189,6 +210,12 @@ def main():
                                                or not 0 < args.stop_proximal_upper <= 1):
         raise ValueError("--stop-proximal-upper requires physical_sleeve and a fraction in (0, 1]")
     profiles = load_profiles(args.profiles_json, len(args.variants)) * args.replicas
+    if args.observation_voxel_shift_m is not None and any(p.bridge_voxel is not None for p in profiles):
+        raise ValueError("Voxel-grid shift uses the common --bridge-voxel; per-profile voxel overrides are unsupported")
+    if args.observation_voxel_shift_m is not None and args.bridge_voxel == 0:
+        raise ValueError("Voxel-grid shift requires a positive bridge voxel size")
+    if args.isolated_policy_clients and (args.policy_socket is not None or args.policy_device != "cpu"):
+        raise ValueError("Isolated inference clients require --policy-device cpu and no server socket")
     if any(p.lookahead_interval for p in profiles) and (len(profiles) != 1 or args.success_geometry != "physical_sleeve"):
         raise ValueError("IPC lookahead requires one slot and physical_sleeve geometry")
     hang_hash = sha256(args.hang)
@@ -231,6 +258,7 @@ def main():
                     preflight_sha256=sha256(args.preflight_manifest) if args.preflight_manifest is not None else None,
                     collector_sha256=sha256(__file__),
                     controls_sha256=sha256(Path(__file__).with_name("rollout_controls.py")),
+                    perturbations_sha256=sha256(Path(__file__).with_name("sim2real_perturbations.py")),
                     bridge_sha256=sha256(args.package_root / "uipc_manip/wang_bridge.py"),
                     environment_sha256=sha256(args.package_root / "uipc_manip/dressing_env.py"),
                     collector_revision=revision(ROOT), package_revision=revision(args.package_root),
@@ -404,6 +432,8 @@ def main():
     all_records = []
     skipped = []
     def make_client(voxel):
+        if args.observation_voxel_shift_m is not None:
+            voxel = 0.  # Explicit shifted selection below replaces bridge downsampling.
         kwargs = dict(checkpoint=str(args.checkpoint), yaw_deg=args.yaw,
                       device=args.policy_device, voxel=voxel, package_root=args.package_root)
         if args.policy_socket is not None:
@@ -444,6 +474,9 @@ def main():
                 material["cloth_strain_rate"] = args.cloth_strain_rate
             if args.friction is not None:
                 material["friction"] = args.friction
+            for field in ("cloth_youngs", "cloth_bending_stiffness", "cloth_thickness"):
+                if getattr(args, field) is not None:
+                    material[field] = getattr(args, field)
             cfg = replace(train_sac.dressing_config(training_args),
                           cells=tuple((args.garment, b) for b in slot_body), cell_source="live",
                           collision_geometry=args.collision_geometry,
@@ -482,6 +515,14 @@ def main():
                     n = len(variants)
                     cfg = replace(cfg, cells=tuple((args.garment, b) for b in slot_body))
             print(f"[collect] building body={body} variants={labels}", flush=True)
+            if args.isolated_policy_clients:
+                policy_clients = []
+                for i, b in enumerate(slot_body):
+                    voxel = profiles[i].bridge_voxel if profiles[i].bridge_voxel is not None else args.bridge_voxel
+                    key = (b, i % len(base_variants), voxel)
+                    if key not in clients:
+                        clients[key] = make_client(voxel)
+                    policy_clients.append(clients[key])
             try:
                 setup_started = time.monotonic()
                 env = GenesisIPCDressingEnv(cfg, num_envs=n)
@@ -568,7 +609,16 @@ def main():
                         progress = env._last_progress[i]
                         body_force = pairs[i][0] + pairs[i][1]
                         policy_forces[i] = force_input(profiles[i], body_force.sum(0), grip, policy_forces[i])
-                        values = dict(obs=crop_observation(obs[i], spec, profiles[i]).copy(),
+                        policy_obs = crop_observation(obs[i], spec, profiles[i]).copy()
+                        if (args.observation_noise_m or args.observation_dropout
+                                or args.observation_voxel_shift_m is not None):
+                            policy_obs = perturb_observation(
+                                policy_obs, spec, noise_m=args.observation_noise_m,
+                                dropout=args.observation_dropout, seed=args.seed, body=slot_body[i],
+                                replica=i % len(base_variants), frame=len(buffers[i]["obs"]),
+                                voxel_shift=args.observation_voxel_shift_m,
+                                voxel_size=.0625 if args.bridge_voxel is None else args.bridge_voxel)
+                        values = dict(obs=policy_obs,
                                       policy_force=policy_forces[i].copy(), positions=positions[i].astype(np.float32),
                                       tcp=np.asarray(env._anchor[i], np.float32).copy(), gripper_force=grip,
                                       tcp_rotation=rigid_rotation(env._initial_offsets[i], env._offsets[i]),
@@ -812,6 +862,9 @@ def main():
                                   success_geometry=args.success_geometry,
                                   stop_proximal_upper=args.stop_proximal_upper,
                                   seed=args.seed, transitions=t, success_state=success_at[i],
+                                  initial_geometry_sha256=hashlib.sha256(
+                                      data["positions"][0].tobytes() + data["tcp"][0].tobytes()
+                                      + np.asarray(slots[i]["landmarks"]).tobytes()).hexdigest(),
                                   handoff_state=handoff_at[i],
                                   hold_complete=hold_complete, timed_out=bool(success_at[i] is None and t >= args.steps),
                                   stable_success=stable, valid_grasp=valid,
