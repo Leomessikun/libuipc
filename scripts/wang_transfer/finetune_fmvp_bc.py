@@ -88,9 +88,11 @@ def expert_dagger_episodes(datasets: list[Path]) -> list[dict]:
             key = digest(path)
             out.append(dict(path=str(path), body=int(row["body"]), sha256=key, labels=list(range(handoff)),
                             target="expert_relabel"))
-            if row.get("accepted") and handoff < n:
-                out.append(dict(path=str(path), body=int(row["body"]), sha256=key + "-own", labels=list(range(handoff, n)),
-                                target="actions"))
+            if handoff < n:
+                # After the handoff the composite teacher is the pretrained policy itself: its action at the
+                # student's state is filled in at training time (train --teacher-trunk), failed episodes included.
+                out.append(dict(path=str(path), body=int(row["body"]), sha256=key + "-teacher", labels=list(range(handoff, n)),
+                                target="teacher_policy"))
     return out
 
 
@@ -118,8 +120,8 @@ def encode_worker(args) -> str:
             if episode.get("target") == "expert_relabel":
                 from expert_relabel import expert_labels
                 source = expert_labels(data, MAX_TRANSLATION)[0].astype(np.float32)
-            else:
-                source = np.asarray(data[episode.get("target", "actions")], np.float32)
+            elif episode.get("target") == "expert_actions":
+                source = np.asarray(data["expert_actions"], np.float32)
         labels = episode.get("labels")
         steps = (range(0, len(actions), int(episode.get("stride", 1))) if labels is None
                  else [t for t in labels if t < len(actions)])
@@ -133,7 +135,9 @@ def encode_worker(args) -> str:
                 out = policy.trunk(row)[0]
             feats.append(row[0].numpy())
             logits.append(out.numpy())
-            if episode.get("target") in ("expert_actions", "expert_relabel"):  # scripted expert's command at a policy state
+            if episode.get("target") == "teacher_policy":  # pretrained policy's action, computed in train
+                targets.append(np.zeros(3, np.float32)); kinds.append(8)
+            elif episode.get("target") in ("expert_actions", "expert_relabel"):  # scripted expert's command at a policy state
                 targets.append(np.clip(source[t, :3] @ rotation.T, -1, 1)); kinds.append(7)
             elif episode.get("target") == "actions":       # own executed action of an accepted DAgger episode
                 targets.append(np.clip(actions[t, :3] @ rotation.T, -1, 1)); kinds.append(int(controller[t]))
@@ -185,7 +189,7 @@ def train(args) -> None:
     per_body = dict(zip(bodies.tolist(), counts.tolist()))
     weight = np.array([1.0 / per_body[b] for b in cat["bodies"]], np.float32)
     weight *= np.where(cat["kinds"] == 2, args.hold_weight, 1.0)
-    weight *= np.where(np.isin(cat["kinds"], (6, 7)), args.dagger_weight, 1.0)
+    weight *= np.where(np.isin(cat["kinds"], (6, 7, 8)), args.dagger_weight, 1.0)
     if args.state_weights is not None:
         # Per-state weights aligned with each shard (e.g. advantage weights from compute_advantage_weights.py).
         extra = np.concatenate([np.load(args.state_weights / p.name)["weights"] for p in shards])
@@ -203,6 +207,17 @@ def train(args) -> None:
     start = state if args.init is None else torch.load(str(args.init), map_location="cpu", weights_only=False)["model_state_dict"]
     trunk.load_state_dict({k[len("trunk."):]: v for k, v in start.items() if k.startswith("trunk.")}, strict=True)
     x = torch.from_numpy(cat["feats"]).float()
+    if (cat["kinds"] == 8).any():
+        if args.teacher_trunk is None:
+            raise ValueError("kind-8 states need --teacher-trunk (the pretrained policy that continues after the handoff)")
+        teacher = torch.nn.Sequential(torch.nn.Linear(50, 1024), torch.nn.ReLU(), torch.nn.Linear(1024, 1024),
+                                      torch.nn.ReLU(), torch.nn.Linear(1024, 12))
+        tstate = torch.load(str(args.teacher_trunk), map_location="cpu", weights_only=False)["model_state_dict"]
+        teacher.load_state_dict({k[len("trunk."):]: v for k, v in tstate.items() if k.startswith("trunk.")}, strict=True)
+        m = cat["kinds"] == 8
+        with torch.no_grad():
+            cat["targets"][m] = teacher(x[torch.from_numpy(m)])[:, :3].tanh().numpy()
+        print(f"[train] {int(m.sum())} post-handoff states labelled by {args.teacher_trunk}", flush=True)
     base = torch.from_numpy(cat["logits"]).float()[:, :6].tanh()
     target = torch.from_numpy(cat["targets"]).float()
     w = torch.from_numpy(weight)
@@ -274,6 +289,8 @@ def main() -> None:
     t.add_argument("--dagger-weight", type=float, default=3.0)
     t.add_argument("--init", type=Path, default=None, help="Start the trunk from this checkpoint instead.")
     t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--teacher-trunk", type=Path, default=None,
+                   help="Checkpoint whose trunk labels kind-8 (post-handoff DAgger) states, e.g. r1.")
     t.add_argument("--state-weights", type=Path, default=None,
                    help="Directory of per-shard npz files with a 'weights' array aligned with each feature shard.")
     t.add_argument("--out", type=Path, required=True)
