@@ -246,7 +246,7 @@ rotation command is zeroed, the tool keeps r1's vertical-only rotation rule afte
 | entry, handoff 0.95 | 0 | 6 | 12 | 13 | 11 | 42/69 | 10 : 13 |
 | entry, handoff 0.8 | 0 | 11 | 12 | - | - | 23/42 | 8 : 8 |
 | entry, handoff 0.6 | 9 | 12 | 11 | 11 | 13 | 56/69 | 15 : 4 |
-| translation-only entry, 0.6 | 11 | 13 | 14 | running | running | 38/42 | 16 : 1 |
+| translation-only entry, 0.6 | 11 | 13 | 14 | 13 | 13 | **64/69** | **20 : 1** (sign test p = 2e-5) |
 
 Handing off at 60 % of the forearm (decision 60-70) instead of 95 % turns tshirt_26 from 0/14 into 9-11/14.
 The translation-only expert is at least as good as the full one, so the useful part of the expert is a route,
@@ -273,6 +273,5 @@ receives states it knows, and distills the composite into the single point-cloud
 4. If the student loses part of the entry, DAgger: run the student, relabel entry-phase states with the
    expert's translation, aggregate.
 
-The teacher already beats r1 by 15 : 4 (5 garments) and 16 : 1 (translation-only, 3 garments) on development
-units. The method claim stands only if the distilled student, without privileged input, keeps a clear part of
+The translation-only teacher beats r1 by 20 : 1 on the 69 development units (64 vs 45; flow 48). The method claim stands only if the distilled student, without privileged input, keeps a clear part of
 that gain on the held-out test bodies.
