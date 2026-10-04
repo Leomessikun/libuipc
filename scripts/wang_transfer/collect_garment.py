@@ -133,6 +133,9 @@ def parser():
     p.add_argument("--lookahead-retreat", action="store_true",
                    help="Add retreat candidates to the batched lookahead: reverse the mean recent executed translation, once and twice.")
     p.add_argument("--lookahead-retreat-window", type=int, default=6)
+    p.add_argument("--expert-params", default="{}",
+                   help="JSON keyword arguments of the scripted expert (HeuristicDressingPolicy), e.g. "
+                        "'{\"z_offset\": 0.08, \"translation_step\": 0.004}': one member of its strategy family")
     p.add_argument("--lookahead-value-margin", type=float, default=.01,
                    help="Minimum predicted success gain over the nominal action for a value-ranked candidate.")
     p.add_argument("--batched-lookahead-horizon", type=int, default=1,
@@ -591,7 +594,7 @@ def main():
                     if need_expert:
                         if getattr(env, "_heuristic", None) is None:
                             from uipc_manip.dressing_heuristic import HeuristicDressingPolicy
-                            env._heuristic = HeuristicDressingPolicy(env)
+                            env._heuristic = HeuristicDressingPolicy(env, **json.loads(args.expert_params))
                         for i, variant in enumerate(variants):
                             if variant == "handoff" and handoff_at[i] is None and buffers[i]["forearm_ratio"][-1] >= args.handoff_forearm:
                                 handoff_at[i] = step

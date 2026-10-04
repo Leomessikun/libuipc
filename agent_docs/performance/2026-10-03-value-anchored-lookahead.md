@@ -142,3 +142,51 @@ shared blind spot that local post-training around the base behaviour does not le
 r1-to-expert handoff run on tshirt_26 and hospital gown (bodies 1-14) are measuring whether those units are
 solvable at all (`expert_headroom_20261004`, `handoff_headroom_20261004`).
 
+
+## Headroom: a different strategy solves units the FMVP family cannot (2026-10-04)
+
+Scripted seven-stage expert (`dressing_heuristic.py`, privileged arm landmarks, moves at the speed cap) and an
+r1-to-expert handoff at forearm ratio, development bodies 1-14 x tshirt_26 / hospital gown
+(`expert_headroom_20261004`, `handoff_headroom_20261004`), paired with r1 and flow from `policy_eval_test_20260927`:
+
+| policy | tshirt_26 | hospital gown | all |
+|---|---|---|---|
+| r1 | 6/14 | 8/14 | 14/28 |
+| flow | 8/14 | 9/14 | 17/28 |
+| expert | 5/14 | 1/14 | 6/28 |
+| handoff | 2/14 | 3/14 | 5/28 |
+
+The expert is much weaker overall (it loses the grasp after about 135 decisions on most units), but it is not
+a worse version of the same behaviour. On the 12 units both r1 and flow fail, every FMVP-family policy evaluated
+so far (r1, flow, bc0, r2, flow_e2e, lookahead and value teachers, HAW; 14-18 trials per unit) succeeded 14 times in
+187 trials, and on tshirt_26 3047 / 5035 / 8049 twice in 51. Expert and handoff together succeed on those three
+in 4 of 6 attempts (8049: 0 of 18 before, 2 of 2 now) and on gown 5035 once. The oracle over r1, flow, expert and
+handoff is 21/28 against r1's 14/28.
+
+The placement does not explain it either: across 8,246 archived r1 rollouts, 42 garment-body pairs that failed
+at the default offset never succeeded reliably at another offset (0 always-succeed, 4 mixed).
+
+Reading: r1's failures are concentrated on units its strategy family does not solve; local per-step corrections
+around r1 stay inside that family. A strategy with a different global plan (hover height, waypoints through
+finger, past the elbow, hooked over it, past the shoulder, explicit cuff alignment) solves some of them.
+
+## Method hypothesis: strategy-level post-training
+
+The decision that determines the outcome is global and made at entry, so post-training should search and learn
+at the strategy level, not per action:
+
+1. **Strategy search in IPC.** For each training unit (garment x body), evaluate a small family of strategies
+   to completion: r1, the scripted expert family (parameters: hover height, elbow/shoulder overshoot, outward
+   offset around the bend, speed), and r1-to-strategy handoffs. Outcomes per (unit, strategy).
+2. **Strategy selection.** Learn P(success | initial observation, strategy) from those outcomes and choose
+   the strategy per unit. The initial observation is the point cloud the deployed policy already sees.
+3. **Distillation.** Train a strategy-conditioned student (or r1 fine-tuned on the selected strategy's
+   successes only where r1 is predicted to fail), so the deployed policy covers the union.
+
+Success criteria, in order: (a) the strategy family's union clearly exceeds r1 on development units with
+reproducible rescues; (b) selection from the initial state recovers a large part of the oracle gap on held-out
+bodies; (c) the distilled student beats r1 on test bodies 15-41.
+
+Running: expert reproducibility with a new seed (`expert_seed2_20261004`), the expert on the other three
+garments (`expert_headroom_20261004`), then five family members (slow, low, high, outward, deep) on development
+bodies 1-14 x tshirt_26 / hospital gown (`expert_family_20261004`, `collect_garment.py --expert-params`).
