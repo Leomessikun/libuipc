@@ -28,7 +28,7 @@ from rollout_controls import crop_observation, force_input, load_profiles, profi
 
 
 ROOT = Path("/home/ge47gax/kun/libuipc")
-VARIANTS = {"baseline": 1.0, "half": 0.5, "quarter": 0.25, "handoff": 1.0, "expert": 1.0}
+VARIANTS = {"baseline": 1.0, "half": 0.5, "quarter": 0.25, "handoff": 1.0, "expert": 1.0, "entry": 1.0}
 
 
 def sha256(path):
@@ -83,6 +83,9 @@ def parser():
                    help="Slow when gripper projection reaches this fraction of the hand-shoulder chord.")
     p.add_argument("--handoff-forearm", type=float, default=0.5,
                    help="Hand off to the existing expert's forearm stage after this coverage.")
+    p.add_argument("--entry-forearm", type=float, default=0.95,
+                   help="Variant 'entry': the scripted expert threads the hand and forearm, the policy takes over "
+                        "once the sleeve covers this forearm fraction (the reverse of 'handoff').")
     p.add_argument("--yaw", type=float, default=267.0)
     p.add_argument("--rotation", choices=("off", "fmvp"), default="off",
                    help="Keep the historical zero rotation or apply FMVP's vertical-only PyBullet rotation rule.")
@@ -590,7 +593,7 @@ def main():
                     tracking_scales = np.ones(n)
                     planner_choices = np.full(n, -1, dtype=np.int16)
                     controllers = np.full(n, 2, dtype=np.int8)  # 0 FMVP, 1 scripted expert, 2 hold
-                    need_expert = any(v in ("expert", "handoff") for v in variants)
+                    need_expert = any(v in ("expert", "handoff", "entry") for v in variants)
                     if need_expert:
                         if getattr(env, "_heuristic", None) is None:
                             from uipc_manip.dressing_heuristic import HeuristicDressingPolicy
@@ -605,13 +608,17 @@ def main():
                                 env._heuristic._align_steps[i] = 0
                                 env._heuristic._best_upper[i] = buffers[i]["upperarm_ratio"][-1]
                                 print(f"[handoff] body={body} state={step} forearm={buffers[i]['forearm_ratio'][-1]:.3f}", flush=True)
+                            if variant == "entry" and handoff_at[i] is None and buffers[i]["forearm_ratio"][-1] >= args.entry_forearm:
+                                handoff_at[i] = step
+                                print(f"[entry] body={body} state={step} forearm={buffers[i]['forearm_ratio'][-1]:.3f} -> policy", flush=True)
                         expert = env.scripted_actions()
                     else:
                         expert = None
                     for i, variant in enumerate(variants):
                         if completed[i] or (success_at[i] is not None and not args.autonomous_hold):
                             continue
-                        if variant == "expert" or (variant == "handoff" and handoff_at[i] is not None):
+                        if (variant == "expert" or (variant == "handoff" and handoff_at[i] is not None)
+                                or (variant == "entry" and handoff_at[i] is None)):
                             proposed[i] = actions[i] = expert[i]
                             scales[i] = 1.
                             controllers[i] = 1

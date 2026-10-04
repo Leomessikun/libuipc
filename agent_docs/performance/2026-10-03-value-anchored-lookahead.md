@@ -190,3 +190,45 @@ bodies; (c) the distilled student beats r1 on test bodies 15-41.
 Running: expert reproducibility with a new seed (`expert_seed2_20261004`), the expert on the other three
 garments (`expert_headroom_20261004`), then five family members (slow, low, high, outward, deep) on development
 bodies 1-14 x tshirt_26 / hospital gown (`expert_family_20261004`, `collect_garment.py --expert-params`).
+
+## Strategy family: parameters do not diversify; phases do (2026-10-04)
+
+The expert's rescues reproduce exactly with a new seed (`expert_seed2_20261004`: the same six units succeed). On
+the other garments the default expert is weak (tshirt_68 0/14, tshirt_4 0/14, tshirt_392 3/13, both of the latter
+already solved by r1). Varying its parameters (`expert_family_20261004`: half speed, hover 8 cm, hover 16 cm)
+changes almost nothing: every variant succeeds on the same units. Parameter search inside the scripted family
+does not widen coverage. (`outward_offset` does not exist in the installed `dressing_heuristic`; that variant
+did not run.)
+
+What differs is the phase. The expert covers the whole forearm (forearm ratio 1.0) on 39 of 42 units by about
+decision 90 and then loses the grasp on the upper arm. r1 is the opposite: 75 % of its failures are at entry
+or on the forearm, and once the sleeve reaches the upper arm it succeeds 81 % of the time. The earlier handoff
+ran r1 first and the expert second, the wrong way round.
+
+### Reverse composition: expert entry, then r1
+
+`collect_garment.py --variants entry --entry-forearm 0.95`: the scripted expert threads hand and forearm, r1
+takes over once the sleeve covers 95 % of the forearm (decision 84-100). Development bodies 1-14 x 5 garments
+(`entry_compose_20261004`), paired with r1 and flow from `policy_eval_test_20260927`:
+
+| garment | entry | r1 | flow | entry-only : r1-only |
+|---|---|---|---|---|
+| hospital gown | 12/14 | 8/14 | 9/14 | 4 : 0 |
+| tshirt_4 | 13/14 | 11/14 | 11/14 | 3 : 1 |
+| tshirt_392 | 11/13 | 11/13 | 12/13 | 0 : 0 |
+| tshirt_68 | 6/14 | 9/14 | 8/14 | 3 : 6 |
+| tshirt_26 | 0/14 | 6/14 | 8/14 | 0 : 6 |
+| all | 42/69 | 45/69 | 48/69 | 10 : 13 |
+
+The per-unit oracle of entry and r1 is 55/69. Successful compositions are faster (gown 191-198 decisions
+against 281-289 for r1). On tshirt_26 every composition reaches upper-arm 0.4-0.76 and then loses the grasp
+under r1: the handoff state carries more tension than r1's own states (gripper force p90 110-124 N against
+25-65 N for r1 alone on tshirt_26/68). The tool rotation at handoff is small (0-43 degrees), so it is not an
+orientation mismatch.
+
+The r1 continuation value at the handoff state separates outcomes with AUC 0.85, but only through the garment:
+within a garment it saturates near 1 (tshirt_68 failures 0.99), because handoff states lie outside the r1
+state distribution it was trained on. It cannot yet time the handoff.
+
+Running: handoff thresholds 0.6 and 0.8 on tshirt_26, tshirt_68 and hospital gown (`entry60`, `entry80` in
+`entry_compose_20261004`).
