@@ -83,13 +83,15 @@ def encode_worker(args) -> str:
     rotation = policy.rotation.astype(np.float32)          # ours -> model: v @ R.T
     spec = ObsSpec(768)
     feats, logits, targets, weights, bodies, kinds = [], [], [], [], [], []
+    state_steps, state_episodes = [], []
     for episode in episodes:
         with np.load(episode["path"], allow_pickle=False) as data:
             obs = np.asarray(data["obs"][:-1], np.float32)
             actions = np.asarray(data["actions"], np.float32)
             controller = np.asarray(data["controller_id"], np.int8)
         labels = episode.get("labels")
-        steps = range(len(actions)) if labels is None else [t for t in labels if t < len(actions)]
+        steps = (range(0, len(actions), int(episode.get("stride", 1))) if labels is None
+                 else [t for t in labels if t < len(actions)])
         for t in steps:
             pos, flags, valid, _ = spec.unpack_numpy(obs[t])
             ref_pos, ref_flags = to_reference_cloud(pos[valid], flags[valid], yaw_deg=yaw, voxel=policy.voxel)
@@ -107,9 +109,12 @@ def encode_worker(args) -> str:
             else:                                           # executed translation, model frame
                 targets.append(np.clip(actions[t, :3] @ rotation.T, -1, 1)); kinds.append(int(controller[t]))
             bodies.append(episode["body"])
+            state_steps.append(t)
+            state_episodes.append(int(episode.get("index", -1)))
         print(f"[features] body={episode['body']} states={len(steps)}", flush=True)
     np.savez(out_path, feats=np.stack(feats), logits=np.stack(logits), targets=np.stack(targets),
-             bodies=np.asarray(bodies), kinds=np.asarray(kinds, np.int8))
+             bodies=np.asarray(bodies), kinds=np.asarray(kinds, np.int8),
+             steps=np.asarray(state_steps, np.int32), episodes=np.asarray(state_episodes, np.int32))
     return str(out_path)
 
 
@@ -120,6 +125,10 @@ def features(args) -> None:
     if args.exclude_bodies:
         episodes = [e for e in episodes if e["body"] not in set(args.exclude_bodies)]
     args.out.mkdir(parents=True, exist_ok=True)
+    for i, e in enumerate(episodes):
+        e["index"] = i
+        if args.stride > 1 and "labels" not in e:
+            e["stride"] = args.stride
     (args.out / "episodes.json").write_text(json.dumps(episodes, indent=1))
     shards = [episodes[i::args.workers] for i in range(args.workers)]
     jobs = [(s, args.out / f"shard_{i:02d}.npz", str(args.checkpoint), args.yaw) for i, s in enumerate(shards) if s]
@@ -141,6 +150,12 @@ def train(args) -> None:
     weight = np.array([1.0 / per_body[b] for b in cat["bodies"]], np.float32)
     weight *= np.where(cat["kinds"] == 2, args.hold_weight, 1.0)
     weight *= np.where(cat["kinds"] == 6, args.dagger_weight, 1.0)
+    if args.state_weights is not None:
+        # Per-state weights aligned with each shard (e.g. advantage weights from compute_advantage_weights.py).
+        extra = np.concatenate([np.load(args.state_weights / p.name)["weights"] for p in shards])
+        if len(extra) != len(weight):
+            raise ValueError("State weights do not match the feature shards")
+        weight *= extra.astype(np.float32)
     weight /= weight.mean()
     print(f"[train] {n} states, {len(bodies)} bodies, holds {int((cat['kinds'] == 2).sum())}, "
           f"lookahead labels {int((cat['kinds'] == 6).sum())}", flush=True)
@@ -209,6 +224,7 @@ def main() -> None:
     f.add_argument("--yaw", type=float, default=267.0)
     f.add_argument("--workers", type=int, default=24)
     f.add_argument("--out", type=Path, required=True)
+    f.add_argument("--stride", type=int, default=1, help="Encode every n-th state of non-DAgger episodes.")
     t = sub.add_parser("train")
     t.add_argument("--features", type=Path, required=True)
     t.add_argument("--checkpoint", type=Path, default=Path("/home/ge47gax/Desktop/fmvp_sim.pt"))
@@ -220,6 +236,8 @@ def main() -> None:
     t.add_argument("--dagger-weight", type=float, default=3.0)
     t.add_argument("--init", type=Path, default=None, help="Start the trunk from this checkpoint instead.")
     t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--state-weights", type=Path, default=None,
+                   help="Directory of per-shard npz files with a 'weights' array aligned with each feature shard.")
     t.add_argument("--out", type=Path, required=True)
     a = p.parse_args()
     features(a) if a.stage == "features" else train(a)

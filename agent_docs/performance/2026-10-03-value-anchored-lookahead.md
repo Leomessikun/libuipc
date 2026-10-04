@@ -102,3 +102,31 @@ Next variant (running, `value_teacher_entry_20261004`, bodies 8-14): plan from d
 (no contact yet during entry), add two retreat candidates (reverse the mean of the last six executed
 translations, once and twice), same value and margin.
 
+## Entry-phase variant and what the failures really are (2026-10-04)
+
+Entry-phase value teacher (plan from decision 5, no load gate, retreat candidates; bodies 8-14, tshirt_26):
+2/7 vs r1 2/7 (1:1). It rescued body 4041 (r1 grasp loss at 209) but lost 5040 and 6035 after reaching the top
+(upper-arm 0.97 / 0.93): stop and retreat choices stretched episodes to 400-557 decisions, beyond the value's
+training range, and the grasp was lost on the way. Three bodies never got the sleeve past the elbow under any
+policy. Stopped after one job. Four value-teacher variants are now level with r1; local one-action lookahead,
+even with a long-horizon value, does not convert these failures.
+
+Where r1 fails on the 201 test units (all 11 evaluated policies): 37 of its 71 failures fail for every policy
+(35 of them never get the sleeve past the elbow); 34 are solved by at least one policy (12 by only one).
+In 800 archived grasp-loss episodes, the sleeve was partly on the forearm in 43 % (forearm ratio 0.3-0.8),
+barely entered in 32 % (hospital gown 129 of them), stalled at the elbow in 6 % and lost after passing the elbow
+in 19 %. Once the sleeve reaches the upper arm the episode succeeds 81 % of the time; otherwise 7 %. Start
+geometry predicts reaching the upper arm with AUC 0.79 (garment alone 0.66).
+
+## Next: post-training from failures with value advantages (running)
+
+Bc0 and r1 imitate successes only; the 4,546 archived failures are unused although they show which actions make
+the state worse. Hazard-advantage-weighted post-training (`compute_advantage_weights.py`, `finetune_fmvp_bc.py
+--state-weights`): every encoded state of 1,500 successes and 1,500 grasp-loss failures (training bodies only,
+every third state) gets w = clip(exp((V(s_{t+8}) - V(s_t)) / 0.1), 0.05, 20); the actor is fine-tuned from r1
+for 3 epochs. Control: the same data and budget with success-only uniform weights (self-imitation). Both are
+evaluated on development bodies 1-14 x 5 garments against r1 (`haw_eval_dev_20261004`). This is offline
+advantage-weighted regression with an asymmetric privileged critic; the established ingredients are AWR/IQL-style
+weighting, the question is whether failure data with a hazard critic improves a pretrained dressing policy where
+success-only imitation does not.
+
