@@ -180,6 +180,12 @@ no new success counts or McNemar results existed. Read `status.json` and
 `summary.json` for later completion. The complete task question remains open
 until the physical rollouts finish.
 
+Initial execution update: the first nominal batch finished, **fmvp_sim 3/7**;
+the sequential queue moved to r1. This single-policy result is not a paired
+gain estimate. A CPU reporter maintains the [live English results table](2026-10-05-sim2real-robustness-results.md)
+from completed batches. It labels missing data and incomplete comparisons
+explicitly; neither the supervisor nor reporter starts policy training.
+
 ## 5. One concrete candidate: post-training with calibrated comparison labels
 
 **Status: a falsifiable method proposal, not an established new algorithm.**
@@ -275,7 +281,17 @@ target success by at least 10 percentage points; report uncertainty rather than
 treating these thresholds as a significance test. A method that succeeds only by
 rejecting almost every change has failed the prediction.
 
-**First rejection test, before another actor training:** use 8 development entry
+**Cheapest rejection screen: no new IPC calls.** Once Q4 finishes, treat each
+perturbed condition in turn as a hidden synthetic target. Reveal the first three
+bodies' two base-relative comparisons for calibration (six paired labels), then
+predict harmful versus helpful updates on the remaining four bodies. Compare
+the ternary calibrator with uncalibrated ensemble selection, a simple scalar
+gain calibrator, and ordinary robust-baseline-regret selection. Reuse only the
+existing three checkpoints and Q4 outputs. This costs CPU minutes and can reject
+the calibration premise. It cannot establish a new trained policy, and the small
+number of independent bodies means a weak or noisy result remains inconclusive.
+
+**First physical test of candidate chunks, if the free screen survives:** use 8 development entry
 cases, pi_0 and two fixed flow-generated candidate chunks, 3 source physics models,
 and 2 independent replicas. This is **144 full continuations** (8×3×3×2). Use a
 fourth, predeclared held-out model (a new joint shift, not a Q4 condition selected

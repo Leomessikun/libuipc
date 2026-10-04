@@ -1,15 +1,15 @@
 {
-  "recorded_utc": "2026-10-04T22:44:02.053277+00:00",
-  "phase": "prior_art_and_instrumentation_complete; physical_screen_waiting_for_resources",
+  "recorded_utc": "2026-10-04T22:50:59.818547+00:00",
+  "phase": "prior_art_and_instrumentation_complete; physical_screen_running",
   "protocol_path": "output/uipc_manip/sim2real_audit_20261005/protocol.json",
   "status_snapshot": {
     "stage": "running",
     "supervisor_pid": 2288111,
-    "time": 1791153841.3161583,
+    "time": 1791154258.4732823,
     "job": {
-      "id": 0,
+      "id": 1,
       "condition": "nominal",
-      "policy": "fmvp_sim",
+      "policy": "r1",
       "garment": "tshirt_26",
       "bodies": [
         1032,
@@ -28,10 +28,10 @@
         0
       ]
     },
-    "worker_pid": 2331340,
-    "total_gpu_mib": 82874.0,
-    "log": "/home/ge47gax/kun/libuipc/output/uipc_manip/sim2real_audit_20261005/runs/job000_nominal_fmvp_sim_attempt0.log",
-    "worker_seconds_so_far": 268.016073607374
+    "worker_pid": 2382962,
+    "total_gpu_mib": 82870.0,
+    "log": "/home/ge47gax/kun/libuipc/output/uipc_manip/sim2real_audit_20261005/runs/job001_nominal_r1_attempt0.log",
+    "worker_seconds_so_far": 685.158409642987
   },
   "measured_bodies": [
     1032,
@@ -203,10 +203,90 @@
     "states_per_policy": 49,
     "limits": "Open-loop on preserved r1 states. Nominal/perturbed flow share noise per state. Actions are raw translation proposals, not executed control or success. States within body are correlated."
   },
-  "closed_loop_results": null,
+  "closed_loop_results": {
+    "planned_episodes": 210,
+    "recorded_rows": 7,
+    "completed_batches": 1,
+    "conditions": {},
+    "repeatability": {
+      "fmvp_sim": {
+        "units": 0,
+        "agreement": {
+          "mean": null,
+          "bootstrap95": null
+        }
+      },
+      "r1": {
+        "units": 0,
+        "agreement": {
+          "mean": null,
+          "bootstrap95": null
+        }
+      },
+      "flow": {
+        "units": 0,
+        "agreement": {
+          "mean": null,
+          "bootstrap95": null
+        }
+      }
+    },
+    "cost": {
+      "worker_seconds": 461.4701833371073,
+      "attempts": 1,
+      "peak_total_gpu_mib": 88300.0
+    },
+    "complete": false,
+    "limits": [
+      "Pointwise exploratory p-values; no multiplicity-adjusted discovery claim.",
+      "Percentile bootstrap over seven bodies is a coarse uncertainty summary.",
+      "Same-simulator parameter stress is not calibrated target physics or real-robot evidence."
+    ],
+    "pending_conditions": [
+      "nominal",
+      "friction_x2",
+      "youngs_x2",
+      "bending_x2",
+      "density_x1p5",
+      "thickness_x1p5",
+      "point_noise_3mm",
+      "point_dropout_30pct",
+      "voxel_origin_half_cell",
+      "nominal_repeat"
+    ]
+  },
   "limits": [
     "No real-robot evidence.",
-    "No new closed-loop success results at this snapshot.",
+    "Closed-loop screen incomplete; only completed, geometrically matched cases contribute to paired statistics.",
     "CPU action sensitivity cannot establish retention of task-success gains."
+  ],
+  "initial_completed_batches": [
+    {
+      "job": {
+        "id": 0,
+        "condition": "nominal",
+        "policy": "fmvp_sim",
+        "garment": "tshirt_26",
+        "bodies": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "extra": [],
+        "seed": 2026100500,
+        "offset_mm": [
+          0,
+          5,
+          0
+        ]
+      },
+      "successes": 3,
+      "rows": 7,
+      "worker_seconds": 461.4701833371073
+    }
   ]
 }

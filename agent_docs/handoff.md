@@ -14,10 +14,15 @@ Q4 is implemented in `scripts/wang_transfer/run_sim2real_audit.py`. Frozen proto
 first seven development bodies, tshirt_26, three policies, eight single-factor
 shifts plus nominal/identical nominal repeat: 210 attempts, 30 sequential batches.
 One world/worker, CPU inference, admission below 84 GiB, terminate only our process
-group at 89.75 GiB, 24 worker-hour cap. Supervisor PID 2288111 is launched; its
-initial state is `waiting_for_gpu`, not simulation running. Read
+group at 89.75 GiB, 24 worker-hour cap. Supervisor PID 2288111 is launched. After
+waiting for resources, fmvp_sim nominal completed at 3/7 in 461.47 worker-seconds;
+r1 nominal is running at this update. No complete three-policy comparison yet. Read
 `output/uipc_manip/sim2real_audit_20261005/{status,protocol,summary}.json` and
 `supervisor.log` for current status. M4/composite DAgger remain stopped.
+CPU reporter PID 2392226 updates the [live result table](performance/2026-10-05-sim2real-robustness-results.md)
+every 30 seconds and exits when the study completes or needs inspection. The
+file is generated; later working-tree updates to it are expected. No new actor
+training is queued. Its raw numbers come only from completed physical batches.
 
 Three measurement integrity tests pass. A CPU-only replay of 49 preserved states
 finds r1/flow no more action-sensitive than fmvp_sim under the selected camera
