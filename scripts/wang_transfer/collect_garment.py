@@ -83,6 +83,8 @@ def parser():
                    help="Slow when gripper projection reaches this fraction of the hand-shoulder chord.")
     p.add_argument("--handoff-forearm", type=float, default=0.5,
                    help="Hand off to the existing expert's forearm stage after this coverage.")
+    p.add_argument("--expert-no-rotation", action="store_true",
+                   help="Zero the scripted expert's rotation: only the translation a translation-only student can imitate.")
     p.add_argument("--entry-forearm", type=float, default=0.95,
                    help="Variant 'entry': the scripted expert threads the hand and forearm, the policy takes over "
                         "once the sleeve covers this forearm fraction (the reverse of 'handoff').")
@@ -612,6 +614,8 @@ def main():
                                 handoff_at[i] = step
                                 print(f"[entry] body={body} state={step} forearm={buffers[i]['forearm_ratio'][-1]:.3f} -> policy", flush=True)
                         expert = env.scripted_actions()
+                        if args.expert_no_rotation:
+                            expert[:, 3:] = 0.
                     else:
                         expert = None
                     for i, variant in enumerate(variants):
