@@ -232,3 +232,47 @@ state distribution it was trained on. It cannot yet time the handoff.
 
 Running: handoff thresholds 0.6 and 0.8 on tshirt_26, tshirt_68 and hospital gown (`entry60`, `entry80` in
 `entry_compose_20261004`).
+
+### Handoff timing decides it; the expert's rotation is not needed (2026-10-04)
+
+Same protocol, handoff when the sleeve covers 60 % / 80 % of the forearm instead of 95 %
+(`entry60`, `entry80`), and a translation-only expert (`entry60nr`, `--expert-no-rotation`: the expert's
+rotation command is zeroed, the tool keeps r1's vertical-only rotation rule after the handoff):
+
+| condition | tshirt_26 | tshirt_68 | gown | tshirt_4 | tshirt_392 | all | vs r1 (win : loss) |
+|---|---|---|---|---|---|---|---|
+| r1 | 6/14 | 9/14 | 8/14 | 11/14 | 11/13 | 45/69 | |
+| flow | 8/14 | 8/14 | 9/14 | 11/14 | 12/13 | 48/69 | |
+| entry, handoff 0.95 | 0 | 6 | 12 | 13 | 11 | 42/69 | 10 : 13 |
+| entry, handoff 0.8 | 0 | 11 | 12 | - | - | 23/42 | 8 : 8 |
+| entry, handoff 0.6 | 9 | 12 | 11 | 11 | 13 | 56/69 | 15 : 4 |
+| translation-only entry, 0.6 | 11 | 13 | 14 | running | running | 38/42 | 16 : 1 |
+
+Handing off at 60 % of the forearm (decision 60-70) instead of 95 % turns tshirt_26 from 0/14 into 9-11/14.
+The translation-only expert is at least as good as the full one, so the useful part of the expert is a route,
+not a cuff rotation: hover above the finger, then drive the opening along the forearm to past the elbow. A
+translation-only student can imitate it.
+
+Handoff states drift out of r1's state distribution as the threshold rises (median 10-NN distance to 109k
+archived r1 decision states, standardized privileged features, same garment: 0.53 at 0.6, 0.89 at 0.8, 1.30
+at 0.95), which matches the timing effect at the population level. Within a condition the distance does not
+predict a unit's outcome (AUC 0.52), so it is not a per-state handoff rule.
+
+## Method: phase-composed teacher distillation
+
+The pretrained policy fails in one phase (entry) and is strong in the next (upper arm, 81 % success once
+reached). Post-training therefore composes a teacher from (i) a privileged translation-only route for the weak
+phase and (ii) the pretrained policy itself for the strong phase, handing off early enough that the policy
+receives states it knows, and distills the composite into the single point-cloud student:
+
+1. Collect composite rollouts (translation-only expert entry, r1 from 60 % forearm) on training bodies
+   (`composite_train_20261004`, 28 training bodies x 5 garments, running).
+2. Fine-tune r1 on the accepted composite episodes (all states: the expert's entry translations and r1's own
+   continuation from composite states), `finetune_fmvp_bc.py`, init r1, 3 epochs.
+3. Evaluate the student alone (no expert) on development bodies 1-14, then once on test bodies 15-41.
+4. If the student loses part of the entry, DAgger: run the student, relabel entry-phase states with the
+   expert's translation, aggregate.
+
+The teacher already beats r1 by 15 : 4 (5 garments) and 16 : 1 (translation-only, 3 garments) on development
+units. The method claim stands only if the distilled student, without privileged input, keeps a clear part of
+that gain on the held-out test bodies.
