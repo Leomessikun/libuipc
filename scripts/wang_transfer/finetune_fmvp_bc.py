@@ -28,6 +28,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
+MAX_TRANSLATION = 0.008660254037844387  # collector speed cap (m per decision), as recorded in eval results
 PACKAGE = ROOT / ".claude/worktrees/residual-rl/python"
 
 
@@ -71,7 +72,8 @@ def dagger_episodes(dirs: list[Path]) -> list[dict]:
 
 def expert_dagger_episodes(datasets: list[Path]) -> list[dict]:
     """Policy-executed episodes with the scripted expert's shadow command (collect_garment 'dagger_entry').
-    Entry states, before the handoff, are labelled with the expert's translation whatever the outcome;
+    Entry states, before the handoff, are labelled with the expert's translation whatever the outcome, recomputed
+    from the stored state (expert_relabel.py: the recorded shadow command follows the expert's own stage counter);
     after the handoff an accepted episode contributes its own executed actions, a failed one nothing."""
     out = []
     for dataset in datasets:
@@ -85,7 +87,7 @@ def expert_dagger_episodes(datasets: list[Path]) -> list[dict]:
             handoff = n if row.get("handoff_state") is None else min(int(row["handoff_state"]), n)
             key = digest(path)
             out.append(dict(path=str(path), body=int(row["body"]), sha256=key, labels=list(range(handoff)),
-                            target="expert_actions"))
+                            target="expert_relabel"))
             if row.get("accepted") and handoff < n:
                 out.append(dict(path=str(path), body=int(row["body"]), sha256=key + "-own", labels=list(range(handoff, n)),
                                 target="actions"))
@@ -96,6 +98,7 @@ def encode_worker(args) -> str:
     episodes, out_path, checkpoint, yaw = args
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     sys.path.insert(0, str(PACKAGE))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     import torch
     from torch_geometric.data import Batch, Data
     from uipc_manip.obs import ObsSpec
@@ -112,7 +115,11 @@ def encode_worker(args) -> str:
             obs = np.asarray(data["obs"][:-1], np.float32)
             actions = np.asarray(data["actions"], np.float32)
             controller = np.asarray(data["controller_id"], np.int8)
-            source = np.asarray(data[episode.get("target", "actions")], np.float32)
+            if episode.get("target") == "expert_relabel":
+                from expert_relabel import expert_labels
+                source = expert_labels(data, MAX_TRANSLATION)[0].astype(np.float32)
+            else:
+                source = np.asarray(data[episode.get("target", "actions")], np.float32)
         labels = episode.get("labels")
         steps = (range(0, len(actions), int(episode.get("stride", 1))) if labels is None
                  else [t for t in labels if t < len(actions)])
@@ -126,7 +133,7 @@ def encode_worker(args) -> str:
                 out = policy.trunk(row)[0]
             feats.append(row[0].numpy())
             logits.append(out.numpy())
-            if episode.get("target") == "expert_actions":  # scripted expert's shadow command at a policy state
+            if episode.get("target") in ("expert_actions", "expert_relabel"):  # scripted expert's command at a policy state
                 targets.append(np.clip(source[t, :3] @ rotation.T, -1, 1)); kinds.append(7)
             elif episode.get("target") == "actions":       # own executed action of an accepted DAgger episode
                 targets.append(np.clip(actions[t, :3] @ rotation.T, -1, 1)); kinds.append(int(controller[t]))
