@@ -117,6 +117,8 @@ def encode_worker(args) -> str:
             obs = np.asarray(data["obs"][:-1], np.float32)
             actions = np.asarray(data["actions"], np.float32)
             controller = np.asarray(data["controller_id"], np.int8)
+            forearm = np.asarray(data["forearm_ratio"], np.float32)
+            switch = episode.get("switch")
             if episode.get("target") == "expert_relabel":
                 from expert_relabel import expert_labels
                 source = expert_labels(data, MAX_TRANSLATION)[0].astype(np.float32)
@@ -135,7 +137,11 @@ def encode_worker(args) -> str:
                 out = policy.trunk(row)[0]
             feats.append(row[0].numpy())
             logits.append(out.numpy())
-            if episode.get("target") == "teacher_policy":  # pretrained policy's action, computed in train
+            past_switch = switch is not None and forearm[t] >= switch
+            if episode.get("target") == "teacher_policy" or (past_switch and episode.get("target") != "actions"
+                                                              and (controller[t] == 1 or episode.get("target") in ("expert_actions", "expert_relabel"))):
+                # pretrained policy's action, computed in train; past the label switch the expert's push is
+                # replaced by it so that the student's smoothed transition ends before the executed handoff
                 targets.append(np.zeros(3, np.float32)); kinds.append(8)
             elif episode.get("target") in ("expert_actions", "expert_relabel"):  # scripted expert's command at a policy state
                 targets.append(np.clip(source[t, :3] @ rotation.T, -1, 1)); kinds.append(7)
@@ -167,6 +173,8 @@ def features(args) -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     for i, e in enumerate(episodes):
         e["index"] = i
+        if args.label_switch is not None:
+            e["switch"] = args.label_switch
         if args.stride > 1 and "labels" not in e:
             e["stride"] = args.stride
     (args.out / "episodes.json").write_text(json.dumps(episodes, indent=1))
@@ -272,6 +280,8 @@ def main() -> None:
                    help="Directories of lookahead-labelled attempts (accepted or not).")
     f.add_argument("--expert-dagger", type=Path, nargs="*", default=[],
                    help="Datasets of policy-executed episodes with the scripted expert's shadow labels (attempts.jsonl).")
+    f.add_argument("--label-switch", type=float, default=None,
+                   help="Forearm coverage from which expert-labelled states take the pretrained policy's label instead.")
     f.add_argument("--exclude-bodies", type=int, nargs="*", default=[])
     f.add_argument("--checkpoint", type=Path, default=Path("/home/ge47gax/Desktop/fmvp_sim.pt"))
     f.add_argument("--yaw", type=float, default=267.0)
