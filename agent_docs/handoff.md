@@ -1,5 +1,14 @@
 # Handoff — Current State of the Repo
 
+## 2026-10-05 — Owner stopped and abandoned the dressing project
+
+The owner explicitly requested stopping all current work and not continuing the
+project. Feedback-repair simulation/supervisor and CPU reporter are stopped;
+the pipeline records `stopped_by_request` and `STOP_REQUESTED.json` prohibits
+automatic continuation. Existing results are retained. The thread goal is paused,
+not completed. Do not resume research, collection or training without a new owner
+request. Earlier running-state entries below are historical.
+
 ## 2026-10-05 — Feedback-repair mechanism pilot is running
 
 The owner asked why processing had stopped. The previous turn had completed only

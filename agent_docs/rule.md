@@ -110,6 +110,12 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Stop and abandon the dressing project.** The owner explicitly stopped this
+  work as wasteful and instructed not to continue the project. Simulation,
+  supervision and reporting processes have been stopped; retain existing data
+  and do not resume research, collection or training without a new owner request.
+  This supersedes the earlier continuation instructions below. (2026-10-05.)
+
 - **Continue actual method work after the CPU proposal.** The owner again asked
   where processing was and why work stopped. Finish the authorized concrete
   mechanism work and show live stage/PID/logs. Run the bounded feedback-repair

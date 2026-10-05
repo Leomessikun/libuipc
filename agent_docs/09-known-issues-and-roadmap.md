@@ -1,5 +1,11 @@
 # 09 — Known Issues, Tech Debt, and Roadmap
 
+## Dressing project stopped by owner — 2026-10-05
+
+All current feedback-repair simulation, supervision and CPU reporting work has
+stopped. Preserve results; do not resume research, collection or training unless
+the owner requests it again. Earlier plans and running-state records are historical.
+
 ## Sim-to-real gain retention study — 2026-10-05
 
 Questions 1–3 primary-source map completed; see
