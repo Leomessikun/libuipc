@@ -27,6 +27,12 @@ Current interim output: `output/uipc_manip/feedback_repairs_20261005/interim_res
 At the 28-attempt snapshot there are no new successes and two harmful correction
 outcomes; source collection is incomplete. Generate the final repo report only
 after the worker pipeline terminates and the analyzer covers every saved batch.
+The reporter's optional `--watch` mode refreshes the independent analyzer on new
+batches/source fit/stage changes, then generates the report and exits on terminal
+status. It checks the producer's actual process identity, rejects a lost producer
+without inventing completion, and uses a file lock to prevent duplicate reporters.
+This is CPU analysis only; it never launches simulation or training. Its own
+process and coverage are recorded in the output's `reporter_status.json`.
 
 Implemented the bounded execution hook, candidate generation, source-only
 cross-fitted router, robust whole-repair compiler and sequential guarded driver.

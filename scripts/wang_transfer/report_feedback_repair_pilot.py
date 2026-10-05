@@ -9,10 +9,24 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from datetime import datetime, timezone
+import fcntl
 import json
+import os
 from pathlib import Path
+import time
 
 from run_sim2real_audit import digest, write_json
+
+
+def supervisor_alive(pid):
+    """Inspect the actual process identity; a stale status file is insufficient."""
+    root = Path("/proc") / str(pid)
+    try:
+        if root.joinpath("stat").read_text().split(")", 1)[1].split()[0] == "Z":
+            return False
+        return b"run_feedback_repair_pilot.py" in root.joinpath("cmdline").read_bytes()
+    except FileNotFoundError:
+        return False
 
 
 def render(out, destination):
@@ -172,10 +186,53 @@ def render(out, destination):
     return record
 
 
+def watch(out, destination):
+    """Update evidence after new records, then exit at the producer's endpoint."""
+    from analyze_feedback_repair_pilot import analyze
+
+    lock = (out / ".decision_reporter.lock").open("a")
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    previous = None
+    while True:
+        state = json.loads((out / "status.json").read_text())
+        files = sorted((out / "completed").glob("*.json"))
+        signature = (tuple(p.name for p in files), state["stage"],
+                     digest(out / "source_fit.json") if (out / "source_fit.json").exists() else None)
+        if signature != previous:
+            try:
+                analyze(out)
+                record = render(out, destination)
+            except json.JSONDecodeError:
+                current = json.loads((out / "status.json").read_text())
+                if current["stage"] != "fitting_source_routers" or not supervisor_alive(current["supervisor_pid"]):
+                    raise
+                # The frozen source fitter writes its JSON before returning.
+                # A read during that write is an observation race, not failure.
+                time.sleep(1)
+                continue
+            previous = signature
+            print(json.dumps(dict(phase=record["phase"], attempts=record["cost"]["finished_attempts"],
+                                  integrity=record["integrity_summary"]["integrity_pass"])), flush=True)
+        write_json(out / "reporter_status.json", dict(pid=os.getpid(), producer_pid=state["supervisor_pid"],
+                   updated_utc=datetime.now(timezone.utc).isoformat(), phase=record["phase"],
+                   analyzed_attempts=record["integrity_summary"]["completed_attempts"], report=str(destination)))
+        if record["terminal"]:
+            if record["integrity_summary"]["completed_attempts"] != record["cost"]["finished_attempts"]:
+                previous = None
+                continue
+            return record
+        if not supervisor_alive(state["supervisor_pid"]):
+            # Do not convert an incomplete record into a successful endpoint or
+            # restart a simulator. The investigator must inspect the lost process.
+            raise RuntimeError("Producer exited without a terminal status; saved report remains incomplete")
+        time.sleep(30)
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", type=Path, default=Path("output/uipc_manip/feedback_repairs_20261005"))
     p.add_argument("--report", type=Path, default=Path("agent_docs/performance/2026-10-05-feedback-repair-results.md"))
+    p.add_argument("--watch", action="store_true", help="CPU-only analysis after each new batch; stop at producer endpoint")
     a = p.parse_args()
-    r = render(a.out.resolve(), a.report.resolve())
+    r = (watch if a.watch else render)(a.out.resolve(), a.report.resolve())
     print(json.dumps({k: r[k] for k in ("phase", "source_complete", "cost", "source_gate")}, indent=2))

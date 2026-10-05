@@ -29,6 +29,9 @@ The read-only `report_feedback_repair_pilot.py` reports new success/harm,
 same-controller repeat agreement, actual target execution and charged worker
 costs. Its interim artifact is under the pilot output directory; regenerate
 the final repo report after terminal status and full saved-state analysis.
+Optional `--watch` mode keeps the interim evidence/analyzer synchronized and
+exits at the pipeline endpoint. It checks the producer process and never starts
+simulation or actor training; `reporter_status.json` exposes its own PID/coverage.
 The first 14 attempts have no correction success on the difficult body; five
 corrections and base succeed on the easier body. The independent acceptance
 recheck passes. Initial cloth differences and preintervention divergence are
