@@ -1,7 +1,9 @@
 # Candidate: post-training from complete observable feedback repairs
 
-Status: a concrete, unvalidated method hypothesis. A CPU supervision compiler is
-implemented; no dressing teacher, actor, or real-robot gain is established.
+Status: a concrete, unvalidated method hypothesis. The compiler, bounded repair
+execution, source-only router fitting and guarded physical pipeline are now
+implemented. The source pilot is running; no teacher gain, actor gain or real-robot
+transfer is established.
 The [completed robustness study](2026-10-05-sim2real-posttraining-study.md) motivates
 checking transfer, but does not establish that observation aliasing or loss of
 plan consistency caused our failures. Those mechanisms must be tested first.
@@ -192,8 +194,9 @@ The completed Q4 cost was 3.44 worker-hours for 30 seven-slot batches, or about
 6.9 minutes per batch. Sixteen analogous seven-candidate batches suggest
 **roughly 2–4 single-worker hours** for this pilot, including startup headroom;
 material/contact trajectories may be slower. Ceiling: four worker-hours and
-112 finished attempts, all retries charged. No new GPU campaign was launched
-by the compiler or this proposal. The latest one-worker / below-90-GiB constraint
+112 attempts, all retries charged. The compiler alone launched no GPU campaign;
+the subsequently authorized physical pilot is now running, as recorded below.
+The one-worker / below-90-GiB constraint
 continues to apply.
 
 If the observable repair bank survives, use a separate development set for
@@ -217,5 +220,76 @@ Three analytic checks pass: complementary whole policies can improve robustly;
 observable response enables more gain than an aliased response; and uniformly
 harmful repairs return to the frozen policy. These are numerical checks of known
 optimization semantics, **not dressing experiments or novelty evidence**.
-Candidate generation, camera-based router training, actor absorption and hardware
-verification are specified above and remain unimplemented.
+Bounded candidate execution and source-only router fitting are now implemented.
+Actor absorption and hardware verification remain unimplemented.
+
+## October 5 execution: frozen rejection pilot
+
+The owner asked where the actual processing was and why work had stopped. The
+earlier turn had finished only analysis and the CPU compiler. The continuation
+now runs `run_feedback_repair_pilot.py`, using a new optional hook in the existing
+`collect_garment.py`; it does not restart Q4, M4 or previous collectors.
+
+Supervisor **659533** and first worker **659650** started source collection.
+Live records, source snapshot and exact commands are under
+`output/uipc_manip/feedback_repairs_20261005/`. Read `status.json` for the current
+worker, `events.jsonl` for all admissions and costs, `supervisor.log` for batch
+completion, and `runs/*.log` for actual IPC steps. Historical PIDs in this section
+are launch records; the status file is authoritative.
+
+Frozen settings, selected before this pilot's outcomes:
+
+- Bodies 1032 and 1041, tshirt_26, source physics nominal / bending x2 /
+  density x1.5; held target is the new joint bending+density shift.
+- Two reset seeds, 2026100510 and 2026100511. All seven controllers in a block
+  share the nominal placement and seed. Slot ordering rotates between batches.
+  Physics is set before settling; no deformed snapshot is reinterpreted under
+  another material. Full trajectories retain numerical initial states.
+- FMVP runs through decision 59. At decision 60, execute one of three
+  12-decision feedback prefixes: half nominal action, nominal translation with
+  rotation removed, or nominal plus 0.25 normalized world-z translation.
+  These reuse `IPCActionFilter` proposals; they are not new skills.
+- Then execute an 80-decision suffix: either half nominal action or nominal
+  translation with rotation removed. Query the base policy every decision.
+  At decision 152 all alternatives return to frozen FMVP. Early success uses
+  the unchanged physical-sleeve / valid-grasp 20-step hold.
+- The router receives 18 segmented visible-cloud statistics at repair start,
+  18 changes after the prefix, and three executed virtual-tool displacements.
+  It ignores packed goal/attachment scalars, forces, true material IDs and
+  hidden cloth geometry. No extra point noise or dropout is used in this
+  mechanism pilot; camera perturbation robustness remains untested.
+- Fit a cost-sensitive decision stump with fixed quartile threshold proposals
+  on one replica and apply it to the other to estimate source values. Refit
+  both replicas for the frozen target router. Empty conditional cells have
+  pessimistic value zero and explicit support counts. Termination before
+  routing is an absorbing outcome, including any early success.
+- The mixture LP uses three physics models, averaging the two development
+  bodies. Maximize worst-model gain first, then mean gain among ties. This
+  avoids arbitrary fallback when an easy source is at ceiling. Pure zero-gain
+  ties retain FMVP. This is ordinary optimization, not a novelty claim.
+- Strengthen the flat control to a **robust mixture of complete flat
+  corrections**, using directly measured full outcomes. A feedback win cannot
+  be attributed merely to permitting a mixture for only one method.
+- The privileged-state router is an information-rich control trained on the
+  same source outcomes, **not a guaranteed oracle upper bound**. Target mode
+  draws are coupled by common seeds across controls; resampling keeps the
+  executed prefix fixed and changes suffix identity at every decision.
+
+The frozen source gate requires new repairs of base failures in both replicas,
+nonnegative worst-model gain, positive mean gain, and at least 0.10 mean gain
+over the robust flat mixture using cross-fitted source estimates. If it fails,
+save the result and do not spend the 28 target attempts or launch actor training
+for the unchanged bank. This is a rejection rule, not a confidence certificate
+or evidence that every feedback method is impossible. If it passes, execute
+actual closed-loop target controllers; do not assemble target successes by
+selecting already measured outcomes.
+
+Every worker admission charges seven attempts, even on setup failure. Setup,
+saving and aborted worker wall time count toward the four-worker-hour cap.
+Maximum 112 attempts, one worker, admission below 84 GiB, terminate only that
+worker's process group at 89.75 GiB. No unrelated processes are modified.
+
+Nine focused CPU tests pass: the three original LP cases plus camera-only input
+integrity, tool-frame compensation, common-prefix and fallback behavior,
+privileged-input independence, the LP ceiling tie, and rejecting a no-repair
+source bank. These verify implementation contracts, not scientific efficacy.

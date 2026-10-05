@@ -17,6 +17,38 @@ import numpy as np
 from scipy.optimize import linprog
 
 
+def compile_gain_bank(gains):
+    """Known robust mixture LP, then maximize mean gain among worst-case ties.
+
+    Column zero must be the measured-reference fallback. The secondary objective
+    avoids discarding a no-harm repair just because one source model is at ceiling.
+    """
+    gains = np.asarray(gains, dtype=float)
+    if gains.ndim != 2 or not np.isfinite(gains).all() or not np.allclose(gains[:, 0], 0):
+        raise ValueError("Expected finite model-by-repair gains with zero fallback column")
+    result = linprog(np.r_[np.zeros(gains.shape[1]), -1.],
+                     A_ub=np.column_stack([-gains, np.ones(len(gains))]), b_ub=np.zeros(len(gains)),
+                     A_eq=np.array([np.r_[np.ones(gains.shape[1]), 0.]]), b_eq=[1.],
+                     bounds=[(0., 1.)] * gains.shape[1] + [(None, None)], method="highs")
+    if not result.success:
+        raise RuntimeError(result.message)
+    secondary = linprog(-gains.mean(axis=0), A_ub=-gains,
+                        b_ub=np.full(len(gains), -result.x[-1] + 1e-9),
+                        A_eq=np.ones((1, gains.shape[1])), b_eq=[1.],
+                        bounds=[(0., 1.)] * gains.shape[1], method="highs")
+    if not secondary.success:
+        raise RuntimeError(secondary.message)
+    weights = secondary.x
+    if float(gains.mean(axis=0) @ weights) <= 1e-9 and result.x[-1] <= 1e-9:
+        weights = np.r_[1., np.zeros(gains.shape[1] - 1)]
+    weights[np.abs(weights) < 1e-8] = 0.
+    weights /= weights.sum()
+    return dict(mixture_weights=weights.tolist(), model_gain=(gains @ weights).tolist(),
+                worst_model_gain=float(np.min(gains @ weights)),
+                mean_model_gain=float(np.mean(gains @ weights)),
+                best_single_repair_worst_gain=float(gains.min(axis=0).max()))
+
+
 def compile_repairs(response_probability, branch_value, baseline_value):
     """Finite-model optimization; inputs are point estimates, not certificates.
 
@@ -40,20 +72,9 @@ def compile_repairs(response_probability, branch_value, baseline_value):
                       for assignment in assignments], axis=1)
     # Explicit frozen-policy fallback has zero gain in every source model.
     gains = np.column_stack([np.zeros(len(q)), gains])
-    objective = np.r_[np.zeros(gains.shape[1]), -1.]
-    result = linprog(objective, A_ub=np.column_stack([-gains, np.ones(len(q))]),
-                     b_ub=np.zeros(len(q)),
-                     A_eq=np.array([np.r_[np.ones(gains.shape[1]), 0.]]), b_eq=[1.],
-                     bounds=[(0., 1.)] * gains.shape[1] + [(None, None)], method="highs")
-    if not result.success:
-        raise RuntimeError(result.message)
-    weights = result.x[:-1]
-    weights[np.abs(weights) < 1e-10] = 0.
     return dict(
         repair_assignments=["frozen_policy_fallback", *map(list, assignments)],
-        mixture_weights=weights.tolist(), model_gain=(gains @ weights).tolist(),
-        worst_model_gain=float(np.min(gains @ weights)),
-        best_single_repair_worst_gain=float(gains.min(axis=0).max()),
+        **compile_gain_bank(gains),
         objective="max_lambda min_model sum_repair lambda[repair] * full_outcome_gain[model,repair]",
         status="Proposal compiler only. Estimated-source robustness is not a real-transfer or novel-algorithm claim.")
 

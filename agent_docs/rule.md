@@ -110,6 +110,14 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Continue actual method work after the CPU proposal.** The owner again asked
+  where processing was and why work stopped. Finish the authorized concrete
+  mechanism work and show live stage/PID/logs. Run the bounded feedback-repair
+  pilot: at most 112 admitted attempts / four worker-hours, one sim worker,
+  total GPU below 90 GiB. Count setup and aborted workers, preserve cancelled
+  queues and unrelated work, and report negative evidence without inventing
+  novelty or hardware transfer. (Reaffirmed 2026-10-05.)
+
 - **Finish the method investigation after measurement completion.** The owner
   asked why work had stopped and explicitly requested continuing to identify a
   concrete method/algorithm contribution if the project was not finished.

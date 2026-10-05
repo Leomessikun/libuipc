@@ -60,7 +60,10 @@ The [second candidate](2026-10-05-feedback-repair-posttraining.md) includes the
 finite mixture operator, actor losses, source/target protocol, missing-data rules,
 baselines and stopping criteria. Its CPU compiler is implemented and three
 analytic checks pass. Those checks are not dressing success or novelty evidence.
-The physical candidate pilot and actor training have not been launched.
+The physical candidate pilot is now running under the owner-authorized
+continuation: supervisor 659533, output `output/uipc_manip/feedback_repairs_20261005/`.
+The frozen source gate compares against a robust flat-repair mixture before
+spending target attempts. Actor training has not been launched.
 
 The next study must produce **new successful, observable repairs** and transfer
 them into an actual actor. Reweighting weak labels or repeatedly evaluating the

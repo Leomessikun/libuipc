@@ -18,7 +18,13 @@ The [decision memo](performance/2026-10-05-sim2real-posttraining-decision.md) an
 provide the next candidate, update rules, prior-art objections and a proposed
 112-attempt / 2–4-worker-hour mechanism experiment. CPU compiler and analytic
 checks pass; dressing teacher/actor/real transfer and novelty are unestablished.
-The proposed physical experiment has not been launched. No new actor queue runs.
+The physical experiment is now running via `run_feedback_repair_pilot.py`:
+supervisor 659533, first worker 659650, live status under
+`output/uipc_manip/feedback_repairs_20261005/`. Bounded repair execution and
+source-only router fitting are implemented; nine focused tests pass. The first
+84 source attempts must support feedback gain over a robust flat-repair mixture
+before 28 actual target attempts. Maximum 112 admitted attempts / four worker-hours.
+No new actor queue runs.
 Do not interpret simulated robustness as hardware transfer, or CVaR/KL/ensemble
 acceptance as new algorithms. One worker, total GPU use below 90 GiB. Reserved test bodies and
 cancelled queues stay untouched.

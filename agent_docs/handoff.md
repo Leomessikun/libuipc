@@ -1,6 +1,27 @@
 # Handoff — Current State of the Repo
 
-## 2026-10-05 — Sim-to-real post-training study
+## 2026-10-05 — Feedback-repair mechanism pilot is running
+
+The owner asked why processing had stopped. The previous turn had completed only
+analysis and a CPU compiler; the authorized continuation now has actual physical
+collection. Supervisor PID **659533**, first worker **659650**, output
+`output/uipc_manip/feedback_repairs_20261005/`. Its `status.json` is authoritative
+for current PID, stage, GPU allocation and charged time; `runs/*.log` reports
+actual IPC steps. The first worker has passed decision 80 with all seven slots
+still active. One worker, total GPU below 90 GiB, 112 admitted attempts / four
+worker-hours maximum including setup and aborted attempts.
+
+Implemented the bounded execution hook, candidate generation, source-only
+cross-fitted router, robust whole-repair compiler and sequential guarded driver.
+Collect 84 source attempts on two development bodies / three physics models;
+only a supported advantage over a robust flat-repair mixture triggers the 28
+actual target-controller runs under the new joint material shift. No actor
+training is automatically queued. Nine focused CPU tests pass. This is a
+rejection pilot of a method hypothesis, not a proven contribution or hardware
+transfer result. Full frozen settings and interpretation:
+[execution protocol](performance/2026-10-05-feedback-repair-posttraining.md#october-5-execution-frozen-rejection-pilot).
+
+## 2026-10-05 — Completed sim-to-real robustness study
 
 The owner requested the study in brief `67e0c5fa`, with questions 1–3 before the
 question-4 robustness measurement. The primary-source map is now in
@@ -45,10 +66,11 @@ Current recommendation and candidate costs: [decision memo](performance/2026-10-
 The [feedback-repair proposal](performance/2026-10-05-feedback-repair-posttraining.md)
 specifies complete, observation-executable corrections and preserving their joint
 association during actor post-training. Its CPU compiler and three analytic checks
-exist; candidate generation/router/actor/hardware remain unimplemented. A2D, BIG,
+exist; actor/hardware remain unimplemented. The subsequent candidate-generation
+and router implementation is described above. A2D, BIG,
 LCEOPT, CoPlanner, SDP, ACPPO-Corr and robust-regret prior art prevent a broad novelty
 claim. Proposed first rejection pilot: 112 new repair/controller attempts, roughly
-2–4 single-worker hours, four-hour ceiling. **Not launched.** Do not restart the
+2–4 single-worker hours, four-hour ceiling. **Now running; see above.** Do not restart the
 completed Q4 or cancelled queues, or portray the prototype as a validated method.
 
 ## 2026-10-03 — Effect-code study completed without verified improvement

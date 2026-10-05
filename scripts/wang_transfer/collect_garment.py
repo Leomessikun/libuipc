@@ -65,6 +65,8 @@ def parser():
                    help="Run identical controllers in separate IPC slots for repeated evaluation.")
     p.add_argument("--profiles-json", type=Path,
                    help="One explicit policy-input/control profile per variant, for controlled comparisons.")
+    p.add_argument("--feedback-repairs-json", type=Path,
+                   help="Frozen bounded feedback-repair controllers; single body, baseline variants only.")
     p.add_argument("--no-placement-cache", action="store_true",
                    help="Diagnostic: repeat the identical full-body placement search for every controller slot.")
     p.add_argument("--seed", type=int, default=1000)
@@ -210,6 +212,13 @@ def main():
                                                or not 0 < args.stop_proximal_upper <= 1):
         raise ValueError("--stop-proximal-upper requires physical_sleeve and a fraction in (0, 1]")
     profiles = load_profiles(args.profiles_json, len(args.variants)) * args.replicas
+    if args.feedback_repairs_json is not None:
+        if (args.replicas != 1 or args.batch_bodies != 1 or set(args.variants) != {"baseline"}
+                or args.success_geometry != "physical_sleeve"
+                or args.native_policy_actions or args.freeze_from_state is not None
+                or args.batched_lookahead_interval or any(p.lookahead_interval for p in profiles)
+                or any(p.force_source != "zero" or p.tracking_budget_m is not None for p in profiles)):
+            raise ValueError("Feedback repair pilot requires baseline FMVP, zero force, and one body per world")
     if args.observation_voxel_shift_m is not None and any(p.bridge_voxel is not None for p in profiles):
         raise ValueError("Voxel-grid shift uses the common --bridge-voxel; per-profile voxel overrides are unsupported")
     if args.observation_voxel_shift_m is not None and args.bridge_voxel == 0:
@@ -259,13 +268,14 @@ def main():
                     collector_sha256=sha256(__file__),
                     controls_sha256=sha256(Path(__file__).with_name("rollout_controls.py")),
                     perturbations_sha256=sha256(Path(__file__).with_name("sim2real_perturbations.py")),
+                    feedback_repairs_sha256=sha256(args.feedback_repairs_json) if args.feedback_repairs_json else None,
                     bridge_sha256=sha256(args.package_root / "uipc_manip/wang_bridge.py"),
                     environment_sha256=sha256(args.package_root / "uipc_manip/dressing_env.py"),
                     collector_revision=revision(ROOT), package_revision=revision(args.package_root),
                     policy_force_input="zero" if args.profiles_json is None else "per_profile; stored in policy_force",
                     profiles=[profile_dict(p) for p in profiles], force_sampling="end of decision, not substep peak",
                     observations="obs[t] -> actions[t] -> obs[t+1]; force arrays align with obs",
-                    controller_id="0 FMVP, 1 scripted expert, 2 hold, 3 tracking-limited FMVP, 4 IPC-improved FMVP; policy_actions are proposals",
+                    controller_id="0 FMVP, 1 scripted expert, 2 hold, 3 tracking-limited FMVP, 4 IPC-improved FMVP, 6 bounded feedback repair; policy_actions are proposals",
                     accepted_rule=("proximal sleeve fraction >= stop_proximal_upper, real sleeve wrapped throughout hold, valid grasp, no sim error"
                                    if args.stop_proximal_upper is not None else
                                    "upper >= success throughout hold, valid grasp throughout, no sim error"))
@@ -595,6 +605,10 @@ def main():
                 completed = np.zeros(n, bool)
                 slowed = np.zeros(n, bool)
                 failures = [None] * n
+                repairs = None
+                if args.feedback_repairs_json is not None:
+                    from feedback_repair_control import load_repairs
+                    repairs = load_repairs(args.feedback_repairs_json, n, args.seed + 1009 * slot_body[0])
 
                 def record_state():
                     positions = env.positions()
@@ -717,6 +731,20 @@ def main():
                                 if tracking_scales[i] < 1:
                                     controllers[i] = 3
                     actions = np.clip(actions, -1, 1)
+                    if repairs is not None:
+                        for i, repair in enumerate(repairs):
+                            if completed[i] or success_at[i] is not None:
+                                continue
+                            action, changed = repair.act(
+                                step=step, observation=buffers[i]["obs"][-1],
+                                tool=buffers[i]["tcp"][-1], nominal=actions[i],
+                                privileged=[buffers[i]["upperarm_ratio"][-1], buffers[i]["forearm_ratio"][-1],
+                                            buffers[i]["sleeve_proximal_upper_fraction"][-1],
+                                            float(np.linalg.norm(buffers[i]["gripper_force"][-1])),
+                                            buffers[i]["tracking_error"][-1] if buffers[i]["tracking_error"] else 0.])
+                            actions[i] = action
+                            if changed:
+                                controllers[i] = 6
                     macro_step = False
                     if planner is not None and args.macro_recovery and success_at[0] is None and not completed[0]:
                         progress_now, _ = planner.progress(buffers[0]["positions"][-1])
@@ -876,6 +904,8 @@ def main():
                                   early_turn=bool(data["early_turn"].any()),
                                   duration_sim_s=t * cfg.dt * cfg.action_repeat,
                                   path=str((body_dirs[slot_body[i]] / f"{labels[i]}.npz").relative_to(args.out)))
+                    if repairs is not None:
+                        record["feedback_repair"] = repairs[i].record()
                     full_body = (dict(human_vertices=env.collider_meshes[i][0],
                                       human_faces=env.collider_meshes[i][1])
                                  if args.collision_geometry == "full_body" else {})
