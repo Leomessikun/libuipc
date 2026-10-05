@@ -34,6 +34,13 @@ without inventing completion, and uses a file lock to prevent duplicate reporter
 This is CPU analysis only; it never launches simulation or training. Its own
 process and coverage are recorded in the output's `reporter_status.json`.
 
+At 42/84 saved attempts, the first replica is complete: zero new correction
+successes and three harmful correction outcomes. The frozen requirement of new
+repairs in both replicas is therefore impossible for this unchanged bank. The
+remaining replica finishes the predeclared repeatability assessment; do not
+queue target tests or actor training from this bank. This is a bank-level
+rejection, not evidence that all feedback repair or sim-to-real learning fails.
+
 Implemented the bounded execution hook, candidate generation, source-only
 cross-fitted router, robust whole-repair compiler and sequential guarded driver.
 Collect 84 source attempts on two development bodies / three physics models;

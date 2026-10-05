@@ -65,6 +65,17 @@ continuation: supervisor 659533, output `output/uipc_manip/feedback_repairs_2026
 The frozen source gate compares against a robust flat-repair mixture before
 spending target attempts. Actor training has not been launched.
 
+**Interim source decision (42/84 attempts):** all six first-replica blocks are
+complete. None of the six corrections succeeds in a block where the base fails;
+three correction outcomes fail where the base succeeds. The frozen gate requires
+new repairs in both replicas, so this unchanged bank cannot pass that gate even
+if the second replica produces repairs. The second replica completes the
+predeclared repeatability/value assessment, not a route to actor training.
+This rejects the current half-action/no-rotation/lift bank as sufficient
+supervision; it does not reject every observable feedback method. Final counts,
+source estimates and charged cost remain pending. Current generated report:
+`output/uipc_manip/feedback_repairs_20261005/interim_results.md`.
+
 The next study must produce **new successful, observable repairs** and transfer
 them into an actual actor. Reweighting weak labels or repeatedly evaluating the
 same three checkpoints does not supply that capability. If ordinary history-flow
