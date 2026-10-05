@@ -3,18 +3,24 @@
 ## Sim-to-real gain retention study — 2026-10-05
 
 Questions 1–3 primary-source map completed; see
-[the study](performance/2026-10-05-sim2real-posttraining-study.md). Next is the
-authorized paired physics/observation robustness measurement of existing
-fmvp_sim/r1/flow checkpoints. The frozen 210-attempt pilot is running;
-supervisor 2288111 has completed fmvp_sim nominal (3/7, 461.47 seconds), then
-started r1 nominal. No complete three-policy comparison at this update. A CPU
-reporter maintains the [live result table](performance/2026-10-05-sim2real-robustness-results.md).
-CPU action-sensitivity diagnostic completed; a conditional
-ternary-comparison calibration candidate and its strongest prior-art objections
-are documented, with the proposed follow-up experiment explicitly not launched.
+[the study](performance/2026-10-05-sim2real-posttraining-study.md). All 210 planned
+attempts finished in 3.44 worker-hours, peak total GPU 88.16 GiB. **The frozen
+post-settling hash pairing check admits zero pairs.** A disclosed secondary
+matched-reset analysis verifies equal static geometry/placement/configuration
+except declared interventions; all cases pass. Nominal base/r1/flow = 3/7,3/7,4/7;
+bending ×2 = 4/7,1/7,2/7. Nominal-repeat noise and missing nominal r1 advantage make
+historical gain retention inconclusive. See the [results](performance/2026-10-05-sim2real-robustness-results.md).
+The free ternary-calibration screen adds no success and has no positive repair
+opportunity on its held-out bank. Deprioritize it.
+
+The [decision memo](performance/2026-10-05-sim2real-posttraining-decision.md) and
+[feedback-repair method specification](performance/2026-10-05-feedback-repair-posttraining.md)
+provide the next candidate, update rules, prior-art objections and a proposed
+112-attempt / 2–4-worker-hour mechanism experiment. CPU compiler and analytic
+checks pass; dressing teacher/actor/real transfer and novelty are unestablished.
+The proposed physical experiment has not been launched. No new actor queue runs.
 Do not interpret simulated robustness as hardware transfer, or CVaR/KL/ensemble
-acceptance as new algorithms. One worker, total GPU use below 90 GiB; initial
-89.57 GiB usage delayed admission; the first batch's peak total was 86.23 GiB. Reserved test bodies and
+acceptance as new algorithms. One worker, total GPU use below 90 GiB. Reserved test bodies and
 cancelled queues stay untouched.
 
 ## Completed effect-code post-training pilot — 2026-10-03

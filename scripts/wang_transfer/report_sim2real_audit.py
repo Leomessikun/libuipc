@@ -22,6 +22,12 @@ def render(out, target):
     protocol = json.loads((out / "protocol.json").read_text())
     state = json.loads((out / "status.json").read_text())
     summary = json.loads((out / "summary.json").read_text())
+    secondary_path = out / "matched_reset_summary.json"
+    secondary = json.loads(secondary_path.read_text()) if secondary_path.exists() else None
+    use_secondary = secondary is not None and not secondary["validation_errors"]
+    if use_secondary:
+        summary = dict(summary, conditions={c: dict(row, paired_units=row["matched_reset_blocks"])
+                                           for c, row in secondary["conditions"].items()})
     try:
         os.kill(state["supervisor_pid"], 0)
         alive = True
@@ -36,14 +42,26 @@ def render(out, target):
              "[Research study and method candidate](2026-10-05-sim2real-posttraining-study.md). "
              "Protocol, raw trajectories, hashes, resource events and machine-readable results: "
              "`output/uipc_manip/sim2real_audit_20261005/`.", "",
-             "Seven development bodies, one garment, three frozen policies. A row is paired only "
-             "when all three policies have completed with matching initial geometry. Missing jobs "
-             "are not failures. Grasp loss is a task failure. No real robot is measured.", "",
-             "## Success counts", "",
+             "Seven development bodies, one garment, three frozen policies. Missing jobs "
+             "are not failures. Grasp loss is a task failure. No real robot is measured.", ""]
+    if use_secondary:
+        lines += ["**Frozen primary endpoint failed:** all initial-state hashes differ; "
+                  "there are zero exact-state pairs. The table below is a **secondary matched-reset "
+                  "analysis**, added after finding this problem. Static geometry, hang, grasp, tool, "
+                  "placement and the declared configuration were checked exactly; trials then settle "
+                  "independently. No success-dependent geometric tolerance was introduced. Physics "
+                  "changes include their effect on the settled initial drape.", "",
+                  "The selected nominal cases do not reproduce r1's historical advantage (3/7 vs 3/7). "
+                  "Consequently this screen cannot establish retention or loss of that historical gain.", ""]
+    elif summary["complete"] and all(not row["paired_units"] for row in summary["conditions"].values()):
+        lines += ["**Analysis invalid:** batches finished but no exact-state pair passed. "
+                  "Zero admitted cases are not zero successes. Inspect initialization before inference.", ""]
+    lines += ["## " + ("Secondary matched-reset success counts" if use_secondary else "Strict paired success counts"), "",
              "| Condition | Paired cases | fmvp_sim | r1 | flow |", "|---|---:|---:|---:|---:|"]
     for c, row in summary["conditions"].items():
         n = row["paired_units"]
-        counts = [f"{row['successes'][p]}/{n}" if n else "pending" for p in ("fmvp_sim", "r1", "flow")]
+        counts = [f"{row['successes'][p]}/{n}" if n else
+                  ("not admitted" if summary["complete"] else "pending") for p in ("fmvp_sim", "r1", "flow")]
         lines.append(f"| {c} | {n} | " + " | ".join(counts) + " |")
     lines += ["", "## Paired gain over fmvp_sim", "",
               "Gains and changes are percentage points; brackets are pointwise 95% percentile "
@@ -63,10 +81,21 @@ def render(out, target):
         agreement = r["agreement"]["mean"]
         lines.append(f"- {p}: {r['units']} paired repeat cases; agreement "
                      + (f"{100 * agreement:.1f}%." if agreement is not None else "pending."))
+    if use_secondary:
+        lines += ["", "## Initialization audit", "",
+                  "| Condition | Largest vertex gap among policies after settling (mm) | Largest RMS gap (mm) |",
+                  "|---|---:|---:|"]
+        for c, row in secondary["conditions"].items():
+            lines.append(f"| {c} | {row['post_settle_max_vertex_gap_mm']:.3f} | {row['post_settle_max_rms_gap_mm']:.3f} |")
+        lines += ["", "The original byte hashes and strict rejection are retained in `summary.json`. "
+                  "Independent settling and a single nominal repeat do not isolate stochastic "
+                  "variation from true parameter sensitivity."]
     cost = summary["cost"]
     lines += ["", "## Cost and interpretation limits", "",
               f"- Finished/terminated worker attempts: {cost['attempts']}; charged time "
-              f"{cost['worker_seconds'] / 3600:.2f} worker-hours. The currently active attempt is not yet in this total.",
+              f"{cost['worker_seconds'] / 3600:.2f} worker-hours. "
+              + ("Any currently active attempt is excluded from this total." if not summary["complete"]
+                 else "All planned attempts are included; none remains active."),
               f"- Recorded peak total GPU use in finished attempts: {cost['peak_total_gpu_mib']} MiB.",
               "- Small-sample exploratory screen. A zero-width bootstrap interval from identical observed "
               "differences is a resampling degeneracy, not certainty about the population. No equivalence "

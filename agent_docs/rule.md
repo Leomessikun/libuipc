@@ -110,6 +110,16 @@ record it here in the same commit.**
 
 ## Task-scoped (recorded for context, not general policy)
 
+- **Finish the method investigation after measurement completion.** The owner
+  asked why work had stopped and explicitly requested continuing to identify a
+  concrete method/algorithm contribution if the project was not finished.
+  Completing a background rollout queue is not completion of interpretation or
+  method design. Audit the actual finished data, disclose failed measurement
+  checks, and specify an implementable post-training mechanism with primary-source
+  objections and a decisive finite experiment. Do not claim novelty or transfer
+  from an analytic prototype. The one-worker / below-90-GiB limit and restrictions
+  on unrelated workloads continue to apply. (Reaffirmed 2026-10-05.)
+
 - **Study post-training gains that survive sim-to-real transfer.** Read the
   October 5 brief at `67e0c5fa`; complete its questions 1–3 prior-art map before
   running question 4, paired physics/observation perturbations of fmvp_sim, r1

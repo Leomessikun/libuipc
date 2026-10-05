@@ -1,37 +1,13 @@
 {
-  "recorded_utc": "2026-10-04T22:50:59.818547+00:00",
-  "phase": "prior_art_and_instrumentation_complete; physical_screen_running",
+  "recorded_utc": "2026-10-05T12:21:30.039683+00:00",
+  "phase": "physical_screen_complete; primary_exact_state_endpoint_failed; secondary_reset_analysis_and_method_specification_complete",
   "protocol_path": "output/uipc_manip/sim2real_audit_20261005/protocol.json",
   "status_snapshot": {
-    "stage": "running",
+    "stage": "complete",
     "supervisor_pid": 2288111,
-    "time": 1791154258.4732823,
-    "job": {
-      "id": 1,
-      "condition": "nominal",
-      "policy": "r1",
-      "garment": "tshirt_26",
-      "bodies": [
-        1032,
-        1041,
-        2034,
-        2035,
-        3041,
-        3047,
-        4038
-      ],
-      "extra": [],
-      "seed": 2026100500,
-      "offset_mm": [
-        0,
-        5,
-        0
-      ]
-    },
-    "worker_pid": 2382962,
-    "total_gpu_mib": 82870.0,
-    "log": "/home/ge47gax/kun/libuipc/output/uipc_manip/sim2real_audit_20261005/runs/job001_nominal_r1_attempt0.log",
-    "worker_seconds_so_far": 685.158409642987
+    "time": 1791165963.1659558,
+    "summary": "/home/ge47gax/kun/libuipc/output/uipc_manip/sim2real_audit_20261005/summary.json",
+    "worker_seconds": 12389.263644221704
   },
   "measured_bodies": [
     1032,
@@ -205,60 +181,535 @@
   },
   "closed_loop_results": {
     "planned_episodes": 210,
-    "recorded_rows": 7,
-    "completed_batches": 1,
-    "conditions": {},
+    "recorded_rows": 210,
+    "completed_batches": 30,
+    "conditions": {
+      "nominal": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      },
+      "friction_x2": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      },
+      "youngs_x2": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      },
+      "bending_x2": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      },
+      "density_x1p5": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      },
+      "thickness_x1p5": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      },
+      "point_noise_3mm": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      },
+      "point_dropout_30pct": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      },
+      "voxel_origin_half_cell": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      },
+      "nominal_repeat": {
+        "paired_units": 0,
+        "initialization_mismatches": [
+          1032,
+          1041,
+          2034,
+          2035,
+          3041,
+          3047,
+          4038
+        ],
+        "successes": {
+          "fmvp_sim": 0,
+          "r1": 0,
+          "flow": 0
+        },
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "gain_change_from_nominal": {
+              "mean": null,
+              "bootstrap95": null
+            },
+            "interaction_units": 0
+          }
+        }
+      }
+    },
     "repeatability": {
       "fmvp_sim": {
-        "units": 0,
+        "units": 7,
         "agreement": {
-          "mean": null,
-          "bootstrap95": null
+          "mean": 0.5714285714285714,
+          "bootstrap95": [
+            0.14285714285714285,
+            0.8571428571428571
+          ]
         }
       },
       "r1": {
-        "units": 0,
+        "units": 7,
         "agreement": {
-          "mean": null,
-          "bootstrap95": null
+          "mean": 1.0,
+          "bootstrap95": [
+            1.0,
+            1.0
+          ]
         }
       },
       "flow": {
-        "units": 0,
+        "units": 7,
         "agreement": {
-          "mean": null,
-          "bootstrap95": null
+          "mean": 0.8571428571428571,
+          "bootstrap95": [
+            0.5714285714285714,
+            1.0
+          ]
         }
       }
     },
     "cost": {
-      "worker_seconds": 461.4701833371073,
-      "attempts": 1,
-      "peak_total_gpu_mib": 88300.0
+      "worker_seconds": 12389.263644221704,
+      "attempts": 30,
+      "peak_total_gpu_mib": 90276.0
     },
-    "complete": false,
+    "complete": true,
     "limits": [
       "Pointwise exploratory p-values; no multiplicity-adjusted discovery claim.",
       "Percentile bootstrap over seven bodies is a coarse uncertainty summary.",
       "Same-simulator parameter stress is not calibrated target physics or real-robot evidence."
     ],
-    "pending_conditions": [
-      "nominal",
-      "friction_x2",
-      "youngs_x2",
-      "bending_x2",
-      "density_x1p5",
-      "thickness_x1p5",
-      "point_noise_3mm",
-      "point_dropout_30pct",
-      "voxel_origin_half_cell",
-      "nominal_repeat"
-    ]
+    "primary_pairing_valid": false,
+    "interpretation": "210 physical attempts complete; zero exact-state pairs admitted. Zero admitted successes are not actual zero successes."
   },
   "limits": [
-    "No real-robot evidence.",
-    "Closed-loop screen incomplete; only completed, geometrically matched cases contribute to paired statistics.",
-    "CPU action sensitivity cannot establish retention of task-success gains."
+    "No real-robot evidence or new actor trained.",
+    "Frozen exact-state endpoint failed; secondary matched-reset analysis is explicitly post hoc.",
+    "Nominal r1 gain absent in the selected seven-body/single-garment screen; historical gain retention inconclusive.",
+    "One attempt per body/condition/policy and only one nominal repeat do not isolate parameter sensitivity from stochasticity.",
+    "Independent settling changes initialization; material interventions include altered initial drape.",
+    "Density/thickness change mass and grasp penalty; flow uses simulated gripper force.",
+    "CPU calibration decisions reuse only four held-out bodies; no statistical discovery claim.",
+    "Analytic compiler checks establish numerical semantics, not method novelty, dressing capability, or transfer."
   ],
   "initial_completed_batches": [
     {
@@ -288,5 +739,684 @@
       "rows": 7,
       "worker_seconds": 461.4701833371073
     }
-  ]
+  ],
+  "secondary_matched_reset": {
+    "analysis": "Secondary analysis specified after noticing all exact-state hashes mismatch; not the frozen primary endpoint.",
+    "strict_exact_state_blocks": {
+      "nominal": 0,
+      "friction_x2": 0,
+      "youngs_x2": 0,
+      "bending_x2": 0,
+      "density_x1p5": 0,
+      "thickness_x1p5": 0,
+      "point_noise_3mm": 0,
+      "point_dropout_30pct": 0,
+      "voxel_origin_half_cell": 0,
+      "nominal_repeat": 0
+    },
+    "reset_design": "Exact static arrays/hang/grasp/TCP/placement/configuration check, then independently settled trials. No outcome-dependent geometric tolerance.",
+    "validation_errors": [],
+    "conditions": {
+      "nominal": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 1,
+            "losses": 1,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": 0.0,
+              "bootstrap95": [
+                -0.42857142857142855,
+                0.42857142857142855
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": 0.0,
+              "bootstrap95": [
+                0.0,
+                0.0
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 2,
+            "losses": 1,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": 0.14285714285714285,
+              "bootstrap95": [
+                -0.2857142857142857,
+                0.5714285714285714
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": 0.0,
+              "bootstrap95": [
+                0.0,
+                0.0
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 3,
+          "r1": 3,
+          "flow": 4
+        },
+        "post_settle_max_vertex_gap_mm": 0.22018006711732596,
+        "post_settle_max_rms_gap_mm": 0.10186694271396846
+      },
+      "friction_x2": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 1,
+            "losses": 2,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.2857142857142857
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.2857142857142857
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 1,
+            "losses": 1,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": 0.0,
+              "bootstrap95": [
+                -0.42857142857142855,
+                0.42857142857142855
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.2857142857142857
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 4,
+          "r1": 3,
+          "flow": 4
+        },
+        "post_settle_max_vertex_gap_mm": 0.7019098266027868,
+        "post_settle_max_rms_gap_mm": 0.25632797041907907
+      },
+      "youngs_x2": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": 0.0,
+              "bootstrap95": [
+                0.0,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": 0.0,
+              "bootstrap95": [
+                -0.42857142857142855,
+                0.42857142857142855
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 0,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": 0.0,
+              "bootstrap95": [
+                0.0,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.2857142857142857
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 4,
+          "r1": 4,
+          "flow": 4
+        },
+        "post_settle_max_vertex_gap_mm": 0.12403669825289398,
+        "post_settle_max_rms_gap_mm": 0.061648279370274395
+      },
+      "bending_x2": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 3,
+            "exact_mcnemar_p": 0.25,
+            "gain": {
+              "mean": -0.42857142857142855,
+              "bootstrap95": [
+                -0.8571428571428571,
+                -0.14285714285714285
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.42857142857142855,
+              "bootstrap95": [
+                -0.8571428571428571,
+                -0.14285714285714285
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 2,
+            "exact_mcnemar_p": 0.5,
+            "gain": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.7142857142857143,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.42857142857142855,
+              "bootstrap95": [
+                -1.0,
+                0.0
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 4,
+          "r1": 1,
+          "flow": 2
+        },
+        "post_settle_max_vertex_gap_mm": 0.21692534210160375,
+        "post_settle_max_rms_gap_mm": 0.1157032311311923
+      },
+      "density_x1p5": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 2,
+            "exact_mcnemar_p": 0.5,
+            "gain": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.7142857142857143,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.0
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 2,
+            "exact_mcnemar_p": 0.5,
+            "gain": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.7142857142857143,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.42857142857142855,
+              "bootstrap95": [
+                -1.0,
+                0.0
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 5,
+          "r1": 3,
+          "flow": 3
+        },
+        "post_settle_max_vertex_gap_mm": 0.11986119352513924,
+        "post_settle_max_rms_gap_mm": 0.06677424971712753
+      },
+      "thickness_x1p5": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 1,
+            "losses": 1,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": 0.0,
+              "bootstrap95": [
+                -0.42857142857142855,
+                0.42857142857142855
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": 0.0,
+              "bootstrap95": [
+                -0.42857142857142855,
+                0.42857142857142855
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 1,
+            "losses": 1,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": 0.0,
+              "bootstrap95": [
+                -0.42857142857142855,
+                0.42857142857142855
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.2857142857142857
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 5,
+          "r1": 5,
+          "flow": 5
+        },
+        "post_settle_max_vertex_gap_mm": 0.16898717149160802,
+        "post_settle_max_rms_gap_mm": 0.08950859046308324
+      },
+      "point_noise_3mm": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 2,
+            "exact_mcnemar_p": 0.5,
+            "gain": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.7142857142857143,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.0
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 2,
+            "exact_mcnemar_p": 0.5,
+            "gain": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.7142857142857143,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.42857142857142855,
+              "bootstrap95": [
+                -1.0,
+                0.0
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 5,
+          "r1": 3,
+          "flow": 3
+        },
+        "post_settle_max_vertex_gap_mm": 0.19024814537260681,
+        "post_settle_max_rms_gap_mm": 0.08569374767830595
+      },
+      "point_dropout_30pct": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 2,
+            "exact_mcnemar_p": 0.5,
+            "gain": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.7142857142857143,
+                0.2857142857142857
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 2,
+            "exact_mcnemar_p": 0.5,
+            "gain": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.42857142857142855,
+              "bootstrap95": [
+                -1.1428571428571428,
+                0.2857142857142857
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 3,
+          "r1": 1,
+          "flow": 1
+        },
+        "post_settle_max_vertex_gap_mm": 0.7589913439005613,
+        "post_settle_max_rms_gap_mm": 0.26731446268968284
+      },
+      "voxel_origin_half_cell": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 1,
+            "losses": 2,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.2857142857142857
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.8571428571428571,
+                0.42857142857142855
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 1,
+            "losses": 2,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.2857142857142857
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -0.7142857142857143,
+                0.2857142857142857
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 5,
+          "r1": 4,
+          "flow": 4
+        },
+        "post_settle_max_vertex_gap_mm": 0.6627928814850748,
+        "post_settle_max_rms_gap_mm": 0.2452994231134653
+      },
+      "nominal_repeat": {
+        "matched_reset_blocks": 7,
+        "comparisons": {
+          "r1": {
+            "wins": 0,
+            "losses": 1,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.42857142857142855,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.5714285714285714,
+                0.2857142857142857
+              ]
+            },
+            "interaction_blocks": 7
+          },
+          "flow": {
+            "wins": 0,
+            "losses": 1,
+            "exact_mcnemar_p": 1.0,
+            "gain": {
+              "mean": -0.14285714285714285,
+              "bootstrap95": [
+                -0.42857142857142855,
+                0.0
+              ]
+            },
+            "gain_change_from_nominal": {
+              "mean": -0.2857142857142857,
+              "bootstrap95": [
+                -1.0,
+                0.2857142857142857
+              ]
+            },
+            "interaction_blocks": 7
+          }
+        },
+        "successes": {
+          "fmvp_sim": 4,
+          "r1": 3,
+          "flow": 3
+        },
+        "post_settle_max_vertex_gap_mm": 0.7136978674679995,
+        "post_settle_max_rms_gap_mm": 0.26268811780028045
+      }
+    },
+    "repeatability": {
+      "fmvp_sim": {
+        "units": 7,
+        "agreement": {
+          "mean": 0.5714285714285714,
+          "bootstrap95": [
+            0.14285714285714285,
+            0.8571428571428571
+          ]
+        }
+      },
+      "r1": {
+        "units": 7,
+        "agreement": {
+          "mean": 1.0,
+          "bootstrap95": [
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "flow": {
+        "units": 7,
+        "agreement": {
+          "mean": 0.8571428571428571,
+          "bootstrap95": [
+            0.5714285714285714,
+            1.0
+          ]
+        }
+      }
+    },
+    "cost": {
+      "worker_seconds": 12389.263644221704,
+      "attempts": 30,
+      "peak_total_gpu_mib": 90276.0
+    },
+    "nominal_gain_present": {
+      "r1": 0.0,
+      "flow": 0.14285714285714285
+    },
+    "limits": [
+      "Exact hidden-state counterfactual pairing failed; these are matched-reset block comparisons.",
+      "Physics interventions include material-dependent settling before the policy starts.",
+      "Nominal r1 gain is absent on the selected seven bodies; cannot estimate retention of the historical 201-unit gain.",
+      "One attempt per case/condition/policy; stochastic sensitivity and parameter sensitivity are not isolated.",
+      "One garment, seven bodies, no hardware. No significance, equivalence, or causal bottleneck claim."
+    ],
+    "cpu_wall_seconds": 9.443290933035314
+  },
+  "comparison_calibration_screen": {
+    "method": "Leave-one-stress-condition-out; six paired target labels on first three bodies; choose among base/r1/flow on last four.",
+    "summaries": {
+      "nominal_selection": {
+        "decisions": 32,
+        "selected_updates": 8,
+        "harmful_updates": 1,
+        "harmful_fraction_of_updates": 0.125,
+        "success_count": 19,
+        "baseline_success_count": 20,
+        "net_gain": -1,
+        "regret": 1,
+        "gain_mse": 0.40625
+      },
+      "ensemble_mean": {
+        "decisions": 32,
+        "selected_updates": 8,
+        "harmful_updates": 1,
+        "harmful_fraction_of_updates": 0.125,
+        "success_count": 19,
+        "baseline_success_count": 20,
+        "net_gain": -1,
+        "regret": 1,
+        "gain_mse": 0.1258656509695291
+      },
+      "worst_model_gain": {
+        "decisions": 32,
+        "selected_updates": 0,
+        "harmful_updates": 0,
+        "harmful_fraction_of_updates": null,
+        "success_count": 20,
+        "baseline_success_count": 20,
+        "net_gain": 0,
+        "regret": 0,
+        "gain_mse": 0.40625
+      },
+      "scalar_bias": {
+        "decisions": 32,
+        "selected_updates": 11,
+        "harmful_updates": 1,
+        "harmful_fraction_of_updates": 0.09090909090909091,
+        "success_count": 19,
+        "baseline_success_count": 20,
+        "net_gain": -1,
+        "regret": 1,
+        "gain_mse": 0.23163053309966647
+      },
+      "scalar_ridge": {
+        "decisions": 32,
+        "selected_updates": 11,
+        "harmful_updates": 1,
+        "harmful_fraction_of_updates": 0.09090909090909091,
+        "success_count": 19,
+        "baseline_success_count": 20,
+        "net_gain": -1,
+        "regret": 1,
+        "gain_mse": 0.23523289975319622
+      },
+      "ternary_offset": {
+        "decisions": 32,
+        "selected_updates": 13,
+        "harmful_updates": 1,
+        "harmful_fraction_of_updates": 0.07692307692307693,
+        "success_count": 19,
+        "baseline_success_count": 20,
+        "net_gain": -1,
+        "regret": 1,
+        "gain_mse": 0.1497366276172909
+      }
+    },
+    "cpu_wall_seconds": 0.005893209017813206,
+    "limits": [
+      "Secondary matched-reset data; primary exact-state endpoint failed.",
+      "Eight conditions reuse only four held-out bodies; 32 decisions are not 32 independent targets.",
+      "No history features, candidate chunks, distillation, real trials, or confidence guarantee.",
+      "Nominal r1 improvement absent; this only rejects/promotes a small calibration component.",
+      "Penalty constants fixed to one; no target-test tuning. No statistical discovery claim."
+    ]
+  },
+  "followup_files_sha256": {
+    "output/uipc_manip/sim2real_audit_20261005/matched_reset_summary.json": "c942361c39807474a4c83873590e44b00931a698c156328c2a204eadd7e379ba",
+    "output/uipc_manip/sim2real_audit_20261005/comparison_calibration_screen.json": "c37187da780f2926d86ac44f14934d9fe32f07bb2f88a69eae18b3c2f985be92",
+    "scripts/wang_transfer/analyze_sim2real_completed.py": "32b9cd0d4fef69041e1c5c0df52e44fbddbbb421200148799a7ba30bb3bba469",
+    "scripts/wang_transfer/check_comparison_calibration.py": "6ca7ad1f9b09b657d7dc7058ade512d67e62584946c80e2e90abf49683c76ebd",
+    "scripts/wang_transfer/compile_feedback_repairs.py": "aa8fdf6881a3297e39343316aaa0835c269822e2642da718326713dd5fe10110"
+  },
+  "method_candidate_status": {
+    "comparison_calibration": "deprioritized; free screen adds no success and its held-out bank has no positive repair opportunity",
+    "complete_observable_feedback_repairs": "finite compiler implemented; three analytic checks pass; generator/router/actor/physical pilot unimplemented; novelty and real transfer not established",
+    "next_proposed_cost": "112 full attempts / about 2\u20134 worker-hours; proposed only, not launched"
+  }
 }

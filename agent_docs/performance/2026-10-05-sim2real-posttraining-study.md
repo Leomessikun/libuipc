@@ -5,6 +5,16 @@ Questions 1–3 were investigated before launching question 4. This record separ
 published evidence, our measurements, and proposed methods. No new policy has been
 trained for this study. The cancelled M4/composite-teacher queues remain stopped.
 
+**Completed measurement update:** all 210 predeclared attempts finished in 3.44
+worker-hours. The frozen exact-state pairing check admitted **zero pairs** because
+independent settling changes cloth vertices. A disclosed secondary matched-reset
+analysis verifies identical spawn geometry/configuration and reports the outcomes.
+Nominal success is fmvp_sim/r1/flow **3/7, 3/7, 4/7**; bending ×2 is **4/7, 1/7, 2/7**.
+The nominal r1 advantage is absent in this small screen, so it cannot establish
+retention or loss of the historical 201-unit gain. No real transfer was measured.
+See the [decision memo](2026-10-05-sim2real-posttraining-decision.md) for the current
+recommendation and [complete result table](2026-10-05-sim2real-robustness-results.md).
+
 ## 1. What the transfer literature actually establishes
 
 “Works on a real robot” and “an improvement learned in simulation transfers” are
@@ -25,6 +35,7 @@ controller gap. An entry marked “not established” is not evidence of impossi
 | [ASAP, 2025](https://arxiv.org/html/2502.01143v1) | Fit a delta-action model from target data; insert it into the source simulator and fine-tune the policy against the aligned dynamics. D/A. | Target motion tracking rollouts and locomotion data. | IsaacGym→IsaacSim/Genesis and Unitree G1 hardware; better tracking than tested SysID/DR/delta-dynamics baselines. Does not resolve garment perception or establish that cloth mismatch is action-equivalent. |
 | [TRANSIC, 2024](https://arxiv.org/html/2405.10315v2) | Learn a residual policy and gate from human online corrections; regularize a transferred visual policy. Joint O/D/A errors. | 20/100/90/17 corrected real trajectories across four tasks, containing 62/434/489/58 corrections. | Contact-rich furniture skills, aggregate 81% in the reported ablation table. Shows the value of targeted real corrections, rather than zero-target-data transfer. |
 | [DFP, 2026](https://arxiv.org/html/2605.07727v1); [Drifting, 2026](https://arxiv.org/html/2602.04770v2) | Move a one-pass generator toward data and critic-selected actions using a stopped-gradient drifting target; original drifting also supports feature-space transport. | DFP's evaluated offline/online simulator data. | DFP reports simulated RL, not real transfer. Its critic can favor simulator-specific actions. One network evaluation is not equivalent to critic-free deployment when best-of-N selection is used. Merely replacing flow matching with drifting does not address this study's gap. |
+| [World and behavior grounding, 2026](https://arxiv.org/html/2610.00821), §4 | Independently ground the simulated world and simulated demonstration behavior; co-train flow/foundation policies. | 100 real demonstrations plus about 1,500 simulated trajectories per configuration; calibration/System ID also used. | Dynamic pick-and-sort: real-only 52% versus grounded co-training 86%; 50 real trials per policy. World grounding contributes a larger average effect than behavior grounding in this setting. Gains do not establish target-data-free transfer or which cloth coefficient matters. |
 
 **Correction to earlier framing:** the brief points to §14 of the October 3
 report for DFP. That section concerns **Discrete Forcing**, a different paper.
@@ -152,7 +163,7 @@ Validation: three CPU integrity tests pass (protected observation fields,
 zero-shift equivalence to the actual bridge, and paired statistics including
 grasp failures). Collector CLI parsing and Python compilation pass.
 
-### 4.2 Completed CPU diagnostic; closed-loop measurement still pending
+### 4.2 Completed CPU diagnostic
 
 While the GPU admission condition was unmet, replayed **49 preserved r1 states**
 (seven fixed times on each of the seven bodies) through all three policies on
@@ -175,21 +186,65 @@ raw output is `observation_sensitivity.json` beside the protocol.
 The committed [evidence snapshot](2026-10-05-sim2real-posttraining-evidence.json)
 records hashes, intervention settings, and these completed CPU results.
 
-At the recorded launch, supervisor PID 2288111 was **waiting for GPU headroom**;
-no new success counts or McNemar results existed. Read `status.json` and
-`summary.json` for later completion. The complete task question remains open
-until the physical rollouts finish.
+### 4.3 All physical attempts finished; primary pairing failure disclosed
 
-Initial execution update: the first nominal batch finished, **fmvp_sim 3/7**;
-the sequential queue moved to r1. This single-policy result is not a paired
-gain estimate. A CPU reporter maintains the [live English results table](2026-10-05-sim2real-robustness-results.md)
-from completed batches. It labels missing data and incomplete comparisons
-explicitly; neither the supervisor nor reporter starts policy training.
+Supervisor 2288111 finished at **2026-10-05 02:06 UTC / 04:06 Berlin**. There are
+30 completed batches and 210 recorded outcomes; no automatic actor training
+follows. Charged cost: **12,389.26 worker-seconds = 3.44 hours**. Recorded peak total
+GPU usage: **90,276 MiB = 88.16 GiB**, below the owner limit.
+
+The original analysis required identical post-reset cloth/TCP/landmark byte
+hashes. Every body's hash differed across runs, so **zero cases pass that frozen
+primary endpoint**. This was an overly strict/inappropriate initial-state check:
+each world performs 30 settling substeps and two hold substeps before state zero.
+Floating-point nondeterminism changes vertices even with the same controls;
+material interventions also legitimately change the settled drape. Do not call
+the zero admitted cases zero task successes, or silently discard the check.
+
+`analyze_sim2real_completed.py` adds a **secondary, post hoc matched-reset block
+analysis**, preserving `summary.json` and its primary rejection. It verifies
+exact equality of static human/arm geometry, garment faces/hang, tool position,
+grasp indices/initial offsets, landmarks, placement and seed. Every environment
+configuration must equal nominal plus its predeclared material intervention.
+All 210 cases pass those checks. No tolerance was selected using success outcomes.
+The largest post-settle vertex discrepancy among policies within a condition is
+0.759 mm; nominal is 0.220 mm. Material-dependent initial drape is part of this
+secondary intervention; it is not held fixed by this design.
+
+| Condition | fmvp_sim | r1 | flow |
+|---|---:|---:|---:|
+| Nominal | 3/7 | 3/7 | 4/7 |
+| Friction ×2 | 4/7 | 3/7 | 4/7 |
+| Young's modulus ×2 | 4/7 | 4/7 | 4/7 |
+| Bending ×2 | 4/7 | 1/7 | 2/7 |
+| Density ×1.5 | 5/7 | 3/7 | 3/7 |
+| Half-thickness ×1.5 | 5/7 | 5/7 | 5/7 |
+| Point noise 3 mm | 5/7 | 3/7 | 3/7 |
+| Dropout 30% | 3/7 | 1/7 | 1/7 |
+| Half-cell voxel origin | 5/7 | 4/7 | 4/7 |
+| Identical nominal repeat | 4/7 | 3/7 | 3/7 |
+
+The [generated full table](2026-10-05-sim2real-robustness-results.md) includes
+block win/loss counts, exact McNemar p-values, gain-change bootstrap intervals,
+repeat agreement and initialization diagnostics. None of the within-condition
+exact tests is below 0.25. A coarse negative bootstrap interval is not a
+multiple-comparison discovery; its sampling assumptions and small sample matter.
+Nominal-repeat agreement is **4/7 base, 7/7 r1, 6/7 flow**.
+
+**Interpretation:** checkpoint ordering varies in this pilot, with bending and
+dropout unfavorable to r1/flow. However nominal r1 has no gain and nominal flow's
+one-case edge disappears in the nominal repeat. This screen cannot establish
+that the historical sim gain either survives or collapses. Do not generalize
+the seven-body counts to the 201-unit benchmark. Do not claim a dominant real
+physics gap or hardware transfer. The initial protocol's exact-state endpoint
+failed, and the secondary result is a sensitivity warning, not a causal verdict.
 
 ## 5. One concrete candidate: post-training with calibrated comparison labels
 
-**Status: a falsifiable method proposal, not an established new algorithm.**
-The measured failure mechanism is not yet known. In particular the CPU diagnostic
+**Updated status: deprioritized candidate; its small calibration component was
+tested without new IPC and gave no added success.** It remains a falsifiable
+proposal, not an established new algorithm. The measured failure mechanism is
+not yet known. In particular the CPU diagnostic
 does not support claiming that r1's encoder became more noise-sensitive. Proceed
 with this candidate only if Q4 or a small target-domain check reveals unreliable
 improvement ordering beyond repeatability noise. If all selected simulated gains
@@ -343,3 +398,53 @@ IPC engine, pretrained checkpoint, flow parameterization, residual formulation,
 KL anchor, and worst-case ensemble check are not independently new. Broadly
 describing the proposal as “rank-aware sim-to-real post-training” would overlap
 with existing work. The narrow claim remains unproven pending the experiment.
+
+### 5.1 Completed free rejection screen
+
+`check_comparison_calibration.py` used the disclosed matched-reset outcomes.
+For each of eight stress targets it fit six target comparison labels from the
+first three bodies, then chose base/r1/flow on the remaining four. Constants and
+methods were fixed before running this screen. These 32 decisions reuse four
+independent bodies; they are not 32 independent targets.
+
+| Selection rule | Actual target successes / 32 | Harmful updates | Selected updates |
+|---|---:|---:|---:|
+| Keep base | 20 | 0 | 0 |
+| Nominal or ensemble-mean selection | 19 | 1 | 8 |
+| Worst-model gain | 20 | 0 | 0 |
+| Scalar bias or ridge calibration | 19 | 1 | 11 |
+| Three-outcome logit correction | 19 | 1 | 13 |
+
+There is **no positive oracle opportunity** among the two alternatives on these
+held-out cases: neither repairs a base failure. The ternary estimator's smaller
+harmful fraction comes from choosing more ties, not fewer harmful outcomes.
+Therefore this screen provides no reason to scale that estimator. It cannot
+reject the full future chunk-calibration method when successful alternatives
+exist; that situation is absent here. Costs: CPU seconds, zero new IPC calls.
+
+The novelty objection is also stronger after the follow-up search:
+[Reward Learning From Preference With Ties](https://arxiv.org/html/2410.05328)
+already models tie-related preference bias. Treat tie handling as a control,
+not as a new post-training principle.
+
+## 6. Second candidate and current research decision
+
+The [complete observable feedback-repair proposal](2026-10-05-feedback-repair-posttraining.md)
+specifies a different supervision object: a robust distribution over complete
+feedback corrections, with causal observation routing and repair identity retained
+through prefix/continuation. Its mathematical operator, actor losses, objections,
+failure criteria and proposed **112-attempt / 2–4-worker-hour** mechanism pilot
+are concrete. A CPU compiler and three analytic checks are implemented. No new
+physical pilot or student training has been launched.
+
+This is a hypothesis about efficient supervision/absorption, not an assertion
+that trees, mixtures, belief-aware teachers or shared-prefix diffusion are new.
+A2D, BIG, LCEOPT, CoPlanner, SDP and ACPPO-Corr are required comparisons. If ordinary
+history-flow distillation preserves the same gain, the proposed association
+mechanism has no demonstrated method value. A real paired comparison remains
+necessary before claiming sim-to-real improvement.
+
+The requested prior-art map, bounded measurement, failure disclosure and concrete
+candidate specifications are delivered. No validated novel algorithm or transferable
+actor exists from this study. The next scientific step is a finite experiment on
+**new executable repairs**, not more data from the unchanged weak labeling bank.

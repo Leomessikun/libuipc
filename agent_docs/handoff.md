@@ -14,22 +14,42 @@ Q4 is implemented in `scripts/wang_transfer/run_sim2real_audit.py`. Frozen proto
 first seven development bodies, tshirt_26, three policies, eight single-factor
 shifts plus nominal/identical nominal repeat: 210 attempts, 30 sequential batches.
 One world/worker, CPU inference, admission below 84 GiB, terminate only our process
-group at 89.75 GiB, 24 worker-hour cap. Supervisor PID 2288111 is launched. After
-waiting for resources, fmvp_sim nominal completed at 3/7 in 461.47 worker-seconds;
-r1 nominal is running at this update. No complete three-policy comparison yet. Read
+group at 89.75 GiB, 24 worker-hour cap. Supervisor PID 2288111 completed all 210
+attempts at 02:06 UTC on October 5, charging 12,389.26 seconds (3.44 worker-hours),
+recorded peak total 90,276 MiB (88.16 GiB). No audit simulation is still running. Read
 `output/uipc_manip/sim2real_audit_20261005/{status,protocol,summary}.json` and
 `supervisor.log` for current status. M4/composite DAgger remain stopped.
-CPU reporter PID 2392226 updates the [live result table](performance/2026-10-05-sim2real-robustness-results.md)
-every 30 seconds and exits when the study completes or needs inspection. The
-file is generated; later working-tree updates to it are expected. No new actor
-training is queued. Its raw numbers come only from completed physical batches.
+CPU reporter PID 2392226 exited on completion. The [result table](performance/2026-10-05-sim2real-robustness-results.md)
+is generated from the saved data. No new actor training is queued.
+
+The **frozen exact-state pairing check failed for every case**: independent
+settling changes cloth bytes; material changes also change the settled initial
+drape. `summary.json` retains zero admitted pairs. A disclosed secondary analysis
+in `matched_reset_summary.json` checks exact static body/garment/hang/grasp/TCP/
+landmarks/placement and nominal configuration plus declared intervention. All 210
+cases pass, without an outcome-dependent tolerance. Within-condition post-settle
+vertex gaps are at most 0.759 mm. Use matched-reset blocks, never assert identical
+hidden-state counterfactuals. Nominal base/r1/flow is 3/7,3/7,4/7; bending ×2 is
+4/7,1/7,2/7; nominal repeat is 4/7,3/7,3/7. The nominal r1 gain is absent here, so
+the screen cannot establish retention/loss of its historical 201-unit advantage.
 
 Three measurement integrity tests pass. A CPU-only replay of 49 preserved states
 finds r1/flow no more action-sensitive than fmvp_sim under the selected camera
-shifts; this does not measure success-gain retention. See the study for numbers
-and a concrete, conditional candidate based on calibrated three-way outcome
-comparisons. S-HCI-GIBO and Sim2Act substantially narrow the novelty claim; no new
-algorithm or real transfer result is established. Physical Q4 results are pending.
+shifts; this does not measure success-gain retention. The free comparison-calibration
+screen has also finished: ternary and scalar calibration both select 19/32 successes,
+versus keeping the base 20/32. The held-out bank contains no positive repair, so
+this deprioritizes the tiny estimator but does not invalidate calibration where
+repairs exist. No extra IPC was used.
+
+Current recommendation and candidate costs: [decision memo](performance/2026-10-05-sim2real-posttraining-decision.md).
+The [feedback-repair proposal](performance/2026-10-05-feedback-repair-posttraining.md)
+specifies complete, observation-executable corrections and preserving their joint
+association during actor post-training. Its CPU compiler and three analytic checks
+exist; candidate generation/router/actor/hardware remain unimplemented. A2D, BIG,
+LCEOPT, CoPlanner, SDP, ACPPO-Corr and robust-regret prior art prevent a broad novelty
+claim. Proposed first rejection pilot: 112 new repair/controller attempts, roughly
+2–4 single-worker hours, four-hour ceiling. **Not launched.** Do not restart the
+completed Q4 or cancelled queues, or portray the prototype as a validated method.
 
 ## 2026-10-03 — Effect-code study completed without verified improvement
 
