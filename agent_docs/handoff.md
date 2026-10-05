@@ -48,6 +48,13 @@ interfaces must be matched before any deployment claim. The user has been asked
 which robot/real data is actually available; source simulation does not depend
 on that answer.
 
+The prior-art attack additionally checks CPD, SafeAPT and Sim-to-Lab-to-Real:
+cross-domain policy distillation, target adaptation of a simulated repertoire,
+and policy-distribution calibration already exist. A recent world-action transfer
+study has zero-real-demo hardware evidence, but uses 40 H100 GPUs for 72 hours
+and does not isolate its predictive objective with matched baselines. These
+findings narrow the proposal; they do not change the frozen running experiment.
+
 ## 2026-10-05 — Completed sim-to-real robustness study
 
 The owner requested the study in brief `67e0c5fa`, with questions 1–3 before the

@@ -139,6 +139,7 @@ the actor does not, the method has not delivered transferable post-training.
 | [Set-Supervised Diffusion Policy, RSS 2026](https://arxiv.org/html/2606.01865) | Learns distributions of desired action chunks using positive/negative corrections. Our claim must concern transfer-aware, observation-executable **joint repair supervision**, not “use sets instead of one action.” |
 | [ACPPO-Corr, 2026](https://arxiv.org/html/2609.36250) | Already adds stepwise feedback to chunked actions. Merely reacting during a chunk is not a contribution. |
 | [Robust baseline regret](https://arxiv.org/abs/1607.03842), [Sim2Act](https://arxiv.org/html/2603.09053v1) | Base-relative robust improvement and action-ranking-aware calibration already exist. The LP and calibration do not independently establish novelty. |
+| [Cyclic Policy Distillation](https://arxiv.org/html/2207.14561), [SafeAPT](https://arxiv.org/html/2201.13248) | Already learn/distill policies across randomized dynamics, or calibrate and select a simulated repertoire with real outcomes. A repair bank, cross-domain distillation and a later real selection loop cannot independently establish the proposed learning contribution. |
 | [World/behavior grounding, 2026](https://arxiv.org/html/2610.00821) | Real co-training gains depend on grounded simulated behavior outside real-data coverage. An observation-based branch cannot repair an incorrectly modeled suffix by itself. Real paired outcomes remain necessary. |
 
 **Strongest reviewer objection:** this may be robust POMDP planning plus
