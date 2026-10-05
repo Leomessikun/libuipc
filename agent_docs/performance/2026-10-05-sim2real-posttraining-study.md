@@ -36,6 +36,7 @@ controller gap. An entry marked “not established” is not evidence of impossi
 | [TRANSIC, 2024](https://arxiv.org/html/2405.10315v2) | Learn a residual policy and gate from human online corrections; regularize a transferred visual policy. Joint O/D/A errors. | 20/100/90/17 corrected real trajectories across four tasks, containing 62/434/489/58 corrections. | Contact-rich furniture skills, aggregate 81% in the reported ablation table. Shows the value of targeted real corrections, rather than zero-target-data transfer. |
 | [DFP, 2026](https://arxiv.org/html/2605.07727v1); [Drifting, 2026](https://arxiv.org/html/2602.04770v2) | Move a one-pass generator toward data and critic-selected actions using a stopped-gradient drifting target; original drifting also supports feature-space transport. | DFP's evaluated offline/online simulator data. | DFP reports simulated RL, not real transfer. Its critic can favor simulator-specific actions. One network evaluation is not equivalent to critic-free deployment when best-of-N selection is used. Merely replacing flow matching with drifting does not address this study's gap. |
 | [World and behavior grounding, 2026](https://arxiv.org/html/2610.00821), §4 | Independently ground the simulated world and simulated demonstration behavior; co-train flow/foundation policies. | 100 real demonstrations plus about 1,500 simulated trajectories per configuration; calibration/System ID also used. | Dynamic pick-and-sort: real-only 52% versus grounded co-training 86%; 50 real trials per policy. World grounding contributes a larger average effect than behavior grounding in this setting. Gains do not establish target-data-free transfer or which cloth coefficient matters. |
+| [Simulation Distillation, 2026](https://arxiv.org/html/2603.15759), §IV/V | Pretrain latent dynamics, reward, value and action priors in simulation; freeze the perceptual/reward/value components and fit dynamics from real rollouts. MPPI converts improved predictions into behavior. | 15–30 minutes of real interaction in its reported manipulation/locomotion experiments. | Real adaptation from raw observations; no cloth experiment. Already covers modular adaptation of action consequences while preserving simulated task structure. Our finite repair-bank distillation must be compared with this stronger alternative to direct actor fine-tuning. |
 
 **Correction to earlier framing:** the brief points to §14 of the October 3
 report for DFP. That section concerns **Discrete Forcing**, a different paper.
@@ -434,8 +435,9 @@ specifies a different supervision object: a robust distribution over complete
 feedback corrections, with causal observation routing and repair identity retained
 through prefix/continuation. Its mathematical operator, actor losses, objections,
 failure criteria and proposed **112-attempt / 2–4-worker-hour** mechanism pilot
-are concrete. A CPU compiler and three analytic checks are implemented. No new
-physical pilot or student training has been launched.
+are concrete. The compiler, bounded physical execution and source-only router
+fitting are implemented; nine focused checks pass. The physical pilot now runs
+under `output/uipc_manip/feedback_repairs_20261005/`. No student training is queued.
 
 This is a hypothesis about efficient supervision/absorption, not an assertion
 that trees, mixtures, belief-aware teachers or shared-prefix diffusion are new.
@@ -443,6 +445,35 @@ A2D, BIG, LCEOPT, CoPlanner, SDP and ACPPO-Corr are required comparisons. If ord
 history-flow distillation preserves the same gain, the proposed association
 mechanism has no demonstrated method value. A real paired comparison remains
 necessary before claiming sim-to-real improvement.
+
+### 6.1 Additional prior-art challenge found during physical collection
+
+[Learning Latent Plans from Play](https://proceedings.mlr.press/v100/lynch20a/lynch20a.pdf)
+already learns a trajectory-level latent plan with a plan recognizer/proposal and
+a feedback policy conditioned on that plan. A persistent repair identity plus
+conditional action learning is therefore not, by itself, a new learning rule.
+
+[Why Does Action Chunking Improve Behavioral Cloning Performance in Robotic Control?](https://arxiv.org/html/2608.02547)
+provides a stronger empirical objection: in its simulated and hardware tasks,
+delayed predictors and randomized delay ensembles explain gains that do not
+require preserving a sampled joint action sequence. Its smooth-dynamics theory
+does not establish what happens at our cloth contact failures. Nevertheless,
+temporal association cannot be assumed to be the useful mechanism here. Add a
+randomized-delay deployment of the **same trained history/chunk student** to any
+later absorption study. The current hand-coded suffix resampling control is not
+that baseline. This finding does not change the already frozen physical pilot.
+
+[Closed-Loop Sim-to-Real RL for Deformable Microfiber Shape Control](https://arxiv.org/abs/2605.21688)
+reports direct transfer from simplified frictionless simulation using visual
+feedback to correct observable interaction error. The domain and control regime
+differ from dressing, but the broad idea that feedback can absorb unmodeled
+deformable dynamics is already established.
+
+Together these sources narrow the candidate: the only remaining proposed method
+value is a measured, query-efficient way to construct and absorb **useful,
+observation-executable corrections under model shift**. A generic robust planner,
+feedback loop or latent-plan actor is not enough. The running pilot tests whether
+there is any useful repair bank before investing in this unvalidated distinction.
 
 The requested prior-art map, bounded measurement, failure disclosure and concrete
 candidate specifications are delivered. No validated novel algorithm or transferable

@@ -11,6 +11,14 @@ actual IPC steps. The first worker has passed decision 80 with all seven slots
 still active. One worker, total GPU below 90 GiB, 112 admitted attempts / four
 worker-hours maximum including setup and aborted attempts.
 
+The first two batches are complete (14 attempts). On nominal body 1032, all
+seven controllers fail; on body 1041, base and five of six corrections succeed.
+Independent replay of the saved success/grasp/hold arrays agrees with every
+accepted flag. Static geometry/input/window checks pass, but settled cloth
+differs by up to 3.924 mm and decision-60 cloth positions by up to 0.361 m. These
+are matched-reset samples, not identical-state counterfactuals. See
+[interim evidence](performance/2026-10-05-feedback-repair-evidence.json).
+
 Implemented the bounded execution hook, candidate generation, source-only
 cross-fitted router, robust whole-repair compiler and sequential guarded driver.
 Collect 84 source attempts on two development bodies / three physics models;
@@ -20,6 +28,16 @@ training is automatically queued. Nine focused CPU tests pass. This is a
 rejection pilot of a method hypothesis, not a proven contribution or hardware
 transfer result. Full frozen settings and interpretation:
 [execution protocol](performance/2026-10-05-feedback-repair-posttraining.md#october-5-execution-frozen-rejection-pilot).
+
+Follow-up primary-source search adds Play-LMP, SimDist, and Levine et al.'s
+2026 action-chunking analysis. Persistent plans and feedback are established;
+temporal-consistency gains must be tested against a same-student randomized
+delay ensemble if absorption proceeds. The latter is not the current hand-coded
+suffix resampling. The historical yaw adapter also means the current physical
+pilot is not a strict three-translation-only hardware policy. Both action
+interfaces must be matched before any deployment claim. The user has been asked
+which robot/real data is actually available; source simulation does not depend
+on that answer.
 
 ## 2026-10-05 — Completed sim-to-real robustness study
 

@@ -1,0 +1,588 @@
+{
+  "protocol": {
+    "version": 1,
+    "created_unix": 1791211121.82125,
+    "revision": "43bdac6b4eb704a45c59e83ba63b98c0a9ce621f",
+    "checkpoint": "/home/ge47gax/Desktop/fmvp_sim.pt",
+    "checkpoint_sha256": "eef38b84f95a0ca099d03cb92bbf00da0af29b58640837fe307d3d2635b4af97",
+    "source_sha256": {
+      "/home/ge47gax/kun/libuipc/output/uipc_manip/feedback_repairs_20261005/source/collect_garment.py": "554523cb732b570bb16217e1f8b597a5427404611141d9b0db6e76c21842dd54",
+      "/home/ge47gax/kun/libuipc/output/uipc_manip/feedback_repairs_20261005/source/feedback_repair_control.py": "429dbeedaeab9af5dfbbf134933edbdecb061edb19f20ce7557994101b8ac858",
+      "/home/ge47gax/kun/libuipc/output/uipc_manip/feedback_repairs_20261005/source/fit_feedback_repairs.py": "e3adc1db1a4e775d6e2d2f4ecfea8ec897f516dbd873a37a7fdfdc51e3b386ec",
+      "/home/ge47gax/kun/libuipc/output/uipc_manip/feedback_repairs_20261005/source/compile_feedback_repairs.py": "4161d6617b9b1bd3393caada3a740ea86fdbc469929c4133e53c3e33c3177c5b",
+      "/home/ge47gax/kun/libuipc/output/uipc_manip/feedback_repairs_20261005/source/rollout_controls.py": "36e98f6e139bc5f923614a0b40b62284c06da29c072dcacc681a02d00a79fd94",
+      "/home/ge47gax/kun/libuipc/output/uipc_manip/feedback_repairs_20261005/source/physical_sleeve.py": "cb15ecff1560317c992ff1f260ba8ca66ed664a4c3e8667c534349170316148d",
+      "/home/ge47gax/kun/libuipc/output/uipc_manip/feedback_repairs_20261005/source/sim2real_perturbations.py": "7a6700a072c0470de2c7c133f61e8702adf6fb0cf92ff68f519c57e740b19b2f",
+      "/home/ge47gax/kun/libuipc/output/uipc_manip/feedback_repairs_20261005/source/run_feedback_repair_pilot.py": "780ebfacc5714093a51c64a1f9ed68a0bca88ef32d5c6a80757f42f195c27012",
+      "/home/ge47gax/kun/libuipc/.claude/worktrees/residual-rl/python/uipc_manip/dressing_env.py": "5786e4b31f63df0f2a0013fb4b99613e9f99907a433060b250c643faf6052844",
+      "/home/ge47gax/kun/libuipc/.claude/worktrees/residual-rl/python/uipc_manip/wang_bridge.py": "2941a779b2491d70d288eb2a96d721ccca806f29efa4e93d2ec3bf93a2ea1742",
+      "/home/ge47gax/kun/libuipc/.claude/worktrees/residual-rl/python/uipc_manip/wang_client.py": "8f6f94c35a038ea5738764b99bec49a89842a13132497768548ff0ca24425d32",
+      "/home/ge47gax/kun/libuipc/.claude/worktrees/residual-rl/python/uipc_manip/obs.py": "2eb3fddab830c12d0eb498d61e3d7176762a5f59586c4e66e085abe71dd1df57"
+    },
+    "jobs": [
+      {
+        "id": 0,
+        "phase": "source",
+        "condition": "nominal",
+        "extra": [],
+        "body": 1032,
+        "repeat": 0,
+        "seed": 2026100510
+      },
+      {
+        "id": 1,
+        "phase": "source",
+        "condition": "nominal",
+        "extra": [],
+        "body": 1041,
+        "repeat": 0,
+        "seed": 2026100510
+      },
+      {
+        "id": 2,
+        "phase": "source",
+        "condition": "bending_x2",
+        "extra": [
+          "--cloth-bending-stiffness",
+          ".2"
+        ],
+        "body": 1032,
+        "repeat": 0,
+        "seed": 2026100510
+      },
+      {
+        "id": 3,
+        "phase": "source",
+        "condition": "bending_x2",
+        "extra": [
+          "--cloth-bending-stiffness",
+          ".2"
+        ],
+        "body": 1041,
+        "repeat": 0,
+        "seed": 2026100510
+      },
+      {
+        "id": 4,
+        "phase": "source",
+        "condition": "density_x1p5",
+        "extra": [
+          "--cloth-density",
+          "1125"
+        ],
+        "body": 1032,
+        "repeat": 0,
+        "seed": 2026100510
+      },
+      {
+        "id": 5,
+        "phase": "source",
+        "condition": "density_x1p5",
+        "extra": [
+          "--cloth-density",
+          "1125"
+        ],
+        "body": 1041,
+        "repeat": 0,
+        "seed": 2026100510
+      },
+      {
+        "id": 6,
+        "phase": "source",
+        "condition": "nominal",
+        "extra": [],
+        "body": 1032,
+        "repeat": 1,
+        "seed": 2026100511
+      },
+      {
+        "id": 7,
+        "phase": "source",
+        "condition": "nominal",
+        "extra": [],
+        "body": 1041,
+        "repeat": 1,
+        "seed": 2026100511
+      },
+      {
+        "id": 8,
+        "phase": "source",
+        "condition": "bending_x2",
+        "extra": [
+          "--cloth-bending-stiffness",
+          ".2"
+        ],
+        "body": 1032,
+        "repeat": 1,
+        "seed": 2026100511
+      },
+      {
+        "id": 9,
+        "phase": "source",
+        "condition": "bending_x2",
+        "extra": [
+          "--cloth-bending-stiffness",
+          ".2"
+        ],
+        "body": 1041,
+        "repeat": 1,
+        "seed": 2026100511
+      },
+      {
+        "id": 10,
+        "phase": "source",
+        "condition": "density_x1p5",
+        "extra": [
+          "--cloth-density",
+          "1125"
+        ],
+        "body": 1032,
+        "repeat": 1,
+        "seed": 2026100511
+      },
+      {
+        "id": 11,
+        "phase": "source",
+        "condition": "density_x1p5",
+        "extra": [
+          "--cloth-density",
+          "1125"
+        ],
+        "body": 1041,
+        "repeat": 1,
+        "seed": 2026100511
+      },
+      {
+        "id": 12,
+        "phase": "target",
+        "condition": "bending_x2_density_x1p5",
+        "extra": [
+          "--cloth-bending-stiffness",
+          ".2",
+          "--cloth-density",
+          "1125"
+        ],
+        "body": 1032,
+        "repeat": 0,
+        "seed": 2026100510
+      },
+      {
+        "id": 13,
+        "phase": "target",
+        "condition": "bending_x2_density_x1p5",
+        "extra": [
+          "--cloth-bending-stiffness",
+          ".2",
+          "--cloth-density",
+          "1125"
+        ],
+        "body": 1041,
+        "repeat": 0,
+        "seed": 2026100510
+      },
+      {
+        "id": 14,
+        "phase": "target",
+        "condition": "bending_x2_density_x1p5",
+        "extra": [
+          "--cloth-bending-stiffness",
+          ".2",
+          "--cloth-density",
+          "1125"
+        ],
+        "body": 1032,
+        "repeat": 1,
+        "seed": 2026100511
+      },
+      {
+        "id": 15,
+        "phase": "target",
+        "condition": "bending_x2_density_x1p5",
+        "extra": [
+          "--cloth-bending-stiffness",
+          ".2",
+          "--cloth-density",
+          "1125"
+        ],
+        "body": 1041,
+        "repeat": 1,
+        "seed": 2026100511
+      }
+    ],
+    "settings": {
+      "start": 60,
+      "prefix_steps": 12,
+      "suffix_steps": 80,
+      "prefixes": [
+        "half",
+        "no_rotation",
+        "lift"
+      ],
+      "suffixes": [
+        "half",
+        "no_rotation"
+      ],
+      "lift_residual": 0.25,
+      "sensor_noise_m": 0.0,
+      "sensor_dropout": 0.0,
+      "seed": 2026100507,
+      "feature_contract": "18 cloud statistics at repair start, their response delta, and 3 measured tool displacements; no force/goal/attached input"
+    },
+    "source_controllers": [
+      {
+        "name": "base",
+        "kind": "base"
+      },
+      {
+        "name": "p0_s0",
+        "kind": "fixed",
+        "prefix": 0,
+        "suffix": 0
+      },
+      {
+        "name": "p0_s1",
+        "kind": "fixed",
+        "prefix": 0,
+        "suffix": 1
+      },
+      {
+        "name": "p1_s0",
+        "kind": "fixed",
+        "prefix": 1,
+        "suffix": 0
+      },
+      {
+        "name": "p1_s1",
+        "kind": "fixed",
+        "prefix": 1,
+        "suffix": 1
+      },
+      {
+        "name": "p2_s0",
+        "kind": "fixed",
+        "prefix": 2,
+        "suffix": 0
+      },
+      {
+        "name": "p2_s1",
+        "kind": "fixed",
+        "prefix": 2,
+        "suffix": 1
+      }
+    ],
+    "target_controllers": [
+      {
+        "name": "base",
+        "kind": "base"
+      },
+      {
+        "name": "flat",
+        "kind": "flat"
+      },
+      {
+        "name": "observable",
+        "kind": "observable"
+      },
+      {
+        "name": "privileged",
+        "kind": "privileged"
+      },
+      {
+        "name": "initial",
+        "kind": "initial"
+      },
+      {
+        "name": "shuffled",
+        "kind": "shuffled"
+      },
+      {
+        "name": "resample",
+        "kind": "resample"
+      }
+    ],
+    "bodies": [
+      1032,
+      1041
+    ],
+    "garment": "tshirt_26",
+    "max_worker_hours": 4.0,
+    "max_charged_attempts": 112,
+    "memory_limit_gib": 90.0,
+    "admission_below_gib": 84.0,
+    "terminate_at_gib": 89.75,
+    "max_concurrent_sim_workers": 1,
+    "source_gate": "New repaired baseline failures in both independent replicas; OOF observable mixture mean gain >0 and worst gain >=0; >=.10 mean gain over robust flat mixture.",
+    "router": "Cost-sensitive decision stump; quartile thresholds; train on other replica for source value estimation; refit all source only for target execution.",
+    "pairing": "Matched static reset geometry, same body/seed/offset/config per block; independent settling, no bitwise counterfactual claim.",
+    "source_models": "Three physics conditions, averaging the two development bodies. Target joint shift never used for fitting.",
+    "budget": "Every worker admission charges seven attempts including failed setup/retries; all worker wall time including setup and saving is charged.",
+    "interpretation": "Rejection pilot only. No actor or hardware evidence; two repeats are not a statistical validation."
+  },
+  "status": {
+    "stage": "running_source",
+    "supervisor_pid": 659533,
+    "time": 1791212168.9097052,
+    "job": {
+      "id": 2,
+      "phase": "source",
+      "condition": "bending_x2",
+      "extra": [
+        "--cloth-bending-stiffness",
+        ".2"
+      ],
+      "body": 1032,
+      "repeat": 0,
+      "seed": 2026100510
+    },
+    "worker_pid": 731170,
+    "log": "/home/ge47gax/kun/libuipc/output/uipc_manip/feedback_repairs_20261005/runs/job002_source_bending_x2_body1032_rep0.log",
+    "total_gpu_mib": 29807.0,
+    "worker_seconds_so_far": 1033.1747782030143,
+    "completed_attempts": 14
+  },
+  "summary": {
+    "completed_batches": 2,
+    "completed_attempts": 14,
+    "counts": {
+      "source/nominal/base": {
+        "successes": 1,
+        "attempts": 2
+      },
+      "source/nominal/p0_s0": {
+        "successes": 1,
+        "attempts": 2
+      },
+      "source/nominal/p0_s1": {
+        "successes": 0,
+        "attempts": 2
+      },
+      "source/nominal/p1_s0": {
+        "successes": 1,
+        "attempts": 2
+      },
+      "source/nominal/p1_s1": {
+        "successes": 1,
+        "attempts": 2
+      },
+      "source/nominal/p2_s0": {
+        "successes": 1,
+        "attempts": 2
+      },
+      "source/nominal/p2_s1": {
+        "successes": 1,
+        "attempts": 2
+      }
+    },
+    "charged_attempts": 14,
+    "worker_seconds": 746.6027613962069,
+    "peak_total_gpu_mib": 26682.0
+  },
+  "recorded_utc": "2026-10-05T14:56:09.201344+00:00",
+  "analysis_summary": {
+    "completed_batches": 2,
+    "completed_attempts": 14,
+    "integrity_pass": true,
+    "max_initial_vertex_gap_m": 0.003924020566046238,
+    "max_preintervention_vertex_gap_m": 0.3612912595272064,
+    "interpretation": "Matched-reset outcomes, not identical-state counterfactuals. Two repeated development cases cannot establish novelty, statistical significance, or hardware transfer."
+  },
+  "outcomes": [
+    {
+      "job_id": 0,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1032,
+      "repeat": 0,
+      "controller": "base",
+      "accepted": false,
+      "transitions": 141,
+      "failure": "grasp tracking exceeded validity limit; ended at first invalid transition",
+      "base_accepted": false,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 0,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1032,
+      "repeat": 0,
+      "controller": "p0_s0",
+      "accepted": false,
+      "transitions": 300,
+      "failure": "grasp tracking exceeded validity limit; ended at first invalid transition",
+      "base_accepted": false,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 0,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1032,
+      "repeat": 0,
+      "controller": "p0_s1",
+      "accepted": false,
+      "transitions": 158,
+      "failure": "grasp tracking exceeded validity limit; ended at first invalid transition",
+      "base_accepted": false,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 0,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1032,
+      "repeat": 0,
+      "controller": "p1_s0",
+      "accepted": false,
+      "transitions": 219,
+      "failure": "grasp tracking exceeded validity limit; ended at first invalid transition",
+      "base_accepted": false,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 0,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1032,
+      "repeat": 0,
+      "controller": "p1_s1",
+      "accepted": false,
+      "transitions": 125,
+      "failure": "grasp tracking exceeded validity limit; ended at first invalid transition",
+      "base_accepted": false,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 0,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1032,
+      "repeat": 0,
+      "controller": "p2_s0",
+      "accepted": false,
+      "transitions": 296,
+      "failure": "grasp tracking exceeded validity limit; ended at first invalid transition",
+      "base_accepted": false,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 0,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1032,
+      "repeat": 0,
+      "controller": "p2_s1",
+      "accepted": false,
+      "transitions": 177,
+      "failure": "grasp tracking exceeded validity limit; ended at first invalid transition",
+      "base_accepted": false,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 1,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1041,
+      "repeat": 0,
+      "controller": "p0_s0",
+      "accepted": true,
+      "transitions": 268,
+      "failure": null,
+      "base_accepted": true,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 1,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1041,
+      "repeat": 0,
+      "controller": "p0_s1",
+      "accepted": false,
+      "transitions": 237,
+      "failure": "grasp tracking exceeded validity limit; ended at first invalid transition",
+      "base_accepted": true,
+      "delta": -1,
+      "response_available": true
+    },
+    {
+      "job_id": 1,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1041,
+      "repeat": 0,
+      "controller": "p1_s0",
+      "accepted": true,
+      "transitions": 283,
+      "failure": null,
+      "base_accepted": true,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 1,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1041,
+      "repeat": 0,
+      "controller": "p1_s1",
+      "accepted": true,
+      "transitions": 254,
+      "failure": null,
+      "base_accepted": true,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 1,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1041,
+      "repeat": 0,
+      "controller": "p2_s0",
+      "accepted": true,
+      "transitions": 273,
+      "failure": null,
+      "base_accepted": true,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 1,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1041,
+      "repeat": 0,
+      "controller": "p2_s1",
+      "accepted": true,
+      "transitions": 259,
+      "failure": null,
+      "base_accepted": true,
+      "delta": 0,
+      "response_available": true
+    },
+    {
+      "job_id": 1,
+      "phase": "source",
+      "condition": "nominal",
+      "body": 1041,
+      "repeat": 0,
+      "controller": "base",
+      "accepted": true,
+      "transitions": 230,
+      "failure": null,
+      "base_accepted": true,
+      "delta": 0,
+      "response_available": true
+    }
+  ],
+  "evidence_scope": "Interim source data; no held-physics feedback controller, actor update, novelty or real transfer established."
+}

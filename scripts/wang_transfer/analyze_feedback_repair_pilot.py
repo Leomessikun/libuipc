@@ -31,13 +31,23 @@ def analyze(out):
                 common_state = min(state, len(z["positions"]) - 1)
                 before = float(np.linalg.norm(z["positions"][common_state] - reference["positions"][common_state], axis=1).max())
                 zero_force = not bool(np.any(z["policy_force"]))
+                first = row["success_state"]
+                # Recompute the pilot's physical-sleeve acceptance from saved
+                # states, independently of the collector's accepted flag.
+                accepted = False
+                if first is not None and len(z["actions"]) >= first + 20:
+                    proximal = z["sleeve_proximal_upper_fraction"][first:]
+                    accepted = (len(proximal) >= 21 and bool(np.all(proximal >= .7))
+                                and bool(np.all(z["sleeve_wrapped"][first:]))
+                                and bool(np.all(z["grasp_valid"])) and row["sim_error"] is None)
                 changed = np.flatnonzero(z["controller_id"] == 6)
                 in_window = not len(changed) or (changed.min() >= protocol["settings"]["start"]
                              and changed.max() < sum(protocol["settings"][k] for k in ("start", "prefix_steps", "suffix_steps")))
                 checks.append(dict(job_id=row["job_id"], controller=row["feedback_repair"]["controller"]["name"],
                                    static_mismatches=mismatches, initial_max_vertex_gap_m=initial,
                                    preintervention_state=common_state, preintervention_max_vertex_gap_m=before,
-                                   zero_force_policy_input=zero_force, bounded_intervention=bool(in_window)))
+                                   zero_force_policy_input=zero_force, bounded_intervention=bool(in_window),
+                                   success_rule_matches=bool(accepted == row["accepted"])))
             outcomes.append(dict(job_id=row["job_id"], phase=row["phase"], condition=row["condition"],
                                  body=row["body"], repeat=row["repeat"], controller=row["feedback_repair"]["controller"]["name"],
                                  accepted=row["accepted"], transitions=row["transitions"], failure=row["sim_error"],
@@ -45,7 +55,7 @@ def analyze(out):
                                  response_available=row["feedback_repair"]["response_feature"] is not None))
     result = dict(completed_batches=len(batches), completed_attempts=len(outcomes), outcomes=outcomes, reset_checks=checks,
                   integrity_pass=bool(checks) and all(not c["static_mismatches"] and c["zero_force_policy_input"]
-                                                     and c["bounded_intervention"] for c in checks),
+                                                     and c["bounded_intervention"] and c["success_rule_matches"] for c in checks),
                   max_initial_vertex_gap_m=max((c["initial_max_vertex_gap_m"] for c in checks), default=None),
                   max_preintervention_vertex_gap_m=max((c["preintervention_max_vertex_gap_m"] for c in checks), default=None),
                   interpretation="Matched-reset outcomes, not identical-state counterfactuals. Two repeated development cases cannot establish novelty, statistical significance, or hardware transfer.")

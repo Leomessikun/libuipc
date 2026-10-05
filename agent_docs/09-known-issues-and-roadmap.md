@@ -25,6 +25,13 @@ source-only router fitting are implemented; nine focused tests pass. The first
 84 source attempts must support feedback gain over a robust flat-repair mixture
 before 28 actual target attempts. Maximum 112 admitted attempts / four worker-hours.
 No new actor queue runs.
+The first 14 attempts have no correction success on the difficult body; five
+corrections and base succeed on the easier body. The independent acceptance
+recheck passes. Initial cloth differences and preintervention divergence are
+recorded in the [interim evidence](performance/2026-10-05-feedback-repair-evidence.json).
+Further novelty constraints: Play-LMP already preserves latent plans; a 2026
+Levine-team analysis finds delayed ensembles sufficient for action-chunking
+benefits in its domains. Any later actor study needs that simpler control.
 Do not interpret simulated robustness as hardware transfer, or CVaR/KL/ensemble
 acceptance as new algorithms. One worker, total GPU use below 90 GiB. Reserved test bodies and
 cancelled queues stay untouched.

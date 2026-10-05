@@ -133,6 +133,9 @@ the actor does not, the method has not delivered transferable post-training.
 | [Privileged POMDP learning, 2024/2025](https://arxiv.org/html/2412.00985), [To Distill or Decide, 2025](https://arxiv.org/html/2510.03207) | Already analyze privileged distillation failures and belief-based alternatives. Our Q4 data does not independently establish those failure mechanisms. |
 | [LCEOPT, AAAI 2024](https://arxiv.org/abs/2305.08049), [Pessimistic Iterative Planning](https://openreview.net/pdf?id=tQMBxQZblv) | Policy-tree search, Monte Carlo outcomes, recurrent controllers and robust partial-observation planning are established. IPC trees alone would be an implementation. |
 | [CoPlanner, 2025](https://arxiv.org/html/2509.17080) | Shared prefixes, later branches and contingency-aware diffusion already exist. Moving those components from driving to dressing does not supply algorithmic novelty. |
+| [Play-LMP, CoRL 2019](https://proceedings.mlr.press/v100/lynch20a/lynch20a.pdf) | Trajectory-level latent plans and plan-conditioned feedback policies already exist. Persistent identity and its action loss are not independently new. |
+| [Why Does Action Chunking Improve BC?, 2026](https://arxiv.org/html/2608.02547) | Delayed prediction and randomized delay ensembles explain action-chunking gains in the evaluated tasks without needing joint action consistency. A same-student randomized-delay control is needed if actor absorption proceeds; suffix resampling alone does not implement that baseline. |
+| [Simulation Distillation, 2026](https://arxiv.org/html/2603.15759) | Sim-pretrained task structure plus real-data dynamics adaptation and online planning already improves hardware behavior. Whole-repair post-training needs a demonstrated cost/absorption advantage over this alternative. |
 | [Set-Supervised Diffusion Policy, RSS 2026](https://arxiv.org/html/2606.01865) | Learns distributions of desired action chunks using positive/negative corrections. Our claim must concern transfer-aware, observation-executable **joint repair supervision**, not “use sets instead of one action.” |
 | [ACPPO-Corr, 2026](https://arxiv.org/html/2609.36250) | Already adds stepwise feedback to chunked actions. Merely reacting during a chunk is not a contribution. |
 | [Robust baseline regret](https://arxiv.org/abs/1607.03842), [Sim2Act](https://arxiv.org/html/2603.09053v1) | Base-relative robust improvement and action-ranking-aware calibration already exist. The LP and calibration do not independently establish novelty. |
@@ -293,3 +296,26 @@ Nine focused CPU tests pass: the three original LP cases plus camera-only input
 integrity, tool-frame compensation, common-prefix and fallback behavior,
 privileged-input independence, the LP ceiling tie, and rejecting a no-repair
 source bank. These verify implementation contracts, not scientific efficacy.
+
+### First completed batch and interpretation
+
+Nominal physics / body 1032 / repeat 0 has finished: base and all six repair
+combinations fail (0/7). Base loses the grasp at decision 141; corrections end
+between decisions 125 and 300. Longer grasp retention is not dressing success.
+All seven records have a visible response feature. The read-only analyzer
+confirms exact static body/garment/grasp arrays and initial tool positions, zero
+force input, and interventions confined to the declared decision window.
+
+Settled cloth vertices differ by up to **3.924 mm**, and by decision 60 the
+largest vertex difference is **0.361 m**, before a repair has executed. This is
+important outcome noise and trajectory divergence, not identical-state
+counterfactual evidence. The experiment estimates controller behavior over
+matched reset blocks; two replicas will remain too few for strong causal or
+statistical claims. Preserve these diagnostics in `analysis.json` and do not
+replace a failed comparison with a tolerance selected after seeing outcomes.
+
+The frozen collector also preserves the historical FMVP yaw adapter. Its actions
+are not a strict three-translation-only hardware policy. The brief's translation
+interface must be matched for both the frozen base and any candidate before
+training a deployment actor or claiming hardware gain. This mechanism screen
+does not certify that action-interface transfer.
