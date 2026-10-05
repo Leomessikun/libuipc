@@ -163,7 +163,8 @@ ensemble-best chunks; a history-flow student trained on single winners; the same
 repair data with mode labels independently shuffled between prefix/suffix; and
 a response router restricted to the repair-start frame. These isolate additional
 data, memory, feedback, and preservation of plan associations. Include a
-privileged router only as an upper bound, never as the deployed result.
+privileged router only as an information-rich control, never as the deployed
+result or a guaranteed upper bound.
 
 ## Smallest decisive experiment and cost
 
@@ -176,7 +177,7 @@ Run two independent replicas: **2×3×7×2 = 84 source attempts**. Then freeze t
 observation-only router and repair mixture. Use a new joint bending+density shift
 for **2×1×7×2 = 28 target attempts**. Here the seven target controllers are the
 frozen policy, best flat correction, compiled observation-only repair, privileged
-router upper bound, initial-frame-only router, shuffled repair associations, and
+router control, initial-frame-only router, shuffled repair associations, and
 per-decision mode resampling. **Execute these actual closed-loop controllers**;
 do not infer their returns by splicing outcomes from separately settled runs.
 Total: **112 complete attempts**.

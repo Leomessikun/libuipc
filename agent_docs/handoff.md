@@ -19,6 +19,15 @@ differs by up to 3.924 mm and decision-60 cloth positions by up to 0.361 m. Thes
 are matched-reset samples, not identical-state counterfactuals. See
 [interim evidence](performance/2026-10-05-feedback-repair-evidence.json).
 
+`report_feedback_repair_pilot.py` now generates a read-only decision report from
+the completed batches and admission ledger. It distinguishes new successes from
+harmful corrections, reports independent-repeat agreement and real executed
+target counts, and states which saved attempts the integrity analyzer covered.
+Current interim output: `output/uipc_manip/feedback_repairs_20261005/interim_results.md`.
+At the 28-attempt snapshot there are no new successes and two harmful correction
+outcomes; source collection is incomplete. Generate the final repo report only
+after the worker pipeline terminates and the analyzer covers every saved batch.
+
 Implemented the bounded execution hook, candidate generation, source-only
 cross-fitted router, robust whole-repair compiler and sequential guarded driver.
 Collect 84 source attempts on two development bodies / three physics models;
